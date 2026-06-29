@@ -6,6 +6,32 @@ Status as of 2026-06-29: spike is truck-verified (auth -> connect -> ABS ->
 phone playback + Android Auto). This plan turns it into a real project. iOS /
 CarPlay is explicitly **deferred** (its own milestone later).
 
+## Build progress (2026-06-29)
+
+All four milestones implemented to the limit of what's verifiable without a
+device build / external accounts. `tsc --noEmit` clean throughout.
+
+- **M1 (native Google) - CODE DONE, needs provisioning.** Migrated
+  @clerk/clerk-expo 2.x -> @clerk/expo 3.6.3 (SDK 56 / RN 0.85 in peer range; no
+  SDK bump needed). useSignInWithGoogle() wired, gated by NATIVE_GOOGLE_ENABLED;
+  falls back to browser OAuth until Google Cloud + Clerk dashboard + keystore
+  SHA are provisioned. **You must do AUTH_SETUP.md** + a device rebuild to flip
+  it on and verify.
+- **M2 (auth hardening) - DONE.** Env/secret separation (config.ts + app.config
+  extra + .env.example), 401 -> sign-out-with-reason, no-linked-server screen,
+  sign-out teardown audit.
+- **M3 (features) - DONE.** Search, full library browsing + pagination, full
+  player screen, chapters, sleep timer, multi-server picker. In-car (Android
+  Auto) search left as a tracked follow-up - it touches the truck-verified
+  native service and needs DHU/car verification.
+- **M4 (release) - CODE DONE, signing needs your keystore.** CI typecheck +
+  manual Android build workflows, standalone-js config plugin, versionCode,
+  RELEASE.md. Signed Play uploads await your upload keystore as CI secrets.
+
+**What needs YOU before this ships:** AUTH_SETUP.md (Google/Clerk/keystore),
+RELEASE.md signing, and on-device verification of native Google + the new
+screens. None of those are blocked on code.
+
 ## Where the spike actually is
 
 What works today, in this repo:
