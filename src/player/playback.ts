@@ -40,7 +40,7 @@ export async function playItemById(itemId: string): Promise<void> {
     itemId,
     sessionId: session.id,
     title: session.displayTitle,
-    author: session.displayAuthor,
+    author: session.displayAuthor ?? '',
     artworkUrl: coverUrl(itemId),
     url: mediaUrl(track.contentUrl),
     duration: session.duration,

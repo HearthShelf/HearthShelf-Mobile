@@ -17,7 +17,7 @@ import { setSession, clearSession } from '@/api/session'
 import { clearTrack } from '@/player/store'
 import { setAutoSession, clearAutoSession } from '@/player/autoBridge'
 import { coverUrl, getItemsInProgress, getLibraries, getLibraryItems, itemAuthor, itemTitle } from '@/api/abs'
-import type { ABSLibraryItem } from '@/api/types'
+import type { ABSLibraryItem } from '@hearthshelf/core'
 import { playItemById } from '@/player/playback'
 import { NowPlayingBar } from '@/player/NowPlayingBar'
 

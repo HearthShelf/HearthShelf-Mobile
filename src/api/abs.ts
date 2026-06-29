@@ -16,7 +16,7 @@ import type {
   ABSItemsInProgressResponse,
   ABSLibraryItem,
   ABSPlaybackSession,
-} from './types'
+} from '@hearthshelf/core'
 
 function requireSession() {
   const s = getSession()

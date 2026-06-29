@@ -31,7 +31,8 @@
   "scripts": {
     "start": "expo start --dev-client",
     "android": "expo run:android",
-    "ios": "expo run:ios"
+    "ios": "expo run:ios",
+    "sync-core": "git submodule update --remote packages/core"
   },
   "private": true
 }

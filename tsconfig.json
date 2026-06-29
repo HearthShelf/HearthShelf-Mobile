@@ -5,6 +5,12 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@hearthshelf/core": [
+        "./packages/core/src/index.ts"
+      ],
+      "@hearthshelf/core/*": [
+        "./packages/core/src/*"
       ]
     }
   },
