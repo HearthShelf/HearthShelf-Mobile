@@ -1,6 +1,7 @@
 {
   "name": "hearthshelf-mobile",
   "version": "0.0.1",
+  "license": "MIT",
   "main": "index.js",
   "dependencies": {
     "@clerk/clerk-expo": "^2.19.31",

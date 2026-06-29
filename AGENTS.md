@@ -39,15 +39,17 @@ Auto** (a native Kotlin Media3 `MediaLibraryService`).
 
 ## Licensing
 
-AGPLv3, same as the rest of the ecosystem (see `LICENSE.md`). The paid iPhone
-build recoups Apple's developer fee by selling **convenience** (the signed App
-Store build), not by closing the source - keep the source open. Note: AGPL has a
-known friction with Apple's App Store terms; as the copyright holder you can
-grant Apple the needed terms, but be aware of it.
+**MIT** (see `LICENSE.md`) - deliberately permissive, not AGPL like the servers.
+AGPL on a client app buys little (its network-copyleft clause doesn't apply to an
+app running on the user's phone) and costs a real Apple App Store conflict
+(GPL/AGPL vs App Store terms - the VLC issue) plus contributor deterrence. MIT
+sidesteps both. The shared `@hearthshelf/core` is MIT too, so it links cleanly.
+The paid iPhone build recoups Apple's developer fee by selling **convenience**
+(the signed App Store build), not by closing the source - keep the source open.
 
 ## Related repositories
 
-All AGPLv3.
+Servers are AGPLv3; this app + the shared `@hearthshelf/core` are MIT.
 
 | Repo | What it is |
 | --- | --- |
