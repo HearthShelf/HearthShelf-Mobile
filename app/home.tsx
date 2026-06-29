@@ -11,7 +11,7 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
-import { fetchLinkedServers } from '@/api/controlPlane'
+import { fetchLinkedServers, setSessionExpiredHandler } from '@/api/controlPlane'
 import { CLERK_JWT_TEMPLATE } from '@/lib/config'
 import { connectServer } from '@/api/connect'
 import { setSession, clearSession } from '@/api/session'
@@ -25,7 +25,15 @@ import { NowPlayingBar } from '@/player/NowPlayingBar'
 type Status =
   | { phase: 'connecting' }
   | { phase: 'error'; message: string }
+  | { phase: 'no-servers' }
   | { phase: 'ready'; serverName: string }
+
+class NoLinkedServersError extends Error {
+  constructor() {
+    super('No linked servers on this account')
+    this.name = 'NoLinkedServersError'
+  }
+}
 
 export default function HomeScreen() {
   const { getToken, signOut } = useAuth()
@@ -34,13 +42,14 @@ export default function HomeScreen() {
   const [items, setItems] = useState<ABSLibraryItem[]>([])
 
   // signOut() clears the Clerk session, but this screen isn't the auth gate, so
-  // nothing redirects on its own. Tear down our state and navigate explicitly.
-  async function handleSignOut() {
+  // nothing redirects on its own. Tear down ALL per-account state (playback,
+  // car bridge, ABS session) so nothing leaks across accounts, then navigate.
+  async function handleSignOut(reason?: 'expired') {
     clearTrack()
     clearAutoSession()
     await clearSession()
     await signOut()
-    router.replace('/sign-in')
+    router.replace(reason ? `/sign-in?reason=${reason}` : '/sign-in')
   }
 
   // Clerk's getToken is a fresh function every render; keep it in a ref so the
@@ -64,7 +73,7 @@ export default function HomeScreen() {
     setStatus({ phase: 'connecting' })
     try {
       const servers = await fetchLinkedServers(token)
-      if (servers.length === 0) throw new Error('No linked servers on this account')
+      if (servers.length === 0) throw new NoLinkedServersError()
       const server = servers[0]
 
       const { serverUrl, token: absToken } = await connectServer(token, server.id, server.url)
@@ -83,7 +92,11 @@ export default function HomeScreen() {
       setItems(list)
       setStatus({ phase: 'ready', serverName: server.name })
     } catch (e) {
-      setStatus({ phase: 'error', message: (e as Error).message })
+      if (e instanceof NoLinkedServersError) {
+        setStatus({ phase: 'no-servers' })
+      } else {
+        setStatus({ phase: 'error', message: (e as Error).message })
+      }
     }
   }, [])
 
@@ -91,11 +104,40 @@ export default function HomeScreen() {
     connect()
   }, [connect])
 
+  // When the control plane reports our Clerk session expired (401), sign out and
+  // return to the sign-in screen with a reason instead of a dead error.
+  useEffect(() => {
+    setSessionExpiredHandler(() => {
+      void handleSignOut('expired')
+    })
+    return () => setSessionExpiredHandler(null)
+    // handleSignOut is stable enough for this lifecycle; intentionally not a dep.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   if (status.phase === 'connecting') {
     return (
       <SafeAreaView style={styles.center}>
         <ActivityIndicator />
         <Text style={styles.dim}>Connecting to your server…</Text>
+      </SafeAreaView>
+    )
+  }
+
+  if (status.phase === 'no-servers') {
+    return (
+      <SafeAreaView style={styles.center}>
+        <Text style={styles.title}>No server linked</Text>
+        <Text style={styles.dim}>
+          Link an AudiobookShelf server at app.hearthshelf.com, then come back
+          and retry.
+        </Text>
+        <TouchableOpacity style={styles.retry} onPress={connect}>
+          <Text style={styles.retryText}>Retry</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => handleSignOut()}>
+          <Text style={styles.signOut}>Sign out</Text>
+        </TouchableOpacity>
       </SafeAreaView>
     )
   }
@@ -107,7 +149,7 @@ export default function HomeScreen() {
         <TouchableOpacity style={styles.retry} onPress={connect}>
           <Text style={styles.retryText}>Retry</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleSignOut}>
+        <TouchableOpacity onPress={() => handleSignOut()}>
           <Text style={styles.signOut}>Sign out</Text>
         </TouchableOpacity>
       </SafeAreaView>
@@ -118,7 +160,7 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.title}>{status.serverName}</Text>
-        <TouchableOpacity onPress={handleSignOut}>
+        <TouchableOpacity onPress={() => handleSignOut()}>
           <Text style={styles.signOut}>Sign out</Text>
         </TouchableOpacity>
       </View>

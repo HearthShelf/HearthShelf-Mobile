@@ -18,6 +18,18 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Session-expired seam (mirrors the web app's ClerkTokenBridge). When the
+ * control plane rejects our Clerk token as expired/invalid (401), the auth
+ * layer registers what to do - sign out and route to /sign-in with a reason -
+ * so the user gets a clear message instead of a dead error screen.
+ */
+type SessionExpiredHandler = () => void
+let onSessionExpired: SessionExpiredHandler | null = null
+export function setSessionExpiredHandler(fn: SessionExpiredHandler | null): void {
+  onSessionExpired = fn
+}
+
 async function request<T>(getToken: GetToken, path: string, init?: RequestInit): Promise<T> {
   const token = await getToken()
   const headers = new Headers(init?.headers)
@@ -33,6 +45,9 @@ async function request<T>(getToken: GetToken, path: string, init?: RequestInit):
     } catch {
       // non-JSON error body; keep statusText
     }
+    // A 401 means the Clerk session is no longer accepted - hand off to the
+    // registered handler (sign out + redirect) rather than surfacing a raw error.
+    if (res.status === 401) onSessionExpired?.()
     throw new ApiError(res.status, detail)
   }
   return res.json() as Promise<T>

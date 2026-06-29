@@ -4,7 +4,7 @@ import { useSSO } from '@clerk/expo'
 // here is a secondary fallback to the primary Google flow).
 import { useSignIn } from '@clerk/expo/legacy'
 import { useSignInWithGoogle } from '@clerk/expo/google'
-import { useRouter } from 'expo-router'
+import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useEffect, useState } from 'react'
 import * as WebBrowser from 'expo-web-browser'
 import { NATIVE_GOOGLE_ENABLED } from '@/lib/config'
@@ -37,10 +37,13 @@ export default function SignInScreen() {
   const { startSSOFlow } = useSSO()
   const { startGoogleAuthenticationFlow } = useSignInWithGoogle()
   const router = useRouter()
+  const { reason } = useLocalSearchParams<{ reason?: string }>()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(
+    reason === 'expired' ? 'Your session expired. Please sign in again.' : null
+  )
 
   // Warm up the browser on Android so the OAuth tab opens snappily.
   useEffect(() => {
