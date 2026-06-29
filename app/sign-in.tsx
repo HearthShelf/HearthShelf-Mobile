@@ -1,7 +1,13 @@
-import { useSignIn, useSSO } from '@clerk/clerk-expo'
+import { useSSO } from '@clerk/expo'
+// The classic create()/setActive() useSignIn shape (the new signal-based
+// useSignIn in @clerk/expo's root would require a flow rewrite; the email path
+// here is a secondary fallback to the primary Google flow).
+import { useSignIn } from '@clerk/expo/legacy'
+import { useSignInWithGoogle } from '@clerk/expo/google'
 import { useRouter } from 'expo-router'
 import { useEffect, useState } from 'react'
 import * as WebBrowser from 'expo-web-browser'
+import { NATIVE_GOOGLE_ENABLED } from '@/lib/config'
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -17,14 +23,19 @@ import {
 WebBrowser.maybeCompleteAuthSession()
 
 /**
- * Clerk sign-in. Primary path is "Continue with Google" (the HearthShelf Clerk
- * instance's OAuth provider) via useSSO(); email/password is kept as a fallback.
- * Either way the result is a real Clerk session, which the control plane verifies
- * for the grant -> /hs/hosted/connect -> ABS token handshake.
+ * Clerk sign-in. Primary path is "Continue with Google":
+ *   - When the Google client IDs are provisioned (NATIVE_GOOGLE_ENABLED), this
+ *     uses Clerk's native Android Credential Manager account-picker sheet via
+ *     useSignInWithGoogle() - one tap, no browser.
+ *   - Otherwise it falls back to the browser-tab OAuth flow via useSSO().
+ * Email/password is kept as a secondary fallback. Either way the result is a
+ * real Clerk session, which the control plane verifies for the grant ->
+ * /hs/hosted/connect -> ABS token handshake.
  */
 export default function SignInScreen() {
   const { signIn, setActive, isLoaded } = useSignIn()
   const { startSSOFlow } = useSSO()
+  const { startGoogleAuthenticationFlow } = useSignInWithGoogle()
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -44,18 +55,21 @@ export default function SignInScreen() {
     setBusy(true)
     setError(null)
     try {
-      // Let useSSO build its own redirect (scheme + 'sso-callback' path) so it
-      // matches Clerk's native flow exactly. Passing a custom one (e.g.
-      // '/home') caused a redirect-url mismatch. The value to allowlist in the
-      // Clerk dashboard is `hearthshelf://sso-callback`.
-      const { createdSessionId, setActive: ssoSetActive } = await startSSOFlow({
-        strategy: 'oauth_google',
-      })
-      if (createdSessionId && ssoSetActive) {
-        await ssoSetActive({ session: createdSessionId })
+      // Native account-picker sheet (Android Credential Manager) when the
+      // Google client IDs are provisioned; otherwise the browser-tab OAuth flow.
+      const { createdSessionId, setActive: flowSetActive } = NATIVE_GOOGLE_ENABLED
+        ? await startGoogleAuthenticationFlow()
+        : // Let useSSO build its own redirect (scheme + 'sso-callback' path) so
+          // it matches Clerk's native flow exactly. Passing a custom one (e.g.
+          // '/home') caused a redirect-url mismatch. The value to allowlist in
+          // the Clerk dashboard is `hearthshelf://sso-callback`.
+          await startSSOFlow({ strategy: 'oauth_google' })
+
+      if (createdSessionId && flowSetActive) {
+        await flowSetActive({ session: createdSessionId })
         router.replace('/home')
       } else {
-        // No session usually means the user cancelled the browser flow.
+        // No session usually means the user cancelled the picker / browser flow.
         setError('Google sign-in did not complete')
       }
     } catch (e) {

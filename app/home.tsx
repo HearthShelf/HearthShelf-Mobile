@@ -1,4 +1,4 @@
-import { useAuth } from '@clerk/clerk-expo'
+import { useAuth } from '@clerk/expo'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import { fetchLinkedServers } from '@/api/controlPlane'
+import { CLERK_JWT_TEMPLATE } from '@/lib/config'
 import { connectServer } from '@/api/connect'
 import { setSession, clearSession } from '@/api/session'
 import { clearTrack } from '@/player/store'
@@ -50,8 +51,16 @@ export default function HomeScreen() {
   const connect = useCallback(async () => {
     // The control plane verifies a token minted from the 'hearthshelf' Clerk JWT
     // template (it carries the verified email/username claims) - NOT the default
-    // session token. Must match the web app (ClerkTokenBridge).
-    const token = () => getTokenRef.current({ template: 'hearthshelf' })
+    // session token. Must match the web app (ClerkTokenBridge). In @clerk/expo
+    // 3.x getToken() throws ClerkOfflineError when offline rather than returning
+    // null, so swallow it to a null and let the API layer surface the failure.
+    const token = async () => {
+      try {
+        return await getTokenRef.current({ template: CLERK_JWT_TEMPLATE })
+      } catch {
+        return null
+      }
+    }
     setStatus({ phase: 'connecting' })
     try {
       const servers = await fetchLinkedServers(token)
