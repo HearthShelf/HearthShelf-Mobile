@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Declares HearthShelf to Android Auto as a MEDIA app. The
+  com.google.android.gms.car.application meta-data in the manifest points here;
+  without it, Android Auto won't list the app even though its MediaBrowserService
+  is discoverable.
+-->
+<automotiveApp>
+    <uses name="media" />
+</automotiveApp>
