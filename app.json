@@ -17,6 +17,7 @@
     },
     "android": {
       "package": "com.hearthshelf.mobile",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -52,7 +53,8 @@
           }
         }
       ],
-      "./plugins/hearthshelf-auto/index.js"
+      "./plugins/hearthshelf-auto/index.js",
+      "./plugins/standalone-js/index.js"
     ]
   }
 }

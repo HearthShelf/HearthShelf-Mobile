@@ -1,0 +1,54 @@
+name: Build Android (manual)
+
+# Manually-dispatched Android build. Kept OFF automatic triggers on purpose:
+# per repo policy, pushes must not fire builds/releases. Run this from the
+# Actions tab when you want a debug APK artifact.
+#
+# This produces an UNSIGNED-for-release debug APK (debug keystore). Play Store
+# release signing + upload is a separate step that needs the upload keystore as
+# encrypted secrets - see RELEASE.md. We do not put signing here yet so secrets
+# aren't required to use this workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      standalone:
+        description: 'Embed JS in the APK (untethered/in-car build)'
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17 # RN 0.85 / Expo 56 request a Java 17 toolchain
+
+      - uses: android-actions/setup-android@v3
+
+      - run: npm ci
+
+      - name: Prebuild (runs config plugins, incl. Android Auto + standalone-js)
+        env:
+          HEARTHSHELF_STANDALONE_DEBUG: ${{ inputs.standalone && '1' || '0' }}
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Assemble debug APK
+        run: ./gradlew :app:assembleDebug
+        working-directory: android
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

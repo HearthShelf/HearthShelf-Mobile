@@ -1,0 +1,30 @@
+name: CI
+
+# Typecheck on every PR and push to main. This does NOT build or release - it is
+# a fast correctness gate. The Android build is a separate, manually-dispatched
+# workflow (build-android.yml) so it never fires a release on its own.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive # packages/core is a submodule
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+      - name: Expo config resolves
+        run: npx expo config --type public > /dev/null
