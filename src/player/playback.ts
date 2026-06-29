@@ -45,6 +45,12 @@ export async function playItemById(itemId: string): Promise<void> {
     url: mediaUrl(track.contentUrl),
     duration: session.duration,
     startPosition: session.currentTime > 0 ? session.currentTime : 0,
+    // The play-session already carries chapters - no extra detail fetch needed.
+    chapters: (session.chapters ?? []).map((c) => ({
+      title: c.title,
+      start: c.start,
+      end: c.end,
+    })),
   }
   loadTrack(np)
 

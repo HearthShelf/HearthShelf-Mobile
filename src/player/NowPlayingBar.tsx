@@ -4,6 +4,7 @@
  */
 import { useSyncExternalStore } from 'react'
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { useRouter } from 'expo-router'
 import { getState, subscribe, togglePlay, jumpBy } from './store'
 
 function fmt(seconds: number): string {
@@ -17,24 +18,27 @@ function fmt(seconds: number): string {
 }
 
 export function NowPlayingBar() {
+  const router = useRouter()
   const { nowPlaying, isPlaying, position } = useSyncExternalStore(subscribe, getState)
   if (!nowPlaying) return null
 
   return (
     <View style={styles.bar}>
-      {nowPlaying.artworkUrl ? (
-        <Image source={{ uri: nowPlaying.artworkUrl }} style={styles.cover} />
-      ) : (
-        <View style={styles.cover} />
-      )}
-      <View style={styles.meta}>
-        <Text style={styles.title} numberOfLines={1}>
-          {nowPlaying.title}
-        </Text>
-        <Text style={styles.time}>
-          {fmt(position)} / {fmt(nowPlaying.duration)}
-        </Text>
-      </View>
+      <TouchableOpacity style={styles.tap} onPress={() => router.push('/player')}>
+        {nowPlaying.artworkUrl ? (
+          <Image source={{ uri: nowPlaying.artworkUrl }} style={styles.cover} />
+        ) : (
+          <View style={styles.cover} />
+        )}
+        <View style={styles.meta}>
+          <Text style={styles.title} numberOfLines={1}>
+            {nowPlaying.title}
+          </Text>
+          <Text style={styles.time}>
+            {fmt(position)} / {fmt(nowPlaying.duration)}
+          </Text>
+        </View>
+      </TouchableOpacity>
       <TouchableOpacity style={styles.ctrl} onPress={() => jumpBy(-15)}>
         <Text style={styles.ctrlText}>-15</Text>
       </TouchableOpacity>
@@ -59,6 +63,7 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#3a322c',
   },
+  tap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 0 },
   cover: { width: 44, height: 44, borderRadius: 5, backgroundColor: '#332b25' },
   meta: { flex: 1, minWidth: 0 },
   title: { color: '#f3e9dd', fontSize: 14, fontWeight: '600' },

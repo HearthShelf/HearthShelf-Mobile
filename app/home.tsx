@@ -11,10 +11,14 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
-import { fetchLinkedServers, setSessionExpiredHandler } from '@/api/controlPlane'
+import {
+  fetchLinkedServers,
+  setSessionExpiredHandler,
+  type LinkedServer,
+} from '@/api/controlPlane'
 import { CLERK_JWT_TEMPLATE } from '@/lib/config'
 import { connectServer } from '@/api/connect'
-import { setSession, clearSession } from '@/api/session'
+import { setSession, clearSession, setLastServerId, getLastServerId } from '@/api/session'
 import { clearTrack } from '@/player/store'
 import { setAutoSession, clearAutoSession } from '@/player/autoBridge'
 import { coverUrl, getItemsInProgress, getLibraries, getLibraryItems, itemAuthor, itemTitle } from '@/api/abs'
@@ -26,6 +30,7 @@ type Status =
   | { phase: 'connecting' }
   | { phase: 'error'; message: string }
   | { phase: 'no-servers' }
+  | { phase: 'select-server'; servers: LinkedServer[] }
   | { phase: 'ready'; serverName: string }
 
 class NoLinkedServersError extends Error {
@@ -53,44 +58,70 @@ export default function HomeScreen() {
   }
 
   // Clerk's getToken is a fresh function every render; keep it in a ref so the
-  // connect callback stays stable and the mount effect doesn't loop forever.
+  // connect callbacks stay stable and the mount effect doesn't loop forever.
   const getTokenRef = useRef(getToken)
   getTokenRef.current = getToken
 
-  const connect = useCallback(async () => {
-    // The control plane verifies a token minted from the 'hearthshelf' Clerk JWT
-    // template (it carries the verified email/username claims) - NOT the default
-    // session token. Must match the web app (ClerkTokenBridge). In @clerk/expo
-    // 3.x getToken() throws ClerkOfflineError when offline rather than returning
-    // null, so swallow it to a null and let the API layer surface the failure.
-    const token = async () => {
-      try {
-        return await getTokenRef.current({ template: CLERK_JWT_TEMPLATE })
-      } catch {
-        return null
-      }
+  // The control plane verifies a token minted from the 'hearthshelf' Clerk JWT
+  // template (it carries the verified email/username claims) - NOT the default
+  // session token. Must match the web app (ClerkTokenBridge). In @clerk/expo 3.x
+  // getToken() throws ClerkOfflineError when offline rather than returning null,
+  // so swallow it to a null and let the API layer surface the failure.
+  const tokenFn = useCallback(async () => {
+    try {
+      return await getTokenRef.current({ template: CLERK_JWT_TEMPLATE })
+    } catch {
+      return null
     }
+  }, [])
+
+  // Do the grant -> connect -> ABS-token handshake for a chosen server, hydrate
+  // the home list, and remember the server for next launch.
+  const connectTo = useCallback(
+    async (server: LinkedServer) => {
+      setStatus({ phase: 'connecting' })
+      try {
+        const { serverUrl, token: absToken } = await connectServer(tokenFn, server.id, server.url)
+        await setSession({ serverUrl, token: absToken })
+        await setLastServerId(server.id)
+        // Hand the server URL + token to the native Android Auto service so the
+        // car can browse + play headlessly.
+        setAutoSession(serverUrl, absToken)
+
+        // Continue Listening first; fall back to the first library's items.
+        let list = await getItemsInProgress()
+        if (list.length === 0) {
+          const libs = await getLibraries()
+          const firstBookLib = libs.find((l) => l.mediaType === 'book') ?? libs[0]
+          if (firstBookLib) list = await getLibraryItems(firstBookLib.id, 0, 50)
+        }
+        setItems(list)
+        setStatus({ phase: 'ready', serverName: server.name })
+      } catch (e) {
+        setStatus({ phase: 'error', message: (e as Error).message })
+      }
+    },
+    [tokenFn]
+  )
+
+  const connect = useCallback(async () => {
+    const token = tokenFn
     setStatus({ phase: 'connecting' })
     try {
       const servers = await fetchLinkedServers(token)
       if (servers.length === 0) throw new NoLinkedServersError()
-      const server = servers[0]
-
-      const { serverUrl, token: absToken } = await connectServer(token, server.id, server.url)
-      await setSession({ serverUrl, token: absToken })
-      // Hand the server URL + token to the native Android Auto service so the
-      // car can browse + play headlessly.
-      setAutoSession(serverUrl, absToken)
-
-      // Continue Listening first; fall back to the first library's items.
-      let list = await getItemsInProgress()
-      if (list.length === 0) {
-        const libs = await getLibraries()
-        const firstBookLib = libs.find((l) => l.mediaType === 'book') ?? libs[0]
-        if (firstBookLib) list = await getLibraryItems(firstBookLib.id, 0, 50)
+      if (servers.length === 1) {
+        await connectTo(servers[0])
+        return
       }
-      setItems(list)
-      setStatus({ phase: 'ready', serverName: server.name })
+      // Multiple servers: reconnect to the one last used, else let the user pick.
+      const lastId = await getLastServerId()
+      const remembered = lastId ? servers.find((s) => s.id === lastId) : undefined
+      if (remembered) {
+        await connectTo(remembered)
+      } else {
+        setStatus({ phase: 'select-server', servers })
+      }
     } catch (e) {
       if (e instanceof NoLinkedServersError) {
         setStatus({ phase: 'no-servers' })
@@ -98,7 +129,7 @@ export default function HomeScreen() {
         setStatus({ phase: 'error', message: (e as Error).message })
       }
     }
-  }, [])
+  }, [connectTo])
 
   useEffect(() => {
     connect()
@@ -142,6 +173,32 @@ export default function HomeScreen() {
     )
   }
 
+  if (status.phase === 'select-server') {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <Text style={[styles.title, { paddingHorizontal: 16, paddingTop: 8 }]}>
+          Choose a server
+        </Text>
+        <FlatList
+          data={status.servers}
+          keyExtractor={(s) => s.id}
+          contentContainerStyle={{ padding: 16 }}
+          renderItem={({ item }) => (
+            <TouchableOpacity style={styles.serverRow} onPress={() => connectTo(item)}>
+              <Text style={styles.bookTitle}>{item.name}</Text>
+              <Text style={styles.bookAuthor} numberOfLines={1}>
+                {item.url}
+              </Text>
+            </TouchableOpacity>
+          )}
+        />
+        <TouchableOpacity style={{ alignItems: 'center', padding: 16 }} onPress={() => handleSignOut()}>
+          <Text style={styles.signOut}>Sign out</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    )
+  }
+
   if (status.phase === 'error') {
     return (
       <SafeAreaView style={styles.center}>
@@ -162,6 +219,14 @@ export default function HomeScreen() {
         <Text style={styles.title}>{status.serverName}</Text>
         <TouchableOpacity onPress={() => handleSignOut()}>
           <Text style={styles.signOut}>Sign out</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={styles.navRow}>
+        <TouchableOpacity style={styles.navBtn} onPress={() => router.push('/search')}>
+          <Text style={styles.navText}>Search</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.navBtn} onPress={() => router.push('/libraries')}>
+          <Text style={styles.navText}>Libraries</Text>
         </TouchableOpacity>
       </View>
       <Text style={styles.section}>
@@ -202,7 +267,23 @@ const styles = StyleSheet.create({
   },
   title: { color: '#f3e9dd', fontSize: 22, fontWeight: '700' },
   section: { color: '#a99', fontSize: 13, paddingHorizontal: 16, paddingTop: 4 },
+  navRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 10 },
+  navBtn: {
+    backgroundColor: '#221d19',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#3a322c',
+  },
+  navText: { color: '#d9c9b8', fontSize: 14, fontWeight: '600' },
   row: { flexDirection: 'row', gap: 12, paddingVertical: 8, alignItems: 'center' },
+  serverRow: {
+    backgroundColor: '#221d19',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 10,
+  },
   cover: { width: 56, height: 56, borderRadius: 6, backgroundColor: '#332b25' },
   meta: { flex: 1 },
   bookTitle: { color: '#f3e9dd', fontSize: 16, fontWeight: '600' },

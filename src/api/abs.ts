@@ -15,8 +15,19 @@ import type {
   ABSShelf,
   ABSItemsInProgressResponse,
   ABSLibraryItem,
+  ABSLibraryItemDetail,
+  ABSChapter,
   ABSPlaybackSession,
+  ABSSearchResponse,
 } from '@hearthshelf/core'
+
+/** A page of library items plus the total count, for infinite scroll. */
+export interface LibraryItemsPage {
+  results: ABSLibraryItem[]
+  total: number
+  page: number
+  limit: number
+}
 
 function requireSession() {
   const s = getSession()
@@ -68,8 +79,47 @@ export async function getLibraryItems(
   return data.results
 }
 
+/** Like getLibraryItems but returns the page envelope (total) for infinite scroll. */
+export async function getLibraryItemsPage(
+  libraryId: string,
+  page = 0,
+  limit = 50
+): Promise<LibraryItemsPage> {
+  const data = await absRequest<ABSLibraryItemsResponse>(
+    `/api/libraries/${libraryId}/items?page=${page}&limit=${limit}&minified=1`
+  )
+  return { results: data.results, total: data.total, page: data.page, limit: data.limit }
+}
+
 export async function getPersonalized(libraryId: string): Promise<ABSShelf[]> {
   return absRequest<ABSShelf[]>(`/api/libraries/${libraryId}/personalized`)
+}
+
+/** Full item detail (NOT minified) - carries media.chapters[] for the chapter list. */
+export async function getItemDetail(itemId: string): Promise<ABSLibraryItemDetail> {
+  return absRequest<ABSLibraryItemDetail>(`/api/items/${itemId}`)
+}
+
+/** Chapters for an item, from the detail endpoint. Empty for single-file books. */
+export async function getItemChapters(itemId: string): Promise<ABSChapter[]> {
+  const detail = await getItemDetail(itemId)
+  return detail.media.chapters ?? []
+}
+
+/**
+ * Search a library. ABS returns books/series/authors/narrators; we surface the
+ * flat list of matched library items (books) for the search screen.
+ */
+export async function searchLibrary(
+  libraryId: string,
+  query: string,
+  limit = 25
+): Promise<ABSLibraryItem[]> {
+  const q = encodeURIComponent(query)
+  const data = await absRequest<ABSSearchResponse>(
+    `/api/libraries/${libraryId}/search?q=${q}&limit=${limit}`
+  )
+  return (data.book ?? []).map((b) => b.libraryItem)
 }
 
 export async function getItemsInProgress(): Promise<ABSLibraryItem[]> {

@@ -17,6 +17,24 @@ interface AbsSession {
 let current: AbsSession | null = null
 
 const KEY = 'hs.abs.session'
+const LAST_SERVER_KEY = 'hs.lastServerId'
+
+/** Remember which linked server the user last connected to (multi-server). */
+export async function setLastServerId(serverId: string): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(LAST_SERVER_KEY, serverId)
+  } catch {
+    // non-fatal; we just fall back to the first server next launch
+  }
+}
+
+export async function getLastServerId(): Promise<string | null> {
+  try {
+    return await SecureStore.getItemAsync(LAST_SERVER_KEY)
+  } catch {
+    return null
+  }
+}
 
 export function getSession(): AbsSession | null {
   return current
