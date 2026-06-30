@@ -21,13 +21,18 @@ module.exports = function withStandaloneJs(config) {
 
   return withAppBuildGradle(config, (cfg) => {
     let src = cfg.modResults.contents
-    if (src.includes('debuggableVariants = []')) return cfg
 
-    if (/debuggableVariants\s*=/.test(src)) {
-      // Replace an existing assignment (RN template sometimes emits one).
-      src = src.replace(/debuggableVariants\s*=\s*\[[^\]]*\]/, 'debuggableVariants = []')
-    } else if (/react\s*\{/.test(src)) {
-      // Inject into the existing react { } block.
+    // Idempotency: only bail if a REAL (uncommented) assignment is already
+    // present. The RN template ships a commented `// debuggableVariants = []`
+    // example line, so a naive substring check matches that and does nothing -
+    // leaving debug unbundled and the APK unable to find its JS at runtime.
+    // Require a line where the assignment is the first non-space token.
+    if (/^\s*debuggableVariants\s*=/m.test(src)) return cfg
+
+    // Inject a real assignment as the first statement inside the react { } block.
+    // (Editing the commented example is brittle; an explicit insert is clearer
+    // and survives template wording changes.)
+    if (/react\s*\{/.test(src)) {
       src = src.replace(/react\s*\{/, 'react {\n    debuggableVariants = []')
     } else {
       // No react block (unexpected for an RN app); append a minimal one.
