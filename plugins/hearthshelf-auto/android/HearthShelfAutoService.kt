@@ -71,6 +71,14 @@ class HearthShelfAutoService : MediaLibraryService() {
   private val LIB_PREFIX = "lib:"
   private val PLAY_PREFIX = "play:"
 
+  /**
+   * Last search's results, cached so onGetSearchResult can serve them without a
+   * second round-trip to ABS. onSearch does the query, stashes the books here,
+   * then notifies the client of the count; the client then pulls pages from this.
+   */
+  @Volatile private var lastSearchQuery: String? = null
+  @Volatile private var lastSearchBooks: List<Book> = emptyList()
+
   private inner class LibraryCallback : MediaLibrarySession.Callback {
 
     override fun onGetLibraryRoot(
@@ -129,6 +137,84 @@ class HearthShelfAutoService : MediaLibraryService() {
       }
       return Futures.immediateFuture(resolved.get())
     }
+
+    /**
+     * The car's voice/text search ("play <book>"). Query ABS across every book
+     * library, cache the hits, then tell the client how many we found - it will
+     * follow up with onGetSearchResult to actually pull the items.
+     */
+    override fun onSearch(
+      session: MediaLibrarySession,
+      browser: MediaSession.ControllerInfo,
+      query: String,
+      params: LibraryParams?
+    ): ListenableFuture<LibraryResult<Void>> {
+      val future = io.submit<LibraryResult<Void>> {
+        try {
+          val books = searchAll(query)
+          lastSearchQuery = query
+          lastSearchBooks = books
+          Log.i(TAG, "onSearch query=\"$query\" -> ${books.size} items")
+          session.notifySearchResultChanged(browser, query, books.size, params)
+          LibraryResult.ofVoid(params)
+        } catch (e: Exception) {
+          Log.e(TAG, "onSearch query=\"$query\" FAILED", e)
+          lastSearchQuery = query
+          lastSearchBooks = emptyList()
+          session.notifySearchResultChanged(browser, query, 0, params)
+          LibraryResult.ofVoid(params)
+        }
+      }
+      return Futures.immediateFuture(future.get())
+    }
+
+    /** Serve a page of the results that onSearch cached for this query. */
+    override fun onGetSearchResult(
+      session: MediaLibrarySession,
+      browser: MediaSession.ControllerInfo,
+      query: String,
+      page: Int,
+      pageSize: Int,
+      params: LibraryParams?
+    ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+      val future = io.submit<LibraryResult<ImmutableList<MediaItem>>> {
+        try {
+          val base = serverUrl
+          val tok = token
+          if (base == null || tok == null) {
+            return@submit LibraryResult.ofItemList(ImmutableList.of(), params)
+          }
+          // The client searches before paging, so the cache is normally warm.
+          // Re-run on a cache miss (e.g. a different query) to stay correct.
+          val books = if (query == lastSearchQuery) lastSearchBooks else searchAll(query)
+          val from = page * pageSize
+          val pageItems = if (from >= books.size) emptyList()
+            else books.subList(from, minOf(from + pageSize, books.size))
+          Log.i(TAG, "onGetSearchResult query=\"$query\" page=$page -> ${pageItems.size} items")
+          LibraryResult.ofItemList(
+            ImmutableList.copyOf(pageItems.map { playable(base, tok, it) }), params
+          )
+        } catch (e: Exception) {
+          Log.e(TAG, "onGetSearchResult query=\"$query\" FAILED", e)
+          LibraryResult.ofItemList(ImmutableList.of(), params)
+        }
+      }
+      return Futures.immediateFuture(future.get())
+    }
+  }
+
+  /** Search every book library and flatten the hits into one de-duped list. */
+  private fun searchAll(query: String): List<Book> {
+    val base = serverUrl ?: return emptyList()
+    val tok = token ?: return emptyList()
+    val seen = HashSet<String>()
+    val out = mutableListOf<Book>()
+    for (lib in absLibraries(base, tok)) {
+      for (b in absSearchLibrary(base, tok, lib.first, query)) {
+        if (seen.add(b.id)) out.add(b)
+      }
+    }
+    return out
   }
 
   /** POST /api/items/:id/play -> real stream URL + resume position. */
@@ -291,6 +377,22 @@ class HearthShelfAutoService : MediaLibraryService() {
     val body = httpGet("$base/api/libraries/$libId/items?limit=100&minified=1", tok)
       ?: return emptyList()
     return parseBooks(JSONObject(body).optJSONArray("results"))
+  }
+
+  /**
+   * GET /api/libraries/:id/search -> matched books. ABS wraps each hit as
+   * { libraryItem: {...} } under a "book" array; unwrap to the item, then parse
+   * the same minified shape Continue Listening / browse use.
+   */
+  private fun absSearchLibrary(base: String, tok: String, libId: String, query: String): List<Book> {
+    val q = java.net.URLEncoder.encode(query, "UTF-8")
+    val body = httpGet("$base/api/libraries/$libId/search?q=$q&limit=25", tok) ?: return emptyList()
+    val books = JSONObject(body).optJSONArray("book") ?: return emptyList()
+    val items = JSONArray()
+    for (i in 0 until books.length()) {
+      books.getJSONObject(i).optJSONObject("libraryItem")?.let { items.put(it) }
+    }
+    return parseBooks(items)
   }
 
   private fun absItemsInProgress(base: String, tok: String): List<Book> {
