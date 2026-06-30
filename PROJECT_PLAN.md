@@ -6,6 +6,31 @@ Status as of 2026-06-29: spike is truck-verified (auth -> connect -> ABS ->
 phone playback + Android Auto). This plan turns it into a real project. iOS /
 CarPlay is explicitly **deferred** (its own milestone later).
 
+## Mobile UI import (2026-06-30)
+
+Imported the web app's mobile design language into the native app in one pass.
+`tsc --noEmit` clean; full Metro Android bundle (1990 modules) succeeds. Not yet
+device-verified (UI/gestures/sheets need on-device QA).
+
+- **Design system** - new `src/ui/` (theme tokens ported from web `tokens.css`
+  dark palette, primitives, icons, BookTile, AzRail). Per-screen hardcoded hex
+  removed in favor of `theme.ts`.
+- **Shell** - stack -> expo-router `(tabs)` group (Home/Library/More) with a
+  custom themed tab bar and a floating MiniPlayer that persists across tabs.
+  Auth gate moved into the root layout (avoids an index/tabs `/` collision).
+  `home.tsx` / `libraries.tsx` / `NowPlayingBar.tsx` removed.
+- **Screens** - home calm-hero + `getPersonalized` shelves; 3-col cover grid +
+  A-Z rail in library browse + search; new book detail (`app/item/[id]`);
+  More/settings (switch server, sign out, about).
+- **Player** - rebuilt with big transport, 4-button toolbar, `@gorhom/bottom-sheet`
+  sheets (chapters/speed/sleep), and a reanimated swipe-up car mode. Store gains
+  `rate`/`setRate`; `PlayerHost` wires `<Video rate>`.
+- **Deps** - reanimated 4 + `react-native-worklets` (its babel plugin, last),
+  `@gorhom/bottom-sheet`, `@expo/vector-icons`, `@shopify/flash-list`.
+
+Deferred (v1 out of scope): light/OLED themes, author/series detail heroes,
+native Android Auto search, offline/caching, playlists.
+
 ## Build progress (2026-06-29)
 
 All four milestones implemented to the limit of what's verifiable without a
