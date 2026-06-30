@@ -1,0 +1,36 @@
+/**
+ * Compact book tile for the 4-column library grid and search results. 2:3 cover
+ * with title/author below, tap opens the item detail. Matches the web mobile
+ * `.lib-grid .book` treatment.
+ */
+import { Pressable, StyleSheet, View } from 'react-native'
+import { useRouter } from 'expo-router'
+import type { ABSLibraryItem } from '@hearthshelf/core'
+import { coverUrl, itemAuthor, itemTitle } from '@/api/abs'
+import { AppText, Cover } from './primitives'
+import { colors, spacing } from './theme'
+
+export function BookTile({ item, width }: { item: ABSLibraryItem; width: number }) {
+  const router = useRouter()
+  return (
+    <Pressable
+      style={[styles.tile, { width }]}
+      onPress={() => router.push(`/item/${item.id}`)}
+    >
+      <Cover uri={coverUrl(item.id)} width={width} aspectRatio={2 / 3} />
+      <View style={styles.meta}>
+        <AppText variant="caption" numberOfLines={2}>
+          {itemTitle(item)}
+        </AppText>
+        <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
+          {itemAuthor(item)}
+        </AppText>
+      </View>
+    </Pressable>
+  )
+}
+
+const styles = StyleSheet.create({
+  tile: { marginBottom: spacing.md },
+  meta: { marginTop: spacing.xs, gap: 1 },
+})

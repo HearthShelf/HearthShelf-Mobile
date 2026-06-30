@@ -53,6 +53,8 @@ export interface PlayerState {
   seekTo: number | null
   /** Active sleep timer, or null. */
   sleepTimer: SleepTimer
+  /** Playback speed multiplier fed to <Video rate> (1 = normal). */
+  rate: number
 }
 
 let state: PlayerState = {
@@ -61,6 +63,7 @@ let state: PlayerState = {
   position: 0,
   seekTo: null,
   sleepTimer: null,
+  rate: 1,
 }
 
 const listeners = new Set<() => void>()
@@ -136,6 +139,14 @@ export function seekToChapter(chapter: ChapterMark): void {
   requestSeek(chapter.start)
 }
 
+// ---- playback rate ----
+
+/** Set the playback speed (clamped 0.5x-3.0x). Persists across the session. */
+export function setRate(rate: number): void {
+  const clamped = Math.max(0.5, Math.min(3, rate))
+  if (state.rate !== clamped) set({ rate: clamped })
+}
+
 // ---- sleep timer ----
 
 export function setSleepTimer(timer: SleepTimer): void {
@@ -190,5 +201,5 @@ export function clearSeek(): void {
 }
 
 export function clearTrack(): void {
-  set({ nowPlaying: null, isPlaying: false, position: 0, seekTo: null, sleepTimer: null })
+  set({ nowPlaying: null, isPlaying: false, position: 0, seekTo: null, sleepTimer: null, rate: 1 })
 }

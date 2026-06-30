@@ -70,7 +70,7 @@ export default function SignInScreen() {
 
       if (createdSessionId && flowSetActive) {
         await flowSetActive({ session: createdSessionId })
-        router.replace('/home')
+        router.replace('/(tabs)')
       } else {
         // No session usually means the user cancelled the picker / browser flow.
         setError('Google sign-in did not complete')
@@ -94,7 +94,7 @@ export default function SignInScreen() {
       const attempt = await signIn.create({ identifier: email, password })
       if (attempt.status === 'complete') {
         await setActive({ session: attempt.createdSessionId })
-        router.replace('/home')
+        router.replace('/(tabs)')
       } else {
         // e.g. needs 2FA / email code - out of scope for the spike.
         setError(`Sign-in needs another step: ${attempt.status}`)

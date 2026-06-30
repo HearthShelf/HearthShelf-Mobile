@@ -1,28 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-  ActivityIndicator,
-  FlatList,
-  Image,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { FlatList, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native'
 import { useRouter } from 'expo-router'
-import { coverUrl, getLibraries, itemAuthor, itemTitle, searchLibrary } from '@/api/abs'
 import type { ABSLibraryItem } from '@hearthshelf/core'
-import { playItemById } from '@/player/playback'
+import { getLibraries, searchLibrary } from '@/api/abs'
+import { AppText, Centered, IconButton, Loading, Screen, icons } from '@/ui/primitives'
+import { BookTile } from '@/ui/BookTile'
+import { colors, radius, spacing } from '@/ui/theme'
+
+const COLS = 3
+const GUTTER = spacing.lg
 
 export default function SearchScreen() {
   const router = useRouter()
+  const { width } = useWindowDimensions()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<ABSLibraryItem[]>([])
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
 
-  // The search endpoint is per-library; resolve the first book library once.
+  const tileWidth = (width - GUTTER * 2 - GUTTER * (COLS - 1)) / COLS
+
   const libraryIdRef = useRef<string | null>(null)
   async function resolveLibraryId(): Promise<string | null> {
     if (libraryIdRef.current) return libraryIdRef.current
@@ -47,8 +44,7 @@ export default function SearchScreen() {
         setResults([])
         return
       }
-      const list = await searchLibrary(libraryId, trimmed)
-      setResults(list)
+      setResults(await searchLibrary(libraryId, trimmed))
     } catch {
       setResults([])
     } finally {
@@ -57,89 +53,71 @@ export default function SearchScreen() {
     }
   }, [])
 
-  // Debounce input ~350ms so we don't fire a request per keystroke.
   useEffect(() => {
     const handle = setTimeout(() => void runSearch(query), 350)
     return () => clearTimeout(handle)
   }, [query, runSearch])
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <Screen>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.back}>{'< Back'}</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>Search</Text>
+        <IconButton name={icons.back} onPress={() => router.back()} />
+        <View style={styles.searchBox}>
+          <IconButton name={icons.search} size={20} color={colors.textMuted} />
+          <TextInput
+            style={styles.input}
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search books"
+            placeholderTextColor={colors.textFaint}
+            autoCorrect={false}
+            autoCapitalize="none"
+            autoFocus
+          />
+        </View>
       </View>
-      <TextInput
-        style={styles.input}
-        value={query}
-        onChangeText={setQuery}
-        placeholder="Search books"
-        placeholderTextColor="#a99"
-        autoCorrect={false}
-        autoCapitalize="none"
-        autoFocus
-      />
+
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator />
-        </View>
+        <Loading />
       ) : searched && results.length === 0 ? (
-        <View style={styles.center}>
-          <Text style={styles.dim}>No results</Text>
-        </View>
+        <Centered>
+          <AppText variant="meta" color={colors.textMuted}>
+            No results
+          </AppText>
+        </Centered>
       ) : (
         <FlatList
           data={results}
           keyExtractor={(it) => it.id}
-          contentContainerStyle={{ padding: 16 }}
-          renderItem={({ item }) => (
-            <TouchableOpacity style={styles.row} onPress={() => playItemById(item.id)}>
-              <Image source={{ uri: coverUrl(item.id) }} style={styles.cover} />
-              <View style={styles.meta}>
-                <Text style={styles.bookTitle} numberOfLines={2}>
-                  {itemTitle(item)}
-                </Text>
-                <Text style={styles.bookAuthor} numberOfLines={1}>
-                  {itemAuthor(item)}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          )}
+          numColumns={COLS}
+          columnWrapperStyle={{ gap: GUTTER }}
+          contentContainerStyle={{ padding: GUTTER, paddingBottom: 140, gap: spacing.xs }}
+          keyboardShouldPersistTaps="handled"
+          renderItem={({ item }) => <BookTile item={item} width={tileWidth} />}
         />
       )}
-    </SafeAreaView>
+    </Screen>
   )
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#14110f' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingTop: 8,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
   },
-  back: { color: '#c4633a', fontSize: 15, fontWeight: '600' },
-  title: { color: '#f3e9dd', fontSize: 22, fontWeight: '700' },
-  input: {
-    margin: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: '#221d19',
+  searchBox: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: colors.fill,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#3a322c',
-    color: '#f3e9dd',
-    fontSize: 16,
+    borderColor: colors.hairline,
   },
-  row: { flexDirection: 'row', gap: 12, paddingVertical: 8, alignItems: 'center' },
-  cover: { width: 56, height: 56, borderRadius: 6, backgroundColor: '#332b25' },
-  meta: { flex: 1 },
-  bookTitle: { color: '#f3e9dd', fontSize: 16, fontWeight: '600' },
-  bookAuthor: { color: '#a99', fontSize: 13, marginTop: 2 },
-  dim: { color: '#a99' },
+  input: { flex: 1, paddingVertical: spacing.md, color: colors.text, fontSize: 16 },
 })

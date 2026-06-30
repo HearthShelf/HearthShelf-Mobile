@@ -36,6 +36,15 @@ export async function getLastServerId(): Promise<string | null> {
   }
 }
 
+/** Forget the remembered server so the next connect shows the picker. */
+export async function clearLastServerId(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(LAST_SERVER_KEY)
+  } catch {
+    // non-fatal
+  }
+}
+
 export function getSession(): AbsSession | null {
   return current
 }

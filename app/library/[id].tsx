@@ -1,33 +1,34 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-  ActivityIndicator,
-  FlatList,
-  Image,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { FlatList, StyleSheet, View, useWindowDimensions } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { coverUrl, getLibraryItemsPage, itemAuthor, itemTitle } from '@/api/abs'
 import type { ABSLibraryItem } from '@hearthshelf/core'
-import { playItemById } from '@/player/playback'
+import { letterOf } from '@hearthshelf/core'
+import { getLibraryItemsPage, itemTitle } from '@/api/abs'
+import { AppText, Centered, IconButton, Loading, Screen, icons } from '@/ui/primitives'
+import { BookTile } from '@/ui/BookTile'
+import { AzRail } from '@/ui/AzRail'
+import { colors, spacing } from '@/ui/theme'
 
 const PAGE_SIZE = 50
+const COLS = 3
+const GUTTER = spacing.lg
 
 export default function LibraryBrowseScreen() {
   const router = useRouter()
   const { id } = useLocalSearchParams<{ id: string }>()
+  const { width } = useWindowDimensions()
 
   const [items, setItems] = useState<ABSLibraryItem[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Guard against overlapping page loads while a fetch is in flight.
+  const listRef = useRef<FlatList<ABSLibraryItem>>(null)
   const nextPageRef = useRef(0)
   const loadingRef = useRef(false)
+
+  // Tile width: full width minus side gutters and inter-column gaps, / COLS.
+  const tileWidth = (width - GUTTER * 2 - GUTTER * (COLS - 1)) / COLS
 
   const loadMore = useCallback(async () => {
     if (!id || loadingRef.current) return
@@ -49,82 +50,78 @@ export default function LibraryBrowseScreen() {
     void loadMore()
   }, [loadMore])
 
-  const onEndReached = () => {
-    if (items.length < total) void loadMore()
-  }
+  // First loaded-item index per letter bucket, for the A-Z rail.
+  const letterIndex = useMemo(() => {
+    const map = new Map<string, number>()
+    items.forEach((it, i) => {
+      const l = letterOf(itemTitle(it))
+      if (!map.has(l)) map.set(l, i)
+    })
+    return map
+  }, [items])
+
+  const available = useMemo(() => new Set(letterIndex.keys()), [letterIndex])
+
+  const onJump = useCallback(
+    (letter: string) => {
+      const idx = letterIndex.get(letter)
+      if (idx == null) return
+      // FlatList numColumns indexes by item; scroll to the row containing it.
+      listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0 })
+    },
+    [letterIndex]
+  )
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <Screen>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.back}>{'< Back'}</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>Library</Text>
+        <IconButton name={icons.back} onPress={() => router.back()} />
+        <AppText variant="hero">Library</AppText>
       </View>
-      {total > 0 || items.length > 0 ? (
-        <Text style={styles.section}>
-          {items.length} of {total} loaded
-        </Text>
-      ) : null}
+
       {loading && items.length === 0 ? (
-        <View style={styles.center}>
-          <ActivityIndicator />
-        </View>
+        <Loading />
       ) : error && items.length === 0 ? (
-        <View style={styles.center}>
-          <Text style={styles.error}>{error}</Text>
-        </View>
+        <Centered>
+          <AppText variant="meta" color={colors.destructive}>
+            {error}
+          </AppText>
+        </Centered>
       ) : (
-        <FlatList
-          data={items}
-          keyExtractor={(it) => it.id}
-          contentContainerStyle={{ padding: 16 }}
-          onEndReached={onEndReached}
-          onEndReachedThreshold={0.5}
-          ListFooterComponent={
-            items.length < total ? (
-              <View style={styles.footer}>
-                <ActivityIndicator />
-              </View>
-            ) : null
-          }
-          renderItem={({ item }) => (
-            <TouchableOpacity style={styles.row} onPress={() => playItemById(item.id)}>
-              <Image source={{ uri: coverUrl(item.id) }} style={styles.cover} />
-              <View style={styles.meta}>
-                <Text style={styles.bookTitle} numberOfLines={2}>
-                  {itemTitle(item)}
-                </Text>
-                <Text style={styles.bookAuthor} numberOfLines={1}>
-                  {itemAuthor(item)}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          )}
-        />
+        <View style={{ flex: 1 }}>
+          <FlatList
+            ref={listRef}
+            data={items}
+            keyExtractor={(it) => it.id}
+            numColumns={COLS}
+            columnWrapperStyle={{ gap: GUTTER }}
+            contentContainerStyle={{ padding: GUTTER, paddingBottom: 140, gap: spacing.xs }}
+            onEndReached={() => {
+              if (items.length < total) void loadMore()
+            }}
+            onEndReachedThreshold={0.6}
+            onScrollToIndexFailed={({ index }) => {
+              // Item not yet measured: nudge near it, then retry once laid out.
+              listRef.current?.scrollToOffset({
+                offset: Math.floor(index / COLS) * (tileWidth * 1.5 + spacing.md),
+                animated: true,
+              })
+            }}
+            renderItem={({ item }) => <BookTile item={item} width={tileWidth} />}
+          />
+          <AzRail available={available} onJump={onJump} />
+        </View>
       )}
-    </SafeAreaView>
+    </Screen>
   )
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#14110f' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingTop: 8,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
   },
-  back: { color: '#c4633a', fontSize: 15, fontWeight: '600' },
-  title: { color: '#f3e9dd', fontSize: 22, fontWeight: '700' },
-  section: { color: '#a99', fontSize: 13, paddingHorizontal: 16, paddingTop: 4 },
-  row: { flexDirection: 'row', gap: 12, paddingVertical: 8, alignItems: 'center' },
-  cover: { width: 56, height: 56, borderRadius: 6, backgroundColor: '#332b25' },
-  meta: { flex: 1 },
-  bookTitle: { color: '#f3e9dd', fontSize: 16, fontWeight: '600' },
-  bookAuthor: { color: '#a99', fontSize: 13, marginTop: 2 },
-  footer: { paddingVertical: 16 },
-  error: { color: '#e88', textAlign: 'center', paddingHorizontal: 24 },
 })

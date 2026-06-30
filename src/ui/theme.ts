@@ -1,0 +1,96 @@
+/**
+ * Design tokens ported from the web app's dark palette
+ * (HearthShelf-WebApp/src/styles/tokens.css, `.dark` block).
+ *
+ * The web theme system supports light/oled/flat variants; the native app ships
+ * the dark palette only for v1. `color-mix(in oklab, ...)` expressions from the
+ * CSS are resolved here to concrete rgba so React Native can consume them.
+ */
+
+export const colors = {
+  // Surface ramp (scaffold -> highest), darkest to lightest.
+  scaffold: '#1b1a18',
+  lowest: '#131211',
+  low: '#201e1c',
+  base: '#242220',
+  high: '#2a2825',
+  highest: '#322f2b',
+  sheet: '#222120',
+
+  // Text ramp.
+  text: '#f4f1ea',
+  textMuted: '#aba498',
+  textFaint: '#756f64',
+  onAccent: '#ffffff',
+
+  // Accent / brand. The web "accent" used for active states + CTAs is the warm
+  // coral ring/destructive color; brand-hearth is the amber used in the wordmark.
+  accent: '#e0654a',
+  brandHearth: '#bd863f',
+  brandShelf: '#f0e6d6',
+
+  // Lines + fills (semi-transparent over the surface).
+  border: '#383530',
+  hairline: 'rgba(255,255,255,0.08)',
+  fill: 'rgba(255,255,255,0.06)',
+  fillStrong: 'rgba(255,255,255,0.10)',
+
+  // Derived: --row-now = color-mix(in oklab, accent 22%, transparent).
+  rowNow: 'rgba(224,101,74,0.22)',
+  // Accent washes used for chips / icon tiles (accent @ 12% / 22%).
+  accentWash: 'rgba(224,101,74,0.12)',
+  accentTile: 'rgba(224,101,74,0.22)',
+
+  // Scrim behind sheets / modals.
+  scrim: 'rgba(0,0,0,0.55)',
+
+  destructive: '#e0654a',
+} as const
+
+export const radius = {
+  card: 16,
+  row: 12,
+  pill: 999,
+  sheet: 20,
+  tile: 10,
+} as const
+
+export const spacing = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 24,
+  xxl: 32,
+} as const
+
+/** Type scale (size + weight pairs) matching the web mobile hierarchy. */
+export const type = {
+  hero: { fontSize: 22, fontWeight: '700' as const },
+  title: { fontSize: 18, fontWeight: '700' as const },
+  body: { fontSize: 16, fontWeight: '500' as const },
+  label: { fontSize: 14, fontWeight: '600' as const },
+  meta: { fontSize: 13, fontWeight: '500' as const },
+  caption: { fontSize: 11, fontWeight: '500' as const },
+} as const
+
+/** Elevation - --shadow-lift: 0 18px 48px rgba(0,0,0,0.55). */
+export const shadow = {
+  lift: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.5,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  card: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+} as const
+
+export const theme = { colors, radius, spacing, type, shadow } as const
+export type Theme = typeof theme
