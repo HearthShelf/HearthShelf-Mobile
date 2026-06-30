@@ -1,14 +1,17 @@
-name: Build Android (manual)
+name: Build Android
 
-# Manually-dispatched Android build. Kept OFF automatic triggers on purpose:
-# per repo policy, pushes must not fire builds/releases. Run this from the
-# Actions tab when you want a debug APK artifact.
+# Builds a debug APK artifact you can sideload. Runs automatically on every push
+# to main (always have a fresh APK waiting), and on manual dispatch from the
+# Actions tab. Always a standalone build on push (JS embedded, so it runs
+# untethered / in the car); manual dispatch can toggle that off.
 #
 # This produces an UNSIGNED-for-release debug APK (debug keystore). Play Store
 # release signing + upload is a separate step that needs the upload keystore as
 # encrypted secrets - see RELEASE.md. We do not put signing here yet so secrets
 # aren't required to use this workflow.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       standalone:
@@ -40,7 +43,12 @@ jobs:
 
       - name: Prebuild (runs config plugins, incl. Android Auto + standalone-js)
         env:
-          HEARTHSHELF_STANDALONE_DEBUG: ${{ inputs.standalone && '1' || '0' }}
+          # Push builds are always standalone; manual dispatch honors the toggle.
+          # (push events carry no inputs, so inputs.standalone is empty there.)
+          HEARTHSHELF_STANDALONE_DEBUG: ${{ (github.event_name == 'push' || inputs.standalone) && '1' || '0' }}
+          # Stamp the CI run number as the Android versionCode so every build is
+          # distinguishable on-device (Settings -> App info) and monotonic.
+          EXPO_ANDROID_VERSION_CODE: ${{ github.run_number }}
         run: npx expo prebuild --platform android --no-install
 
       - name: Assemble debug APK
@@ -49,6 +57,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
+          name: app-debug-apk-${{ github.run_number }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error

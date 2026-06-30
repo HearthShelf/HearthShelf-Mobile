@@ -8,15 +8,22 @@ Android first; iOS is a later milestone.
 - **CI** (`.github/workflows/ci.yml`): on every PR and push to main, runs
   `tsc --noEmit` + resolves the Expo config. Fast correctness gate. No build,
   no release - so a push can never accidentally ship anything.
-- **Android build** (`.github/workflows/build-android.yml`): **manual dispatch
-  only** (Actions tab). Prebuilds (runs all config plugins incl. Android Auto +
-  standalone-js), assembles a debug APK, uploads it as an artifact. The
-  `standalone` input embeds the JS bundle for untethered / in-car installs.
+- **Android build** (`.github/workflows/build-android.yml`): runs **on every
+  push to main** (so a fresh sideloadable APK is always waiting) and on **manual
+  dispatch** (Actions tab). Prebuilds (runs all config plugins incl. Android Auto
+  + standalone-js), assembles a **debug** APK, uploads it as an artifact named
+  `app-debug-apk-<run-number>`. Push builds are always standalone (JS embedded,
+  runs untethered / in the car); manual dispatch can toggle the `standalone`
+  input off. The CI run number is stamped as the Android `versionCode`
+  (`EXPO_ANDROID_VERSION_CODE`, read in `app.config.js`) so every build is
+  distinguishable on-device and monotonic.
 
 Both check out the `packages/core` submodule (`submodules: recursive`).
 
-> Per repo policy these never auto-trigger a Play release. Promotion to the
-> store is a deliberate manual step (below) until we wire signed uploads.
+> The auto-build produces only a **debug-signed** APK - it never touches the
+> upload keystore and never publishes to Play. Promotion to the store stays a
+> deliberate manual step (below) until we wire signed uploads, so a push still
+> cannot ship a release.
 
 ## Standalone (no-Metro) builds
 
@@ -37,9 +44,10 @@ every prebuild - see TESTING.md. Now it survives.)
 ## Versioning
 
 - User-facing version: `app.json` -> `expo.version` (e.g. `0.0.1`).
-- Android build number: set `expo.android.versionCode` (integer, must increase
-  for every Play upload). Bump it on each release; CI can be extended to derive
-  it from the run number later.
+- Android build number: `expo.android.versionCode` (integer, must increase for
+  every Play upload). CI overrides it with the run number via
+  `EXPO_ANDROID_VERSION_CODE` (see `app.config.js`); the `app.json` value is the
+  local-dev fallback.
 - iOS build number (later): `expo.ios.buildNumber`.
 
 ## Release signing (manual - needs YOUR keystore)
