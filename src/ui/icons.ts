@@ -65,6 +65,16 @@ export const icons = {
   server: 'dns',
   signOut: 'logout',
   retry: 'refresh',
+  // Settings
+  palette: 'palette',
+  darkMode: 'dark-mode',
+  connections: 'hub',
+  book: 'menu-book',
+  person: 'person',
+  chevronDown: 'expand-more',
+  checkCircleFilled: 'check-circle',
+  link: 'link',
+  add: 'add',
 } as const satisfies Record<string, IconName>
 
 /**

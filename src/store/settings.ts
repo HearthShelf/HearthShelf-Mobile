@@ -1,24 +1,62 @@
 /**
- * Cross-device user preferences (queue mode + auto-rules today; more will land
- * here as mobile grows a Settings screen). Plain subscribe/snapshot store,
+ * Cross-device user preferences (queue mode + auto-rules, plus the My Settings
+ * screen's Appearance/Playback/Sleep prefs). Plain subscribe/snapshot store,
  * matching player/store.ts's convention - no Zustand in this app.
  *
  * Values persist server-side via /hs/settings (see queueSync.ts), same blob
  * the WebApp reads/writes, keyed by ABS user id - so switching between web and
- * mobile keeps the same queue mode and auto-rule choices. Local state here is
- * just the fast in-memory cache; sync is best-effort (offline keeps defaults).
+ * mobile keeps the same queue mode, auto-rule, and playback choices. Local
+ * state here is just the fast in-memory cache; sync is best-effort (offline
+ * keeps defaults). player/store.ts reads the playback defaults (rate, skip
+ * amounts, sleep behavior) from here when a fresh session starts, so My
+ * Settings and the in-player sheets share one source of truth.
  */
 import type { QueueMode, AutoRulePref } from '@hearthshelf/core'
 import { DEFAULT_AUTO_RULES } from '@hearthshelf/core'
 
+export type ThemePref = 'dark' | 'oled'
+export type GlowMode = 'gradient' | 'image'
+export type ScrubberScope = 'chapter' | 'book'
+
 export interface SettingsState {
   queueMode: QueueMode
   queueAutoRules: AutoRulePref[]
+
+  // Appearance
+  theme: ThemePref
+  glowMode: GlowMode
+
+  // Playback
+  scrubber: ScrubberScope
+  defaultSpeed: number
+  skipForward: number
+  skipBack: number
+  hearthBgPlayer: boolean
+
+  // Sleep timer defaults (seed player/store.ts's sleepBehavior on a fresh session)
+  sleepRewindSec: number
+  sleepChapterBarrier: boolean
+  sleepFade: boolean
+  sleepFadeLen: number
 }
 
 let state: SettingsState = {
   queueMode: 'off',
   queueAutoRules: DEFAULT_AUTO_RULES,
+
+  theme: 'dark',
+  glowMode: 'gradient',
+
+  scrubber: 'chapter',
+  defaultSpeed: 1,
+  skipForward: 30,
+  skipBack: 15,
+  hearthBgPlayer: true,
+
+  sleepRewindSec: 30,
+  sleepChapterBarrier: true,
+  sleepFade: true,
+  sleepFadeLen: 20,
 }
 
 const listeners = new Set<() => void>()
@@ -52,7 +90,26 @@ export function toggleAutoRule(id: AutoRulePref['id']): void {
   })
 }
 
+/** Generic setter for the My Settings screen's rows. */
+export function setSetting<K extends keyof SettingsState>(key: K, value: SettingsState[K]): void {
+  set({ [key]: value } as Partial<SettingsState>)
+}
+
 /** Snapshot the syncable values for a /hs/settings PUT. */
 export function settingsValues(s: SettingsState = state): Record<string, unknown> {
-  return { queueMode: s.queueMode, queueAutoRules: s.queueAutoRules }
+  return {
+    queueMode: s.queueMode,
+    queueAutoRules: s.queueAutoRules,
+    theme: s.theme,
+    glowMode: s.glowMode,
+    scrubber: s.scrubber,
+    defaultSpeed: s.defaultSpeed,
+    skipForward: s.skipForward,
+    skipBack: s.skipBack,
+    hearthBgPlayer: s.hearthBgPlayer,
+    sleepRewindSec: s.sleepRewindSec,
+    sleepChapterBarrier: s.sleepChapterBarrier,
+    sleepFade: s.sleepFade,
+    sleepFadeLen: s.sleepFadeLen,
+  }
 }

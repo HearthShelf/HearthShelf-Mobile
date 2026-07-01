@@ -7,9 +7,38 @@
  * Queue MODE and auto-rules are NOT here - they're preferences and live in
  * src/store/settings.ts / /hs/settings, same as the WebApp.
  */
-import type { QueueEntry } from '@hearthshelf/core'
+import type { QueueEntry, QueueMode, AutoRuleId } from '@hearthshelf/core'
 
 export type { QueueEntry } from '@hearthshelf/core'
+
+/** Shared copy for the queue mode picker - used by both QueueSheet (player) and
+ *  the My Settings Queue section, so the two surfaces never drift. */
+export const QUEUE_MODES: { v: QueueMode; label: string }[] = [
+  { v: 'off', label: 'Off' },
+  { v: 'manual', label: 'Manual' },
+  { v: 'auto', label: 'Auto' },
+  { v: 'playlist', label: 'Playlist' },
+]
+export const QUEUE_MODE_SUB: Record<QueueMode, string> = {
+  off: 'Playback stops when this book ends.',
+  manual: 'Your hand-picked order - drag to arrange.',
+  auto: "Filled automatically from what you're listening to.",
+  playlist: 'Playing in order from a saved list.',
+}
+export const AUTO_RULE_COPY: Record<AutoRuleId, { label: string; desc: string }> = {
+  'finish-series': {
+    label: 'Finish the current series',
+    desc: "Queue the next book whenever you're part-way through a series.",
+  },
+  'in-progress': {
+    label: 'Anything in progress',
+    desc: "Pull in other titles you've already started but set down.",
+  },
+  'new-in-series': {
+    label: 'New books in series you started',
+    desc: "Add fresh releases from a series you haven't finished yet.",
+  },
+}
 
 export interface QueueState {
   items: QueueEntry[]

@@ -9,8 +9,16 @@ import { Pressable, StyleSheet, View } from 'react-native'
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { coverHue } from '@hearthshelf/core'
-import type { QueueEntry, QueueMode, AutoRuleId } from '@hearthshelf/core'
-import { getQueueState, reorderQueue, removeFromQueue, subscribeQueue } from './queue'
+import type { QueueEntry } from '@hearthshelf/core'
+import {
+  getQueueState,
+  reorderQueue,
+  removeFromQueue,
+  subscribeQueue,
+  QUEUE_MODES,
+  QUEUE_MODE_SUB,
+  AUTO_RULE_COPY,
+} from './queue'
 import { getSettingsState, setQueueMode, subscribeSettings, toggleAutoRule } from '@/store/settings'
 import { getState, subscribe } from './store'
 import { coverUrl } from '@/api/abs'
@@ -19,32 +27,9 @@ import { Icon, icons } from '@/ui/icons'
 import { colors, radius, spacing } from '@/ui/theme'
 import type { SheetHandle } from './sheets'
 
-const MODES: { v: QueueMode; label: string }[] = [
-  { v: 'off', label: 'Off' },
-  { v: 'manual', label: 'Manual' },
-  { v: 'auto', label: 'Auto' },
-  { v: 'playlist', label: 'Playlist' },
-]
-const MODE_SUB: Record<QueueMode, string> = {
-  off: 'Playback stops when this book ends.',
-  manual: 'Your hand-picked order - drag to arrange.',
-  auto: "Filled automatically from what you're listening to.",
-  playlist: 'Playing in order from a saved list.',
-}
-const RULE_COPY: Record<AutoRuleId, { label: string; desc: string }> = {
-  'finish-series': {
-    label: 'Finish the current series',
-    desc: "Queue the next book whenever you're part-way through a series.",
-  },
-  'in-progress': {
-    label: 'Anything in progress',
-    desc: "Pull in other titles you've already started but set down.",
-  },
-  'new-in-series': {
-    label: 'New books in series you started',
-    desc: "Add fresh releases from a series you haven't finished yet.",
-  },
-}
+const MODES = QUEUE_MODES
+const MODE_SUB = QUEUE_MODE_SUB
+const RULE_COPY = AUTO_RULE_COPY
 
 export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => void }>(
   function QueueSheet({ onJump }, ref) {

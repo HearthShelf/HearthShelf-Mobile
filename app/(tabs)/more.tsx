@@ -1,16 +1,17 @@
-import { useAuth } from '@clerk/expo'
-import { ScrollView, StyleSheet, View } from 'react-native'
+import { useAuth, useUser } from '@clerk/expo'
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import Constants from 'expo-constants'
 import { clearSession, clearLastServerId } from '@/api/session'
 import { clearTrack } from '@/player/store'
 import { clearAutoSession } from '@/player/autoBridge'
 import { AppText, IconButton, Row, Screen, SectionHeader, icons } from '@/ui/primitives'
-import { colors, spacing } from '@/ui/theme'
+import { colors, radius, spacing } from '@/ui/theme'
 import { type IconName } from '@/ui/icons'
 
 export default function MoreScreen() {
   const { signOut } = useAuth()
+  const { user } = useUser()
   const router = useRouter()
 
   async function handleSignOut() {
@@ -31,10 +32,36 @@ export default function MoreScreen() {
     router.replace('/(tabs)')
   }
 
+  const displayName = user?.fullName || user?.username || 'You'
+  const email = user?.primaryEmailAddress?.emailAddress ?? ''
+  const initial = displayName.charAt(0).toUpperCase()
+
   return (
     <Screen>
       <SectionHeader title="More" />
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 140, gap: spacing.sm }}>
+        <Pressable
+          onPress={() => router.push('/settings')}
+          style={({ pressed }) => [styles.profileCard, pressed && styles.pressed]}
+        >
+          <View style={styles.avatar}>
+            <AppText variant="mono" color={colors.brandHearth} style={{ fontSize: 18 }}>
+              {initial}
+            </AppText>
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <AppText variant="label" numberOfLines={1}>
+              {displayName}
+            </AppText>
+            {email ? (
+              <AppText variant="caption" color={colors.textMuted} numberOfLines={1} style={{ marginTop: 2 }}>
+                {email}
+              </AppText>
+            ) : null}
+          </View>
+          <IconButton name={icons.chevronRight} color={colors.textMuted} />
+        </Pressable>
+
         <Group label="Server">
           <SettingRow icon={icons.server} label="Switch server" onPress={switchServer} />
         </Group>
@@ -93,6 +120,25 @@ function SettingRow({
 }
 
 const styles = StyleSheet.create({
+  profileCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    backgroundColor: colors.card,
+    borderRadius: radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairline,
+  },
+  avatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.accentTile,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pressed: { opacity: 0.7 },
   aboutRow: {
     flexDirection: 'row',
     alignItems: 'center',

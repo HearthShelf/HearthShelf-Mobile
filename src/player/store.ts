@@ -9,7 +9,13 @@
  *
  * Plain subscribe/snapshot store so it's usable from React (useSyncExternalStore)
  * and from non-React car callbacks alike, with no extra dependency.
+ *
+ * rate/sleepBehavior seed from src/store/settings.ts (the My Settings screen's
+ * Default speed / Sleep timer rows) each time a fresh track loads, so a setting
+ * changed there is what the next book starts with - matching the WebApp, where
+ * Settings and the player popovers read the same store.
  */
+import { getSettingsState } from '@/store/settings'
 
 /** A chapter mark within the now-playing item (seconds, absolute in the book). */
 export interface ChapterMark {
@@ -105,11 +111,19 @@ function set(patch: Partial<PlayerState>): void {
 // ---- commands (called from phone UI and car callbacks) ----
 
 export function loadTrack(track: NowPlaying): void {
+  const s = getSettingsState()
   set({
     nowPlaying: track,
     isPlaying: true,
     position: track.startPosition,
     seekTo: null,
+    rate: s.defaultSpeed,
+    sleepBehavior: {
+      rewindSec: s.sleepRewindSec,
+      chapterBarrier: s.sleepChapterBarrier,
+      fade: s.sleepFade,
+      fadeLen: s.sleepFadeLen,
+    },
   })
 }
 

@@ -522,27 +522,62 @@ grouped rows — **Shelves** (Collections, Playlists), **Insights** (Listening h
 - **Listening history (`isHistory`):** thumb rows with author · % + relative time.
 - **Server stats (`isServerStats`, Admin):** 4 stat tiles + a top-listeners leaderboard.
 
-**This repo:** [app/(tabs)/more.tsx](app/(tabs)/more.tsx) is minimal: Switch server, Sign out, version.
-No profile card, no My settings screen, no theme toggle, no sub-screens.
+**This repo (was):** [app/(tabs)/more.tsx](app/(tabs)/more.tsx) was minimal: Switch server, Sign out,
+version. No profile card, no My settings screen, no theme toggle, no sub-screens.
 
-**Build (§0.4 #5 — build what exists, stub the rest this pass):**
-- **Now:** restyle More into the hub with the profile card + grouped rows. Build **My settings**:
-  playback rows; **Appearance** with a **theme** segmented control (Dark works; Light/Auto are honest
-  stubs — `theme.ts` ships dark-only today) **and a Glow style toggle** (Gradient / Image, per §0.4 #3,
-  stored and read by `<CoverGlow>`); Sign out. Build **Server settings** (existing switch logic →
-  linked-server list) and **About** (static).
-- **Stub (visible "coming soon", never a dead link):** Collections, Playlists, Listening history, admin
-  Server stats — all need endpoints we don't have yet.
+**Built — My Settings is done, expanded past the DS mock per user direction (2026-07-01):**
+the user asked for a fuller settings surface than the DS's bare "My settings" (profile card + playback
+rows + theme seg + sign out), pulling section structure from the WebApp/self-hosted `SettingsPage.tsx`:
+Appearance / Listening (Playback + Queue + Sleep timer) / Reading / HearthShelf (Connections + My
+servers). Subscription is deliberately excluded (out of scope for now).
 
-**Validation pass — More:**
-- [ ] Hub shows profile card (real name/email from Clerk) → My settings.
-- [ ] My settings: playback rows reflect real store values; theme toggle works (Dark) with Light/Auto
-      honestly disabled/noted; **Glow style toggle** switches `<CoverGlow>` between gradient and image
-      and the choice persists; Sign out works (existing logic).
-- [ ] Server settings lists linked servers, marks the active one, and switching works (regression of
-      existing `switchServer`).
-- [ ] About shows real version/build from `expo-constants`.
-- [ ] Any not-yet-built row is visibly "coming soon", not a broken link.
+- **[app/(tabs)/more.tsx](app/(tabs)/more.tsx):** profile card (Clerk `useUser` avatar-initial/name/email)
+  added above the existing Server/Account/About groups, linking to `/settings`.
+- **[app/settings/index.tsx](app/settings/index.tsx):** the hub. A current-user card at the top links to
+  `/settings/account` (the "Account & HearthShelf Account" page — separate, minimal for now). Below it,
+  `SectionAccordion`s (new, [src/ui/settingsControls.tsx](src/ui/settingsControls.tsx)) for:
+  - **Appearance:** theme (Dark/OLED — `theme.ts` is dark-only today, so this is aspirational until a
+    light palette exists) and glow-mode (Gradient/Image, read by `<CoverGlow>`).
+  - **Playback (+ Queue):** Default speed (new — genuinely missing from every HearthShelf surface until
+    now, including the WebApp), skip forward/back, progress-bar scope, hearth background toggle, then
+    queue mode + auto-rules (shared copy with the player's `QueueSheet` via new
+    `QUEUE_MODES`/`QUEUE_MODE_SUB`/`AUTO_RULE_COPY` exports in [src/player/queue.ts](src/player/queue.ts),
+    so the two surfaces can't drift).
+  - **Sleep timer:** rewind-on-wake, chapter barrier, fade toggle + length — the same fields
+    `player/store.ts`'s `SleepBehavior` already carried session-only.
+  - **Reading:** no ebook reader exists yet (mobile or the hosted WebApp) — shown as a dimmed row list
+    matching the self-hosted app's real reader-prefs shape (theme/typeface/size/spacing/width/justify),
+    per user direction, so a future mobile reader has its settings surface already specified.
+  - **Connections:** Hardcover + external-book-links notes, mirrored from the self-hosted app's
+    `ConnectionsSettings` — no per-user token UI on mobile yet, shown as an honest note.
+  - **My servers:** links to [app/settings/servers.tsx](app/settings/servers.tsx), a real linked-server
+    list (`fetchLinkedServers`) with active-server check and tap-to-switch (ports the Home connect flow's
+    `connectTo` logic, then bounces to `(tabs)` to reload).
+- **[app/settings/account.tsx](app/settings/account.tsx):** minimal Account page (Clerk identity fields,
+  member-since, sign out) — the destination for the current-user card. Small on purpose; the user flagged
+  a fuller "Account & HearthShelf Account" page as separate/future work.
+- **Shared state (2026-07-01 decision):** Default speed and the Sleep-timer defaults now live in
+  [src/store/settings.ts](src/store/settings.ts) (synced via the existing `/hs/settings` blob, alongside
+  queue mode/auto-rules). `player/store.ts`'s `loadTrack` seeds `rate`/`sleepBehavior` from these defaults
+  on every fresh session — matching the WebApp's model where the in-player Speed/Sleep sheets adjust the
+  *live* session only and never write back to the stored default.
+
+**Still stubbed (visible "coming soon", never a dead link):** Collections, Playlists, Listening history,
+admin Server stats — all need endpoints we don't have yet. About is unchanged (static, already real).
+
+**Validation pass — My Settings:**
+- [x] Hub (More) shows profile card (real name/email from Clerk) → My Settings.
+- [x] My Settings: all rows read/write the real `src/store/settings.ts` store; Default speed and Sleep
+      timer changes seed the *next* session (`loadTrack`), not the live one (matches WebApp behavior).
+      Queue mode/auto-rules match the player's QueueSheet 1:1 (shared constants).
+- [x] My servers lists linked servers, marks the active one by URL match, and switching mints a fresh
+      grant + session then returns to Home (regression of the existing Home `connectTo` logic).
+- [x] Reading and Connections show honest, visibly-non-interactive placeholders — no dead taps.
+- [x] `npx tsc --noEmit` and `npx expo export --platform android` (2060 modules) both pass clean.
+- [ ] **Not yet verified on-device**: accordion expand/collapse feel (Reanimated `LinearTransition`),
+      slider responsiveness in Sleep timer, Clerk `useUser` fields rendering correctly, and the My-servers
+      switch flow against two real linked servers. Typecheck + bundle pass; UI feel needs a real build per
+      the verification-boundary memory.
 
 ---
 
