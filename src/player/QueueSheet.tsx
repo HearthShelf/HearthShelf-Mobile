@@ -135,7 +135,7 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
           )}
         </Sheet>
 
-        <Sheet ref={rulesRef} title="What gets added" kicker="Auto-queue" stackBehavior="push">
+        <Sheet ref={rulesRef} kicker="Auto-queue" stackBehavior="push">
           <View>
             {settings.queueAutoRules.map((r) => {
               const copy = RULE_COPY[r.id]
@@ -153,12 +153,6 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
                 </Touchable>
               )
             })}
-            <View style={styles.hintRow}>
-              <Icon name={icons.tune} size={16} color={colors.textMuted} />
-              <AppText variant="caption" color={colors.textMuted} style={{ flex: 1, marginLeft: spacing.sm }}>
-                These live in Settings › Playback › Auto-queue. Changes apply everywhere.
-              </AppText>
-            </View>
           </View>
         </Sheet>
       </>
