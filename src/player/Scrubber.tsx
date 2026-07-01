@@ -1,6 +1,8 @@
 /**
- * Draggable "Hearth Pill" scrubber, ported from the web app's shipped
- * Scrubber.tsx + the design system's variant 2f ("Hearth Pill, calmer").
+ * Draggable "Hearth Pill" scrubber, matching the web app's shipped
+ * Scrubber.tsx + design.css `.scrub` exactly (not the earlier design-system
+ * mockup variants - those had gold, a shimmer sweep, and chip backgrounds
+ * that never shipped to web).
  *
  * Interaction mirrors the web component: while dragging, the displayed ratio
  * tracks the pointer locally and `onSeek` fires only once, on release - so a
@@ -9,39 +11,31 @@
  * fires continuously with the live ratio (and once with `null` on end) so a
  * caller can preview the target time without committing a seek.
  *
- * Visual (2f): a 30px rounded pill with a two-tone gold -> ember fill, interior
- * elapsed / chapter / remain label chips, and a full-height cream leading line
- * that thickens while dragging. A shimmer sweeps the fill while playing.
+ * Visual: a 30px rounded pill, ember fill (two-tone gradient toward a warmer
+ * orange at the leading edge), interior elapsed / chapter / remain labels
+ * (plain text, no background chips), and a full-height cream leading line
+ * with an ember glow that thickens while dragging.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
-import Animated, {
-  Easing,
-  cancelAnimation,
-  runOnJS,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from 'react-native-reanimated'
+import { runOnJS } from 'react-native-reanimated'
 import { LinearGradient } from 'expo-linear-gradient'
 import { colors, radius } from '@/ui/theme'
 
 const PILL_HEIGHT = 30
-const GOLD = colors.brandHearth // #bd863f
 const EMBER = colors.accent // #e0654a
 const CREAM = colors.brandCream // #ffe6cf
-// Two-tone fill: gold blended toward ember, then ember. Matches web `.scrub > i`
-// (`color-mix(accent 65%, #d27a3e)` -> accent); we approximate the mid stop.
-const FILL_START = '#c07a42'
+// Two-tone fill toward the leading edge. Matches web `.scrub > i`'s
+// `color-mix(in oklab, accent 65%, #d27a3e) -> accent` exactly (computed in
+// OKLab, not a linear-RGB guess - the two are visibly different colors).
+const FILL_START = '#db6d46'
 const FILL_END = EMBER
 
 export function Scrubber({
   ratio,
   onSeek,
   onDrag,
-  playing = false,
   knob = true,
   elapsed,
   remain,
@@ -54,7 +48,6 @@ export function Scrubber({
   /** Fires continuously while dragging with the live 0-1 ratio, and once with
    * null when the drag/tap ends - so the caller can preview the target time. */
   onDrag?: (ratio: number | null) => void
-  playing?: boolean
   knob?: boolean
   elapsed?: string
   remain?: string
@@ -119,27 +112,6 @@ export function Scrubber({
   const pct = Math.max(0, Math.min(1, shown)) * 100
   const hasLabels = elapsed !== undefined || remain !== undefined || chapter !== undefined
 
-  // Shimmer sweep across the fill while playing (web: `hsShimmer` on the fill).
-  const shimmer = useSharedValue(0)
-  useEffect(() => {
-    if (playing && !dragging) {
-      shimmer.value = 0
-      shimmer.value = withRepeat(
-        withTiming(1, { duration: 2600, easing: Easing.linear }),
-        -1,
-        false
-      )
-    } else {
-      cancelAnimation(shimmer)
-      shimmer.value = 0
-    }
-  }, [playing, dragging, shimmer])
-
-  const shimmerStyle = useAnimatedStyle(() => ({
-    opacity: shimmer.value === 0 ? 0 : 1,
-    transform: [{ translateX: `${-100 + shimmer.value * 200}%` }],
-  }))
-
   return (
     <GestureDetector gesture={pan}>
       <View style={styles.pill} onLayout={onLayout} hitSlop={{ top: 8, bottom: 8 }}>
@@ -151,45 +123,38 @@ export function Scrubber({
             end={{ x: 1, y: 0 }}
             style={StyleSheet.absoluteFill}
           />
-          <Animated.View style={[styles.shimmer, shimmerStyle]} pointerEvents="none">
-            <LinearGradient
-              colors={['transparent', 'rgba(255,230,200,0.22)', 'transparent']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={StyleSheet.absoluteFill}
-            />
-          </Animated.View>
         </View>
 
-        {/* interior label chips - marker passes behind them */}
-        {hasLabels && (
-          <View style={styles.labels} pointerEvents="none">
-            <LabelChip text={elapsed} />
-            {chapter ? <LabelChip text={chapter} dim /> : <View />}
-            <LabelChip text={remain ? `-${remain}` : undefined} />
-          </View>
-        )}
-
-        {/* full-height cream leading line */}
+        {/* full-height cream leading line, behind the labels like web (the
+            marker passes behind the text instead of overlapping it) */}
         {knob && (
           <View
             style={[styles.line, { left: `${pct}%`, width: dragging ? 3 : 2 }]}
             pointerEvents="none"
           />
         )}
+
+        {/* interior labels - plain text over the fill/track, no background
+            chip (web: .scrub-labels). Chapter takes all remaining width
+            between elapsed/remain so long titles get real room instead of
+            being clipped to a fixed max width. */}
+        {hasLabels && (
+          <View style={styles.labels} pointerEvents="none">
+            <Text numberOfLines={1} style={styles.labelText}>
+              {elapsed}
+            </Text>
+            {chapter !== undefined && (
+              <Text numberOfLines={1} style={[styles.labelText, styles.labelChapter]}>
+                {chapter}
+              </Text>
+            )}
+            <Text numberOfLines={1} style={styles.labelText}>
+              {remain}
+            </Text>
+          </View>
+        )}
       </View>
     </GestureDetector>
-  )
-}
-
-function LabelChip({ text, dim }: { text?: string; dim?: boolean }) {
-  if (text === undefined) return <View />
-  return (
-    <View style={styles.chip}>
-      <Text numberOfLines={1} style={[styles.labelText, dim && { opacity: 0.92 }]}>
-        {text}
-      </Text>
-    </View>
   )
 }
 
@@ -197,9 +162,9 @@ const styles = StyleSheet.create({
   pill: {
     height: PILL_HEIGHT,
     borderRadius: radius.pill,
-    backgroundColor: '#232120', // color-mix(foreground 9%, lowest)
+    backgroundColor: '#232120', // color-mix(in oklab, text 9%, c-lowest)
     borderWidth: 1,
-    borderColor: 'rgba(224,101,74,0.48)', // #e0654a7a
+    borderColor: colors.hairline,
     overflow: 'hidden',
     justifyContent: 'center',
   },
@@ -210,13 +175,6 @@ const styles = StyleSheet.create({
     left: 0,
     overflow: 'hidden',
   },
-  shimmer: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    width: '55%',
-  },
   labels: {
     position: 'absolute',
     top: 0,
@@ -226,20 +184,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 4,
-  },
-  chip: {
-    backgroundColor: 'rgba(18,13,10,0.34)',
-    borderRadius: radius.pill,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    maxWidth: '46%',
+    gap: 8,
+    paddingHorizontal: 12,
   },
   labelText: {
     color: '#fff',
     fontSize: 10.5,
     fontWeight: '600',
     letterSpacing: 0.1,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  labelChapter: {
+    flex: 1,
+    textAlign: 'center',
+    opacity: 0.85,
   },
   line: {
     position: 'absolute',
@@ -247,10 +207,13 @@ const styles = StyleSheet.create({
     bottom: 0,
     marginLeft: -1,
     backgroundColor: CREAM,
+    // Dual-layer glow matches web's `box-shadow: 0 0 8px 1px accent, 0 0 2px
+    // 0 cream` - RN only supports one shadow, so the ember bloom (the more
+    // visible layer) wins; a plain shadowRadius:4 was much too faint.
     shadowColor: EMBER,
-    shadowOpacity: 1,
-    shadowRadius: 4,
+    shadowOpacity: 0.9,
+    shadowRadius: 8,
     shadowOffset: { width: 0, height: 0 },
-    elevation: 2,
+    elevation: 4,
   },
 })

@@ -146,7 +146,6 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const chapters = nowPlaying.chapters
   const hasChapters = chapters.length > 0
   const chapter = currentChapter()
-  const chapterIdx = hasChapters ? chapters.findIndex((c) => c === chapter) : -1
   const bookProgress = duration > 0 ? Math.min(1, Math.max(0, position / duration)) : 0
   const hue = coverHue(nowPlaying.itemId)
 
@@ -162,9 +161,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const remainLabel = formatTimestamp(
     Math.max(0, hasChapters ? chSpan - chPos : duration - shownPos)
   )
-  const chapterLabel = hasChapters
-    ? `Ch ${chapterIdx + 1}/${chapters.length} · ${chapter?.title}`
-    : undefined
+  const chapterLabel = hasChapters ? chapter?.title : undefined
 
   const seekToRatio = (r: number) => {
     if (hasChapters) requestSeek(chStart + r * chSpan)
@@ -277,7 +274,6 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         <View style={styles.scrub}>
           <Scrubber
             ratio={chRatio}
-            playing={isPlaying}
             elapsed={elapsedLabel}
             remain={remainLabel}
             chapter={chapterLabel}
@@ -781,6 +777,10 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     gap: spacing.sm,
     marginTop: spacing.lg,
+    // Sit above the play button's accent glow so the shadow doesn't bleed onto
+    // these buttons (Android draws by elevation; iOS by zIndex).
+    elevation: 16,
+    zIndex: 2,
   },
   actionBtn: {
     flex: 1,
