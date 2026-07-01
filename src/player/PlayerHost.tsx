@@ -63,6 +63,12 @@ export function PlayerHost() {
         syncProgress(e.position)
       }),
       emitter.addListener('onState', (e: { isPlaying: boolean }) => {
+        // Native is reporting its own engine state (e.g. a transient pause while
+        // it buffers a seek). Sync our "last pushed" marker to it FIRST so the
+        // store update below doesn't make sync() echo this back as a fresh
+        // play()/pause() command - that echo is what caused the play/pause
+        // flicker + audio stutter right after a skip.
+        lastPlaying.current = e.isPlaying
         setPlaying(e.isPlaying)
         // On pause/stop (incl. the sleep timer stopping playback), flush a final
         // sync so the server has the real stop point and Recent listens is fresh.

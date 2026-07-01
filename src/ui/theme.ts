@@ -133,11 +133,13 @@ export const shadow = {
     elevation: 3,
   },
   // Accent-tinted lift for the play button - a colored drop shadow, not a ring.
-  // iOS blurs the accent directly; Android tints the elevation shadow on API28+.
+  // Nearly symmetric (tiny downward bias) so it reads as a halo around the button
+  // rather than a low, offset shadow. iOS blurs the accent; Android tints the
+  // elevation shadow on API28+.
   accentLift: {
     shadowColor: colors.accent,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.55,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
     shadowRadius: 16,
     elevation: 12,
   },

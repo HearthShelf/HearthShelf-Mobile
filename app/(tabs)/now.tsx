@@ -58,7 +58,9 @@ function EmptyState() {
     if (!last) return
     try {
       await playItemById(last.id)
-      router.push('/player')
+      // Stay on this tab - it re-renders the inline <PlayerSurface embedded /> now
+      // that nowPlaying is set. Pushing /player would stack a second (non-embedded)
+      // player on top, which is where the stray "minimize" button came from.
     } catch {
       // If the session can't start, drop the user on the item so they can retry.
       router.push(`/item/${last.id}`)
