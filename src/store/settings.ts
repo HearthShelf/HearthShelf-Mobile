@@ -107,6 +107,7 @@ export function settingsValues(s: SettingsState = state): Record<string, unknown
     queueAutoRules: s.queueAutoRules,
     theme: s.theme,
     glowMode: s.glowMode,
+    coverAspect: s.coverAspect,
     scrubber: s.scrubber,
     defaultSpeed: s.defaultSpeed,
     skipForward: s.skipForward,

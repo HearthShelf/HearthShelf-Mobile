@@ -67,11 +67,15 @@ async function absRequest<T>(path: string, init?: RequestInit): Promise<T> {
   return (text ? JSON.parse(text) : undefined) as T
 }
 
-/** Build an absolute, token-bearing media URL (covers, audio files). */
+/** Build an absolute, token-bearing media URL (covers, audio files). Returns ''
+ *  when there's no session (e.g. mid server-switch) so callers used during render
+ *  - like coverUrl() in a <Cover uri=...> - degrade to their fallback art instead
+ *  of throwing not_connected and red-boxing the screen. */
 export function mediaUrl(path: string): string {
-  const { serverUrl, token } = requireSession()
+  const s = getSession()
+  if (!s) return ''
   const sep = path.includes('?') ? '&' : '?'
-  return `${serverUrl}${path}${sep}token=${encodeURIComponent(token)}`
+  return `${s.serverUrl}${path}${sep}token=${encodeURIComponent(s.token)}`
 }
 
 export function coverUrl(itemId: string): string {
