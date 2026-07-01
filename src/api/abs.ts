@@ -21,6 +21,13 @@ import type {
   ABSSearchResponse,
   ABSListeningStats,
   HSListeningStats,
+  ABSSeries,
+  ABSSeriesResponse,
+  ABSLibraryAuthor,
+  ABSAuthorsResponse,
+  ABSNarrator,
+  ABSNarratorsResponse,
+  ABSAuthorDetail,
 } from '@hearthshelf/core'
 import { computeListeningStats } from '@hearthshelf/core'
 
@@ -96,6 +103,37 @@ export async function getLibraryItemsPage(
 
 export async function getPersonalized(libraryId: string): Promise<ABSShelf[]> {
   return absRequest<ABSShelf[]>(`/api/libraries/${libraryId}/personalized`)
+}
+
+// ---- Series / Authors / Narrators (Library view selector) ----
+
+/** All series in a library, each carrying its books (for the group drilldown). */
+export async function getLibrarySeries(libraryId: string): Promise<ABSSeries[]> {
+  const data = await absRequest<ABSSeriesResponse>(
+    `/api/libraries/${libraryId}/series?limit=0`
+  )
+  return data.results ?? []
+}
+
+export async function getLibraryAuthors(libraryId: string): Promise<ABSLibraryAuthor[]> {
+  const data = await absRequest<ABSAuthorsResponse>(`/api/libraries/${libraryId}/authors`)
+  return data.authors ?? []
+}
+
+/** An author's books (for the group drilldown) - richer than the library list. */
+export async function getAuthorDetail(authorId: string): Promise<ABSAuthorDetail> {
+  return absRequest<ABSAuthorDetail>(`/api/authors/${authorId}?include=items`)
+}
+
+/**
+ * Narrators are derived from item metadata, not first-class ABS records: this
+ * endpoint gives a synthetic id + name + book count, but not the books
+ * themselves. The narrator -> books drilldown filters the full item list by
+ * narratorName client-side (see getLibraryItems + itemNarrator).
+ */
+export async function getLibraryNarrators(libraryId: string): Promise<ABSNarrator[]> {
+  const data = await absRequest<ABSNarratorsResponse>(`/api/libraries/${libraryId}/narrators`)
+  return data.narrators ?? []
 }
 
 /** Full item detail (NOT minified) - carries media.chapters[] for the chapter list. */
@@ -209,4 +247,9 @@ export function itemTitle(item: ABSLibraryItem): string {
 
 export function itemAuthor(item: ABSLibraryItem): string {
   return item.media.metadata.authorName || 'Unknown author'
+}
+
+/** Raw narrator credit string ("Name A, Name B"), empty when uncredited. */
+export function itemNarrator(item: ABSLibraryItem): string {
+  return item.media.metadata.narratorName || ''
 }
