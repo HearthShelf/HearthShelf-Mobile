@@ -616,10 +616,6 @@ const RecentSheet = forwardRef<
   { itemId: string; chapters: { title: string; start: number; end: number }[]; onSeek: (sec: number) => void }
 >(function RecentSheet({ itemId, chapters, onSeek }, ref) {
   const sheetRef = useRef<SheetRef>(null)
-  useImperativeHandle(ref, () => ({
-    present: () => sheetRef.current?.present(),
-    dismiss: () => sheetRef.current?.dismiss(),
-  }))
   const [sessions, setSessions] = useState<RecentSession[] | null>(null)
 
   const load = useCallback(() => {
@@ -627,6 +623,18 @@ const RecentSheet = forwardRef<
       .then((all) => setSessions(all.filter((s) => s.libraryItemId === itemId)))
       .catch(() => setSessions([]))
   }, [itemId])
+
+  // Re-fetch every time the sheet opens - sessions grow while you listen (and a
+  // new one starts after the sleep timer stops), so a stale mount-time fetch
+  // would miss them until the whole player was torn down and rebuilt.
+  useImperativeHandle(ref, () => ({
+    present: () => {
+      setSessions(null)
+      load()
+      sheetRef.current?.present()
+    },
+    dismiss: () => sheetRef.current?.dismiss(),
+  }))
 
   useEffect(() => {
     load()

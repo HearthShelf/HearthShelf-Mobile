@@ -64,6 +64,9 @@ export function PlayerHost() {
       }),
       emitter.addListener('onState', (e: { isPlaying: boolean }) => {
         setPlaying(e.isPlaying)
+        // On pause/stop (incl. the sleep timer stopping playback), flush a final
+        // sync so the server has the real stop point and Recent listens is fresh.
+        if (!e.isPlaying) void syncProgress(getState().position, true)
       }),
       // Native transport (lock screen / car) routes back through the store so it
       // stays the source of truth.

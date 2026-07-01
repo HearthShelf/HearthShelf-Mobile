@@ -61,12 +61,16 @@ export async function playItemById(itemId: string): Promise<void> {
   }
 }
 
-/** Push current position to ABS (called on the <Video> progress tick). */
-export async function syncProgress(currentTime: number): Promise<void> {
+/**
+ * Push current position to ABS. Called on every progress tick (throttled to
+ * ~15s of new listening) and, with `force`, when playback stops/pauses so the
+ * server reflects where you actually stopped - otherwise falling asleep leaves
+ * the last <15s (and the true stop point) unsynced, and "recent listens" lags.
+ */
+export async function syncProgress(currentTime: number, force = false): Promise<void> {
   if (!active) return
   const delta = Math.max(0, Math.round(currentTime - active.lastSyncedTime))
-  // Throttle: only sync when at least ~15s of new listening accrued.
-  if (delta < 15) return
+  if (!force && delta < 15) return
   active.lastSyncedTime = currentTime
   try {
     await syncSession(active.sessionId, {
