@@ -35,6 +35,7 @@ import {
   currentChapter,
 } from '@/player/store'
 import { getQueueState, subscribeQueue } from '@/player/queue'
+import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { useBookmarks } from '@/player/useBookmarks'
 import { coverUrl, getItemDetail, getRecentSessions } from '@/api/abs'
 import { playItemById } from '@/player/playback'
@@ -65,6 +66,7 @@ export default function PlayerScreen() {
     getState
   )
   const queue = useSyncExternalStore(subscribeQueue, getQueueState)
+  const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
   const { width } = useWindowDimensions()
   const toast = useToast()
 
@@ -184,7 +186,7 @@ export default function PlayerScreen() {
         ? 'EOC'
         : 'Sleep'
 
-  const hasNext = queue.mode !== 'off' && queue.items.length > 0
+  const hasNext = settings.queueMode !== 'off' && queue.items.length > 0
   const next = queue.items[0]
 
   const jumpToQueued = async (itemId: string) => {

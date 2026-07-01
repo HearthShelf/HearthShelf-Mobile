@@ -9,17 +9,9 @@ import { Pressable, StyleSheet, View } from 'react-native'
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { coverHue } from '@hearthshelf/core'
-import {
-  getQueueState,
-  subscribeQueue,
-  setQueueMode,
-  reorderQueue,
-  removeFromQueue,
-  toggleAutoRule,
-  type QueueEntry,
-  type QueueMode,
-  type AutoRuleId,
-} from './queue'
+import type { QueueEntry, QueueMode, AutoRuleId } from '@hearthshelf/core'
+import { getQueueState, reorderQueue, removeFromQueue, subscribeQueue } from './queue'
+import { getSettingsState, setQueueMode, subscribeSettings, toggleAutoRule } from '@/store/settings'
 import { getState, subscribe } from './store'
 import { coverUrl } from '@/api/abs'
 import { AppText, Cover, IconButton, Sheet, type SheetRef } from '@/ui/primitives'
@@ -64,6 +56,7 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
     }))
 
     const queue = useSyncExternalStore(subscribeQueue, getQueueState)
+    const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
     const { nowPlaying } = useSyncExternalStore(subscribe, getState)
     const [dragActive, setDragActive] = useState(false)
 
@@ -74,10 +67,10 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
             {MODES.map((m) => (
               <Pressable
                 key={m.v}
-                style={[styles.seg, queue.mode === m.v && styles.segOn]}
+                style={[styles.seg, settings.queueMode === m.v && styles.segOn]}
                 onPress={() => setQueueMode(m.v)}
               >
-                <AppText variant="label" color={queue.mode === m.v ? colors.text : colors.textMuted}>
+                <AppText variant="label" color={settings.queueMode === m.v ? colors.text : colors.textMuted}>
                   {m.label}
                 </AppText>
               </Pressable>
@@ -86,9 +79,9 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
 
           <View style={styles.subRow}>
             <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
-              {MODE_SUB[queue.mode]}
+              {MODE_SUB[settings.queueMode]}
             </AppText>
-            {queue.mode === 'auto' && (
+            {settings.queueMode === 'auto' && (
               <Pressable style={styles.rulesBtn} onPress={() => rulesRef.current?.present()}>
                 <Icon name={icons.tune} size={15} color={colors.text} />
                 <AppText variant="caption">Auto rules</AppText>
@@ -116,7 +109,7 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
             </View>
           )}
 
-          {queue.mode === 'off' ? (
+          {settings.queueMode === 'off' ? (
             <View style={styles.empty}>
               <Icon name={icons.nothingQueued} size={36} color={colors.textFaint} />
               <AppText variant="label" style={{ marginTop: spacing.sm }}>
@@ -143,7 +136,7 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
                 renderItem={(params: RenderItemParams<QueueEntry>) => (
                   <QueueRow
                     {...params}
-                    draggable={queue.mode === 'manual'}
+                    draggable={settings.queueMode === 'manual'}
                     dragActive={dragActive}
                     onJump={() => {
                       sheetRef.current?.dismiss()
@@ -159,7 +152,7 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
 
         <Sheet ref={rulesRef} title="What gets added" kicker="Auto-queue">
           <View>
-            {queue.autoRules.map((r) => {
+            {settings.queueAutoRules.map((r) => {
               const copy = RULE_COPY[r.id]
               return (
                 <Pressable key={r.id} style={styles.row} onPress={() => toggleAutoRule(r.id)}>

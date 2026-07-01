@@ -1,0 +1,136 @@
+/**
+ * Keeps the local queue + settings stores in sync with the server, so the
+ * up-next list and queue mode/auto-rules follow the user across devices.
+ * Mirrors the WebApp's useQueueSync/useSettingsSync pull/push shape, but as
+ * plain start/stop functions (this app has no settings-sync hook convention
+ * yet) called from the connect flow in app/(tabs)/index.tsx, alongside
+ * setAutoSession - and torn down on sign-out.
+ *
+ * Conflict rule: while this device has an active playback session (a track
+ * loaded in player/store.ts), it is the authority over its own queue - it
+ * doesn't adopt a remote pull mid-session. An idle device always adopts the
+ * latest queue/settings the next time the app comes to the foreground.
+ */
+import { AppState, type AppStateStatus } from 'react-native'
+import { getQueueState, setQueueItems, setQueuePlaylistId, subscribeQueue } from './queue'
+import { getState as getPlayerState } from './store'
+import { getServerQueue, putServerQueue } from '@/api/queue'
+import { getServerSettings, putServerSettings } from '@/api/settings'
+import { applyServerSettings, getSettingsState, settingsValues, subscribeSettings } from '@/store/settings'
+
+const QUEUE_PUSH_DEBOUNCE_MS = 400
+const SETTINGS_PUSH_DEBOUNCE_MS = 1200
+
+let started = false
+let hydratingQueue = false
+let hydratedQueue = false
+let hydratingSettings = false
+let hydratedSettings = false
+let queueTimer: ReturnType<typeof setTimeout> | null = null
+let settingsTimer: ReturnType<typeof setTimeout> | null = null
+let unsubQueue: (() => void) | null = null
+let unsubSettings: (() => void) | null = null
+let appStateSub: { remove: () => void } | null = null
+
+function hasActiveSession(): boolean {
+  return !!getPlayerState().nowPlaying
+}
+
+async function pullQueue(): Promise<void> {
+  try {
+    const server = await getServerQueue()
+    if (hasActiveSession()) return
+    hydratingQueue = true
+    // bump=false: adopting the server's state shouldn't immediately look like
+    // a new local write and re-push what we just pulled.
+    setQueueItems(server.items, false)
+    setQueuePlaylistId(server.playlistId, false)
+    hydratingQueue = false
+  } catch {
+    // Backend unreachable - keep the local queue as-is.
+  } finally {
+    hydratedQueue = true
+  }
+}
+
+async function pullSettings(): Promise<void> {
+  try {
+    const server = await getServerSettings()
+    if (server.values && typeof server.values === 'object') {
+      hydratingSettings = true
+      applyServerSettings(server.values)
+      hydratingSettings = false
+    }
+  } catch {
+    // Backend unreachable - keep local defaults/current values.
+  } finally {
+    hydratedSettings = true
+  }
+}
+
+function pushQueue(): void {
+  if (!hydratedQueue || hydratingQueue) return
+  if (queueTimer) clearTimeout(queueTimer)
+  queueTimer = setTimeout(() => {
+    const { items, playlistId, updatedAt } = getQueueState()
+    putServerQueue(items, playlistId, updatedAt)
+      .then((res) => {
+        if (res.applied === false && !hasActiveSession()) {
+          hydratingQueue = true
+          setQueueItems(res.items, false)
+          setQueuePlaylistId(res.playlistId, false)
+          hydratingQueue = false
+        }
+      })
+      .catch(() => {
+        // Best-effort; the local store already holds the change.
+      })
+  }, QUEUE_PUSH_DEBOUNCE_MS)
+}
+
+function pushSettings(): void {
+  if (!hydratedSettings || hydratingSettings) return
+  if (settingsTimer) clearTimeout(settingsTimer)
+  settingsTimer = setTimeout(() => {
+    putServerSettings(settingsValues(getSettingsState())).catch(() => {
+      // Best-effort; the local store already holds the change.
+    })
+  }, SETTINGS_PUSH_DEBOUNCE_MS)
+}
+
+function onAppStateChange(nextState: AppStateStatus): void {
+  if (nextState === 'active') {
+    void pullQueue()
+    void pullSettings()
+  }
+}
+
+/** Call once a session is established (after setSession/setAutoSession). */
+export function startQueueSync(): void {
+  if (started) return
+  started = true
+  hydratedQueue = false
+  hydratedSettings = false
+
+  void pullQueue()
+  void pullSettings()
+
+  unsubQueue = subscribeQueue(pushQueue)
+  unsubSettings = subscribeSettings(pushSettings)
+  appStateSub = AppState.addEventListener('change', onAppStateChange)
+}
+
+/** Call on sign-out / session clear. */
+export function stopQueueSync(): void {
+  started = false
+  hydratedQueue = false
+  hydratedSettings = false
+  if (queueTimer) clearTimeout(queueTimer)
+  if (settingsTimer) clearTimeout(settingsTimer)
+  unsubQueue?.()
+  unsubSettings?.()
+  appStateSub?.remove()
+  unsubQueue = null
+  unsubSettings = null
+  appStateSub = null
+}

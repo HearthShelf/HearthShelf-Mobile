@@ -1,47 +1,28 @@
 /**
- * Client-only up-next queue, ported from the WebApp's queueStore.ts. ABS has no
- * cross-book session queue, so this is a plain in-memory subscribe/snapshot
- * store (same shape as player/store.ts) - SESSION ONLY, cleared on app restart.
- * A server-backed cross-device queue is planned for a later pass; don't add
- * AsyncStorage persistence here in the meantime, it would just be thrown away.
+ * Up-next queue. `items`/`playlistId` persist server-side (see queueSync.ts,
+ * /hs/queue) so they follow the user across devices; this is the fast
+ * in-memory write-through cache - same subscribe/snapshot shape as
+ * player/store.ts, no AsyncStorage here (the server pull replaces it on load).
+ *
+ * Queue MODE and auto-rules are NOT here - they're preferences and live in
+ * src/store/settings.ts / /hs/settings, same as the WebApp.
  */
+import type { QueueEntry } from '@hearthshelf/core'
 
-export interface QueueEntry {
-  libraryItemId: string
-  title: string
-  author: string
-}
-
-// How the up-next queue behaves when a book ends:
-//  - off:      stop at the end of each book
-//  - manual:   play the next book the user queued by hand
-//  - auto:     rebuild up-next from the smart rules
-//  - playlist: follow a chosen ABS playlist in order
-export type QueueMode = 'off' | 'manual' | 'auto' | 'playlist'
-
-// Ordered, toggleable rules that drive Auto mode. Order = priority.
-export type AutoRuleId = 'finish-series' | 'in-progress' | 'new-in-series'
-export interface AutoRule {
-  id: AutoRuleId
-  on: boolean
-}
+export type { QueueEntry } from '@hearthshelf/core'
 
 export interface QueueState {
   items: QueueEntry[]
-  mode: QueueMode
   playlistId: string | null
-  autoRules: AutoRule[]
+  // Bumped on every items/playlistId mutation; the conflict key /hs/queue uses
+  // to decide whether a write is newer than what's stored. See queueSync.ts.
+  updatedAt: number
 }
 
 let state: QueueState = {
   items: [],
-  mode: 'off',
   playlistId: null,
-  autoRules: [
-    { id: 'finish-series', on: true },
-    { id: 'in-progress', on: true },
-    { id: 'new-in-series', on: false },
-  ],
+  updatedAt: 0,
 }
 
 const listeners = new Set<() => void>()
@@ -62,40 +43,42 @@ function set(patch: Partial<QueueState>): void {
 
 export function addToQueue(entry: QueueEntry): void {
   if (state.items.some((i) => i.libraryItemId === entry.libraryItemId)) return
-  set({ items: [...state.items, entry] })
+  set({ items: [...state.items, entry], updatedAt: Date.now() })
 }
 
 export function removeFromQueue(libraryItemId: string): void {
-  set({ items: state.items.filter((i) => i.libraryItemId !== libraryItemId) })
+  set({
+    items: state.items.filter((i) => i.libraryItemId !== libraryItemId),
+    updatedAt: Date.now(),
+  })
 }
 
 export function reorderQueue(from: number, to: number): void {
   const next = state.items.slice()
   const [moved] = next.splice(from, 1)
   next.splice(to, 0, moved)
-  set({ items: next })
+  set({ items: next, updatedAt: Date.now() })
 }
 
 export function clearQueue(): void {
-  set({ items: [] })
+  set({ items: [], updatedAt: Date.now() })
+}
+
+// Replace the whole queue (used when Auto rebuilds it, or a server sync pull
+// adopts a remote queue). bump=false skips the updatedAt stamp, for pulls
+// that shouldn't be echoed straight back to the server as a write.
+export function setQueueItems(items: QueueEntry[], bump = true): void {
+  set({ items, updatedAt: bump ? Date.now() : state.updatedAt })
 }
 
 /** Pop and return the next queued entry, or null when empty. */
 export function nextInQueue(): QueueEntry | null {
   const [head, ...rest] = state.items
   if (!head) return null
-  set({ items: rest })
+  set({ items: rest, updatedAt: Date.now() })
   return head
 }
 
-export function setQueueMode(mode: QueueMode): void {
-  set({ mode })
-}
-
-export function setQueuePlaylistId(playlistId: string | null): void {
-  set({ playlistId })
-}
-
-export function toggleAutoRule(id: AutoRuleId): void {
-  set({ autoRules: state.autoRules.map((r) => (r.id === id ? { ...r, on: !r.on } : r)) })
+export function setQueuePlaylistId(playlistId: string | null, bump = true): void {
+  set({ playlistId, updatedAt: bump ? Date.now() : state.updatedAt })
 }

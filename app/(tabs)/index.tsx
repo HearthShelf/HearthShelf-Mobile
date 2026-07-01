@@ -14,6 +14,7 @@ import { connectServer } from '@/api/connect'
 import { setSession, clearSession, setLastServerId, getLastServerId } from '@/api/session'
 import { clearTrack } from '@/player/store'
 import { setAutoSession, clearAutoSession } from '@/player/autoBridge'
+import { startQueueSync, stopQueueSync } from '@/player/queueSync'
 import {
   coverUrl,
   getHSStats,
@@ -65,6 +66,7 @@ export default function HomeScreen() {
   async function handleSignOut(reason?: 'expired') {
     clearTrack()
     clearAutoSession()
+    stopQueueSync()
     await clearSession()
     await signOut()
     router.replace(reason ? `/sign-in?reason=${reason}` : '/sign-in')
@@ -89,6 +91,7 @@ export default function HomeScreen() {
         await setSession({ serverUrl, token: absToken })
         await setLastServerId(server.id)
         setAutoSession(serverUrl, absToken)
+        startQueueSync()
 
         const progress = await getItemsInProgress()
         setInProgress(progress)
