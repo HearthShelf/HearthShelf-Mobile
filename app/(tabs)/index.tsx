@@ -2,7 +2,8 @@ import { useAuth } from '@clerk/expo'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { useRouter } from 'expo-router'
-import type { ABSLibraryItem, ABSShelf } from '@hearthshelf/core'
+import type { ABSLibraryItem, ABSShelf, HSListeningStats } from '@hearthshelf/core'
+import { formatDuration } from '@hearthshelf/core'
 import {
   fetchLinkedServers,
   setSessionExpiredHandler,
@@ -15,6 +16,7 @@ import { clearTrack } from '@/player/store'
 import { setAutoSession, clearAutoSession } from '@/player/autoBridge'
 import {
   coverUrl,
+  getHSStats,
   getItemsInProgress,
   getLibraries,
   getLibraryItems,
@@ -35,6 +37,7 @@ import {
   SectionHeader,
   icons,
 } from '@/ui/primitives'
+import { Icon } from '@/ui/icons'
 import { colors, radius, spacing } from '@/ui/theme'
 
 type Status =
@@ -57,6 +60,7 @@ export default function HomeScreen() {
   const [status, setStatus] = useState<Status>({ phase: 'connecting' })
   const [inProgress, setInProgress] = useState<ABSLibraryItem[]>([])
   const [shelves, setShelves] = useState<ABSShelf[]>([])
+  const [stats, setStats] = useState<HSListeningStats | null>(null)
 
   async function handleSignOut(reason?: 'expired') {
     clearTrack()
@@ -88,6 +92,13 @@ export default function HomeScreen() {
 
         const progress = await getItemsInProgress()
         setInProgress(progress)
+
+        // Stats strip is best-effort - a stats failure shouldn't block the rest
+        // of Home from loading. Same getHSStats() the Stats tab reads, so the
+        // two never disagree.
+        getHSStats()
+          .then(setStats)
+          .catch(() => setStats(null))
 
         // Personalized shelves from the first book library (matches the web home).
         const libs = await getLibraries()
@@ -227,6 +238,7 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         {hero ? <CalmHero item={hero} onPress={() => playItemById(hero.id)} /> : null}
+        {stats ? <HomeStatsStrip stats={stats} /> : null}
         {shelves.map((shelf) => (
           <Shelf key={shelf.id} shelf={shelf} />
         ))}
@@ -251,6 +263,40 @@ function CalmHero({ item, onPress }: { item: ABSLibraryItem; onPress: () => void
         </AppText>
       </View>
       <IconButton name={icons.play} size={34} color={colors.accent} onPress={onPress} />
+    </Pressable>
+  )
+}
+
+/**
+ * Day streak + this-week cards, matching the prototype's home stats strip.
+ * Reads the same getHSStats() data as the Stats tab, so the two never disagree.
+ */
+function HomeStatsStrip({ stats }: { stats: HSListeningStats }) {
+  const router = useRouter()
+  return (
+    <Pressable onPress={() => router.push('/(tabs)/stats')} style={styles.statsStrip}>
+      <View style={styles.statsTile}>
+        <Icon name={icons.flame} size={21} color={colors.brandHearth} />
+        <View>
+          <AppText variant="mono" style={{ fontWeight: '700' }}>
+            {stats.dayStreak}
+          </AppText>
+          <AppText variant="caption" color={colors.textMuted}>
+            Day streak
+          </AppText>
+        </View>
+      </View>
+      <View style={styles.statsTile}>
+        <Icon name={icons.schedule} size={21} color={colors.textMuted} />
+        <View>
+          <AppText variant="mono" style={{ fontWeight: '700' }}>
+            {formatDuration(stats.weekSec)}
+          </AppText>
+          <AppText variant="caption" color={colors.textMuted}>
+            This week
+          </AppText>
+        </View>
+      </View>
     </Pressable>
   )
 }
@@ -304,4 +350,22 @@ const styles = StyleSheet.create({
   },
   heroMeta: { flex: 1, gap: 2 },
   tile: { width: 120 },
+  statsStrip: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+  },
+  statsTile: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 5,
+    backgroundColor: colors.card,
+    borderRadius: radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairline,
+  },
 })

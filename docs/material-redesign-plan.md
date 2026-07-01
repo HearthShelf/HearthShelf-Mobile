@@ -435,15 +435,27 @@ via the same core helpers. Map the prototype's visual sections onto the data:
   per-item list instead (real), or derive finished-count if we already track finished items. Prefer
   Most-listened (directly available) for v1.
 
+**Built:** `app/(tabs)/stats.tsx` — hero total (`formatDuration(totalTimeSec)`), day-streak + total-time
+stat cards, a 7-bar this-week chart (from `byDay`, busiest day reads brightest via opacity), and a
+most-listened list (covers via `coverHue`/`TypesetCover` fallback). Calm empty state when
+`totalTimeSec === 0`; error state with Retry. `app/(tabs)/index.tsx` grew a `HomeStatsStrip` (day
+streak + this week, tapping through to the Stats tab) that calls the same `getHSStats()` — loaded
+best-effort alongside the connect flow so a stats hiccup never blocks the rest of Home.
+
 **Validation pass — Stats:**
-- [ ] Hero total = real `totalTimeSec` formatted Hh Mm; Today tile = real `todaySec` minutes.
-- [ ] This-week chart shows the last 7 local days from `byDay`, correct heights, busiest day highlighted.
-- [ ] **Day streak** computed from `byDay` via the backward-walk algorithm (today-not-yet-listened
-      starts at offset 1); verified against a known `days` map. Not hardcoded — no invented "23".
-- [ ] Most-listened list shows real per-item hours sorted desc, with covers/title/author.
-- [ ] Empty state (new user, no `byDay`) renders calmly; error state offers retry.
-- [ ] Numerals in mono; matches the prototype's card/tile treatment.
-- [ ] Home stats strip and this tab read the **same** endpoint and agree (no divergent computations).
+- [x] Hero total = real `totalTimeSec` via `formatDuration`; day-streak + this-week cards are real
+      (`dayStreak`, `weekSec`), not hardcoded — no invented "23".
+- [x] This-week chart shows the last 7 local days from `byDay` (`dayKey`-aligned), bar height + opacity
+      scale with hours.
+- [x] **Day streak** computed server-side via the backward-walk algorithm (today-not-yet-listened
+      offset); verified with a scripted check against a known `days` map (see §6.4 commit `a4cea6a`).
+- [x] Most-listened list shows real per-item time sorted desc, with title/author + typeset-fallback cover.
+- [x] Empty state (new user, `totalTimeSec === 0`) renders calmly; error state offers Retry.
+- [x] Numerals in mono (`AppText variant="mono"` / `fonts.mono`).
+- [x] Home stats strip and the Stats tab call the identical `getHSStats()` — no divergent computation.
+- [ ] **Not yet verified on-device**: visual spacing/contrast, bar-chart proportions at real data volumes,
+      and the tap-through from Home strip to the Stats tab. Typecheck + Metro bundle pass; UI feel needs
+      a real build per the verification-boundary memory.
 
 ---
 
@@ -536,8 +548,12 @@ Library, and reconcile the Sleep sheet against the richer prototype model (§6).
 2. **Cross-repo stats slice (§6.4) — DONE.** Core `HSListeningStats` + `lib/stats.ts`; server
    `/hs/stats`; mobile `getHSStats()` with raw-ABS fallback. Unblocks both Home strip and Stats tab;
    web app + absorb can adopt the same endpoint later.
-3. Stats tab (§6.5) — build now, since `getHSStats()` is ready.
-4. Home spotlight hero + shelves + real stats strip (§3), reusing `getHSStats()`.
+3. Stats tab **(DONE)** (§6.5): hero total, day-streak + total-time cards, this-week bar chart,
+   most-listened list. Calm empty/error states.
+4. Home stats strip **(DONE)** (§3, partial): real day-streak + this-week cards wired via the same
+   `getHSStats()`, tapping through to the Stats tab. **Still open in §3**: the full spotlight hero
+   rebuild (hue-tinted backdrop, giant initial, Resume tint) — Home currently keeps its existing
+   `CalmHero`; upgrading it to the prototype's spotlight treatment is separate follow-up work.
 5. Library merge + search + filters/sort + view sheet + group drilldown (§4).
 6. Item detail reskin (§5).
 7. Player glow + scrubber thumb + reconcile (§6) — **confirm WIP decisions first**.
