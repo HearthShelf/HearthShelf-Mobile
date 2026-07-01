@@ -1,19 +1,30 @@
 package com.hearthshelf.mobile
 
 import android.content.Context
+import android.content.Intent
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.WritableMap
+import com.facebook.react.bridge.Arguments
+import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.facebook.react.uimanager.ViewManager
 
 /**
- * Tiny bridge so JS can hand the connected ABS server URL + token to the native
- * Android Auto service (which runs in its own process and can't read JS state).
- * Values land in SharedPreferences; HearthShelfAutoService reads them.
+ * Bridge between JS and the native phone media engine (HearthShelfPlayerService,
+ * a Media3 MediaSession + ExoPlayer) plus the Android Auto session handoff.
  *
- * Plain RN module (old arch is fine for two setters) registered via
+ * - setSession/clearSession: hand the ABS server URL + token to the headless
+ *   Android Auto service (unchanged).
+ * - load/play/pause/seekTo/setRate/setVolume/stop: JS (PlayerHost) drives the
+ *   phone ExoPlayer. The service owns the MediaSession so we control the
+ *   notification / lock-screen chapter progress + custom skip icons.
+ * - Native -> JS events (onProgress/onState/onTogglePlay/onJump) are emitted via
+ *   DeviceEventManagerModule so the JS store stays the source of truth.
+ *
+ * Old-arch RN module (matches the existing style); registered via
  * HearthShelfAutoPackage in MainApplication (injected by the config plugin).
  */
 class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
@@ -21,8 +32,20 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
 
   override fun getName() = "HearthShelfAuto"
 
+  init {
+    emitter = { name, params -> sendEvent(name, params) }
+  }
+
   private fun prefs() =
     ctx.getSharedPreferences("hearthshelf_auto", Context.MODE_PRIVATE)
+
+  private fun sendEvent(name: String, params: WritableMap?) {
+    if (!ctx.hasActiveReactInstance()) return
+    ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+      .emit(name, params)
+  }
+
+  // ---- Android Auto session handoff (unchanged) ----
 
   @ReactMethod
   fun setSession(serverUrl: String, token: String) {
@@ -32,6 +55,65 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
   @ReactMethod
   fun clearSession() {
     prefs().edit().remove("serverUrl").remove("token").apply()
+  }
+
+  // ---- phone playback commands (drive HearthShelfPlayerService) ----
+
+  private fun ensureService() {
+    // Start the foreground media service if it isn't up yet.
+    ctx.startService(Intent(ctx, HearthShelfPlayerService::class.java))
+  }
+
+  @ReactMethod
+  fun load(
+    url: String,
+    startSec: Double,
+    title: String,
+    author: String,
+    artworkUri: String,
+    chaptersJson: String
+  ) {
+    val svc = HearthShelfPlayerService.instance
+    if (svc != null) {
+      svc.load(url, startSec, title, author, artworkUri, chaptersJson)
+    } else {
+      // Service not up yet: stash the load; onCreate will drain it.
+      HearthShelfPlayerService.pendingLoad =
+        HearthShelfPlayerService.PendingLoad(url, startSec, title, author, artworkUri, chaptersJson)
+      ensureService()
+    }
+  }
+
+  @ReactMethod fun play() { HearthShelfPlayerService.instance?.playPlayer() }
+  @ReactMethod fun pause() { HearthShelfPlayerService.instance?.pausePlayer() }
+  @ReactMethod fun seekTo(sec: Double) { HearthShelfPlayerService.instance?.seekToSec(sec) }
+  @ReactMethod fun setRate(rate: Double) { HearthShelfPlayerService.instance?.setRate(rate) }
+  @ReactMethod fun setVolume(volume: Double) { HearthShelfPlayerService.instance?.setVolume(volume) }
+  @ReactMethod fun stop() { HearthShelfPlayerService.instance?.stopPlayer() }
+
+  // RN NativeEventEmitter requires these no-op stubs on the module.
+  @ReactMethod fun addListener(eventName: String) {}
+  @ReactMethod fun removeListeners(count: Int) {}
+
+  companion object {
+    /** Set by the module so the service can emit events back to JS. */
+    @Volatile var emitter: ((String, WritableMap?) -> Unit)? = null
+
+    fun emitProgress(positionSec: Double) {
+      val map = Arguments.createMap().apply { putDouble("position", positionSec) }
+      emitter?.invoke("onProgress", map)
+    }
+    fun emitState(isPlaying: Boolean) {
+      val map = Arguments.createMap().apply { putBoolean("isPlaying", isPlaying) }
+      emitter?.invoke("onState", map)
+    }
+    fun emitTogglePlay() {
+      emitter?.invoke("onTogglePlay", Arguments.createMap())
+    }
+    fun emitJump(deltaSec: Double) {
+      val map = Arguments.createMap().apply { putDouble("delta", deltaSec) }
+      emitter?.invoke("onJump", map)
+    }
   }
 }
 

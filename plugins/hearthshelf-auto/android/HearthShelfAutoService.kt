@@ -1,13 +1,17 @@
 package com.hearthshelf.mobile
 
 import android.content.Context
+import android.os.Bundle
 import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.CommandButton
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -46,11 +50,39 @@ class HearthShelfAutoService : MediaLibraryService() {
   private val token: String?
     get() = prefs.getString("token", null)
 
+  // Skip amounts (seconds) for the seek buttons. Match the in-app player's
+  // rewind/forward defaults; a later pass can read the user's setting.
+  private val REWIND_SEC = 15L
+  private val FORWARD_SEC = 30L
+
+  // Custom transport commands surfaced with our own circular icons, so the
+  // notification / Android Auto stop showing the default fast-forward/rewind
+  // glyphs. Handled in LibraryCallback.onCustomCommand.
+  private val CMD_REWIND = "com.hearthshelf.REWIND"
+  private val CMD_FORWARD = "com.hearthshelf.FORWARD"
+
+  private fun rewindButton(): CommandButton =
+    CommandButton.Builder()
+      .setDisplayName("Back ${REWIND_SEC}s")
+      .setIconResId(resources.getIdentifier("ic_hs_rewind", "drawable", packageName))
+      .setSessionCommand(SessionCommand(CMD_REWIND, Bundle.EMPTY))
+      .build()
+
+  private fun forwardButton(): CommandButton =
+    CommandButton.Builder()
+      .setDisplayName("Forward ${FORWARD_SEC}s")
+      .setIconResId(resources.getIdentifier("ic_hs_forward", "drawable", packageName))
+      .setSessionCommand(SessionCommand(CMD_FORWARD, Bundle.EMPTY))
+      .build()
+
   override fun onCreate() {
     super.onCreate()
     Log.i(TAG, "onCreate: serverUrl=${serverUrl != null}, token=${token != null}")
     val player = ExoPlayer.Builder(this).build()
-    session = MediaLibrarySession.Builder(this, player, LibraryCallback()).build()
+    session = MediaLibrarySession.Builder(this, player, LibraryCallback())
+      // Rewind | (play/pause is standard) | Forward, with our circular icons.
+      .setCustomLayout(ImmutableList.of(rewindButton(), forwardButton()))
+      .build()
   }
 
   override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? =
@@ -80,6 +112,43 @@ class HearthShelfAutoService : MediaLibraryService() {
   @Volatile private var lastSearchBooks: List<Book> = emptyList()
 
   private inner class LibraryCallback : MediaLibrarySession.Callback {
+
+    /** Grant our custom seek commands so the buttons are actionable, and publish
+     *  the custom layout (rewind | forward) to this controller. */
+    override fun onConnect(
+      session: MediaSession,
+      controller: MediaSession.ControllerInfo
+    ): MediaSession.ConnectionResult {
+      val available = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
+        .buildUpon()
+        .add(SessionCommand(CMD_REWIND, Bundle.EMPTY))
+        .add(SessionCommand(CMD_FORWARD, Bundle.EMPTY))
+        .build()
+      return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+        .setAvailableSessionCommands(available)
+        .setCustomLayout(ImmutableList.of(rewindButton(), forwardButton()))
+        .build()
+    }
+
+    /** Seek by our fixed amounts when the custom rewind/forward buttons fire. */
+    override fun onCustomCommand(
+      session: MediaSession,
+      controller: MediaSession.ControllerInfo,
+      customCommand: SessionCommand,
+      args: Bundle
+    ): ListenableFuture<SessionResult> {
+      val player = session.player
+      when (customCommand.customAction) {
+        CMD_REWIND -> player.seekTo((player.currentPosition - REWIND_SEC * 1000).coerceAtLeast(0))
+        CMD_FORWARD -> {
+          val dur = player.duration
+          val target = player.currentPosition + FORWARD_SEC * 1000
+          player.seekTo(if (dur > 0) target.coerceAtMost(dur) else target)
+        }
+        else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+      }
+      return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+    }
 
     override fun onGetLibraryRoot(
       session: MediaLibrarySession,

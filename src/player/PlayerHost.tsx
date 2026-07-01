@@ -1,14 +1,18 @@
 /**
- * The persistent audio engine: a single <Video> element (audio-only) mounted
- * once at the app root and never unmounted. It renders nothing visible; it just
- * plays whatever the player store says and reports progress back.
+ * The persistent audio engine bridge. Instead of rendering a react-native-video
+ * <Video>, this drives a native Media3 ExoPlayer (HearthShelfPlayerService) that
+ * owns the phone MediaSession - so WE control the lock-screen / Android Auto
+ * chapter-relative progress and the custom circular skip icons, which rn-video
+ * could not do.
  *
- * Background playback + lock-screen / Android Auto / CarPlay transport come from
- * react-native-video's MediaSession integration, enabled via the source
- * `metadata` (title/artist/artwork) and the `showNotificationControls` prop.
+ * The JS store stays the single source of truth: this component pushes store
+ * changes down to the native player (load/play/pause/seek/rate/volume) and feeds
+ * native progress/state events back into the store (reportPosition + syncProgress,
+ * setPlaying) - the exact same store calls the old <Video> onProgress made, so no
+ * player-UI screen changes.
  */
-import { useEffect, useRef, useSyncExternalStore } from 'react'
-import Video, { type VideoRef } from 'react-native-video'
+import { useEffect, useRef } from 'react'
+import { NativeEventEmitter, NativeModules } from 'react-native'
 import {
   getState,
   subscribe,
@@ -20,49 +24,103 @@ import {
 } from './store'
 import { syncProgress } from './playback'
 
+// Native module (added in HearthShelfAutoModule / HearthShelfPlayerService).
+// Typed loosely - it's a thin old-arch bridge.
+interface HSPlayer {
+  load(url: string, startSec: number, title: string, author: string, artworkUri: string, chaptersJson: string): void
+  play(): void
+  pause(): void
+  seekTo(sec: number): void
+  setRate(rate: number): void
+  setVolume(volume: number): void
+  stop(): void
+}
+const Native = NativeModules.HearthShelfAuto as HSPlayer | undefined
+
 export function PlayerHost() {
-  const state = useSyncExternalStore(subscribe, getState)
-  const ref = useRef<VideoRef>(null)
-  const { nowPlaying, isPlaying, seekTo, rate, volume } = state
+  // Track what we last pushed so store ticks don't re-issue identical commands.
+  const loadedKey = useRef<string | null>(null)
+  const lastPlaying = useRef<boolean | null>(null)
+  const lastRate = useRef<number | null>(null)
+  const lastVolume = useRef<number | null>(null)
 
-  // Honor one-shot seek requests from the store (skip buttons, scrubbing).
+  // ---- native -> store: progress / state / ended ----
   useEffect(() => {
-    if (seekTo !== null && ref.current) {
-      ref.current.seek(seekTo)
-      clearSeek()
+    if (!Native) return
+    const emitter = new NativeEventEmitter(NativeModules.HearthShelfAuto)
+    const subs = [
+      emitter.addListener('onProgress', (e: { position: number }) => {
+        reportPosition(e.position)
+        syncProgress(e.position)
+      }),
+      emitter.addListener('onState', (e: { isPlaying: boolean }) => {
+        setPlaying(e.isPlaying)
+      }),
+      // Native transport (lock screen / car) routes back through the store so it
+      // stays the source of truth.
+      emitter.addListener('onTogglePlay', () => togglePlay()),
+      emitter.addListener('onJump', (e: { delta: number }) => jumpBy(e.delta)),
+    ]
+    return () => subs.forEach((s) => s.remove())
+  }, [])
+
+  // ---- store -> native: load / play / pause / seek / rate / volume ----
+  useEffect(() => {
+    const sync = () => {
+      if (!Native) return
+      const s = getState()
+      const np = s.nowPlaying
+
+      if (!np) {
+        if (loadedKey.current !== null) {
+          Native.stop()
+          loadedKey.current = null
+        }
+        return
+      }
+
+      // (Re)load when the track changes.
+      const key = `${np.itemId}:${np.sessionId}`
+      if (key !== loadedKey.current) {
+        loadedKey.current = key
+        lastPlaying.current = null
+        lastRate.current = null
+        lastVolume.current = null
+        Native.load(
+          np.url,
+          np.startPosition,
+          np.title,
+          np.author,
+          np.artworkUrl ?? '',
+          JSON.stringify(np.chapters ?? [])
+        )
+      }
+
+      if (s.seekTo !== null) {
+        Native.seekTo(s.seekTo)
+        clearSeek()
+      }
+      if (s.isPlaying !== lastPlaying.current) {
+        lastPlaying.current = s.isPlaying
+        if (s.isPlaying) Native.play()
+        else Native.pause()
+      }
+      if (s.rate !== lastRate.current) {
+        lastRate.current = s.rate
+        Native.setRate(s.rate)
+      }
+      if (s.volume !== lastVolume.current) {
+        lastVolume.current = s.volume
+        Native.setVolume(s.volume)
+      }
     }
-  }, [seekTo])
 
-  if (!nowPlaying) return null
+    sync()
+    return subscribe(sync)
+  }, [])
 
-  return (
-    <Video
-      ref={ref}
-      source={{
-        uri: nowPlaying.url,
-        startPosition: Math.round(nowPlaying.startPosition * 1000),
-        metadata: {
-          title: nowPlaying.title,
-          artist: nowPlaying.author,
-          imageUri: nowPlaying.artworkUrl,
-        },
-      }}
-      paused={!isPlaying}
-      rate={rate}
-      volume={volume}
-      playInBackground
-      playWhenInactive
-      showNotificationControls
-      progressUpdateInterval={1000}
-      // Lock-screen / car transport events route back into the store.
-      onProgress={(e) => {
-        reportPosition(e.currentTime)
-        syncProgress(e.currentTime)
-      }}
-      onPlaybackStateChanged={(e) => setPlaying(e.isPlaying)}
-      style={{ width: 0, height: 0 }}
-    />
-  )
+  // Renders nothing; the audio lives entirely in the native service.
+  return null
 }
 
 // Re-exported so the notification/remote control handlers (registered by the

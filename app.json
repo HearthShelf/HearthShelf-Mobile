@@ -54,7 +54,7 @@
         "react-native-video",
         {
           "enableBackgroundAudio": true,
-          "enableNotificationControls": true
+          "enableNotificationControls": false
         }
       ],
       [

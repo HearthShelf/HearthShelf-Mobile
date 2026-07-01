@@ -21,6 +21,7 @@ const path = require('path')
 
 const PKG = 'com.hearthshelf.mobile'
 const SERVICE = `${PKG}.HearthShelfAutoService`
+const PLAYER_SERVICE = `${PKG}.HearthShelfPlayerService`
 
 function copyKotlin(config) {
   return withDangerousMod(config, [
@@ -36,7 +37,7 @@ function copyKotlin(config) {
         ...PKG.split('.')
       )
       fs.mkdirSync(dest, { recursive: true })
-      for (const f of ['HearthShelfAutoService.kt', 'HearthShelfAutoModule.kt']) {
+      for (const f of ['HearthShelfAutoService.kt', 'HearthShelfAutoModule.kt', 'HearthShelfPlayerService.kt']) {
         fs.copyFileSync(path.join(src, f), path.join(dest, f))
       }
       // The automotive_app_desc declares HearthShelf to Android Auto as MEDIA.
@@ -49,6 +50,18 @@ function copyKotlin(config) {
         path.join(src, 'automotive_app_desc.xml'),
         path.join(resXml, 'automotive_app_desc.xml')
       )
+
+      // Custom media-control vector icons (circular skip / chapter / play /
+      // pause) referenced by the MediaSession command layout.
+      const drawSrc = path.join(src, 'res', 'drawable')
+      const drawDest = path.join(
+        cfg.modRequest.platformProjectRoot,
+        'app', 'src', 'main', 'res', 'drawable'
+      )
+      fs.mkdirSync(drawDest, { recursive: true })
+      for (const f of fs.readdirSync(drawSrc)) {
+        fs.copyFileSync(path.join(drawSrc, f), path.join(drawDest, f))
+      }
       return cfg
     },
   ])
@@ -56,6 +69,18 @@ function copyKotlin(config) {
 
 function addManifestService(config) {
   return withAndroidManifest(config, (cfg) => {
+    // Foreground media-playback permissions for our own MediaSessionService
+    // (self-sufficient - we no longer rely on react-native-video's notification).
+    const manifest = cfg.modResults.manifest
+    manifest['uses-permission'] = manifest['uses-permission'] || []
+    for (const perm of [
+      'android.permission.FOREGROUND_SERVICE',
+      'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
+    ]) {
+      const has = manifest['uses-permission'].find((p) => p.$ && p.$['android:name'] === perm)
+      if (!has) manifest['uses-permission'].push({ $: { 'android:name': perm } })
+    }
+
     const app = AndroidConfig.Manifest.getMainApplicationOrThrow(cfg.modResults)
     app.service = app.service || []
     const already = app.service.find(
@@ -74,6 +99,28 @@ function addManifestService(config) {
               { $: { 'android:name': 'androidx.media3.session.MediaLibraryService' } },
               { $: { 'android:name': 'androidx.media3.session.MediaSessionService' } },
               { $: { 'android:name': 'android.media.browse.MediaBrowserService' } },
+            ],
+          },
+        ],
+      })
+    }
+
+    // The phone media engine: a MediaSessionService that owns the ExoPlayer +
+    // notification (chapter-relative progress + custom skip icons).
+    const hasPlayer = app.service.find(
+      (s) => s.$ && s.$['android:name'] === PLAYER_SERVICE
+    )
+    if (!hasPlayer) {
+      app.service.push({
+        $: {
+          'android:name': PLAYER_SERVICE,
+          'android:exported': 'true',
+          'android:foregroundServiceType': 'mediaPlayback',
+        },
+        'intent-filter': [
+          {
+            action: [
+              { $: { 'android:name': 'androidx.media3.session.MediaSessionService' } },
             ],
           },
         ],
