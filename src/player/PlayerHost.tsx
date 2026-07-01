@@ -43,6 +43,9 @@ export function PlayerHost() {
   const lastPlaying = useRef<boolean | null>(null)
   const lastRate = useRef<number | null>(null)
   const lastVolume = useRef<number | null>(null)
+  // Timestamp (ms) until which onState events are treated as seek transients and
+  // ignored, so a skip doesn't bounce the play/pause intent.
+  const seekingUntil = useRef(0)
 
   // Android 13+ needs runtime POST_NOTIFICATIONS or the media notification never
   // shows. Ask once on mount (no-op below API 33 / on iOS).
@@ -63,11 +66,14 @@ export function PlayerHost() {
         syncProgress(e.position)
       }),
       emitter.addListener('onState', (e: { isPlaying: boolean }) => {
-        // Native is reporting its own engine state (e.g. a transient pause while
-        // it buffers a seek). Sync our "last pushed" marker to it FIRST so the
-        // store update below doesn't make sync() echo this back as a fresh
-        // play()/pause() command - that echo is what caused the play/pause
-        // flicker + audio stutter right after a skip.
+        // Ignore the brief play/pause ExoPlayer emits while it re-buffers a
+        // JS-initiated seek (the native seekToSec preserves playWhenReady, so the
+        // engine keeps playing; this just stops the transient from flipping our
+        // intent and echoing a pause back). Genuine external transport (lock
+        // screen) still comes through once the seek window closes.
+        if (Date.now() < seekingUntil.current) return
+        // Keep our "last pushed" marker in step so the store update below doesn't
+        // make sync() re-issue the very command native just reported.
         lastPlaying.current = e.isPlaying
         setPlaying(e.isPlaying)
         // On pause/stop (incl. the sleep timer stopping playback), flush a final
@@ -117,6 +123,9 @@ export function PlayerHost() {
       if (s.seekTo !== null) {
         Native.seekTo(s.seekTo)
         clearSeek()
+        // Open a window where the onState handler treats native play/pause as a
+        // seek transient and corrects it back to our intent (see above).
+        seekingUntil.current = Date.now() + 1500
       }
       if (s.isPlaying !== lastPlaying.current) {
         lastPlaying.current = s.isPlaying

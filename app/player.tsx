@@ -15,8 +15,10 @@ import {
   useSyncExternalStore,
 } from 'react'
 import { Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native'
+import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Animated, {
   runOnJS,
   useAnimatedStyle,
@@ -253,7 +255,22 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <Screen edges={immersive ? ['top', 'bottom'] : ['top']}>
-      <View style={StyleSheet.absoluteFill}>
+      {/* Blurred artwork fills the whole player as a dim backdrop, then a gradient
+          fades it into the scaffold so the cover, title, and controls stay
+          readable. Falls back to the hue glow when there's no artwork. */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        {nowPlaying.artworkUrl ? (
+          <Image
+            source={{ uri: nowPlaying.artworkUrl }}
+            style={StyleSheet.absoluteFill}
+            blurRadius={40}
+          />
+        ) : null}
+        <LinearGradient
+          colors={['rgba(27,26,24,0.55)', 'rgba(27,26,24,0.82)', colors.scaffold]}
+          locations={[0, 0.55, 1]}
+          style={StyleSheet.absoluteFill}
+        />
         <CoverGlow hue={hue} height={430} />
       </View>
 
@@ -267,6 +284,11 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
             )}
             <View style={{ flex: 1 }} />
             <IconButton name={icons.queue} size={23} onPress={() => queueRef.current?.present()} />
+          </View>
+
+          {/* Thin whole-book progress bar sitting above the numeric strip. */}
+          <View style={styles.bookBarTrack}>
+            <View style={[styles.bookBarFill, { width: `${bookProgress * 100}%` }]} />
           </View>
 
           <View style={styles.wholeBookStrip}>
@@ -507,6 +529,7 @@ function Lightbox({
   onClose: () => void
 }) {
   const { width, height } = useWindowDimensions()
+  const insets = useSafeAreaInsets()
   const scale = useSharedValue(1)
   const savedScale = useSharedValue(1)
   const tx = useSharedValue(0)
@@ -564,7 +587,7 @@ function Lightbox({
         size={24}
         color="#fff"
         onPress={onClose}
-        style={styles.lightboxClose}
+        style={[styles.lightboxClose, { top: insets.top + 12 }]}
       />
       <GestureDetector gesture={gesture}>
         <Animated.View style={[styles.lightboxImgWrap, imgStyle]}>
@@ -793,12 +816,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
   },
+  bookBarTrack: {
+    height: 2,
+    marginHorizontal: spacing.xl,
+    borderRadius: 1,
+    backgroundColor: colors.fillStrong,
+    overflow: 'hidden',
+  },
+  bookBarFill: { height: 2, borderRadius: 1, backgroundColor: colors.accent },
   wholeBookStrip: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.xl,
-    marginTop: 2,
+    marginTop: 6,
   },
   coverArea: {
     flex: 1,
@@ -894,7 +925,6 @@ const styles = StyleSheet.create({
   lightboxImgWrap: { alignItems: 'center', justifyContent: 'center' },
   lightboxClose: {
     position: 'absolute',
-    top: 20,
     right: 20,
     zIndex: 2,
     width: 42,

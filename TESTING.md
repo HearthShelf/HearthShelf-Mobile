@@ -45,7 +45,20 @@ rebuild the APK** - a JS-only reload throws `Cannot find native module
 > handler, and async-storage past what SDK 56 supports, which breaks the native
 > build. "Up to date" for an Expo app = "matches the SDK," and it already does.
 
-## Build the debug APK
+## Quick loop: build + install + launch on the emulator
+
+`scripts/run-emulator.ps1` wraps the whole loop below (x86_64-only build ~= 4x faster
+than all-arch, auto-uninstall on version downgrade, then launch). Pinned to
+`emulator-5554` so a plugged-in phone is never touched.
+
+```powershell
+npm run emulator            # JS-only change
+npm run emulator:native     # native (Kotlin / config-plugin) change - runs prebuild first
+# flags: -Clean (wipe CMake caches for the libworklets.so ninja error), -NoLaunch, -Serial <id>
+./scripts/run-emulator.ps1 -Prebuild -Clean
+```
+
+## Build the debug APK (manual)
 
 ```powershell
 $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"

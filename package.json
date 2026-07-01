@@ -43,6 +43,8 @@
     "start": "expo start --dev-client",
     "android": "expo run:android",
     "ios": "expo run:ios",
+    "emulator": "powershell -ExecutionPolicy Bypass -File scripts/run-emulator.ps1",
+    "emulator:native": "powershell -ExecutionPolicy Bypass -File scripts/run-emulator.ps1 -Prebuild",
     "sync-core": "git submodule update --remote packages/core"
   },
   "private": true

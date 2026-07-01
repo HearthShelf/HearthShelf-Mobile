@@ -200,7 +200,16 @@ class HearthShelfPlayerService : MediaSessionService() {
 
   fun playPlayer() = runOnMain { exo?.playWhenReady = true }
   fun pausePlayer() = runOnMain { exo?.playWhenReady = false }
-  fun seekToSec(sec: Double) = runOnMain { exo?.seekTo((sec * 1000).toLong()) }
+  fun seekToSec(sec: Double) = runOnMain {
+    exo?.let { p ->
+      // Preserve play/pause across the seek. Some seeks (esp. into an unbuffered
+      // region) can otherwise leave playWhenReady flipped, stranding playback
+      // paused after a skip.
+      val wasPlaying = p.playWhenReady
+      p.seekTo((sec * 1000).toLong())
+      p.playWhenReady = wasPlaying
+    }
+  }
   fun setRate(rate: Double) = runOnMain { exo?.setPlaybackSpeed(rate.toFloat()) }
   fun setVolume(volume: Double) = runOnMain { exo?.volume = volume.toFloat() }
   fun stopPlayer() = runOnMain {
