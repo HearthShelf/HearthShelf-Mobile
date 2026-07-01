@@ -11,7 +11,7 @@
  * the web app's Library page already proves out.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { FlatList, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native'
+import { FlatList, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type {
   ABSLibrary,
@@ -43,7 +43,7 @@ import {
   itemTitle,
   searchLibrary,
 } from '@/api/abs'
-import { AppText, Centered, Cover, IconButton, Loading, Screen, Sheet, type SheetRef, icons } from '@/ui/primitives'
+import { AppText, Centered, Cover, IconButton, Loading, Screen, Sheet, type SheetRef, Touchable, icons } from '@/ui/primitives'
 import { BookTile } from '@/ui/BookTile'
 import { AzRail, AZ_RAIL_WIDTH } from '@/ui/AzRail'
 import { colors, radius, spacing } from '@/ui/theme'
@@ -191,7 +191,7 @@ export default function LibraryScreen() {
       {!hasQuery && (
         <View style={styles.viewSelector}>
           {VIEW_MODES.map((v) => (
-            <Pressable
+            <Touchable
               key={v.key}
               onPress={() => setViewMode(v.key)}
               style={[styles.viewChip, viewMode === v.key && styles.viewChipActive]}
@@ -202,7 +202,7 @@ export default function LibraryScreen() {
               >
                 {v.label}
               </AppText>
-            </Pressable>
+            </Touchable>
           ))}
         </View>
       )}
@@ -240,7 +240,7 @@ function LibrarySwitcher({
   const idx = libraries.findIndex((l) => l.id === activeId)
   const active = libraries[idx] ?? libraries[0]
   return (
-    <Pressable
+    <Touchable
       onPress={() => onSelect(libraries[(idx + 1) % libraries.length].id)}
       style={styles.libSwitcher}
     >
@@ -248,7 +248,7 @@ function LibrarySwitcher({
         {active?.name}
       </AppText>
       <IconButton name={icons.chevronRight} size={16} color={colors.textMuted} />
-    </Pressable>
+    </Touchable>
   )
 }
 
@@ -504,10 +504,10 @@ function BooksView({
           {sorted.length} {sorted.length === 1 ? 'title' : 'titles'}
           {filter !== 'all' ? ` · ${filterLabel(filter)}` : ''}
         </AppText>
-        <Pressable style={styles.controlBtn} onPress={() => openSheet('sort')}>
+        <Touchable style={styles.controlBtn} onPress={() => openSheet('sort')}>
           <IconButton name={icons.tune} size={16} color={colors.text} />
           <AppText variant="caption">Filter · Sort · View</AppText>
-        </Pressable>
+        </Touchable>
       </View>
 
       {display === 'grid' ? (
@@ -547,7 +547,7 @@ function BooksView({
       <Sheet ref={sheetRef} title="View options">
         <View style={styles.sheetTabs}>
           {(['display', 'sort', 'filter'] as const).map((t) => (
-            <Pressable
+            <Touchable
               key={t}
               onPress={() => {
                 setOpenGroup(null)
@@ -562,7 +562,7 @@ function BooksView({
               >
                 {t}
               </AppText>
-            </Pressable>
+            </Touchable>
           ))}
         </View>
 
@@ -612,18 +612,18 @@ function BooksView({
               />
             ) : (
               <>
-                <Pressable onPress={() => setFilter('all')} style={styles.sheetRow}>
+                <Touchable onPress={() => setFilter('all')} style={styles.sheetRow}>
                   <AppText variant="body" color={filter === 'all' ? colors.accent : colors.text}>
                     All titles
                   </AppText>
                   {filter === 'all' && <IconButton name={icons.checkCircle} color={colors.accent} />}
-                </Pressable>
+                </Touchable>
                 {CURATED_FILTER_GROUPS.map((gid) => {
                   const group = FILTER_GROUPS.find((g) => g.id === gid)
                   if (!group) return null
                   const activeInGroup = filter.startsWith(`${gid}|`)
                   return (
-                    <Pressable key={gid} onPress={() => setOpenGroup(gid)} style={styles.sheetRow}>
+                    <Touchable key={gid} onPress={() => setOpenGroup(gid)} style={styles.sheetRow}>
                       <AppText variant="body" color={activeInGroup ? colors.accent : colors.text}>
                         {group.label}
                       </AppText>
@@ -635,7 +635,7 @@ function BooksView({
                         )}
                         <IconButton name={icons.chevronRight} color={colors.textMuted} />
                       </View>
-                    </Pressable>
+                    </Touchable>
                   )
                 })}
               </>
@@ -666,7 +666,7 @@ function SegRow<T extends string>({
       </AppText>
       <View style={{ flexDirection: 'row', gap: spacing.sm }}>
         {options.map((o) => (
-          <Pressable
+          <Touchable
             key={o}
             onPress={() => onChange(o)}
             style={[styles.segChoice, value === o && styles.segChoiceActive]}
@@ -678,7 +678,7 @@ function SegRow<T extends string>({
             >
               {o}
             </AppText>
-          </Pressable>
+          </Touchable>
         ))}
       </View>
     </View>
@@ -698,7 +698,7 @@ function SortRow({
   onPress: () => void
 }) {
   return (
-    <Pressable onPress={onPress} style={styles.sheetRow}>
+    <Touchable onPress={onPress} style={styles.sheetRow}>
       <AppText variant="body" color={active ? colors.accent : colors.text}>
         {label}
       </AppText>
@@ -709,7 +709,7 @@ function SortRow({
           color={colors.accent}
         />
       )}
-    </Pressable>
+    </Touchable>
   )
 }
 
@@ -731,12 +731,12 @@ function FilterValues({
   const values = def ? def.values(items) : []
   return (
     <View>
-      <Pressable onPress={onBack} style={styles.filterBack}>
+      <Touchable onPress={onBack} style={styles.filterBack}>
         <IconButton name={icons.back} size={18} color={colors.textMuted} />
         <AppText variant="label" color={colors.textMuted}>
           {def?.label ?? 'Filter'}
         </AppText>
-      </Pressable>
+      </Touchable>
       {values.length === 0 ? (
         <AppText variant="meta" color={colors.textMuted} style={{ paddingVertical: spacing.md }}>
           Nothing to filter by here.
@@ -746,12 +746,12 @@ function FilterValues({
           const f = `${group}|${v}`
           const active = current === f
           return (
-            <Pressable key={v} onPress={() => onPick(f)} style={styles.sheetRow}>
+            <Touchable key={v} onPress={() => onPick(f)} style={styles.sheetRow}>
               <AppText variant="body" color={active ? colors.accent : colors.text} numberOfLines={1}>
                 {v}
               </AppText>
               {active && <IconButton name={icons.checkCircle} color={colors.accent} />}
-            </Pressable>
+            </Touchable>
           )
         })
       )}
@@ -762,7 +762,7 @@ function FilterValues({
 function BookListRow({ item }: { item: ABSLibraryItem }) {
   const router = useRouter()
   return (
-    <Pressable style={styles.listRow} onPress={() => router.push(`/item/${item.id}`)}>
+    <Touchable style={styles.listRow} onPress={() => router.push(`/item/${item.id}`)}>
       <Cover
         uri={coverUrl(item.id)}
         size={46}
@@ -778,7 +778,7 @@ function BookListRow({ item }: { item: ABSLibraryItem }) {
         </AppText>
       </View>
       <IconButton name={icons.chevronRight} color={colors.textMuted} />
-    </Pressable>
+    </Touchable>
   )
 }
 
@@ -848,7 +848,7 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
       keyExtractor={(g) => g.key}
       contentContainerStyle={{ padding: spacing.md, paddingBottom: 140 }}
       renderItem={({ item }) => (
-        <Pressable
+        <Touchable
           style={styles.groupRow}
           onPress={() =>
             router.push(
@@ -876,7 +876,7 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
             </AppText>
           </View>
           <IconButton name={icons.chevronRight} color={colors.textMuted} />
-        </Pressable>
+        </Touchable>
       )}
     />
   )

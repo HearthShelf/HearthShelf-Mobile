@@ -47,6 +47,7 @@ import {
   Screen,
   Sheet,
   type SheetRef,
+  Touchable,
   icons,
 } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
@@ -579,13 +580,13 @@ const MoreSheet = forwardRef<
     <Sheet ref={sheetRef} title="Player">
       <View>
         {rows.map((r) => (
-          <Pressable key={r.label} style={moreStyles.row} onPress={r.onPress}>
+          <Touchable key={r.label} style={moreStyles.row} onPress={r.onPress}>
             <Icon name={r.icon} size={22} color={colors.accent} />
             <AppText variant="label" style={{ flex: 1 }}>
               {r.label}
             </AppText>
             <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />
-          </Pressable>
+          </Touchable>
         ))}
       </View>
     </Sheet>
@@ -661,7 +662,7 @@ const RecentSheet = forwardRef<
             const startCh = chapterAt(s.startTime)
             const endCh = chapterAt(s.currentTime)
             return (
-              <Pressable
+              <Touchable
                 key={s.id}
                 style={recentStyles.row}
                 onPress={() => {
@@ -691,7 +692,7 @@ const RecentSheet = forwardRef<
                   )}
                 </View>
                 <Icon name={icons.play} size={20} color={colors.textMuted} />
-              </Pressable>
+              </Touchable>
             )
           })}
         </View>

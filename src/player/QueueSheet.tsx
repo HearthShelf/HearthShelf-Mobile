@@ -22,7 +22,7 @@ import {
 import { getSettingsState, setQueueMode, subscribeSettings, toggleAutoRule } from '@/store/settings'
 import { getState, subscribe } from './store'
 import { coverUrl } from '@/api/abs'
-import { AppText, Cover, IconButton, Sheet, type SheetRef } from '@/ui/primitives'
+import { AppText, Cover, IconButton, Sheet, type SheetRef, Touchable } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
 import { colors, radius, spacing } from '@/ui/theme'
 import type { SheetHandle } from './sheets'
@@ -50,7 +50,7 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
         <Sheet ref={sheetRef} title="Up next" kicker="On the hearth" snapPoints={['80%']}>
           <View style={styles.segFull}>
             {MODES.map((m) => (
-              <Pressable
+              <Touchable
                 key={m.v}
                 style={[styles.seg, settings.queueMode === m.v && styles.segOn]}
                 onPress={() => setQueueMode(m.v)}
@@ -58,7 +58,7 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
                 <AppText variant="label" color={settings.queueMode === m.v ? colors.text : colors.textMuted}>
                   {m.label}
                 </AppText>
-              </Pressable>
+              </Touchable>
             ))}
           </View>
 
@@ -67,10 +67,10 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
               {MODE_SUB[settings.queueMode]}
             </AppText>
             {settings.queueMode === 'auto' && (
-              <Pressable style={styles.rulesBtn} onPress={() => rulesRef.current?.present()}>
+              <Touchable style={styles.rulesBtn} onPress={() => rulesRef.current?.present()}>
                 <Icon name={icons.tune} size={15} color={colors.text} />
                 <AppText variant="caption">Auto rules</AppText>
-              </Pressable>
+              </Touchable>
             )}
           </View>
 
@@ -140,7 +140,7 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
             {settings.queueAutoRules.map((r) => {
               const copy = RULE_COPY[r.id]
               return (
-                <Pressable key={r.id} style={styles.row} onPress={() => toggleAutoRule(r.id)}>
+                <Touchable key={r.id} style={styles.row} onPress={() => toggleAutoRule(r.id)}>
                   <View style={{ flex: 1 }}>
                     <AppText variant="label">{copy.label}</AppText>
                     <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 3 }}>
@@ -150,7 +150,7 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
                   <View style={[styles.toggleTrack, r.on && styles.toggleTrackOn]}>
                     <View style={[styles.toggleKnob, r.on && styles.toggleKnobOn]} />
                   </View>
-                </Pressable>
+                </Touchable>
               )
             })}
             <View style={styles.hintRow}>
@@ -189,7 +189,7 @@ function QueueRow({
       ) : (
         <View style={{ width: 20 }} />
       )}
-      <Pressable style={styles.rowTap} onPress={onJump}>
+      <Touchable style={styles.rowTap} onPress={onJump}>
         <Cover
           uri={coverUrl(item.libraryItemId)}
           size={46}
@@ -204,7 +204,7 @@ function QueueRow({
             {item.author}
           </AppText>
         </View>
-      </Pressable>
+      </Touchable>
       <IconButton name={icons.close} size={20} color={colors.textMuted} onPress={onRemove} />
     </View>
   )

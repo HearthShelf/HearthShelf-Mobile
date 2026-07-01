@@ -159,7 +159,8 @@ export function Seg<T extends string>({
           <Pressable
             key={o.value}
             onPress={() => onChange(o.value)}
-            style={[styles.segItem, on && styles.segItemOn]}
+            android_ripple={{ color: colors.fillStrong }}
+            style={({ pressed }) => [styles.segItem, on && styles.segItemOn, pressed && styles.pressed]}
           >
             <AppText variant="caption" color={on ? colors.onAccent : colors.textMuted} style={on && styles.segTextOn}>
               {o.label}
@@ -175,7 +176,11 @@ export function Seg<T extends string>({
 
 export function SettingsToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
-    <Pressable onPress={() => onChange(!on)} style={[styles.toggleTrack, on && styles.toggleTrackOn]}>
+    <Pressable
+      onPress={() => onChange(!on)}
+      hitSlop={8}
+      style={({ pressed }) => [styles.toggleTrack, on && styles.toggleTrackOn, pressed && styles.pressed]}
+    >
       <View style={[styles.toggleKnob, on && styles.toggleKnobOn]} />
     </Pressable>
   )
@@ -243,7 +248,12 @@ export function ChipRow<T extends number>({
       {options.map((o) => {
         const on = o === value
         return (
-          <Pressable key={o} onPress={() => onChange(o)} style={[styles.chip, on && styles.chipOn]}>
+          <Pressable
+            key={o}
+            onPress={() => onChange(o)}
+            android_ripple={{ color: colors.fillStrong }}
+            style={({ pressed }) => [styles.chip, on && styles.chipOn, pressed && styles.pressed]}
+          >
             <AppText variant="label" color={on ? colors.onAccent : colors.text}>
               {o}
               {unit}

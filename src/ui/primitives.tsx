@@ -111,6 +111,43 @@ export function Row({
   )
 }
 
+// ---- Touchable ----
+
+/**
+ * A Pressable with built-in press feedback so every tap is acknowledged
+ * immediately: an Android ripple plus a pressed opacity/scale dim (also covers
+ * iOS, where there's no ripple). Use this instead of a bare <Pressable> for any
+ * tappable surface - chips, rows, list items, tray options - so a tap never feels
+ * unregistered while the action catches up.
+ */
+export function Touchable({
+  children,
+  onPress,
+  disabled,
+  style,
+  hitSlop,
+  rippleColor = colors.fillStrong,
+}: {
+  children: React.ReactNode
+  onPress?: () => void
+  disabled?: boolean
+  style?: StyleProp<ViewStyle>
+  hitSlop?: number
+  rippleColor?: string
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      hitSlop={hitSlop}
+      android_ripple={{ color: rippleColor }}
+      style={({ pressed }) => [style, pressed && styles.touchablePressed, disabled && styles.touchableDisabled]}
+    >
+      {children}
+    </Pressable>
+  )
+}
+
 // ---- Chip / Pill ----
 
 export function Chip({
@@ -389,6 +426,8 @@ const styles = StyleSheet.create({
     borderColor: colors.hairline,
   },
   pressed: { opacity: 0.6 },
+  touchablePressed: { opacity: 0.55 },
+  touchableDisabled: { opacity: 0.4 },
   chip: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,

@@ -6,7 +6,7 @@
  * design-system mock, which never got past a bare tap-to-cycle speed control.
  */
 import { forwardRef, useImperativeHandle, useRef, useState, useSyncExternalStore } from 'react'
-import { Pressable, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native'
+import { StyleSheet, TextInput, View, useWindowDimensions } from 'react-native'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import Slider from '@react-native-community/slider'
 import { formatTimestamp } from '@hearthshelf/core'
@@ -22,7 +22,7 @@ import {
   addSleepMinutes,
   type ChapterMark,
 } from './store'
-import { AppText, Sheet, type SheetRef } from '@/ui/primitives'
+import { AppText, Sheet, type SheetRef, Touchable } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
 import { colors, radius, spacing } from '@/ui/theme'
 
@@ -57,7 +57,7 @@ export const ChaptersSheet = forwardRef<SheetHandle>(function ChaptersSheet(_pro
           // active chapter", which broke when nothing was active).
           const isDone = !isActive && position >= c.end
           return (
-            <Pressable
+            <Touchable
               key={`${c.start}-${i}`}
               style={styles.row}
               onPress={() => {
@@ -85,7 +85,7 @@ export const ChaptersSheet = forwardRef<SheetHandle>(function ChaptersSheet(_pro
               <AppText variant="caption" color={colors.textMuted}>
                 {formatTimestamp(c.end - c.start)}
               </AppText>
-            </Pressable>
+            </Touchable>
           )
         })}
       </BottomSheetScrollView>
@@ -132,7 +132,7 @@ export const SpeedSheet = forwardRef<SheetHandle>(function SpeedSheet(_props, re
         {SPEED_PRESETS.map((s) => {
           const on = Math.abs(s - rate) < 0.001
           return (
-            <Pressable
+            <Touchable
               key={s}
               style={[styles.speed, on && styles.speedOn]}
               onPress={() => setRate(s)}
@@ -140,7 +140,7 @@ export const SpeedSheet = forwardRef<SheetHandle>(function SpeedSheet(_props, re
               <AppText variant="label" color={on ? colors.onAccent : colors.text}>
                 {s}×
               </AppText>
-            </Pressable>
+            </Touchable>
           )
         })}
       </View>
@@ -240,7 +240,7 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
       >
         <View style={styles.segFull}>
           {(['duration', 'chapter', 'time'] as SleepTab[]).map((t) => (
-            <Pressable
+            <Touchable
               key={t}
               style={[styles.seg, tab === t && styles.segOn]}
               onPress={() => setTab(t)}
@@ -252,7 +252,7 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
               >
                 {t}
               </AppText>
-            </Pressable>
+            </Touchable>
           ))}
         </View>
 
@@ -263,7 +263,7 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
               // would drift the highlight off the chosen preset).
               const on = sleepTimer?.kind === 'duration' && sleepTimer.totalSec === m * 60
               return (
-                <Pressable
+                <Touchable
                   key={m}
                   style={[styles.speed, on && styles.speedOn]}
                   onPress={() => pickDuration(m)}
@@ -271,7 +271,7 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
                   <AppText variant="label" color={on ? colors.onAccent : colors.text}>
                     {m}m
                   </AppText>
-                </Pressable>
+                </Touchable>
               )
             })}
           </View>
@@ -286,7 +286,7 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
               <View style={{ flexDirection: 'row', gap: spacing.sm }}>
                 {chapters.map((c, i) =>
                   i >= curIdx ? (
-                    <Pressable
+                    <Touchable
                       key={i}
                       style={[styles.chapterChip, targetIdx === i && styles.speedOn]}
                       onPress={() => pickChapter(i, targetAt)}
@@ -298,24 +298,24 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
                       >
                         {c.title}
                       </AppText>
-                    </Pressable>
+                    </Touchable>
                   ) : null
                 )}
               </View>
             </BottomSheetScrollView>
             <View style={styles.segFull}>
-              <Pressable
+              <Touchable
                 style={[styles.seg, sleepTimer?.kind === 'endOfChapter' && targetAt === 'start' && styles.segOn]}
                 onPress={() => pickChapter(targetIdx, 'start')}
               >
                 <AppText variant="label">Chapter start</AppText>
-              </Pressable>
-              <Pressable
+              </Touchable>
+              <Touchable
                 style={[styles.seg, sleepTimer?.kind === 'endOfChapter' && targetAt === 'end' && styles.segOn]}
                 onPress={() => pickChapter(targetIdx, 'end')}
               >
                 <AppText variant="label">Chapter end</AppText>
-              </Pressable>
+              </Touchable>
             </View>
           </View>
         )}
@@ -365,7 +365,7 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
           thumbTintColor={colors.accent}
         />
         {sleepBehavior.rewindSec > 0 && (
-          <Pressable
+          <Touchable
             style={[styles.row, { paddingLeft: spacing.md }]}
             onPress={() => setSleepBehavior({ chapterBarrier: !sleepBehavior.chapterBarrier })}
           >
@@ -376,10 +376,10 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
               </AppText>
             </View>
             <Toggle on={sleepBehavior.chapterBarrier} />
-          </Pressable>
+          </Touchable>
         )}
 
-        <Pressable
+        <Touchable
           style={[styles.row, { marginTop: spacing.sm }]}
           onPress={() => setSleepBehavior({ fade: !sleepBehavior.fade })}
         >
@@ -390,7 +390,7 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
             </AppText>
           </View>
           <Toggle on={sleepBehavior.fade} />
-        </Pressable>
+        </Touchable>
         {sleepBehavior.fade && (
           <View style={[styles.row, { gap: spacing.sm }]}>
             <Icon name={icons.schedule} size={18} color={colors.textMuted} />
@@ -423,13 +423,13 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
                 ) : null}
               </AppText>
               {sleeping && (
-                <Pressable style={styles.ghostBtn} onPress={() => addSleepMinutes(5)}>
+                <Touchable style={styles.ghostBtn} onPress={() => addSleepMinutes(5)}>
                   <Icon name={icons.add} size={16} color={colors.text} />
                   <AppText variant="caption">5 min</AppText>
-                </Pressable>
+                </Touchable>
               )}
             </View>
-            <Pressable
+            <Touchable
               style={styles.cancelSleep}
               onPress={() => {
                 cancelSleepTimer()
@@ -440,7 +440,7 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
               <AppText variant="label" color={colors.onAccent}>
                 Cancel sleep timer
               </AppText>
-            </Pressable>
+            </Touchable>
           </>
         )}
       </BottomSheetScrollView>

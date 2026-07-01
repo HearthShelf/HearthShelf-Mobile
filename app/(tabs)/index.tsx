@@ -40,6 +40,7 @@ import {
   Row,
   Screen,
   SectionHeader,
+  Touchable,
   icons,
 } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
@@ -349,7 +350,7 @@ function ContinueHero({
       <View style={styles.heroContent}>
         <View style={styles.heroGreeting}>{greeting}</View>
         <View style={styles.heroTop}>
-          <Pressable onPress={() => router.push(`/item/${item.id}`)}>
+          <Touchable onPress={() => router.push(`/item/${item.id}`)}>
             <Cover
               uri={coverUrl(item.id)}
               width={92}
@@ -357,7 +358,7 @@ function ContinueHero({
               radius={radius.tile}
               fallback={{ hue: coverHue(item.id), initial: itemTitle(item).charAt(0).toUpperCase() }}
             />
-          </Pressable>
+          </Touchable>
           <View style={styles.heroMeta}>
             <AppText variant="eyebrow" color={colors.accent}>
               {started ? 'Continue' : 'Up next'}
@@ -398,7 +399,7 @@ function ContinueHero({
 function HomeStatsStrip({ stats }: { stats: HSListeningStats }) {
   const router = useRouter()
   return (
-    <Pressable onPress={() => router.push('/(tabs)/stats')} style={styles.statsStrip}>
+    <Touchable onPress={() => router.push('/(tabs)/stats')} style={styles.statsStrip}>
       <View style={styles.statsTile}>
         <Icon name={icons.flame} size={21} color={colors.brandHearth} />
         <View>
@@ -421,7 +422,7 @@ function HomeStatsStrip({ stats }: { stats: HSListeningStats }) {
           </AppText>
         </View>
       </View>
-    </Pressable>
+    </Touchable>
   )
 }
 
@@ -452,7 +453,7 @@ function Shelf({ shelf }: { shelf: ABSShelf }) {
       <SectionHeader
         title={shelf.label}
         action={
-          <Pressable
+          <Touchable
             onPress={() => router.push(href)}
             hitSlop={8}
             style={styles.seeAll}
@@ -461,7 +462,7 @@ function Shelf({ shelf }: { shelf: ABSShelf }) {
               See all
             </AppText>
             <Icon name={icons.chevronRight} size={16} color={colors.textMuted} />
-          </Pressable>
+          </Touchable>
         }
       />
       <FlatList
@@ -471,7 +472,7 @@ function Shelf({ shelf }: { shelf: ABSShelf }) {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.md }}
         renderItem={({ item }) => (
-          <Pressable style={styles.tile} onPress={() => router.push(`/item/${item.id}`)}>
+          <Touchable style={styles.tile} onPress={() => router.push(`/item/${item.id}`)}>
             <Cover uri={coverUrl(item.id)} width={120} aspectRatio={COVER_ASPECT_RATIO[coverAspect]} />
             <AppText variant="meta" numberOfLines={1} style={{ marginTop: spacing.xs }}>
               {itemTitle(item)}
@@ -479,7 +480,7 @@ function Shelf({ shelf }: { shelf: ABSShelf }) {
             <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
               {itemAuthor(item)}
             </AppText>
-          </Pressable>
+          </Touchable>
         )}
       />
     </View>
