@@ -7,6 +7,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
@@ -78,6 +79,13 @@ class HearthShelfAutoService : MediaLibraryService() {
   override fun onCreate() {
     super.onCreate()
     Log.i(TAG, "onCreate: serverUrl=${serverUrl != null}, token=${token != null}")
+
+    // HearthShelf flame as the notification small icon (not Media3's default).
+    val notificationProvider = DefaultMediaNotificationProvider.Builder(this).build().apply {
+      setSmallIcon(resources.getIdentifier("ic_hs_notification", "drawable", packageName))
+    }
+    setMediaNotificationProvider(notificationProvider)
+
     val player = ExoPlayer.Builder(this).build()
     session = MediaLibrarySession.Builder(this, player, LibraryCallback())
       // Rewind | (play/pause is standard) | Forward, with our circular icons.
