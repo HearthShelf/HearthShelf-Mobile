@@ -104,7 +104,10 @@ class HearthShelfPlayerService : MediaSessionService() {
     val sessionActivity = packageManager.getLaunchIntentForPackage(packageName)?.let {
       PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_IMMUTABLE)
     }
+    // A unique session id per service - Media3 requires every session in the
+    // process to have a distinct id, and the phone + Auto services coexist.
     val builder = MediaSession.Builder(this, sessionPlayer)
+      .setId("hearthshelf_phone")
       .setCallback(SessionCallback())
       .setCustomLayout(ImmutableList.of(rewindButton(), forwardButton()))
     if (sessionActivity != null) builder.setSessionActivity(sessionActivity)

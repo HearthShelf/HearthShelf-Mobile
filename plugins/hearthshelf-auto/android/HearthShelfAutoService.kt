@@ -148,8 +148,10 @@ class HearthShelfAutoService : MediaLibraryService() {
     })
 
     // The session (and therefore the car's progress bar) sees chapter-relative
-    // position/duration; the wrapped player keeps absolute book time.
+    // position/duration; the wrapped player keeps absolute book time. A distinct
+    // session id is required - the phone service also runs a session in-process.
     session = MediaLibrarySession.Builder(this, ChapterForwardingPlayer(player), LibraryCallback())
+      .setId("hearthshelf_auto")
       .setCustomLayout(customLayout())
       .build()
 
