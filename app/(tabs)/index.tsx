@@ -40,10 +40,13 @@ import {
   Row,
   Screen,
   SectionHeader,
+  Sheet,
+  type SheetRef,
   Touchable,
   icons,
 } from '@/ui/primitives'
-import { Icon } from '@/ui/icons'
+import { BottomSheetFlatList } from '@gorhom/bottom-sheet'
+import { Icon, type IconName } from '@/ui/icons'
 import { colors, radius, spacing } from '@/ui/theme'
 
 type Status =
@@ -420,38 +423,31 @@ function HomeStatsStrip({ stats }: { stats: HSListeningStats }) {
   )
 }
 
-/**
- * Map a personalized shelf to a Library deep-link. "Recently added" just means
- * the Library sorted by date added; anything else falls back to a genre filter on
- * the shelf label so the "See all" tap always lands somewhere useful.
- */
-function shelfToLibraryHref(shelf: ABSShelf): string {
-  const label = shelf.label.toLowerCase()
-  if (label.includes('recent') || label.includes('added') || label.includes('newest')) {
-    return '/(tabs)/library?sort=Date%20Added&desc=1'
-  }
-  if (label.includes('continue') || label.includes('listen again')) {
-    return '/(tabs)/library?filter=progress|In%20Progress'
-  }
-  // Discover / genre-ish shelves: filter by the shelf's own name as a genre.
-  return `/(tabs)/library?filter=genres|${encodeURIComponent(shelf.label)}`
+
+/** A small leading icon per home section, keyed off its label. */
+function sectionIcon(label: string): IconName {
+  const l = label.toLowerCase()
+  if (l.includes('continue') || l.includes('listen again')) return icons.recent
+  if (l.includes('recent') || l.includes('added') || l.includes('newest')) return icons.add
+  if (l.includes('discover')) return icons.flame
+  if (l.includes('series')) return icons.book
+  return icons.library
 }
 
 function Shelf({ shelf }: { shelf: ABSShelf }) {
   const router = useRouter()
   const { coverAspect } = useSyncExternalStore(subscribeSettings, getSettingsState)
+  const sheetRef = useRef<SheetRef>(null)
   if (shelf.type !== 'book') return null
-  const href = shelfToLibraryHref(shelf)
+  const openAll = () => sheetRef.current?.present()
   return (
     <View style={{ marginTop: spacing.lg }}>
       <SectionHeader
         title={shelf.label}
+        icon={sectionIcon(shelf.label)}
+        onPress={openAll}
         action={
-          <Touchable
-            onPress={() => router.push(href)}
-            hitSlop={8}
-            style={styles.seeAll}
-          >
+          <Touchable onPress={openAll} hitSlop={8} style={styles.seeAll}>
             <AppText variant="caption" color={colors.textMuted}>
               See all
             </AppText>
@@ -477,6 +473,37 @@ function Shelf({ shelf }: { shelf: ABSShelf }) {
           </Touchable>
         )}
       />
+
+      {/* "See all" opens the section's OWN items in a tray (a 3-col grid) rather
+          than a Library-filtered view, which mis-mapped some shelves. */}
+      <Sheet ref={sheetRef} title={shelf.label} snapPoints={['85%']}>
+        <BottomSheetFlatList
+          data={shelf.entities}
+          keyExtractor={(it) => it.id}
+          numColumns={3}
+          columnWrapperStyle={{ gap: spacing.md }}
+          contentContainerStyle={{ gap: spacing.lg, paddingBottom: spacing.xl }}
+          renderItem={({ item }) => (
+            <Touchable
+              style={styles.sheetTile}
+              onPress={() => {
+                sheetRef.current?.dismiss()
+                router.push(`/item/${item.id}`)
+              }}
+            >
+              <Cover
+                uri={coverUrl(item.id)}
+                width={100}
+                aspectRatio={COVER_ASPECT_RATIO[coverAspect]}
+                fallback={{ hue: coverHue(item.id), initial: itemTitle(item).charAt(0).toUpperCase() }}
+              />
+              <AppText variant="caption" numberOfLines={1} style={{ marginTop: spacing.xs }}>
+                {itemTitle(item)}
+              </AppText>
+            </Touchable>
+          )}
+        />
+      </Sheet>
     </View>
   )
 }
@@ -536,6 +563,7 @@ const styles = StyleSheet.create({
   },
   seeAll: { flexDirection: 'row', alignItems: 'center', gap: 1 },
   tile: { width: 120 },
+  sheetTile: { flex: 1, maxWidth: '31%' },
   statsStrip: {
     flexDirection: 'row',
     gap: spacing.sm,

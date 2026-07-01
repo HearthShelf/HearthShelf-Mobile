@@ -65,20 +65,23 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.hairline,
   },
-  // DS tab rhythm: 9/6/7 padding, 4px pill->label gap.
+  // DS: each tab has vertical padding so the pill has room and its rounded ends
+  // aren't clipped by the bar's top border; 4px pill->label gap.
   tab: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    paddingTop: 9,
+    paddingVertical: 5,
   },
   tabPressed: { opacity: 0.6 },
-  // Ember-wash rounded pill behind the active icon (accent @ ~22%).
+  // Ember-wash rounded pill behind the active icon (accent @ ~22%). DS: 60x30,
+  // fully rounded; overflow:hidden so the corners clip cleanly.
   pill: {
-    width: 58,
-    height: 32,
+    width: 60,
+    height: 30,
     borderRadius: radius.pill,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
   },

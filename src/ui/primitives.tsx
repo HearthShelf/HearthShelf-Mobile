@@ -227,10 +227,37 @@ export function PrimaryButton({
 
 // ---- SectionHeader ----
 
-export function SectionHeader({ title, action }: { title: string; action?: React.ReactNode }) {
+export function SectionHeader({
+  title,
+  icon,
+  action,
+  onPress,
+}: {
+  title: string
+  icon?: IconName
+  action?: React.ReactNode
+  /** When set, the whole title area (icon + text) is tappable. */
+  onPress?: () => void
+}) {
+  const titleRow = (
+    <View style={styles.sectionTitleRow}>
+      {icon ? <Icon name={icon} size={20} color={colors.accent} /> : null}
+      <AppText variant="title">{title}</AppText>
+    </View>
+  )
   return (
     <View style={styles.sectionHeader}>
-      <AppText variant="title">{title}</AppText>
+      {onPress ? (
+        <Pressable
+          onPress={onPress}
+          hitSlop={8}
+          style={({ pressed }) => [styles.sectionTitleTap, pressed && styles.pressed]}
+        >
+          {titleRow}
+        </Pressable>
+      ) : (
+        titleRow
+      )}
       {action}
     </View>
   )
@@ -460,6 +487,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.md,
   },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  sectionTitleTap: { flexDirection: 'row', alignItems: 'center' },
   cover: { backgroundColor: colors.highest },
   sheetBody: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl },
   sheetHeader: { gap: 2, marginBottom: spacing.md },
