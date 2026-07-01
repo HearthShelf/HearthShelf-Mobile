@@ -44,7 +44,7 @@ function useSheetHandle(ref: React.Ref<SheetHandle>) {
 
 export const ChaptersSheet = forwardRef<SheetHandle>(function ChaptersSheet(_props, ref) {
   const sheetRef = useSheetHandle(ref)
-  const { nowPlaying } = useSyncExternalStore(subscribe, getState)
+  const { nowPlaying, position } = useSyncExternalStore(subscribe, getState)
   const active = currentChapter()
   const chapters = nowPlaying?.chapters ?? []
 
@@ -53,6 +53,9 @@ export const ChaptersSheet = forwardRef<SheetHandle>(function ChaptersSheet(_pro
       <BottomSheetScrollView>
         {chapters.map((c: ChapterMark, i: number) => {
           const isActive = active === c
+          // Completed once we've listened past its end (not merely "before the
+          // active chapter", which broke when nothing was active).
+          const isDone = !isActive && position >= c.end
           return (
             <Pressable
               key={`${c.start}-${i}`}
@@ -64,8 +67,8 @@ export const ChaptersSheet = forwardRef<SheetHandle>(function ChaptersSheet(_pro
             >
               {isActive ? (
                 <Icon name={icons.nowPlaying} size={18} color={colors.accent} />
-              ) : i < (chapters.findIndex((c2) => c2 === active) ?? -1) ? (
-                <Icon name={icons.check} size={16} color={colors.textFaint} />
+              ) : isDone ? (
+                <Icon name={icons.checkCircle} size={18} color={colors.success} />
               ) : (
                 <AppText variant="caption" color={colors.textFaint} style={{ width: 18, textAlign: 'center' }}>
                   {i + 1}
@@ -168,29 +171,50 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
   const [clockInput, setClockInput] = useState('')
 
   const chapters = nowPlaying?.chapters ?? []
-  const curIdx = Math.max(
-    0,
-    chapters.findIndex((c) => position >= c.start && position < c.end)
-  )
+  // Current chapter; when scrubbed past the last boundary, clamp to the last
+  // chapter (not 0, which would offer already-finished chapters as targets).
+  const foundIdx = chapters.findIndex((c) => position >= c.start && position < c.end)
+  const curIdx = foundIdx >= 0 ? foundIdx : Math.max(0, chapters.length - 1)
   const targetIdx = sleepTimer?.kind === 'endOfChapter' ? sleepTimer.chapterIndex : curIdx
   const targetAt = sleepTimer?.kind === 'endOfChapter' ? sleepTimer.at : 'end'
 
   const active = sleepTimer !== null
   const sleeping = sleepTimer?.kind === 'duration' || sleepTimer?.kind === 'clock'
+
+  // Seconds until an end-of-chapter timer fires (its boundary minus where we are).
+  const eocSecondsLeft = (() => {
+    if (sleepTimer?.kind !== 'endOfChapter') return null
+    const target = chapters[sleepTimer.chapterIndex]
+    if (!target) return null
+    const boundary = sleepTimer.at === 'start' ? target.start : target.end
+    return Math.max(0, Math.round(boundary - position))
+  })()
+
+  const clockLabel = (ms: number) =>
+    new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+
+  // "Stops at <clock time>" for every kind - end-of-chapter now resolves to a
+  // real wall-clock time instead of the opaque "EOC" / "ch N end".
   const endsAtLabel =
     sleepTimer?.kind === 'clock'
-      ? new Date(sleepTimer.atMs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+      ? clockLabel(sleepTimer.atMs)
       : sleepTimer?.kind === 'endOfChapter'
-        ? `ch ${sleepTimer.chapterIndex + 1} ${sleepTimer.at}`
+        ? eocSecondsLeft != null
+          ? clockLabel(Date.now() + eocSecondsLeft * 1000)
+          : `ch ${sleepTimer.chapterIndex + 1} ${sleepTimer.at}`
         : sleeping
-          ? new Date(Date.now() + (sleepTimer?.remainingSec ?? 0) * 1000).toLocaleTimeString([], {
-              hour: 'numeric',
-              minute: '2-digit',
-            })
+          ? clockLabel(Date.now() + (sleepTimer?.remainingSec ?? 0) * 1000)
           : ''
+  // Remaining countdown shown next to it, for any active timer.
+  const remainingLabel =
+    sleepTimer?.kind === 'duration' || sleepTimer?.kind === 'clock'
+      ? formatTimestamp(sleepTimer.remainingSec)
+      : eocSecondsLeft != null
+        ? formatTimestamp(eocSecondsLeft)
+        : null
 
   const pickDuration = (mins: number) => {
-    setSleepTimer({ kind: 'duration', remainingSec: mins * 60 })
+    setSleepTimer({ kind: 'duration', remainingSec: mins * 60, totalSec: mins * 60 })
   }
   const pickChapter = (idx: number, at: 'start' | 'end') => {
     setSleepTimer({ kind: 'endOfChapter', chapterIndex: idx, at })
@@ -204,7 +228,7 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
     target.setHours(h, m, 0, 0)
     if (target.getTime() <= now.getTime()) target.setDate(target.getDate() + 1)
     const remainingSec = Math.round((target.getTime() - now.getTime()) / 1000)
-    setSleepTimer({ kind: 'clock', remainingSec, atMs: target.getTime() })
+    setSleepTimer({ kind: 'clock', remainingSec, totalSec: remainingSec, atMs: target.getTime() })
   }
 
   return (
@@ -231,7 +255,9 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
         {tab === 'duration' && (
           <View style={styles.grid}>
             {SLEEP_DURATIONS.map((m) => {
-              const on = sleeping && sleepTimer?.kind === 'duration' && Math.abs(sleepTimer.remainingSec - m * 60) < 30
+              // Match on the picked total, not remainingSec (which ticks down and
+              // would drift the highlight off the chosen preset).
+              const on = sleepTimer?.kind === 'duration' && sleepTimer.totalSec === m * 60
               return (
                 <Pressable
                   key={m}
@@ -384,36 +410,33 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
         {active && (
           <>
             <View style={styles.divider} />
-            <View style={styles.row}>
-              <Icon name={icons.schedule} size={17} color={colors.textMuted} />
+            <View style={[styles.row, { borderBottomWidth: 0 }]}>
+              <Icon name={icons.schedule} size={17} color={colors.accent} />
               <AppText variant="meta" style={{ flex: 1, marginLeft: spacing.sm }}>
                 Stops at <AppText variant="meta" color={colors.text}>{endsAtLabel}</AppText>
-                {sleepTimer && (sleepTimer.kind === 'duration' || sleepTimer.kind === 'clock') ? (
-                  <AppText variant="meta" color={colors.textMuted}>
-                    {' '}
-                    · in {formatTimestamp(sleepTimer.remainingSec)}
-                  </AppText>
+                {remainingLabel ? (
+                  <AppText variant="meta" color={colors.textMuted}> · in {remainingLabel}</AppText>
                 ) : null}
               </AppText>
-            </View>
-            <View style={[styles.row, { justifyContent: 'flex-end', gap: spacing.sm }]}>
               {sleeping && (
                 <Pressable style={styles.ghostBtn} onPress={() => addSleepMinutes(5)}>
-                  <Icon name={icons.checkCircle} size={16} color={colors.text} />
+                  <Icon name={icons.add} size={16} color={colors.text} />
                   <AppText variant="caption">5 min</AppText>
                 </Pressable>
               )}
-              <Pressable
-                style={styles.ghostBtn}
-                onPress={() => {
-                  cancelSleepTimer()
-                  sheetRef.current?.dismiss()
-                }}
-              >
-                <Icon name={icons.close} size={16} color={colors.text} />
-                <AppText variant="caption">Cancel</AppText>
-              </Pressable>
             </View>
+            <Pressable
+              style={styles.cancelSleep}
+              onPress={() => {
+                cancelSleepTimer()
+                sheetRef.current?.dismiss()
+              }}
+            >
+              <Icon name={icons.close} size={18} color={colors.onAccent} />
+              <AppText variant="label" color={colors.onAccent}>
+                Cancel sleep timer
+              </AppText>
+            </Pressable>
           </>
         )}
       </BottomSheetScrollView>
@@ -485,6 +508,17 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderRadius: radius.pill,
     backgroundColor: colors.fill,
+  },
+  // Full-width destructive-ish cancel across the bottom when a timer is running.
+  cancelSleep: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+    paddingVertical: spacing.md + 2,
+    borderRadius: radius.card,
+    backgroundColor: colors.accent,
   },
   toggleTrack: {
     width: 46,

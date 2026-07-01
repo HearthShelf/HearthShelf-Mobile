@@ -48,8 +48,8 @@ export interface NowPlaying {
  */
 export type SleepTimer =
   | null
-  | { kind: 'duration'; remainingSec: number }
-  | { kind: 'clock'; remainingSec: number; atMs: number }
+  | { kind: 'duration'; remainingSec: number; totalSec: number }
+  | { kind: 'clock'; remainingSec: number; totalSec: number; atMs: number }
   | { kind: 'endOfChapter'; chapterIndex: number; at: 'start' | 'end' }
 
 /** How a sleep timer behaves once it fires. Mirrors the WebApp's settings store
@@ -195,11 +195,19 @@ export function setSleepBehavior(patch: Partial<SleepBehavior>): void {
   set({ sleepBehavior: { ...state.sleepBehavior, ...patch } })
 }
 
-/** Add minutes to a live duration/clock countdown ("+5 min" while sleeping). */
+/** Add minutes to a live duration/clock countdown ("+5 min" while sleeping).
+ *  Grows totalSec too so the depletion ratio stays <= 1. */
 export function addSleepMinutes(mins: number): void {
   const timer = state.sleepTimer
   if (!timer || timer.kind === 'endOfChapter') return
-  set({ sleepTimer: { ...timer, remainingSec: timer.remainingSec + mins * 60 } })
+  const add = mins * 60
+  set({
+    sleepTimer: {
+      ...timer,
+      remainingSec: timer.remainingSec + add,
+      totalSec: Math.max(timer.totalSec, timer.remainingSec + add),
+    },
+  })
 }
 
 /**

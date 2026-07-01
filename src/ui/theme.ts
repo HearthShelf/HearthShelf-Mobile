@@ -59,6 +59,8 @@ export const colors = {
   scrim: 'rgba(0,0,0,0.55)',
 
   destructive: '#e0654a',
+  // Warm sage green (WebApp --chart-3) for finished/completed affordances.
+  success: '#7fa86b',
 } as const
 
 export const radius = {
