@@ -582,7 +582,7 @@ function BooksView({
           onProgressChanged={refreshProgress}
         />
       ) : (
-        <View style={styles.controlsRow}>
+        <View style={[styles.controlsRow, showAzRail && { paddingRight: 30 }]}>
           <AppText variant="caption" color={colors.textMuted}>
             {sorted.length} {sorted.length === 1 ? 'title' : 'titles'}
           </AppText>
@@ -944,15 +944,42 @@ interface GroupRow {
   key: string
   name: string
   sub: string
+  /** Number of books/titles in the group; drives the "# of books" sort. */
+  count: number
   covers: ABSLibraryItem[]
   /** Single avatar image (authors/narrators); series use stacked covers instead. */
   avatarUri?: string
 }
 
+type GroupSort = 'name' | 'count'
+
 function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) {
   const router = useRouter()
   const [groups, setGroups] = useState<GroupRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Sort name-ascending by default; tapping the active sort flips its direction.
+  const [sort, setSort] = useState<GroupSort>('name')
+  const [desc, setDesc] = useState(false)
+
+  const toggleSort = (next: GroupSort) => {
+    if (next === sort) {
+      setDesc((d) => !d)
+    } else {
+      setSort(next)
+      // Counts read most naturally high-to-low; names low-to-high.
+      setDesc(next === 'count')
+    }
+  }
+
+  const sorted = useMemo(() => {
+    if (!groups) return groups
+    const rows = [...groups]
+    rows.sort((a, b) =>
+      sort === 'count' ? a.count - b.count : a.name.localeCompare(b.name),
+    )
+    if (desc) rows.reverse()
+    return rows
+  }, [groups, sort, desc])
 
   useEffect(() => {
     let cancelled = false
@@ -991,8 +1018,8 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
       </Centered>
     )
   }
-  if (!groups) return <Loading />
-  if (groups.length === 0) {
+  if (!sorted) return <Loading />
+  if (sorted.length === 0) {
     return (
       <Centered>
         <AppText variant="meta" color={colors.textMuted}>
@@ -1002,11 +1029,33 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
     )
   }
 
+  const countLabel = mode === 'series' ? 'Books' : 'Titles'
+
   return (
-    <FlatList
-      data={groups}
-      keyExtractor={(g) => g.key}
-      contentContainerStyle={{ padding: spacing.md, paddingBottom: 140 }}
+    <>
+      <View style={styles.controlsRow}>
+        <AppText variant="caption" color={colors.textMuted}>
+          {sorted.length} {mode === 'series' ? 'series' : mode}
+        </AppText>
+        <View style={styles.groupSorts}>
+          <GroupSortBtn
+            label="Name"
+            active={sort === 'name'}
+            desc={desc}
+            onPress={() => toggleSort('name')}
+          />
+          <GroupSortBtn
+            label={countLabel}
+            active={sort === 'count'}
+            desc={desc}
+            onPress={() => toggleSort('count')}
+          />
+        </View>
+      </View>
+      <FlatList
+        data={sorted}
+        keyExtractor={(g) => g.key}
+        contentContainerStyle={{ padding: spacing.md, paddingBottom: 140 }}
       renderItem={({ item }) => (
         <Touchable
           style={styles.groupRow}
@@ -1049,7 +1098,34 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
           <IconButton name={icons.chevronRight} color={colors.textMuted} />
         </Touchable>
       )}
-    />
+      />
+    </>
+  )
+}
+
+function GroupSortBtn({
+  label,
+  active,
+  desc,
+  onPress,
+}: {
+  label: string
+  active: boolean
+  desc: boolean
+  onPress: () => void
+}) {
+  return (
+    <Touchable
+      style={[styles.groupSortBtn, active && styles.groupSortBtnActive]}
+      onPress={onPress}
+    >
+      <AppText variant="caption" color={active ? colors.text : colors.textMuted}>
+        {label}
+      </AppText>
+      {active && (
+        <Icon name={desc ? icons.collapse : icons.expand} size={16} color={colors.text} />
+      )}
+    </Touchable>
   )
 }
 
@@ -1059,6 +1135,7 @@ function seriesToRow(s: ABSSeries): GroupRow {
     key: s.id,
     name: s.name,
     sub: `${count} ${count === 1 ? 'book' : 'books'}`,
+    count,
     covers: s.books,
   }
 }
@@ -1068,6 +1145,7 @@ function authorToRow(a: ABSLibraryAuthor): GroupRow {
     key: a.id,
     name: a.name,
     sub: `${a.numBooks} ${a.numBooks === 1 ? 'title' : 'titles'}`,
+    count: a.numBooks,
     covers: [],
     avatarUri: authorImageUrl(a.id),
   }
@@ -1078,6 +1156,7 @@ function narratorToRow(n: ABSNarrator): GroupRow {
     key: n.id,
     name: n.name,
     sub: `${n.numBooks} ${n.numBooks === 1 ? 'title' : 'titles'}`,
+    count: n.numBooks,
     covers: [],
     // HearthShelf's custom narrator photo, keyed by name; falls back to initials.
     avatarUri: narratorImageUrl(n.name),
@@ -1140,19 +1219,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   controlBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
     paddingLeft: spacing.sm,
-    paddingRight: spacing.md,
-    paddingVertical: 7,
+    paddingRight: spacing.sm,
+    paddingVertical: 5,
     borderRadius: radius.pill,
     backgroundColor: colors.fill,
     borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairline,
+  },
+  groupSorts: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  groupSortBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingLeft: spacing.sm,
+    paddingRight: 5,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'transparent',
+  },
+  groupSortBtnActive: {
+    backgroundColor: colors.fill,
     borderColor: colors.hairline,
   },
   filterChips: {
@@ -1160,7 +1259,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
     paddingBottom: spacing.sm,
   },
   filterChip: {

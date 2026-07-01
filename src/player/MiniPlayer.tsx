@@ -8,7 +8,7 @@ import { Image, Pressable, StyleSheet, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import { formatTimestamp } from '@hearthshelf/core'
 import { AppText, IconButton, ProgressBar, icons } from '@/ui/primitives'
-import { colors, radius, shadow, spacing } from '@/ui/theme'
+import { colors, spacing } from '@/ui/theme'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { getState, subscribe, togglePlay, jumpBy, currentChapter } from './store'
 
@@ -37,6 +37,7 @@ export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
 
   return (
     <View style={[styles.wrap, { bottom: bottomOffset }]} pointerEvents="box-none">
+      <ProgressBar progress={progress} height={2} style={styles.progress} />
       <View style={styles.bar}>
         <Pressable style={styles.tap} onPress={() => router.push('/player')}>
           {nowPlaying.artworkUrl ? (
@@ -62,6 +63,7 @@ export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
         <IconButton
           name={isPlaying ? icons.pause : icons.play}
           size={30}
+          color={colors.onAccent}
           onPress={togglePlay}
           style={styles.play}
         />
@@ -72,7 +74,6 @@ export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
           onPress={() => jumpBy(30)}
         />
       </View>
-      <ProgressBar progress={progress} height={2} style={styles.progress} />
     </View>
   )
 }
@@ -80,21 +81,17 @@ export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
 const styles = StyleSheet.create({
   wrap: {
     position: 'absolute',
-    left: spacing.sm,
-    right: spacing.sm,
+    left: 0,
+    right: 0,
   },
   bar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    paddingLeft: spacing.sm,
-    paddingRight: spacing.xs,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.sm,
     paddingVertical: spacing.sm,
-    backgroundColor: colors.highest,
-    borderRadius: radius.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-    ...shadow.lift,
+    backgroundColor: colors.popover,
   },
   tap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md, minWidth: 0 },
   cover: { width: 42, height: 42, borderRadius: 8, backgroundColor: colors.high },
@@ -105,9 +102,10 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: colors.accent,
   },
   progress: {
-    marginHorizontal: spacing.lg,
-    marginTop: -1,
+    width: '100%',
+    borderRadius: 0,
   },
 })
