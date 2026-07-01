@@ -6,7 +6,7 @@
  * design-system mock, which never got past a bare tap-to-cycle speed control.
  */
 import { forwardRef, useImperativeHandle, useRef, useState, useSyncExternalStore } from 'react'
-import { StyleSheet, TextInput, View, useWindowDimensions } from 'react-native'
+import { StyleSheet, TextInput, View } from 'react-native'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import Slider from '@react-native-community/slider'
 import { formatTimestamp } from '@hearthshelf/core'
@@ -161,9 +161,13 @@ function fmtRewind(sec: number): string {
   return s ? `${m}m ${s}s` : `${m}m`
 }
 
+// A fixed height so the sheet doesn't re-measure and shrink each time you switch
+// tabs (duration grid is tall, the time input is short - dynamic sizing made it
+// jump). The inner scroll view fills it and scrolls when content overflows.
+const SLEEP_SNAP = ['80%']
+
 export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, ref) {
   const sheetRef = useSheetHandle(ref)
-  const { height } = useWindowDimensions()
   const { sleepTimer, sleepBehavior, nowPlaying, position } = useSyncExternalStore(
     subscribe,
     getState
@@ -233,11 +237,8 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
   }
 
   return (
-    <Sheet ref={sheetRef} title="Sleep timer">
-      <BottomSheetScrollView
-        style={{ maxHeight: height * 0.72 }}
-        contentContainerStyle={{ paddingBottom: spacing.md }}
-      >
+    <Sheet ref={sheetRef} title="Sleep timer" snapPoints={SLEEP_SNAP}>
+      <BottomSheetScrollView contentContainerStyle={{ paddingBottom: spacing.md }}>
         <View style={styles.segFull}>
           {(['duration', 'chapter', 'time'] as SleepTab[]).map((t) => (
             <Touchable
@@ -355,6 +356,8 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
           </AppText>
         </View>
         <Slider
+          style={styles.slider}
+          tapToSeek
           minimumValue={0}
           maximumValue={300}
           step={5}
@@ -395,7 +398,8 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
           <View style={[styles.row, { gap: spacing.sm }]}>
             <Icon name={icons.schedule} size={18} color={colors.textMuted} />
             <Slider
-              style={{ flex: 1 }}
+              style={[styles.slider, { flex: 1 }]}
+              tapToSeek
               minimumValue={3}
               maximumValue={60}
               step={1}
@@ -477,6 +481,9 @@ const styles = StyleSheet.create({
   },
   speedOn: { backgroundColor: colors.accent },
   sliderTicks: { flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.xs },
+  // Taller than the default so the whole strip is a comfortable drag target, not
+  // just the thin track. The community slider's touch area = its rendered height.
+  slider: { height: 44, marginVertical: spacing.xs },
   segFull: {
     flexDirection: 'row',
     gap: 4,

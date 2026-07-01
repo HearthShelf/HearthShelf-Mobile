@@ -296,9 +296,13 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
             <TransportBtn icon={icons.skipPrev} onPress={() => skipChapter(-1)} />
           ) : null}
           <TransportBtn icon={icons.rewind} onPress={() => jumpBy(-15)} />
-          <Pressable onPress={togglePlay} style={styles.play}>
-            <Icon name={isPlaying ? icons.pause : icons.play} size={40} color={colors.onAccent} />
-          </Pressable>
+          <View style={styles.playWrap}>
+            <View style={styles.playGlowOuter} pointerEvents="none" />
+            <View style={styles.playGlowInner} pointerEvents="none" />
+            <Pressable onPress={togglePlay} style={({ pressed }) => [styles.play, pressed && styles.pressed]}>
+              <Icon name={isPlaying ? icons.pause : icons.play} size={44} color={colors.onAccent} />
+            </Pressable>
+          </View>
           <TransportBtn icon={icons.forward} onPress={() => jumpBy(30)} />
           {hasChapters ? (
             <TransportBtn icon={icons.skipNext} onPress={() => skipChapter(1)} />
@@ -382,14 +386,15 @@ export default function PlayerScreen() {
   return <PlayerSurface />
 }
 
-/** A bordered, tappable transport button (rewind / skip / forward). */
+/** A borderless, tappable transport button (rewind / skip / forward). */
 function TransportBtn({ icon, onPress }: { icon: (typeof icons)[keyof typeof icons]; onPress: () => void }) {
   return (
     <Pressable
       onPress={onPress}
+      hitSlop={10}
       style={({ pressed }) => [styles.transportBtn, pressed && styles.pressed]}
     >
-      <Icon name={icon} size={26} color={colors.text} />
+      <Icon name={icon} size={34} color={colors.text} />
     </Pressable>
   )
 }
@@ -756,24 +761,40 @@ const styles = StyleSheet.create({
   transport: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.md,
+    justifyContent: 'space-between',
+    alignSelf: 'stretch',
+    paddingHorizontal: spacing.lg,
     marginTop: spacing.md,
   },
   transportBtn: {
-    width: 54,
-    height: 48,
-    borderRadius: radius.row,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    backgroundColor: colors.fill,
+    width: 56,
+    height: 56,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // Wrapper holds two concentric accent halos behind the play button, giving a
+  // soft falloff glow (Android Views can't blur, so we fake it by layering).
+  playWrap: { alignItems: 'center', justifyContent: 'center' },
+  playGlowOuter: {
+    position: 'absolute',
+    width: 116,
+    height: 116,
+    borderRadius: 58,
+    backgroundColor: colors.accent,
+    opacity: 0.14,
+  },
+  playGlowInner: {
+    position: 'absolute',
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: colors.accent,
+    opacity: 0.22,
+  },
   play: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
