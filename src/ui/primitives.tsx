@@ -318,6 +318,61 @@ export function Cover({
   )
 }
 
+// ---- Avatar ----
+
+/** Up to two initials from a person's name (e.g. "Adam Verner" -> "AV"). */
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  const first = parts[0].charAt(0)
+  const last = parts.length > 1 ? parts[parts.length - 1].charAt(0) : ''
+  return (first + last).toUpperCase()
+}
+
+/**
+ * Round person avatar (authors/narrators). Tries the photo `uri`; if it's
+ * missing or fails to load, shows centered initials on a hued circle. Unlike a
+ * <Cover> fallback (a book-cover treatment with a corner-bleed initial), this is
+ * sized and centered for a small round chip.
+ */
+export function Avatar({
+  uri,
+  size,
+  name,
+  hue,
+}: {
+  uri?: string
+  size: number
+  name: string
+  hue: string
+}) {
+  const [failed, setFailed] = useState(false)
+  if (!uri || failed) {
+    return (
+      <View
+        style={[
+          styles.avatarFallback,
+          { width: size, height: size, borderRadius: size / 2, backgroundColor: hue },
+        ]}
+      >
+        <Text
+          allowFontScaling={false}
+          style={[styles.avatarInitials, { fontSize: size * 0.36 }]}
+        >
+          {initialsOf(name)}
+        </Text>
+      </View>
+    )
+  }
+  return (
+    <Image
+      source={{ uri }}
+      onError={() => setFailed(true)}
+      style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: colors.fill }}
+    />
+  )
+}
+
 // ---- ProgressBar ----
 
 export function ProgressBar({
@@ -490,6 +545,8 @@ const styles = StyleSheet.create({
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   sectionTitleTap: { flexDirection: 'row', alignItems: 'center' },
   cover: { backgroundColor: colors.highest },
+  avatarFallback: { alignItems: 'center', justifyContent: 'center' },
+  avatarInitials: { color: colors.onAccent, fontWeight: '700', letterSpacing: 0.3 },
   sheetBody: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl },
   sheetHeader: { gap: 2, marginBottom: spacing.md },
 })

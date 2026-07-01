@@ -120,15 +120,36 @@ export async function getPersonalized(libraryId: string): Promise<ABSShelf[]> {
 
 /** All series in a library, each carrying its books (for the group drilldown). */
 export async function getLibrarySeries(libraryId: string): Promise<ABSSeries[]> {
-  const data = await absRequest<ABSSeriesResponse>(
-    `/api/libraries/${libraryId}/series?limit=0`
-  )
-  return data.results ?? []
+  // ABS's series endpoint treats limit=0 as "count only" (returns an empty
+  // results[] with the real total), unlike the items endpoint where 0 = all. So
+  // page through with an explicit large limit to actually get the series.
+  const out: ABSSeries[] = []
+  const limit = 500
+  for (let page = 0; page < 50; page++) {
+    const data = await absRequest<ABSSeriesResponse>(
+      `/api/libraries/${libraryId}/series?limit=${limit}&page=${page}`
+    )
+    const results = data.results ?? []
+    out.push(...results)
+    if (results.length < limit) break
+  }
+  return out
 }
 
 export async function getLibraryAuthors(libraryId: string): Promise<ABSLibraryAuthor[]> {
   const data = await absRequest<ABSAuthorsResponse>(`/api/libraries/${libraryId}/authors`)
   return data.authors ?? []
+}
+
+/** ABS author photo (token-bearing). '' when disconnected; falls back to initials. */
+export function authorImageUrl(authorId: string): string {
+  return mediaUrl(`/api/authors/${authorId}/image`)
+}
+
+/** HearthShelf's custom narrator photo (NOT ABS - lives at /hs/narrators/:name/image),
+ *  keyed by name. '' when disconnected; falls back to initials. */
+export function narratorImageUrl(name: string): string {
+  return mediaUrl(`/hs/narrators/${encodeURIComponent(name)}/image`)
 }
 
 /** An author's books (for the group drilldown) - richer than the library list. */

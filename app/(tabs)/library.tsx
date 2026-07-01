@@ -13,6 +13,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FlatList, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native'
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
+import { Gesture, GestureDetector } from 'react-native-gesture-handler'
+import { runOnJS } from 'react-native-reanimated'
 import type {
   ABSLibrary,
   ABSLibraryItem,
@@ -32,6 +34,7 @@ import {
   SORT_MORE,
 } from '@hearthshelf/core'
 import {
+  authorImageUrl,
   coverUrl,
   getLibraries,
   getLibraryAuthors,
@@ -41,9 +44,10 @@ import {
   getMe,
   itemAuthor,
   itemTitle,
+  narratorImageUrl,
   searchLibrary,
 } from '@/api/abs'
-import { AppText, Centered, Cover, IconButton, Loading, Screen, Sheet, type SheetRef, Touchable, icons } from '@/ui/primitives'
+import { AppText, Avatar, Centered, Cover, IconButton, Loading, Screen, Sheet, type SheetRef, Touchable, icons } from '@/ui/primitives'
 import { BookTile } from '@/ui/BookTile'
 import { AzRail, AZ_RAIL_WIDTH } from '@/ui/AzRail'
 import { colors, radius, spacing } from '@/ui/theme'
@@ -390,6 +394,9 @@ function BooksView({
   const [desc, setDesc] = useState(false)
   const [display, setDisplay] = useState<DisplayMode>('grid')
   const [size, setSize] = useState<CoverSize>('comfortable')
+  // Grid column count, adjustable by pinch (2 = big covers, 5 = small). Seeded
+  // from the comfortable/compact setting; pinch overrides it live.
+  const [gridCols, setGridCols] = useState(COLS)
   const sheetRef = useRef<SheetRef>(null)
   const [sheetTab, setSheetTab] = useState<'display' | 'sort' | 'filter'>('sort')
   // When drilling into a filter group's values (e.g. Genre -> pick one).
@@ -446,7 +453,33 @@ function BooksView({
     [filtered, sort, desc, progressOf]
   )
 
-  const cols = size === 'compact' ? 4 : COLS
+  const cols = gridCols
+  // Pinch the grid to resize covers: spread apart = fewer/bigger columns, pinch
+  // together = more/smaller. Clamped 2..5. The column count at gesture start maps
+  // to scale 1; we round the live scale back to a whole column count. All the ref
+  // reads happen on the JS thread (inside runOnJS callbacks) - a plain useRef is
+  // not shared to the gesture's UI worklet, so we only pass e.scale across.
+  const colsRef = useRef(gridCols)
+  colsRef.current = gridCols
+  const pinchBase = useRef(gridCols)
+  const captureCols = useCallback(() => {
+    pinchBase.current = colsRef.current
+  }, [])
+  const applyPinch = useCallback((scale: number) => {
+    const next = Math.max(2, Math.min(5, Math.round(pinchBase.current / scale)))
+    setGridCols((prev) => (prev === next ? prev : next))
+  }, [])
+  const pinchGesture = useMemo(
+    () =>
+      Gesture.Pinch()
+        .onStart(() => {
+          runOnJS(captureCols)()
+        })
+        .onUpdate((e) => {
+          runOnJS(applyPinch)(e.scale)
+        }),
+    [captureCols, applyPinch]
+  )
   // The rail only makes sense on the Title-sorted grid (ascending buckets).
   const showAzRail = sort === 'Title' && !desc && display === 'grid'
 
@@ -511,7 +544,6 @@ function BooksView({
       <View style={styles.controlsRow}>
         <AppText variant="caption" color={colors.textMuted}>
           {sorted.length} {sorted.length === 1 ? 'title' : 'titles'}
-          {filter !== 'all' ? ` · ${filterLabel(filter)}` : ''}
         </AppText>
         <Touchable style={styles.controlBtn} onPress={() => openSheet('sort')}>
           <IconButton name={icons.tune} size={16} color={colors.text} />
@@ -519,29 +551,49 @@ function BooksView({
         </Touchable>
       </View>
 
+      {/* Applied filters as removable chips + a clear-all, so it's obvious what's
+          active and easy to undo without opening the tray. */}
+      {filter !== 'all' && (
+        <View style={styles.filterChips}>
+          <Touchable style={styles.filterChip} onPress={() => setFilter('all')}>
+            <AppText variant="caption" color={colors.onAccent}>
+              {filterLabel(filter)}
+            </AppText>
+            <IconButton name={icons.close} size={13} color={colors.onAccent} />
+          </Touchable>
+          <Touchable onPress={() => setFilter('all')} hitSlop={8} style={styles.clearFilters}>
+            <AppText variant="caption" color={colors.textMuted}>
+              Clear
+            </AppText>
+          </Touchable>
+        </View>
+      )}
+
       {display === 'grid' ? (
-        <FlatList
-          ref={listRef}
-          data={sorted}
-          key={`grid-${cols}`}
-          keyExtractor={(it) => it.id}
-          numColumns={cols}
-          columnWrapperStyle={{ gap: GUTTER }}
-          contentContainerStyle={{
-            paddingTop: GUTTER,
-            paddingLeft: GUTTER,
-            paddingRight: gridPadRight,
-            paddingBottom: 140,
-            gap: spacing.xs,
-          }}
-          onScrollToIndexFailed={({ index }) => {
-            listRef.current?.scrollToOffset({
-              offset: Math.floor(index / cols) * (tileWidth * 1.5 + spacing.md),
-              animated: true,
-            })
-          }}
-          renderItem={({ item }) => <BookTile item={item} width={tileWidth} />}
-        />
+        <GestureDetector gesture={pinchGesture}>
+          <FlatList
+            ref={listRef}
+            data={sorted}
+            key={`grid-${cols}`}
+            keyExtractor={(it) => it.id}
+            numColumns={cols}
+            columnWrapperStyle={{ gap: GUTTER }}
+            contentContainerStyle={{
+              paddingTop: GUTTER,
+              paddingLeft: GUTTER,
+              paddingRight: gridPadRight,
+              paddingBottom: 140,
+              gap: spacing.xs,
+            }}
+            onScrollToIndexFailed={({ index }) => {
+              listRef.current?.scrollToOffset({
+                offset: Math.floor(index / cols) * (tileWidth * 1.5 + spacing.md),
+                animated: true,
+              })
+            }}
+            renderItem={({ item }) => <BookTile item={item} width={tileWidth} />}
+          />
+        </GestureDetector>
       ) : (
         <FlatList
           ref={listRef}
@@ -587,7 +639,10 @@ function BooksView({
               label="Cover size"
               options={['comfortable', 'compact'] as CoverSize[]}
               value={size}
-              onChange={setSize}
+              onChange={(s) => {
+                setSize(s)
+                setGridCols(s === 'compact' ? 4 : COLS)
+              }}
             />
           </View>
         )}
@@ -796,6 +851,8 @@ interface GroupRow {
   name: string
   sub: string
   covers: ABSLibraryItem[]
+  /** Single avatar image (authors/narrators); series use stacked covers instead. */
+  avatarUri?: string
 }
 
 function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) {
@@ -865,17 +922,23 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
             )
           }
         >
-          <View style={styles.groupCovers}>
-            {item.covers.slice(0, 3).map((book, i) => (
-              <Cover
-                key={book.id}
-                size={48}
-                radius={radius.tile}
-                style={{ position: 'absolute', left: i * 15, zIndex: 3 - i }}
-                fallback={{ hue: coverHue(book.id), initial: itemTitle(book).charAt(0).toUpperCase() }}
-              />
-            ))}
-          </View>
+          {item.avatarUri !== undefined ? (
+            // Authors/narrators: a single round avatar, centered-initials fallback.
+            <Avatar uri={item.avatarUri} size={48} name={item.name} hue={coverHue(item.key)} />
+          ) : (
+            <View style={styles.groupCovers}>
+              {item.covers.slice(0, 3).map((book, i) => (
+                <Cover
+                  key={book.id}
+                  uri={coverUrl(book.id)}
+                  size={46}
+                  radius={7}
+                  style={{ position: 'absolute', left: i * 16, zIndex: 3 - i }}
+                  fallback={{ hue: coverHue(book.id), initial: itemTitle(book).charAt(0).toUpperCase() }}
+                />
+              ))}
+            </View>
+          )}
           <View style={{ flex: 1, minWidth: 0 }}>
             <AppText variant="label" numberOfLines={1}>
               {item.name}
@@ -907,6 +970,7 @@ function authorToRow(a: ABSLibraryAuthor): GroupRow {
     name: a.name,
     sub: `${a.numBooks} ${a.numBooks === 1 ? 'title' : 'titles'}`,
     covers: [],
+    avatarUri: authorImageUrl(a.id),
   }
 }
 
@@ -916,6 +980,8 @@ function narratorToRow(n: ABSNarrator): GroupRow {
     name: n.name,
     sub: `${n.numBooks} ${n.numBooks === 1 ? 'title' : 'titles'}`,
     covers: [],
+    // HearthShelf's custom narrator photo, keyed by name; falls back to initials.
+    avatarUri: narratorImageUrl(n.name),
   }
 }
 
@@ -960,14 +1026,17 @@ const styles = StyleSheet.create({
     borderColor: colors.hairline,
   },
   viewChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  // DS "compact rows" (.m-rows): flex row, 13 gap, 9/11 pad, 13 radius.
   groupRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.sm,
-    borderRadius: radius.row,
+    gap: 13,
+    paddingVertical: 9,
+    paddingHorizontal: 11,
+    borderRadius: 13,
   },
-  groupCovers: { width: 74, height: 54 },
+  // Holds up to 3 overlapping 46px covers (46 + 2*16 = 78 wide).
+  groupCovers: { width: 78, height: 46 },
   controlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -987,6 +1056,25 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairline,
   },
+  filterChips: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.sm,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+  },
+  clearFilters: { paddingVertical: 6, paddingHorizontal: spacing.sm },
   listRow: {
     flexDirection: 'row',
     alignItems: 'center',
