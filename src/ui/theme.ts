@@ -78,14 +78,40 @@ export const spacing = {
   xxl: 32,
 } as const
 
-/** Type scale (size + weight pairs) matching the web mobile hierarchy. */
+/**
+ * Font families, loaded via expo-font in app/_layout.tsx (keys must match).
+ * Design-system roles: sans = Inter (UI), mono = Geist Mono (numerals/time),
+ * brand = Libre Baskerville (wordmark, eyebrows, editorial). Libre Baskerville
+ * is NOT the UI body face - it stays in the brand role only.
+ */
+export const fonts = {
+  sans: 'Inter',
+  mono: 'GeistMono',
+  brand: 'LibreBaskerville',
+} as const
+
+/**
+ * Type scale (size + weight pairs) matching the web mobile hierarchy. `hero` and
+ * `title` are the page/section titles (Inter, bold); `mono` carries numerals and
+ * time; `eyebrow` is the tracked-uppercase kicker (brand face); `quote` is the
+ * editorial italic used for book blurbs (brand face).
+ */
 export const type = {
-  hero: { fontSize: 22, fontWeight: '700' as const },
-  title: { fontSize: 18, fontWeight: '700' as const },
-  body: { fontSize: 16, fontWeight: '500' as const },
-  label: { fontSize: 14, fontWeight: '600' as const },
-  meta: { fontSize: 13, fontWeight: '500' as const },
-  caption: { fontSize: 11, fontWeight: '500' as const },
+  hero: { fontSize: 22, fontWeight: '700' as const, fontFamily: fonts.sans },
+  title: { fontSize: 18, fontWeight: '700' as const, fontFamily: fonts.sans },
+  body: { fontSize: 16, fontWeight: '500' as const, fontFamily: fonts.sans },
+  label: { fontSize: 14, fontWeight: '600' as const, fontFamily: fonts.sans },
+  meta: { fontSize: 13, fontWeight: '500' as const, fontFamily: fonts.sans },
+  caption: { fontSize: 11, fontWeight: '500' as const, fontFamily: fonts.sans },
+  mono: { fontSize: 13, fontWeight: '500' as const, fontFamily: fonts.mono },
+  eyebrow: {
+    fontSize: 11,
+    fontWeight: '400' as const,
+    fontFamily: fonts.brand,
+    letterSpacing: 1.6,
+    textTransform: 'uppercase' as const,
+  },
+  quote: { fontSize: 16, fontWeight: '400' as const, fontFamily: fonts.brand, fontStyle: 'italic' as const },
 } as const
 
 /** Elevation - --shadow-lift: 0 18px 48px rgba(0,0,0,0.55). */

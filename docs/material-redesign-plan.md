@@ -519,7 +519,12 @@ Library, and reconcile the Sleep sheet against the richer prototype model (§6).
 
 ## 10. Suggested build order (each is independently shippable)
 
-1. Foundations: token reconcile, `TypesetCover`, `CoverGlow`, filled-icon set, 5-tab nav restyle (§0, §1).
+1. Foundations **(DONE)**: token reconcile + DS aliases, app fonts (Inter/Geist Mono/Libre Baskerville
+   via expo-font), `TypesetCover` fallback folded into `Cover`, `CoverGlow` (gradient mode), filled-icon
+   layer (`iconFor`), 5-tab nav with ember pill + Now Playing/Stats placeholder screens (§0, §1).
+   Fidelity notes carried forward: Material Symbols variable font is a later upgrade (MaterialIcons for
+   now); `CoverGlow` image mode + the appearance toggle land with My settings; variable fonts load as
+   single instances (synthetic bold).
 2. **Cross-repo stats slice (§6.4):** core `HSListeningStats` + `lib/stats.ts`; server `/hs/stats`;
    mobile `getHSStats()` with raw-ABS fallback. Unblocks both Home strip and Stats tab, and lets the
    web app + absorb adopt the same endpoint later.
