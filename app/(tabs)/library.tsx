@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FlatList, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native'
-import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import type {
   ABSLibrary,
   ABSLibraryItem,
@@ -81,23 +81,32 @@ export default function LibraryScreen() {
   const [libraryId, setLibraryId] = useState<string | null>(null)
   const [libError, setLibError] = useState<string | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      try {
-        const libs = await getLibraries()
-        if (cancelled) return
-        setLibraries(libs)
-        const primary = libs.find((l) => l.mediaType === 'book') ?? libs[0]
-        setLibraryId(primary?.id ?? null)
-      } catch (e) {
-        if (!cancelled) setLibError((e as Error).message)
+  // Resolve libraries when the screen mounts AND each time it regains focus, so a
+  // transient not_connected (e.g. right after a server switch) self-heals when you
+  // return to the tab instead of leaving a stuck error.
+  useFocusEffect(
+    useCallback(() => {
+      // Already resolved? Don't re-fetch on every tab focus - only (re)load when
+      // nothing is loaded yet or a prior attempt errored (the self-heal case).
+      if (libraryId && !libError) return
+      let cancelled = false
+      void (async () => {
+        try {
+          const libs = await getLibraries()
+          if (cancelled) return
+          setLibError(null)
+          setLibraries(libs)
+          const primary = libs.find((l) => l.mediaType === 'book') ?? libs[0]
+          setLibraryId(primary?.id ?? null)
+        } catch (e) {
+          if (!cancelled) setLibError((e as Error).message)
+        }
+      })()
+      return () => {
+        cancelled = true
       }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [])
+    }, [libraryId, libError])
+  )
 
   // ---- search ----
   const [query, setQuery] = useState('')

@@ -263,18 +263,23 @@ export function Cover({
   const w = size ?? width
   const dims: ImageStyle = size ? { width: size, height: size } : { width: w, aspectRatio }
 
-  const showFallback = fallback && (!uri || failed)
-  if (showFallback) {
-    return (
-      <TypesetCover
-        hue={fallback.hue}
-        initial={fallback.initial}
-        kicker={fallback.kicker}
-        title={fallback.title}
-        radius={r}
-        style={[dims as StyleProp<ViewStyle>, style as StyleProp<ViewStyle>]}
-      />
-    )
+  const hasUri = !!uri
+  if (!hasUri || failed) {
+    if (fallback) {
+      return (
+        <TypesetCover
+          hue={fallback.hue}
+          initial={fallback.initial}
+          kicker={fallback.kicker}
+          title={fallback.title}
+          radius={r}
+          style={[dims as StyleProp<ViewStyle>, style as StyleProp<ViewStyle>]}
+        />
+      )
+    }
+    // No uri (e.g. mid server-switch) and no fallback: a plain placeholder, not
+    // an <Image source={{ uri: '' }}> which warns "uri should not be empty".
+    return <View style={[styles.cover, dims, { borderRadius: r }, style as StyleProp<ViewStyle>]} />
   }
 
   return (

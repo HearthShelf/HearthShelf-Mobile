@@ -327,16 +327,17 @@ function ContinueHero({
   greeting: React.ReactNode
   onResume: () => void
 }) {
-  const router = useRouter()
-  const { coverAspect } = useSyncExternalStore(subscribeSettings, getSettingsState)
   const pct = Math.round(Math.max(0, Math.min(1, progress)) * 100)
   const started = progress > 0
+  const heroArt = coverUrl(item.id)
   return (
     <View style={styles.hero}>
       {/* Blown-up artwork background; the gradient fades it down to the scaffold
-          and up off the top so it reads as a borderless spotlight, not a card. */}
+          and up off the top so it reads as a borderless spotlight, not a card.
+          Skip the source when there's no art (mid server-switch) - an empty uri
+          warns and shows nothing anyway; the gradient carries the look. */}
       <ImageBackground
-        source={{ uri: coverUrl(item.id) }}
+        source={heroArt ? { uri: heroArt } : undefined}
         style={styles.heroBg}
         imageStyle={styles.heroBgImg}
       >
@@ -347,46 +348,39 @@ function ContinueHero({
         />
       </ImageBackground>
 
+      {/* DS "spotlight 2c": greeting, a gap so the art breathes, then a text-only
+          meta block over the art (no duplicate cover thumbnail), progress, and a
+          compact Resume pill - matching HearthShelf Android - Material.dc.html. */}
       <View style={styles.heroContent}>
         <View style={styles.heroGreeting}>{greeting}</View>
-        <View style={styles.heroTop}>
-          <Touchable onPress={() => router.push(`/item/${item.id}`)}>
-            <Cover
-              uri={coverUrl(item.id)}
-              width={92}
-              aspectRatio={COVER_ASPECT_RATIO[coverAspect]}
-              radius={radius.tile}
-              fallback={{ hue: coverHue(item.id), initial: itemTitle(item).charAt(0).toUpperCase() }}
-            />
-          </Touchable>
-          <View style={styles.heroMeta}>
-            <AppText variant="eyebrow" color={colors.accent}>
-              {started ? 'Continue' : 'Up next'}
-            </AppText>
-            <AppText variant="title" numberOfLines={2}>
-              {itemTitle(item)}
-            </AppText>
-            <AppText variant="meta" color={colors.textMuted} numberOfLines={1}>
+        <View style={styles.heroGap} />
+        <View style={styles.heroMeta}>
+          <AppText variant="eyebrow" color={colors.accent}>
+            {started ? 'Continue' : 'Up next'}
+          </AppText>
+          <AppText variant="title" numberOfLines={2} style={{ marginTop: 6 }}>
+            {itemTitle(item)}
+          </AppText>
+          <AppText variant="meta" color={colors.textMuted} numberOfLines={1} style={{ marginTop: 4 }}>
             {itemAuthor(item)}
           </AppText>
+
+          {started && (
+            <View style={styles.heroProgress}>
+              <ProgressBar progress={progress} style={{ flex: 1 }} />
+              <AppText variant="mono" color={colors.textMuted}>
+                {pct}%
+              </AppText>
+            </View>
+          )}
         </View>
-      </View>
 
-        {started && (
-          <View style={styles.heroProgress}>
-            <ProgressBar progress={progress} style={{ flex: 1 }} />
-            <AppText variant="mono" color={colors.textMuted}>
-              {pct}%
-            </AppText>
-          </View>
-        )}
-
-        <PrimaryButton
-          label={started ? 'Resume' : 'Start listening'}
-          icon={icons.play}
-          onPress={onResume}
-          style={{ marginTop: spacing.md }}
-        />
+        <Touchable onPress={onResume} style={styles.heroResume}>
+          <Icon name={icons.play} size={20} color={colors.onAccent} />
+          <AppText variant="label" color={colors.onAccent}>
+            {started ? 'Resume' : 'Start listening'}
+          </AppText>
+        </Touchable>
       </View>
     </View>
   )
@@ -511,17 +505,34 @@ const styles = StyleSheet.create({
   },
   heroBgImg: { resizeMode: 'cover' },
   heroContent: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.xl,
     paddingTop: spacing.sm,
+    // Gap below the Resume pill so the art's fade-out is visible before the
+    // stats, matching the DS (not overly busy).
+    paddingBottom: spacing.lg,
   },
-  heroGreeting: { marginBottom: spacing.lg },
-  heroTop: { flexDirection: 'row', gap: spacing.md },
-  heroMeta: { flex: 1, gap: 3, justifyContent: 'center' },
+  heroGreeting: {},
+  // DS: 44px of breathing room between the greeting and the title block so the
+  // spotlight art reads before the text starts.
+  heroGap: { height: 44 },
+  heroMeta: {},
   heroProgress: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    marginTop: spacing.md,
+    marginTop: 14,
+  },
+  // Compact auto-width Resume pill (DS: padding 13/26, radius 16), NOT full-width.
+  heroResume: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    marginTop: spacing.lg,
+    paddingVertical: 13,
+    paddingHorizontal: 26,
+    borderRadius: 16,
+    backgroundColor: colors.accent,
   },
   seeAll: { flexDirection: 'row', alignItems: 'center', gap: 1 },
   tile: { width: 120 },
