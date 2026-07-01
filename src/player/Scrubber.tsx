@@ -31,7 +31,7 @@ import { colors, radius } from '@/ui/theme'
 const PILL_HEIGHT = 30
 const GOLD = colors.brandHearth // #bd863f
 const EMBER = colors.accent // #e0654a
-const CREAM = '#ffe6cf'
+const CREAM = colors.brandCream // #ffe6cf
 // Two-tone fill: gold blended toward ember, then ember. Matches web `.scrub > i`
 // (`color-mix(accent 65%, #d27a3e)` -> accent); we approximate the mid stop.
 const FILL_START = '#c07a42'

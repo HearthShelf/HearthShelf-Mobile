@@ -17,17 +17,31 @@ export const colors = {
   highest: '#322f2b',
   sheet: '#222120',
 
+  // Design-system role aliases (colors_and_type.css .dark). The prototype +
+  // shared DS name surfaces by shadcn role; these map onto the ramp above so
+  // components can match the mock without renaming the existing tokens.
+  //   --background #1b1a18 = scaffold   --card #2a2825 = high
+  //   --popover #242220    = base       --elevated #322f2b = highest
+  card: '#2a2825',
+  popover: '#242220',
+  elevated: '#322f2b',
+  // --muted-foreground #aba498 = textMuted (aliased in the text ramp below).
+
   // Text ramp.
   text: '#f4f1ea',
   textMuted: '#aba498',
   textFaint: '#756f64',
   onAccent: '#ffffff',
+  // DS role alias: --muted-foreground = textMuted.
+  mutedForeground: '#aba498',
 
   // Accent / brand. The web "accent" used for active states + CTAs is the warm
   // coral ring/destructive color; brand-hearth is the amber used in the wordmark.
   accent: '#e0654a',
   brandHearth: '#bd863f',
   brandShelf: '#f0e6d6',
+  // Warm cream used for the scrubber leading line / fill highlights (DS 2f).
+  brandCream: '#ffe6cf',
 
   // Lines + fills (semi-transparent over the surface).
   border: '#383530',

@@ -177,7 +177,7 @@ export default function PlayerScreen() {
             />
             <ToolbarBtn icon={icons.speed} label={`${rate}x`} onPress={() => speedRef.current?.present()} />
             <ToolbarBtn icon={icons.sleep} label={sleepLabel} onPress={() => sleepRef.current?.present()} />
-            <ToolbarBtn icon={icons.nowPlaying} label="Car" onPress={enter} />
+            <ToolbarBtn icon={icons.car} label="Car" onPress={enter} />
           </View>
         )}
       </View>
