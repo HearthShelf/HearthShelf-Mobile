@@ -5,7 +5,7 @@
  * Drives the same player store the mini-bar and the car surface read.
  */
 import { useCallback, useRef, useState, useSyncExternalStore } from 'react'
-import { Image, PanResponder, StyleSheet, View, type LayoutChangeEvent } from 'react-native'
+import { Image, StyleSheet, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, {
@@ -33,6 +33,7 @@ import {
   icons,
 } from '@/ui/primitives'
 import { colors, radius, spacing } from '@/ui/theme'
+import { Scrubber } from '@/player/Scrubber'
 import { ChaptersSheet, SpeedSheet, SleepSheet, type SheetHandle } from '@/player/sheets'
 
 export default function PlayerScreen() {
@@ -46,25 +47,11 @@ export default function PlayerScreen() {
   const speedRef = useRef<SheetHandle>(null)
   const sleepRef = useRef<SheetHandle>(null)
 
-  const trackWidth = useRef(0)
   const duration = nowPlaying?.duration ?? 0
 
-  const seekFromX = (x: number) => {
-    if (trackWidth.current <= 0 || duration <= 0) return
-    const ratio = Math.min(1, Math.max(0, x / trackWidth.current))
-    requestSeek(ratio * duration)
-  }
-  const seekFromXRef = useRef(seekFromX)
-  seekFromXRef.current = seekFromX
-
-  const pan = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (e) => seekFromXRef.current(e.nativeEvent.locationX),
-      onPanResponderMove: (e) => seekFromXRef.current(e.nativeEvent.locationX),
-    })
-  ).current
+  // While dragging the scrubber, preview the target time in the labels without
+  // committing a seek (seek fires once, on release - see Scrubber).
+  const [previewRatio, setPreviewRatio] = useState<number | null>(null)
 
   // Car mode: swipe up on the cover enlarges it + simplifies the controls.
   const [carMode, setCarMode] = useState(false)
@@ -97,6 +84,11 @@ export default function PlayerScreen() {
   const hasChapters = chapters.length > 0
   const chapter = currentChapter()
   const progress = duration > 0 ? Math.min(1, Math.max(0, position / duration)) : 0
+
+  // Labels follow the drag preview while scrubbing, else the live position.
+  const shownPos = previewRatio !== null ? previewRatio * duration : position
+  const elapsedLabel = formatTimestamp(shownPos)
+  const remainLabel = formatTimestamp(Math.max(0, duration - shownPos))
 
   const sleepLabel =
     sleepTimer?.kind === 'duration'
@@ -142,27 +134,19 @@ export default function PlayerScreen() {
         ) : null}
 
         {!carMode && (
-          <>
-            <View
-              style={styles.track}
-              onLayout={(e: LayoutChangeEvent) => {
-                trackWidth.current = e.nativeEvent.layout.width
+          <View style={styles.scrub}>
+            <Scrubber
+              ratio={progress}
+              playing={isPlaying}
+              elapsed={elapsedLabel}
+              remain={remainLabel}
+              chapter={hasChapters ? chapter?.title : undefined}
+              onDrag={(r) => setPreviewRatio(r)}
+              onSeek={(r) => {
+                if (duration > 0) requestSeek(r * duration)
               }}
-              {...pan.panHandlers}
-            >
-              <View style={styles.trackFill} pointerEvents="none">
-                <View style={[styles.trackProgress, { width: `${progress * 100}%` }]} />
-              </View>
-            </View>
-            <View style={styles.times}>
-              <AppText variant="caption" color={colors.textMuted}>
-                {formatTimestamp(position)}
-              </AppText>
-              <AppText variant="caption" color={colors.textMuted}>
-                {formatTimestamp(duration)}
-              </AppText>
-            </View>
-          </>
+            />
+          </View>
         )}
 
         <View style={[styles.transport, carMode && styles.transportCar]}>
@@ -240,10 +224,7 @@ const styles = StyleSheet.create({
   cover: { width: 260, height: 260, borderRadius: radius.card, backgroundColor: colors.high },
   coverCar: { width: 320, height: 320 },
   title: { textAlign: 'center' },
-  track: { width: '100%', height: 28, justifyContent: 'center', marginTop: spacing.xl },
-  trackFill: { height: 6, borderRadius: 3, backgroundColor: colors.fillStrong, overflow: 'hidden' },
-  trackProgress: { height: 6, backgroundColor: colors.accent },
-  times: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.xs },
+  scrub: { width: '100%', marginTop: spacing.xl },
   transport: {
     flexDirection: 'row',
     alignItems: 'center',
