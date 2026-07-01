@@ -24,7 +24,7 @@ import {
 } from './store'
 import { AppText, Sheet, type SheetRef, Touchable } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
-import { colors, radius, spacing } from '@/ui/theme'
+import { colors, radius, shadow, spacing } from '@/ui/theme'
 
 export interface SheetHandle {
   present: () => void
@@ -161,11 +161,6 @@ function fmtRewind(sec: number): string {
   return s ? `${m}m ${s}s` : `${m}m`
 }
 
-// A fixed height so the sheet doesn't re-measure and shrink each time you switch
-// tabs (duration grid is tall, the time input is short - dynamic sizing made it
-// jump). The inner scroll view fills it and scrolls when content overflows.
-const SLEEP_SNAP = ['80%']
-
 export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, ref) {
   const sheetRef = useSheetHandle(ref)
   const { sleepTimer, sleepBehavior, nowPlaying, position } = useSyncExternalStore(
@@ -237,8 +232,8 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
   }
 
   return (
-    <Sheet ref={sheetRef} title="Sleep timer" snapPoints={SLEEP_SNAP}>
-      <BottomSheetScrollView contentContainerStyle={{ paddingBottom: spacing.md }}>
+    <Sheet ref={sheetRef} title="Sleep timer">
+      <View style={{ paddingBottom: spacing.md }}>
         <View style={styles.segFull}>
           {(['duration', 'chapter', 'time'] as SleepTab[]).map((t) => (
             <Touchable
@@ -447,7 +442,7 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
             </Touchable>
           </>
         )}
-      </BottomSheetScrollView>
+      </View>
     </Sheet>
   )
 })
@@ -530,6 +525,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md + 2,
     borderRadius: radius.card,
     backgroundColor: colors.accent,
+    ...shadow.accentGlow,
   },
   toggleTrack: {
     width: 46,

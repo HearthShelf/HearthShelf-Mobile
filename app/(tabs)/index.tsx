@@ -560,6 +560,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 26,
     borderRadius: 16,
     backgroundColor: colors.accent,
+    ...shadow.accentGlow,
   },
   seeAll: { flexDirection: 'row', alignItems: 'center', gap: 1 },
   tile: { width: 120 },

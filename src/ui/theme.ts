@@ -141,6 +141,15 @@ export const shadow = {
     shadowRadius: 16,
     elevation: 12,
   },
+  // Primary-CTA glow, matched to the web app's .btn-primary:
+  // box-shadow: 0 8px 24px color-mix(accent 34%, transparent).
+  accentGlow: {
+    shadowColor: colors.accent,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.34,
+    shadowRadius: 12,
+    elevation: 8,
+  },
 } as const
 
 export const theme = { colors, radius, spacing, type, shadow } as const
