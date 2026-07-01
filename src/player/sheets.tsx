@@ -140,7 +140,13 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
         <Pressable
           style={styles.row}
           onPress={() => {
-            setSleepTimer({ kind: 'endOfChapter' })
+            const chapters = getState().nowPlaying?.chapters ?? []
+            const pos = getState().position
+            const idx = Math.max(
+              0,
+              chapters.findIndex((c) => pos >= c.start && pos < c.end)
+            )
+            setSleepTimer({ kind: 'endOfChapter', chapterIndex: idx, at: 'end' })
             close()
           }}
         >

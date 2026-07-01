@@ -29,6 +29,12 @@ import type {
   ABSNarratorsResponse,
   ABSAuthorDetail,
   ABSMeResponse,
+  ABSBookmark,
+  ABSListeningSessionsResponse,
+  ABSCollection,
+  ABSCollectionsResponse,
+  ABSPlaylist,
+  ABSPlaylistsResponse,
 } from '@hearthshelf/core'
 import { computeListeningStats } from '@hearthshelf/core'
 
@@ -172,6 +178,96 @@ export async function getItemsInProgress(): Promise<ABSLibraryItem[]> {
 /** The caller's full progress list, for the Library screen's In progress/Finished filters. */
 export async function getMe(): Promise<ABSMeResponse> {
   return absRequest<ABSMeResponse>('/api/me')
+}
+
+// ---- Bookmarks ----
+// User-scoped, per item. ABS has no per-item bookmark GET, so reads go through
+// /api/me (bookmarks[]); create/delete hit the per-item routes.
+
+/** Every bookmark for this user, across all items. Filter to one item by id. */
+export async function getBookmarks(): Promise<ABSBookmark[]> {
+  const me = await getMe()
+  return me.bookmarks ?? []
+}
+
+export async function createBookmark(
+  libraryItemId: string,
+  time: number,
+  title: string
+): Promise<ABSBookmark> {
+  const b = await absRequest<ABSBookmark | undefined>(
+    `/api/me/item/${libraryItemId}/bookmark`,
+    { method: 'POST', body: JSON.stringify({ time: Math.round(time), title }) }
+  )
+  return b ?? { libraryItemId, title, time: Math.round(time), createdAt: Date.now() }
+}
+
+export async function deleteBookmark(libraryItemId: string, time: number): Promise<void> {
+  await absRequest<void>(`/api/me/item/${libraryItemId}/bookmark/${Math.round(time)}`, {
+    method: 'DELETE',
+  })
+}
+
+// ---- Recent listening sessions ----
+
+export async function getRecentSessions(itemsPerPage = 100) {
+  const data = await absRequest<ABSListeningSessionsResponse>(
+    `/api/me/listening-sessions?page=0&itemsPerPage=${itemsPerPage}`
+  )
+  return data.sessions ?? []
+}
+
+// ---- Collections / Playlists (Add to list) ----
+
+export async function getLibraryCollections(libraryId: string): Promise<ABSCollection[]> {
+  const data = await absRequest<ABSCollectionsResponse>(
+    `/api/libraries/${libraryId}/collections`
+  )
+  return data.results ?? []
+}
+
+export async function getLibraryPlaylists(libraryId: string): Promise<ABSPlaylist[]> {
+  const data = await absRequest<ABSPlaylistsResponse>(`/api/libraries/${libraryId}/playlists`)
+  return data.results ?? []
+}
+
+export async function createCollection(
+  libraryId: string,
+  name: string,
+  books: string[]
+): Promise<void> {
+  await absRequest<void>('/api/collections', {
+    method: 'POST',
+    body: JSON.stringify({ libraryId, name, books }),
+  })
+}
+
+export async function addBookToCollection(
+  collectionId: string,
+  libraryItemId: string
+): Promise<void> {
+  await absRequest<void>(`/api/collections/${collectionId}/book`, {
+    method: 'POST',
+    body: JSON.stringify({ id: libraryItemId }),
+  })
+}
+
+export async function createPlaylist(
+  libraryId: string,
+  name: string,
+  items: { libraryItemId: string }[]
+): Promise<void> {
+  await absRequest<void>('/api/playlists', {
+    method: 'POST',
+    body: JSON.stringify({ libraryId, name, items }),
+  })
+}
+
+export async function addItemToPlaylist(playlistId: string, libraryItemId: string): Promise<void> {
+  await absRequest<void>(`/api/playlists/${playlistId}/item`, {
+    method: 'POST',
+    body: JSON.stringify({ libraryItemId }),
+  })
 }
 
 // ---- Listening stats ----

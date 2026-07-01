@@ -35,14 +35,29 @@ export interface NowPlaying {
 }
 
 /**
- * Sleep timer. `endOfChapter` stops at the current chapter boundary; a number is
- * an absolute fire deadline in epoch ms (the host compares against playback time
- * indirectly via a tick). null = off.
+ * Sleep timer. `duration`/`clock` count down in real seconds (`remainingSec`
+ * ticks off `reportPosition` while playing); `clock` also carries the absolute
+ * epoch-ms deadline so the UI can show "stops at 10:30 PM" without recomputing
+ * it every tick. `endOfChapter` stops at a specific chapter boundary. null = off.
  */
 export type SleepTimer =
   | null
   | { kind: 'duration'; remainingSec: number }
-  | { kind: 'endOfChapter' }
+  | { kind: 'clock'; remainingSec: number; atMs: number }
+  | { kind: 'endOfChapter'; chapterIndex: number; at: 'start' | 'end' }
+
+/** How a sleep timer behaves once it fires. Mirrors the WebApp's settings store
+ *  (sleepRewindSec/chapterBarrier/sleepFade/sleepFadeLen) - in-memory only here,
+ *  no persistence yet (small enough to default fresh each app launch). */
+export interface SleepBehavior {
+  /** Seconds to rewind on stop, 0 = resume exactly where it stopped. */
+  rewindSec: number
+  /** When rewinding, don't cross back over the current chapter's start. */
+  chapterBarrier: boolean
+  /** Ramp volume to 0 over the last `fadeLen` seconds before stopping. */
+  fade: boolean
+  fadeLen: number
+}
 
 export interface PlayerState {
   nowPlaying: NowPlaying | null
@@ -53,8 +68,11 @@ export interface PlayerState {
   seekTo: number | null
   /** Active sleep timer, or null. */
   sleepTimer: SleepTimer
+  sleepBehavior: SleepBehavior
   /** Playback speed multiplier fed to <Video rate> (1 = normal). */
   rate: number
+  /** Output volume fed to <Video volume>, 0-1. Ramped down by the sleep fade. */
+  volume: number
 }
 
 let state: PlayerState = {
@@ -63,7 +81,9 @@ let state: PlayerState = {
   position: 0,
   seekTo: null,
   sleepTimer: null,
+  sleepBehavior: { rewindSec: 30, chapterBarrier: true, fade: true, fadeLen: 20 },
   rate: 1,
+  volume: 1,
 }
 
 const listeners = new Set<() => void>()
@@ -154,7 +174,37 @@ export function setSleepTimer(timer: SleepTimer): void {
 }
 
 export function cancelSleepTimer(): void {
-  if (state.sleepTimer) set({ sleepTimer: null })
+  if (state.sleepTimer) set({ sleepTimer: null, volume: 1 })
+}
+
+export function setSleepBehavior(patch: Partial<SleepBehavior>): void {
+  set({ sleepBehavior: { ...state.sleepBehavior, ...patch } })
+}
+
+/** Add minutes to a live duration/clock countdown ("+5 min" while sleeping). */
+export function addSleepMinutes(mins: number): void {
+  const timer = state.sleepTimer
+  if (!timer || timer.kind === 'endOfChapter') return
+  set({ sleepTimer: { ...timer, remainingSec: timer.remainingSec + mins * 60 } })
+}
+
+/**
+ * The stop sequence when a sleep timer fires: optionally rewind (clamped to the
+ * current chapter's start when chapterBarrier is on), pause, and restore full
+ * volume so the next play isn't left faded down from a previous sleep.
+ */
+function fireStop(position: number): void {
+  const { rewindSec, chapterBarrier } = state.sleepBehavior
+  let target = position
+  if (rewindSec > 0) {
+    target = Math.max(0, position - rewindSec)
+    if (chapterBarrier) {
+      const ch = currentChapterAt(position)
+      if (ch) target = Math.max(ch.start, target)
+    }
+  }
+  set({ position: target, sleepTimer: null, isPlaying: false, volume: 1 })
+  if (target !== position) requestSeek(target)
 }
 
 /** Called by the <Video> host on each progress tick. */
@@ -166,21 +216,27 @@ export function reportPosition(position: number): void {
   // is actually advancing (pausing the book pauses the timer for free).
   const timer = state.sleepTimer
   if (timer && state.isPlaying) {
-    if (timer.kind === 'duration') {
+    if (timer.kind === 'duration' || timer.kind === 'clock') {
       const elapsed = Math.max(0, position - prev)
       const remaining = timer.remainingSec - elapsed
       if (remaining <= 0) {
-        set({ position, sleepTimer: null, isPlaying: false })
+        fireStop(position)
         return
       }
-      set({ position, sleepTimer: { kind: 'duration', remainingSec: remaining } })
+      const { fade, fadeLen } = state.sleepBehavior
+      const volume = fade && fadeLen > 0 ? Math.max(0, Math.min(1, remaining / fadeLen)) : state.volume
+      set({ position, sleepTimer: { ...timer, remainingSec: remaining }, volume })
       return
     }
     if (timer.kind === 'endOfChapter') {
-      const ch = currentChapterAt(position)
-      if (ch && position >= ch.end - 0.5) {
-        set({ position, sleepTimer: null, isPlaying: false })
-        return
+      const chapters = state.nowPlaying?.chapters ?? []
+      const target = chapters[timer.chapterIndex]
+      if (target) {
+        const stopAt = timer.at === 'start' ? target.start : target.end
+        if (position >= stopAt) {
+          fireStop(position)
+          return
+        }
       }
     }
   }
@@ -201,5 +257,13 @@ export function clearSeek(): void {
 }
 
 export function clearTrack(): void {
-  set({ nowPlaying: null, isPlaying: false, position: 0, seekTo: null, sleepTimer: null, rate: 1 })
+  set({
+    nowPlaying: null,
+    isPlaying: false,
+    position: 0,
+    seekTo: null,
+    sleepTimer: null,
+    rate: 1,
+    volume: 1,
+  })
 }

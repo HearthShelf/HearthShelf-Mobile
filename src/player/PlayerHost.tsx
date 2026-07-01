@@ -23,7 +23,7 @@ import { syncProgress } from './playback'
 export function PlayerHost() {
   const state = useSyncExternalStore(subscribe, getState)
   const ref = useRef<VideoRef>(null)
-  const { nowPlaying, isPlaying, seekTo, rate } = state
+  const { nowPlaying, isPlaying, seekTo, rate, volume } = state
 
   // Honor one-shot seek requests from the store (skip buttons, scrubbing).
   useEffect(() => {
@@ -49,6 +49,7 @@ export function PlayerHost() {
       }}
       paused={!isPlaying}
       rate={rate}
+      volume={volume}
       playInBackground
       playWhenInactive
       showNotificationControls
