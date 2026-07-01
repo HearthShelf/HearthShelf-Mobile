@@ -1,7 +1,12 @@
 package com.hearthshelf.mobile
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule
 import com.facebook.react.bridge.ReactApplicationContext
@@ -11,6 +16,7 @@ import com.facebook.react.bridge.WritableMap
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.facebook.react.uimanager.ViewManager
+import com.google.common.util.concurrent.MoreExecutors
 
 /**
  * Bridge between JS and the native phone media engine (HearthShelfPlayerService,
@@ -55,13 +61,48 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
   @ReactMethod
   fun clearSession() {
     prefs().edit().remove("serverUrl").remove("token").apply()
+    Handler(Looper.getMainLooper()).post {
+      controller?.release()
+      controller = null
+    }
   }
 
   // ---- phone playback commands (drive HearthShelfPlayerService) ----
 
+  // A MediaController connected to our own MediaSessionService. Media3 only posts
+  // the media notification while a controller is connected, so we keep this alive
+  // for the app's lifetime. We don't issue commands through it (JS drives the
+  // ExoPlayer directly); its sole job is to make the notification appear.
+  @Volatile private var controller: MediaController? = null
+  @Volatile private var connecting = false
+
   private fun ensureService() {
-    // Start the foreground media service if it isn't up yet.
+    // Start the media service if it isn't up yet.
     ctx.startService(Intent(ctx, HearthShelfPlayerService::class.java))
+    connectController()
+  }
+
+  private fun connectController() {
+    Handler(Looper.getMainLooper()).post {
+      // Guard on the main thread so overlapping calls don't build duplicates.
+      if (controller != null || connecting) return@post
+      connecting = true
+      try {
+        val token = SessionToken(ctx, ComponentName(ctx, HearthShelfPlayerService::class.java))
+        val future = MediaController.Builder(ctx, token).buildAsync()
+        future.addListener({
+          try {
+            controller = future.get()
+          } catch (e: Exception) {
+            // Retry on the next command if the connection couldn't be built.
+          } finally {
+            connecting = false
+          }
+        }, MoreExecutors.directExecutor())
+      } catch (e: Exception) {
+        connecting = false
+      }
+    }
   }
 
   @ReactMethod

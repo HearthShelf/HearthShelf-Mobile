@@ -144,9 +144,19 @@ class HearthShelfPlayerService : MediaSessionService() {
   }
 
   // ---- commands from JS (HearthShelfAutoModule) ----
+  //
+  // ExoPlayer requires all access on the thread its Looper was created on (the
+  // main thread here). JS invokes these on RN's native modules thread, so every
+  // command hops to the main thread first - otherwise ExoPlayer's
+  // verifyApplicationThread() throws "Player is accessed on the wrong thread".
 
-  fun load(url: String, startSec: Double, title: String, author: String, artworkUri: String, chaptersJson: String) {
-    val p = exo ?: return
+  private fun runOnMain(block: () -> Unit) {
+    if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) block()
+    else progressHandler.post(block)
+  }
+
+  fun load(url: String, startSec: Double, title: String, author: String, artworkUri: String, chaptersJson: String) = runOnMain {
+    val p = exo ?: return@runOnMain
     chapters = parseChapters(chaptersJson)
     bookTitle = title
     bookAuthor = author
@@ -185,12 +195,12 @@ class HearthShelfPlayerService : MediaSessionService() {
     p.replaceMediaItem(p.currentMediaItemIndex, cur.buildUpon().setMediaMetadata(buildMeta(idx)).build())
   }
 
-  fun playPlayer() { exo?.playWhenReady = true }
-  fun pausePlayer() { exo?.playWhenReady = false }
-  fun seekToSec(sec: Double) { exo?.seekTo((sec * 1000).toLong()) }
-  fun setRate(rate: Double) { exo?.setPlaybackSpeed(rate.toFloat()) }
-  fun setVolume(volume: Double) { exo?.volume = volume.toFloat() }
-  fun stopPlayer() {
+  fun playPlayer() = runOnMain { exo?.playWhenReady = true }
+  fun pausePlayer() = runOnMain { exo?.playWhenReady = false }
+  fun seekToSec(sec: Double) = runOnMain { exo?.seekTo((sec * 1000).toLong()) }
+  fun setRate(rate: Double) = runOnMain { exo?.setPlaybackSpeed(rate.toFloat()) }
+  fun setVolume(volume: Double) = runOnMain { exo?.volume = volume.toFloat() }
+  fun stopPlayer() = runOnMain {
     exo?.stop()
     exo?.clearMediaItems()
     chapters = emptyList()
