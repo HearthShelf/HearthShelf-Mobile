@@ -44,10 +44,18 @@ class HearthShelfPlayerService : MediaSessionService() {
   private var exo: ExoPlayer? = null
   private var session: MediaSession? = null
 
+  private data class Chapter(val title: String, val start: Double, val end: Double)
+
   // Chapters (absolute seconds) for the currently-loaded book, and whether to
   // report chapter-relative progress to the system (default on).
-  @Volatile private var chapters: List<Pair<Double, Double>> = emptyList()
+  @Volatile private var chapters: List<Chapter> = emptyList()
   private val chapterMode = true
+  // Book title/author + the chapter index currently reflected in the metadata, so
+  // we can refresh the "author · chapter" subtitle only when the chapter changes.
+  @Volatile private var bookTitle = ""
+  @Volatile private var bookAuthor = ""
+  @Volatile private var artUri = ""
+  @Volatile private var shownChapterIdx = -1
 
   private val REWIND_SEC = 15L
   private val FORWARD_SEC = 30L
@@ -58,7 +66,10 @@ class HearthShelfPlayerService : MediaSessionService() {
   private val progressTick = object : Runnable {
     override fun run() {
       exo?.let { p ->
-        if (p.isPlaying) HearthShelfAutoModule.emitProgress(p.currentPosition / 1000.0)
+        if (p.isPlaying) {
+          HearthShelfAutoModule.emitProgress(p.currentPosition / 1000.0)
+          refreshChapterSubtitle()
+        }
       }
       progressHandler.postDelayed(this, 1000)
     }
@@ -137,17 +148,41 @@ class HearthShelfPlayerService : MediaSessionService() {
   fun load(url: String, startSec: Double, title: String, author: String, artworkUri: String, chaptersJson: String) {
     val p = exo ?: return
     chapters = parseChapters(chaptersJson)
-    val meta = MediaMetadata.Builder()
-      .setTitle(title)
-      .setArtist(author)
-      .apply { if (artworkUri.isNotEmpty()) setArtworkUri(android.net.Uri.parse(artworkUri)) }
-      .setIsPlayable(true)
-      .setMediaType(MediaMetadata.MEDIA_TYPE_AUDIO_BOOK)
-      .build()
-    val item = MediaItem.Builder().setUri(url).setMediaMetadata(meta).build()
+    bookTitle = title
+    bookAuthor = author
+    artUri = artworkUri
+    val startIdx = chapters.indexOfFirst { startSec >= it.start && startSec < it.end }
+    shownChapterIdx = startIdx
+    val item = MediaItem.Builder().setUri(url).setMediaMetadata(buildMeta(startIdx)).build()
     p.setMediaItem(item, (startSec * 1000).toLong())
     p.prepare()
     p.playWhenReady = true
+  }
+
+  /** MediaItem metadata with an "author · chapter" subtitle for the given chapter. */
+  private fun buildMeta(chapterIdx: Int): MediaMetadata {
+    val ch = chapters.getOrNull(chapterIdx)
+    val subtitle = if (ch != null) "$bookAuthor · ${ch.title}" else bookAuthor
+    return MediaMetadata.Builder()
+      .setTitle(bookTitle)
+      .setArtist(subtitle)
+      .apply { if (artUri.isNotEmpty()) setArtworkUri(android.net.Uri.parse(artUri)) }
+      .setIsPlayable(true)
+      .setMediaType(MediaMetadata.MEDIA_TYPE_AUDIO_BOOK)
+      .build()
+  }
+
+  /** Refresh the notification subtitle when playback crosses into a new chapter,
+   *  updating metadata seamlessly (same URI -> no reload/seek). */
+  private fun refreshChapterSubtitle() {
+    val p = exo ?: return
+    if (chapters.isEmpty()) return
+    val sec = p.currentPosition / 1000.0
+    val idx = chapters.indexOfFirst { sec >= it.start && sec < it.end }
+    if (idx < 0 || idx == shownChapterIdx) return
+    shownChapterIdx = idx
+    val cur = p.currentMediaItem ?: return
+    p.replaceMediaItem(p.currentMediaItemIndex, cur.buildUpon().setMediaMetadata(buildMeta(idx)).build())
   }
 
   fun playPlayer() { exo?.playWhenReady = true }
@@ -159,23 +194,24 @@ class HearthShelfPlayerService : MediaSessionService() {
     exo?.stop()
     exo?.clearMediaItems()
     chapters = emptyList()
+    shownChapterIdx = -1
   }
 
   // ---- chapter math ----
 
-  /** [start,end] (absolute seconds) of the chapter containing an absolute position. */
-  private fun chapterAt(posMs: Long): Pair<Double, Double>? {
+  /** The chapter containing an absolute position (seconds). */
+  private fun chapterAt(posMs: Long): Chapter? {
     if (chapters.isEmpty()) return null
     val sec = posMs / 1000.0
-    return chapters.firstOrNull { sec >= it.first && sec < it.second } ?: chapters.last()
+    return chapters.firstOrNull { sec >= it.start && sec < it.end } ?: chapters.last()
   }
 
-  private fun parseChapters(json: String): List<Pair<Double, Double>> {
+  private fun parseChapters(json: String): List<Chapter> {
     return try {
       val arr = JSONArray(json)
       (0 until arr.length()).map {
         val o = arr.getJSONObject(it)
-        o.optDouble("start", 0.0) to o.optDouble("end", 0.0)
+        Chapter(o.optString("title", "Chapter ${it + 1}"), o.optDouble("start", 0.0), o.optDouble("end", 0.0))
       }
     } catch (e: Exception) {
       emptyList()
@@ -192,25 +228,25 @@ class HearthShelfPlayerService : MediaSessionService() {
 
     override fun getCurrentPosition(): Long {
       val c = ch() ?: return super.getCurrentPosition()
-      return (super.getCurrentPosition() - (c.first * 1000).toLong()).coerceAtLeast(0)
+      return (super.getCurrentPosition() - (c.start * 1000).toLong()).coerceAtLeast(0)
     }
     override fun getContentPosition(): Long = currentPosition
     override fun getDuration(): Long {
       val c = ch() ?: return super.getDuration()
-      return ((c.second - c.first) * 1000).toLong()
+      return ((c.end - c.start) * 1000).toLong()
     }
     override fun getContentDuration(): Long = duration
     override fun getBufferedPosition(): Long {
       val c = ch() ?: return super.getBufferedPosition()
       // Buffered is absolute (usually well past this chapter's end); clamp into
       // [0, chapterDuration] so the scrubber's buffer bar doesn't overflow.
-      val rel = (super.getBufferedPosition() - (c.first * 1000).toLong()).coerceAtLeast(0)
-      val chapterDur = ((c.second - c.first) * 1000).toLong()
+      val rel = (super.getBufferedPosition() - (c.start * 1000).toLong()).coerceAtLeast(0)
+      val chapterDur = ((c.end - c.start) * 1000).toLong()
       return rel.coerceAtMost(chapterDur)
     }
     override fun seekTo(positionMs: Long) {
       val c = ch()
-      if (c != null) super.seekTo((c.first * 1000).toLong() + positionMs)
+      if (c != null) super.seekTo((c.start * 1000).toLong() + positionMs)
       else super.seekTo(positionMs)
     }
   }

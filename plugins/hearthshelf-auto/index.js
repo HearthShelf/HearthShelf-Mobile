@@ -76,6 +76,8 @@ function addManifestService(config) {
     for (const perm of [
       'android.permission.FOREGROUND_SERVICE',
       'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
+      // Android 13+ requires this to post the media notification at all.
+      'android.permission.POST_NOTIFICATIONS',
     ]) {
       const has = manifest['uses-permission'].find((p) => p.$ && p.$['android:name'] === perm)
       if (!has) manifest['uses-permission'].push({ $: { 'android:name': perm } })

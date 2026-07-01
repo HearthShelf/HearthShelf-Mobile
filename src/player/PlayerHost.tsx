@@ -12,7 +12,7 @@
  * player-UI screen changes.
  */
 import { useEffect, useRef } from 'react'
-import { NativeEventEmitter, NativeModules } from 'react-native'
+import { NativeEventEmitter, NativeModules, PermissionsAndroid, Platform } from 'react-native'
 import {
   getState,
   subscribe,
@@ -43,6 +43,15 @@ export function PlayerHost() {
   const lastPlaying = useRef<boolean | null>(null)
   const lastRate = useRef<number | null>(null)
   const lastVolume = useRef<number | null>(null)
+
+  // Android 13+ needs runtime POST_NOTIFICATIONS or the media notification never
+  // shows. Ask once on mount (no-op below API 33 / on iOS).
+  useEffect(() => {
+    if (Platform.OS !== 'android' || Platform.Version < 33) return
+    void PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+    ).catch(() => {})
+  }, [])
 
   // ---- native -> store: progress / state / ended ----
   useEffect(() => {

@@ -4,7 +4,9 @@ import android.content.Context
 import android.os.Bundle
 import android.util.Log
 import androidx.media3.common.MediaItem
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -39,9 +41,20 @@ import java.util.concurrent.Executors
 class HearthShelfAutoService : MediaLibraryService() {
 
   private var session: MediaLibrarySession? = null
+  // The raw ExoPlayer (absolute book time). Command handlers seek against this,
+  // NOT session.player (which is chapter-relative via ChapterForwardingPlayer).
+  private var rawPlayer: ExoPlayer? = null
   private val io = Executors.newSingleThreadExecutor()
 
   private val TAG = "HSAuto"
+
+  // Resume position (ms) for the item currently being loaded; applied once the
+  // player is ready so the car resumes where you left off instead of at 0.
+  @Volatile private var pendingSeekMs: Long = 0L
+  // ABS play-session id for the loaded book, so we can sync progress back.
+  @Volatile private var absSessionId: String? = null
+  @Volatile private var absDurationSec: Double = 0.0
+  @Volatile private var lastSyncedSec: Double = 0.0
 
   private val prefs by lazy {
     getSharedPreferences("hearthshelf_auto", Context.MODE_PRIVATE)
@@ -61,6 +74,35 @@ class HearthShelfAutoService : MediaLibraryService() {
   // glyphs. Handled in LibraryCallback.onCustomCommand.
   private val CMD_REWIND = "com.hearthshelf.REWIND"
   private val CMD_FORWARD = "com.hearthshelf.FORWARD"
+  private val CMD_PREV_CH = "com.hearthshelf.PREV_CHAPTER"
+  private val CMD_NEXT_CH = "com.hearthshelf.NEXT_CHAPTER"
+  private val CMD_SPEED = "com.hearthshelf.CYCLE_SPEED"
+  private val CMD_BOOKMARK = "com.hearthshelf.BOOKMARK"
+
+  private val SPEED_PRESETS = listOf(1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 0.75f)
+
+  // Chapters (absolute seconds) for the loaded book + the current item id, used
+  // by the chapter-skip buttons, bookmark, and chapter-relative progress.
+  @Volatile private var chapters: List<Chapter> = emptyList()
+  @Volatile private var currentItemId: String? = null
+
+  private fun customButton(cmd: String, name: String, icon: String): CommandButton =
+    CommandButton.Builder()
+      .setDisplayName(name)
+      .setIconResId(resources.getIdentifier(icon, "drawable", packageName))
+      .setSessionCommand(SessionCommand(cmd, Bundle.EMPTY))
+      .build()
+
+  /** absorb's layout: left = rewind | (play) | forward; right = prev/next
+   *  chapter, speed, bookmark. AA has final say on exact slotting. */
+  private fun customLayout(): ImmutableList<CommandButton> = ImmutableList.of(
+    rewindButton(),
+    forwardButton(),
+    customButton(CMD_PREV_CH, "Previous chapter", "ic_hs_prev_chapter"),
+    customButton(CMD_NEXT_CH, "Next chapter", "ic_hs_next_chapter"),
+    customButton(CMD_SPEED, "Speed", "ic_hs_speed"),
+    customButton(CMD_BOOKMARK, "Bookmark", "ic_hs_bookmark")
+  )
 
   private fun rewindButton(): CommandButton =
     CommandButton.Builder()
@@ -87,20 +129,114 @@ class HearthShelfAutoService : MediaLibraryService() {
     setMediaNotificationProvider(notificationProvider)
 
     val player = ExoPlayer.Builder(this).build()
-    session = MediaLibrarySession.Builder(this, player, LibraryCallback())
-      // Rewind | (play/pause is standard) | Forward, with our circular icons.
-      .setCustomLayout(ImmutableList.of(rewindButton(), forwardButton()))
+    rawPlayer = player
+
+    // Apply the resume position once the freshly-loaded item is ready, and report
+    // progress back to ABS so the car doesn't reset the book to the start.
+    player.addListener(object : Player.Listener {
+      override fun onPlaybackStateChanged(state: Int) {
+        if (state == Player.STATE_READY && pendingSeekMs > 0) {
+          val seek = pendingSeekMs
+          pendingSeekMs = 0
+          player.seekTo(seek)
+        }
+        if (state == Player.STATE_ENDED) syncProgress(player.currentPosition, force = true)
+      }
+      override fun onIsPlayingChanged(isPlaying: Boolean) {
+        if (!isPlaying) syncProgress(player.currentPosition, force = true)
+      }
+    })
+
+    // The session (and therefore the car's progress bar) sees chapter-relative
+    // position/duration; the wrapped player keeps absolute book time.
+    session = MediaLibrarySession.Builder(this, ChapterForwardingPlayer(player), LibraryCallback())
+      .setCustomLayout(customLayout())
       .build()
+
+    // Periodic progress sync while playing (throttled inside syncProgress).
+    progressHandler.postDelayed(progressTick, 5000)
+  }
+
+  private val progressHandler = android.os.Handler(android.os.Looper.getMainLooper())
+  private val progressTick = object : Runnable {
+    override fun run() {
+      // Sync ABSOLUTE position (rawPlayer), not the chapter-relative session view.
+      rawPlayer?.let { if (it.isPlaying) syncProgress(it.currentPosition, force = false) }
+      progressHandler.postDelayed(this, 5000)
+    }
+  }
+
+  /** Jump to the previous/next chapter boundary (no-op without chapters). Going
+   *  back near a chapter's start (>3s in) restarts it, matching the in-app player. */
+  private fun seekChapter(player: Player, direction: Int) {
+    val chs = chapters
+    if (chs.isEmpty()) return
+    val posSec = player.currentPosition / 1000.0
+    val idx = chs.indexOfFirst { posSec >= it.start && posSec < it.end }.let { if (it >= 0) it else chs.size - 1 }
+    if (direction < 0 && posSec - chs[idx].start > 3.0) {
+      player.seekTo((chs[idx].start * 1000).toLong())
+      return
+    }
+    val next = (idx + direction).coerceIn(0, chs.size - 1)
+    player.seekTo((chs[next].start * 1000).toLong())
+  }
+
+  /** POST a bookmark at the given position (labelled with the chapter title). */
+  private fun bookmarkNow(posSec: Double) {
+    val id = currentItemId ?: return
+    val base = serverUrl ?: return
+    val tok = token ?: return
+    val ch = chapters.firstOrNull { posSec >= it.start && posSec < it.end }
+    val title = ch?.title ?: "Bookmark"
+    io.execute {
+      try {
+        val conn = (URL("$base/api/items/$id/bookmarks").openConnection() as HttpURLConnection).apply {
+          requestMethod = "POST"
+          setRequestProperty("Authorization", "Bearer $tok")
+          setRequestProperty("Content-Type", "application/json")
+          doOutput = true
+          connectTimeout = 8000
+          readTimeout = 8000
+        }
+        val body = JSONObject().put("time", posSec.toInt()).put("title", title)
+        conn.outputStream.use { it.write(body.toString().toByteArray()) }
+        conn.responseCode
+      } catch (e: Exception) {
+        Log.w(TAG, "bookmark failed: ${e.message}")
+      }
+    }
+  }
+
+  /** POST progress to ABS (throttled to ~15s unless forced on pause/stop). */
+  private fun syncProgress(posMs: Long, force: Boolean) {
+    val sid = absSessionId ?: return
+    val sec = posMs / 1000.0
+    if (!force && kotlin.math.abs(sec - lastSyncedSec) < 15.0) return
+    val elapsed = kotlin.math.max(0.0, sec - lastSyncedSec)
+    lastSyncedSec = sec
+    val base = serverUrl ?: return
+    val tok = token ?: return
+    io.execute {
+      try {
+        httpPostSync("$base/api/session/$sid/sync", tok, sec, elapsed, absDurationSec)
+      } catch (e: Exception) {
+        Log.w(TAG, "sync failed: ${e.message}")
+      }
+    }
   }
 
   override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? =
     session
 
   override fun onDestroy() {
+    progressHandler.removeCallbacks(progressTick)
+    // Persist the final ABSOLUTE position so closing the car app doesn't lose it.
+    rawPlayer?.let { if (it.currentPosition > 0) syncProgress(it.currentPosition, force = true) }
     session?.run {
       player.release()
       release()
     }
+    rawPlayer = null
     session = null
     super.onDestroy()
   }
@@ -121,8 +257,8 @@ class HearthShelfAutoService : MediaLibraryService() {
 
   private inner class LibraryCallback : MediaLibrarySession.Callback {
 
-    /** Grant our custom seek commands so the buttons are actionable, and publish
-     *  the custom layout (rewind | forward) to this controller. */
+    /** Grant our custom commands so the buttons are actionable, and publish the
+     *  full custom layout (skip / chapter / speed / bookmark) to this controller. */
     override fun onConnect(
       session: MediaSession,
       controller: MediaSession.ControllerInfo
@@ -131,21 +267,26 @@ class HearthShelfAutoService : MediaLibraryService() {
         .buildUpon()
         .add(SessionCommand(CMD_REWIND, Bundle.EMPTY))
         .add(SessionCommand(CMD_FORWARD, Bundle.EMPTY))
+        .add(SessionCommand(CMD_PREV_CH, Bundle.EMPTY))
+        .add(SessionCommand(CMD_NEXT_CH, Bundle.EMPTY))
+        .add(SessionCommand(CMD_SPEED, Bundle.EMPTY))
+        .add(SessionCommand(CMD_BOOKMARK, Bundle.EMPTY))
         .build()
       return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
         .setAvailableSessionCommands(available)
-        .setCustomLayout(ImmutableList.of(rewindButton(), forwardButton()))
+        .setCustomLayout(customLayout())
         .build()
     }
 
-    /** Seek by our fixed amounts when the custom rewind/forward buttons fire. */
     override fun onCustomCommand(
       session: MediaSession,
       controller: MediaSession.ControllerInfo,
       customCommand: SessionCommand,
       args: Bundle
     ): ListenableFuture<SessionResult> {
-      val player = session.player
+      // Seek against the RAW player (absolute time); session.player is the
+      // chapter-relative forwarding view, which would offset the target.
+      val player = rawPlayer ?: session.player
       when (customCommand.customAction) {
         CMD_REWIND -> player.seekTo((player.currentPosition - REWIND_SEC * 1000).coerceAtLeast(0))
         CMD_FORWARD -> {
@@ -153,6 +294,14 @@ class HearthShelfAutoService : MediaLibraryService() {
           val target = player.currentPosition + FORWARD_SEC * 1000
           player.seekTo(if (dur > 0) target.coerceAtMost(dur) else target)
         }
+        CMD_PREV_CH -> seekChapter(player, -1)
+        CMD_NEXT_CH -> seekChapter(player, 1)
+        CMD_SPEED -> {
+          val next = SPEED_PRESETS.firstOrNull { it > player.playbackParameters.speed + 0.001f }
+            ?: SPEED_PRESETS.first()
+          player.setPlaybackSpeed(next)
+        }
+        CMD_BOOKMARK -> bookmarkNow(player.currentPosition / 1000.0)
         else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
       }
       return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
@@ -308,19 +457,73 @@ class HearthShelfAutoService : MediaLibraryService() {
     val streamUrl = "$base$contentUrl?token=$tok"
     val startSec = session.optDouble("currentTime", 0.0)
     val art = "$base/api/items/$itemId/cover?token=$tok"
+
+    // Remember where to resume + how to sync this session's progress back to ABS.
+    pendingSeekMs = (startSec * 1000).toLong()
+    absSessionId = session.optString("id").ifEmpty { null }
+    absDurationSec = session.optDouble("duration", 0.0)
+    lastSyncedSec = startSec
+
+    val author = session.optString("displayAuthor", "")
+    chapters = parseChapters(session.optJSONArray("chapters"))
+    currentItemId = itemId
+    val firstChapter = chapters.firstOrNull { startSec >= it.start && startSec < it.end } ?: chapters.firstOrNull()
+    val subtitle = if (firstChapter != null) "$author · ${firstChapter.title}" else author
     return MediaItem.Builder()
       .setMediaId("$PLAY_PREFIX$itemId")
       .setUri(streamUrl)
       .setMediaMetadata(
         MediaMetadata.Builder()
           .setTitle(session.optString("displayTitle", "Audiobook"))
-          .setArtist(session.optString("displayAuthor", ""))
+          .setArtist(subtitle)
           .setArtworkUri(android.net.Uri.parse(art))
           .setIsPlayable(true)
           .setMediaType(MediaMetadata.MEDIA_TYPE_AUDIO_BOOK)
           .build()
       )
       .build()
+  }
+
+  private data class Chapter(val title: String, val start: Double, val end: Double)
+
+  private fun chapterAt(posMs: Long): Chapter? {
+    if (chapters.isEmpty()) return null
+    val sec = posMs / 1000.0
+    return chapters.firstOrNull { sec >= it.start && sec < it.end } ?: chapters.last()
+  }
+
+  /** Presents chapter-relative position/duration to the car's MediaSession while
+   *  the wrapped player keeps absolute book time. */
+  private inner class ChapterForwardingPlayer(inner: Player) : ForwardingPlayer(inner) {
+    private fun ch() = chapterAt(wrappedPlayer.currentPosition)
+    override fun getCurrentPosition(): Long {
+      val c = ch() ?: return super.getCurrentPosition()
+      return (super.getCurrentPosition() - (c.start * 1000).toLong()).coerceAtLeast(0)
+    }
+    override fun getContentPosition(): Long = currentPosition
+    override fun getDuration(): Long {
+      val c = ch() ?: return super.getDuration()
+      return ((c.end - c.start) * 1000).toLong()
+    }
+    override fun getContentDuration(): Long = duration
+    override fun getBufferedPosition(): Long {
+      val c = ch() ?: return super.getBufferedPosition()
+      val rel = (super.getBufferedPosition() - (c.start * 1000).toLong()).coerceAtLeast(0)
+      return rel.coerceAtMost(((c.end - c.start) * 1000).toLong())
+    }
+    override fun seekTo(positionMs: Long) {
+      val c = ch()
+      if (c != null) super.seekTo((c.start * 1000).toLong() + positionMs)
+      else super.seekTo(positionMs)
+    }
+  }
+
+  private fun parseChapters(arr: org.json.JSONArray?): List<Chapter> {
+    if (arr == null) return emptyList()
+    return (0 until arr.length()).map {
+      val o = arr.getJSONObject(it)
+      Chapter(o.optString("title", "Chapter ${it + 1}"), o.optDouble("start", 0.0), o.optDouble("end", 0.0))
+    }
   }
 
   /** Build the children for a browse node by querying ABS directly. */
@@ -433,6 +636,29 @@ class HearthShelfAutoService : MediaLibraryService() {
       if (conn.responseCode in 200..299) conn.inputStream.bufferedReader().readText() else null
     } catch (e: Exception) {
       null
+    }
+  }
+
+  /** POST /api/session/:id/sync so ABS keeps the book's progress (mirrors the JS
+   *  syncSession payload: currentTime / timeListened / duration, all seconds). */
+  private fun httpPostSync(urlStr: String, tok: String, currentTime: Double, timeListened: Double, duration: Double) {
+    try {
+      val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
+        requestMethod = "POST"
+        setRequestProperty("Authorization", "Bearer $tok")
+        setRequestProperty("Content-Type", "application/json")
+        doOutput = true
+        connectTimeout = 8000
+        readTimeout = 8000
+      }
+      val body = JSONObject()
+        .put("currentTime", currentTime)
+        .put("timeListened", timeListened)
+        .put("duration", duration)
+      conn.outputStream.use { it.write(body.toString().toByteArray()) }
+      conn.responseCode // fire; ignore body
+    } catch (e: Exception) {
+      // connectivity blips are expected; next tick retries
     }
   }
 
