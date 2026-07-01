@@ -19,7 +19,10 @@ import type {
   ABSChapter,
   ABSPlaybackSession,
   ABSSearchResponse,
+  ABSListeningStats,
+  HSListeningStats,
 } from '@hearthshelf/core'
+import { computeListeningStats } from '@hearthshelf/core'
 
 /** A page of library items plus the total count, for infinite scroll. */
 export interface LibraryItemsPage {
@@ -125,6 +128,36 @@ export async function searchLibrary(
 export async function getItemsInProgress(): Promise<ABSLibraryItem[]> {
   const data = await absRequest<ABSItemsInProgressResponse>('/api/me/items-in-progress')
   return data.libraryItems
+}
+
+// ---- Listening stats ----
+
+/**
+ * The caller's listening stats (streak, this-week, active days, most-listened),
+ * computed server-side by /hs/stats so mobile/web/absorb all agree. The server
+ * lives on the same origin as ABS (it already fronts /hs/hosted/connect), so we
+ * hit it with the same ABS bearer token and pass our local tz offset for
+ * caller-local day bucketing.
+ *
+ * Falls back to reading raw ABS /api/me/listening-stats and computing locally
+ * (via the same core helper) when the server predates /hs/stats - detected by a
+ * 404 - so the app still works against an older HearthShelf server.
+ */
+export async function getHSStats(): Promise<HSListeningStats> {
+  const { serverUrl, token } = requireSession()
+  const tz = new Date().getTimezoneOffset()
+  const res = await fetch(`${serverUrl}/hs/stats?tz=${tz}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (res.ok) {
+    return (await res.json()) as HSListeningStats
+  }
+  if (res.status === 404) {
+    // Older server without /hs/stats: compute from raw ABS stats client-side.
+    const raw = await absRequest<ABSListeningStats>('/api/me/listening-stats')
+    return computeListeningStats(raw, new Date())
+  }
+  throw new Error(`hs_stats_failed ${res.status}`)
 }
 
 // ---- Playback ----

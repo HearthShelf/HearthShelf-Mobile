@@ -367,15 +367,23 @@ server is older than this endpoint — so the app still works against a HS serve
 `/hs/stats` yet. `getRuntime`/version gating already exists server-side; the client can also just try
 `/hs/stats` and fall back on 404.
 
-**Cross-repo checklist for this slice:**
-- [ ] `HearthShelf-Core`: add `HSListeningStats` + `src/lib/stats.ts` (`computeStreak`/`weekSeconds`/
-      `dayKey`); export both. Bump the submodule pin here + in the web app.
-- [ ] `HearthShelf/server`: add `routes/stats.js` (+ `lib/stats.js` if it needs its own glue),
-      register `handleStats` in `index.js`, importing the compute from core.
-- [ ] `HearthShelf-Mobile`: `getHSStats()` in `@/api/abs.ts` hitting `/hs/stats`, with the
-      raw-ABS + core-helper fallback.
-- [ ] `HearthShelf-WebApp` / absorb: can adopt `/hs/stats` later; they keep working via their current
-      raw reads until then (that's the whole point of centralizing).
+**Cross-repo checklist for this slice — DONE:**
+- [x] `HearthShelf-Core` (`packages/core` submodule + sibling repo, kept in sync): added
+      `HSListeningStats`/`HSStatsItem` to `src/types/abs.ts` and pure `src/lib/stats.ts`
+      (`dayKey`/`weekSeconds`/`computeStreak`/`activeDays`/`mostListened`/`computeListeningStats`),
+      exported via `index.ts`. Verified: today-not-yet-listened offset, a gap correctly stops the
+      streak, week sum, most-listened sort — all confirmed with a scripted check against a known
+      `days` map (see commit `a4cea6a`).
+- [x] `HearthShelf/server`: added `routes/stats.js` (`GET /hs/stats?tz=<offsetMinutes>`, per-user, no
+      admin gate) + `lib/stats.js` (JS mirror of the core compute — the server is standalone ESM and
+      doesn't bundle `@hearthshelf/core`, so keep the two in sync by hand). Registered `handleStats` in
+      `index.js`. `tz` reconstructs the caller's local day boundaries since the server can't know the
+      caller's timezone.
+- [x] `HearthShelf-Mobile`: `getHSStats()` in `src/api/abs.ts` — hits `${serverUrl}/hs/stats?tz=...`
+      with the ABS bearer token (same origin that already serves `/hs/hosted/connect`), falls back to
+      raw ABS `/api/me/listening-stats` + the core compute on a 404 (older server).
+- [ ] `HearthShelf-WebApp` / absorb: not yet adopted; they keep working via their current raw reads
+      until migrated (that's the whole point of centralizing — no coupled rollout required).
 
 ---
 
@@ -525,11 +533,11 @@ Library, and reconcile the Sleep sheet against the richer prototype model (§6).
    Fidelity notes carried forward: Material Symbols variable font is a later upgrade (MaterialIcons for
    now); `CoverGlow` image mode + the appearance toggle land with My settings; variable fonts load as
    single instances (synthetic bold).
-2. **Cross-repo stats slice (§6.4):** core `HSListeningStats` + `lib/stats.ts`; server `/hs/stats`;
-   mobile `getHSStats()` with raw-ABS fallback. Unblocks both Home strip and Stats tab, and lets the
-   web app + absorb adopt the same endpoint later.
-3. Home spotlight hero + shelves + real stats strip (§3).
-4. Stats tab (§6.5).
+2. **Cross-repo stats slice (§6.4) — DONE.** Core `HSListeningStats` + `lib/stats.ts`; server
+   `/hs/stats`; mobile `getHSStats()` with raw-ABS fallback. Unblocks both Home strip and Stats tab;
+   web app + absorb can adopt the same endpoint later.
+3. Stats tab (§6.5) — build now, since `getHSStats()` is ready.
+4. Home spotlight hero + shelves + real stats strip (§3), reusing `getHSStats()`.
 5. Library merge + search + filters/sort + view sheet + group drilldown (§4).
 6. Item detail reskin (§5).
 7. Player glow + scrubber thumb + reconcile (§6) — **confirm WIP decisions first**.
