@@ -222,12 +222,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
             ) : (
               <IconButton name={icons.collapse} size={28} onPress={() => router.back()} />
             )}
-            <View style={{ flex: 1, alignItems: 'center' }}>
-              <AppText variant="eyebrow">Now playing</AppText>
-              <AppText variant="caption" numberOfLines={1} style={{ marginTop: 2, opacity: 0.8 }}>
-                HearthShelf{chapter ? ` · ${chapter.title}` : ''}
-              </AppText>
-            </View>
+            <View style={{ flex: 1 }} />
             <IconButton name={icons.queue} size={23} onPress={() => queueRef.current?.present()} />
           </View>
 
