@@ -162,7 +162,7 @@ export default function ItemDetailScreen() {
             style={styles.seriesCard}
             onPress={() =>
               router.push(
-                `/group/series/${encodeURIComponent(series.id)}?libraryId=${encodeURIComponent(detail.libraryId)}&name=${encodeURIComponent(series.name)}`
+                `/series/${encodeURIComponent(series.id)}?libraryId=${encodeURIComponent(detail.libraryId)}`
               )
             }
           >

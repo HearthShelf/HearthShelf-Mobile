@@ -918,7 +918,9 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
           style={styles.groupRow}
           onPress={() =>
             router.push(
-              `/group/${mode}/${encodeURIComponent(item.key)}?libraryId=${encodeURIComponent(libraryId)}&name=${encodeURIComponent(item.name)}`
+              mode === 'series'
+                ? `/series/${encodeURIComponent(item.key)}?libraryId=${encodeURIComponent(libraryId)}`
+                : `/group/${mode}/${encodeURIComponent(item.key)}?libraryId=${encodeURIComponent(libraryId)}&name=${encodeURIComponent(item.name)}`
             )
           }
         >

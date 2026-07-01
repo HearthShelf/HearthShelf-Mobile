@@ -205,6 +205,14 @@ export async function getMe(): Promise<ABSMeResponse> {
   return absRequest<ABSMeResponse>('/api/me')
 }
 
+/** Mark an item finished or not finished (ABS PATCH /api/me/progress/:id). */
+export async function setItemFinished(itemId: string, finished: boolean): Promise<void> {
+  await absRequest<void>(`/api/me/progress/${encodeURIComponent(itemId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ isFinished: finished }),
+  })
+}
+
 // ---- Bookmarks ----
 // User-scoped, per item. ABS has no per-item bookmark GET, so reads go through
 // /api/me (bookmarks[]); create/delete hit the per-item routes.

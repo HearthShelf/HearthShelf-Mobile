@@ -4,7 +4,7 @@ import { FlatList, ImageBackground, Pressable, ScrollView, StyleSheet, View } fr
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
 import type { ABSLibraryItem, ABSShelf, HSListeningStats } from '@hearthshelf/core'
-import { coverHue, formatDuration } from '@hearthshelf/core'
+import { coverHue, formatDuration, formatTimestamp } from '@hearthshelf/core'
 import {
   fetchLinkedServers,
   setSessionExpiredHandler,
@@ -13,7 +13,15 @@ import {
 import { CLERK_JWT_TEMPLATE } from '@/lib/config'
 import { connectServer } from '@/api/connect'
 import { setSession, clearSession, setLastServerId, getLastServerId } from '@/api/session'
-import { clearTrack, getState, subscribe } from '@/player/store'
+import {
+  clearTrack,
+  getState,
+  subscribe,
+  togglePlay,
+  jumpBy,
+  requestSeek,
+  currentChapter,
+} from '@/player/store'
 import { getSettingsState, subscribeSettings, COVER_ASPECT_RATIO } from '@/store/settings'
 import { setAutoSession, clearAutoSession } from '@/player/autoBridge'
 import { startQueueSync, stopQueueSync } from '@/player/queueSync'
@@ -47,6 +55,7 @@ import {
 } from '@/ui/primitives'
 import { BottomSheetFlatList } from '@gorhom/bottom-sheet'
 import { Icon, type IconName } from '@/ui/icons'
+import { Scrubber } from '@/player/Scrubber'
 import { colors, radius, shadow, spacing } from '@/ui/theme'
 
 type Status =
@@ -67,7 +76,7 @@ export default function HomeScreen() {
   const { getToken, signOut } = useAuth()
   const { user } = useUser()
   const firstName = user?.firstName ?? null
-  const { nowPlaying } = useSyncExternalStore(subscribe, getState)
+  const { nowPlaying, isPlaying, position } = useSyncExternalStore(subscribe, getState)
   const router = useRouter()
   const [status, setStatus] = useState<Status>({ phase: 'connecting' })
   const [inProgress, setInProgress] = useState<ABSLibraryItem[]>([])
@@ -260,11 +269,19 @@ export default function HomeScreen() {
         contentContainerStyle={{ paddingBottom: 140 }}
         showsVerticalScrollIndicator={false}
       >
-        {hero ? (
+        {nowPlaying ? (
+          <PlayerHero
+            nowPlaying={nowPlaying}
+            isPlaying={isPlaying}
+            position={position}
+            greeting={<Greeting firstName={firstName} nowPlayingTitle={nowPlaying.title} />}
+            onOpen={() => router.push('/player')}
+          />
+        ) : hero ? (
           <ContinueHero
             item={hero}
             progress={heroProgress}
-            greeting={<Greeting firstName={firstName} nowPlayingTitle={nowPlaying?.title} />}
+            greeting={<Greeting firstName={firstName} />}
             onResume={async () => {
               try {
                 await playItemById(hero.id)
@@ -276,7 +293,7 @@ export default function HomeScreen() {
           />
         ) : (
           <View style={styles.topBar}>
-            <Greeting firstName={firstName} nowPlayingTitle={nowPlaying?.title} />
+            <Greeting firstName={firstName} />
           </View>
         )}
         {stats ? <HomeStatsStrip stats={stats} /> : null}
@@ -384,6 +401,138 @@ function ContinueHero({
             {started ? 'Resume' : 'Start listening'}
           </AppText>
         </Touchable>
+      </View>
+    </View>
+  )
+}
+
+/**
+ * Live-player hero: shown in place of the Resume hero whenever something is
+ * playing. The now-playing artwork fills the spotlight (same treatment as the
+ * Continue hero), the Resume pill becomes a round play/pause, and the flat
+ * progress bar becomes the real draggable Scrubber - chapter- or book-relative
+ * per the user's scrubber setting, matching the full player. Skip buttons sit in
+ * the bottom-right, using the configured skip amounts. Tapping the cover opens
+ * the full player.
+ */
+function PlayerHero({
+  nowPlaying,
+  isPlaying,
+  position,
+  greeting,
+  onOpen,
+}: {
+  nowPlaying: NonNullable<ReturnType<typeof getState>['nowPlaying']>
+  isPlaying: boolean
+  position: number
+  greeting: React.ReactNode
+  onOpen: () => void
+}) {
+  const { scrubber, skipForward, skipBack } = useSyncExternalStore(subscribeSettings, getSettingsState)
+  const [previewRatio, setPreviewRatio] = useState<number | null>(null)
+
+  const duration = nowPlaying.duration
+  const hasChapters = nowPlaying.chapters.length > 0
+  const chapterScope = scrubber === 'chapter' && hasChapters
+  const chapter = currentChapter()
+
+  const bookProgress = duration > 0 ? Math.min(1, Math.max(0, position / duration)) : 0
+
+  // Chapter-relative when the setting asks for it (and chapters exist), else
+  // whole-book. Mirrors the full player's math so the two never disagree.
+  const chStart = chapter?.start ?? 0
+  const chEnd = chapter?.end ?? duration
+  const chSpan = Math.max(1, chEnd - chStart)
+  const shownPos = previewRatio !== null ? chStart + previewRatio * chSpan : position
+  const chPos = Math.max(0, shownPos - chStart)
+  const ratio = chapterScope ? Math.min(1, chPos / chSpan) : bookProgress
+  const elapsed = formatTimestamp(chapterScope ? chPos : shownPos)
+  const remain = formatTimestamp(
+    Math.max(0, chapterScope ? chSpan - chPos : duration - shownPos)
+  )
+
+  const seekToRatio = (r: number) => {
+    if (chapterScope) requestSeek(chStart + r * chSpan)
+    else if (duration > 0) requestSeek(r * duration)
+  }
+
+  const heroArt = coverUrl(nowPlaying.itemId)
+  return (
+    <View style={styles.hero}>
+      <ImageBackground
+        source={heroArt ? { uri: heroArt } : undefined}
+        style={styles.heroBg}
+        imageStyle={styles.heroBgImg}
+      >
+        <LinearGradient
+          colors={['rgba(27,26,24,0.35)', 'rgba(27,26,24,0.55)', colors.scaffold]}
+          locations={[0, 0.55, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+      </ImageBackground>
+
+      <View style={styles.heroContent}>
+        <Pressable style={styles.heroGreeting} onPress={onOpen}>
+          {greeting}
+        </Pressable>
+        <View style={styles.heroGap} />
+        <Pressable style={styles.heroMeta} onPress={onOpen}>
+          <AppText variant="eyebrow" color={colors.accent}>
+            {isPlaying ? 'Now playing' : 'Continue'}
+          </AppText>
+          <AppText variant="title" numberOfLines={2} style={{ marginTop: 6 }}>
+            {nowPlaying.title}
+          </AppText>
+          <AppText variant="meta" color={colors.textMuted} numberOfLines={1} style={{ marginTop: 4 }}>
+            {nowPlaying.author}
+          </AppText>
+          {isPlaying && chapterScope && chapter?.title ? (
+            <AppText variant="caption" color={colors.textMuted} numberOfLines={1} style={{ marginTop: 2 }}>
+              {chapter.title}
+            </AppText>
+          ) : null}
+        </Pressable>
+
+        {isPlaying ? (
+          <>
+            {/* Live player: draggable scrubber + transport, shown only while
+                audio is advancing. Paused, the hero reverts to the Resume look. */}
+            <View style={styles.heroScrub}>
+              <Scrubber
+                ratio={ratio}
+                elapsed={elapsed}
+                remain={remain}
+                onDrag={setPreviewRatio}
+                onSeek={seekToRatio}
+              />
+            </View>
+
+            <View style={styles.heroPlayerRow}>
+              <Touchable onPress={togglePlay} style={styles.heroPlayBtn}>
+                <Icon name={icons.pause} size={28} color={colors.onAccent} />
+              </Touchable>
+              <View style={{ flex: 1 }} />
+              <IconButton name={icons.rewind} size={30} color={colors.text} onPress={() => jumpBy(-skipBack)} />
+              <IconButton name={icons.forward} size={30} color={colors.text} onPress={() => jumpBy(skipForward)} />
+            </View>
+          </>
+        ) : (
+          <>
+            <View style={styles.heroProgress}>
+              <ProgressBar progress={bookProgress} style={{ flex: 1 }} />
+              <AppText variant="mono" color={colors.textMuted}>
+                {Math.round(bookProgress * 100)}%
+              </AppText>
+            </View>
+
+            <Touchable onPress={togglePlay} style={styles.heroResume}>
+              <Icon name={icons.play} size={20} color={colors.onAccent} />
+              <AppText variant="label" color={colors.onAccent}>
+                Resume
+              </AppText>
+            </Touchable>
+          </>
+        )}
       </View>
     </View>
   )
@@ -560,6 +709,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 26,
     borderRadius: 16,
     backgroundColor: colors.accent,
+    ...shadow.accentGlow,
+  },
+  heroScrub: { marginTop: 18 },
+  heroPlayerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+  },
+  heroPlayBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
     ...shadow.accentGlow,
   },
   seeAll: { flexDirection: 'row', alignItems: 'center', gap: 1 },

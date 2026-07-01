@@ -1,18 +1,23 @@
 <#
 .SYNOPSIS
-  Build the debug APK for the x86_64 emulator and launch it.
+  Build the debug APK for the attached device (emulator or phone) and launch it.
 
 .DESCRIPTION
   Wraps the local build/install/launch loop documented in TESTING.md so you don't
-  have to retype the gradle + adb dance. Builds ONLY the x86_64 ABI (the emulator's)
-  for a ~4x faster build than all-arch. CI is the ~27 min path; this is the fast one.
+  have to retype the gradle + adb dance. Builds ONLY the target device's ABI (one
+  ABI, not all four) for a ~4x faster build. CI is the ~27 min path; this is fast.
+
+  Device pick: one attached -> use it; several -> prompt a menu (emulator or a
+  plugged-in phone). The build ABI follows the pick - x86_64 for emulators,
+  arm64-v8a for real phones - so `npm run emulator` loads onto your Android too.
 
   Steps:
-    1. (optional) expo prebuild        - only for NATIVE changes (Kotlin / config plugin)
-    2. (optional) clear native caches  - fixes the stale-CMake "libworklets.so" ninja error
-    3. gradlew :app:assembleDebug -PreactNativeArchitectures=x86_64
-    4. adb install -r  (auto-uninstalls first if a version-downgrade blocks it)
-    5. launch the app
+    1. pick the device (auto or menu) and its build ABI
+    2. (optional) expo prebuild        - only for NATIVE changes (Kotlin / config plugin)
+    3. (optional) clear native caches  - fixes the stale-CMake "libworklets.so" ninja error
+    4. gradlew :app:assembleDebug -PreactNativeArchitectures=<abi>
+    5. adb install -r  (auto-uninstalls first if a version-downgrade blocks it)
+    6. force-stop + launch the app
 
 .PARAMETER Prebuild
   Run `expo prebuild --platform android` first. REQUIRED after editing anything under
@@ -46,7 +51,12 @@ param(
   [switch]$Prebuild,
   [switch]$Clean,
   [switch]$NoLaunch,
-  [string]$Serial = 'emulator-5554'
+  # Target device serial. Omit to auto-pick: one device -> use it; several ->
+  # prompt to choose (emulator or a plugged-in phone). The build ABI follows the
+  # picked device (x86_64 for emulators, arm64-v8a for real phones).
+  [string]$Serial,
+  # Force a build ABI instead of auto-detecting from the device (e.g. arm64-v8a).
+  [string]$Abi
 )
 
 $ErrorActionPreference = 'Stop'
@@ -69,13 +79,49 @@ if (-not (Test-Path $JdkPath)) {
 }
 $env:JAVA_HOME = $JdkPath
 
-# --- device check ---
-Write-Step "Checking device $Serial"
-$devices = & $adb devices
-if (-not ($devices -match [regex]::Escape($Serial))) {
-  Write-Host $devices
-  throw "Device '$Serial' not attached. Start the emulator (AVD 'hs_auto') or pass -Serial <id>."
+# --- device selection ---
+Write-Step 'Finding devices'
+# Parse `adb devices` into the serials that are actually ready (state 'device').
+$attached = @(
+  (& $adb devices) |
+    Select-Object -Skip 1 |
+    Where-Object { $_ -match '^\S+\s+device$' } |
+    ForEach-Object { ($_ -split '\s+')[0] }
+)
+
+if ($attached.Count -eq 0) {
+  throw 'No devices attached. Start the emulator (AVD "hs_auto") or plug in a phone with USB debugging on.'
 }
+
+if ($Serial) {
+  if ($attached -notcontains $Serial) {
+    throw "Device '$Serial' not attached. Attached: $($attached -join ', ')"
+  }
+}
+elseif ($attached.Count -eq 1) {
+  $Serial = $attached[0]
+}
+else {
+  # Multiple devices - show a labelled menu (serial + model) and let the user pick.
+  Write-Host 'Multiple devices attached - pick one:' -ForegroundColor Yellow
+  for ($i = 0; $i -lt $attached.Count; $i++) {
+    $s = $attached[$i]
+    $model = (& $adb -s $s shell getprop ro.product.model 2>$null).Trim()
+    $kind = if ($s -like 'emulator-*') { 'emulator' } else { 'device' }
+    Write-Host ("  [{0}] {1}  ({2}, {3})" -f $i, $s, $model, $kind)
+  }
+  do {
+    $choice = Read-Host "Enter number (0-$($attached.Count - 1))"
+  } until ($choice -match '^\d+$' -and [int]$choice -lt $attached.Count)
+  $Serial = $attached[[int]$choice]
+}
+
+# --- pick the build ABI for the target (emulators = x86_64, phones = arm64) ---
+if (-not $Abi) {
+  $deviceAbi = (& $adb -s $Serial shell getprop ro.product.cpu.abi 2>$null).Trim()
+  $Abi = if ($deviceAbi) { $deviceAbi } elseif ($Serial -like 'emulator-*') { 'x86_64' } else { 'arm64-v8a' }
+}
+Write-Host "Target: $Serial  (abi: $Abi)" -ForegroundColor Green
 
 # --- 1. prebuild (native changes only) ---
 if ($Prebuild) {
@@ -113,10 +159,10 @@ if ($Clean) {
 }
 
 # --- 3. build ---
-Write-Step 'Building debug APK (x86_64 only)'
+Write-Step "Building debug APK ($Abi only)"
 Push-Location (Join-Path $RepoRoot 'android')
 try {
-  & .\gradlew.bat :app:assembleDebug -PreactNativeArchitectures=x86_64
+  & .\gradlew.bat :app:assembleDebug "-PreactNativeArchitectures=$Abi"
   if ($LASTEXITCODE -ne 0) { throw "Gradle build failed (exit $LASTEXITCODE)." }
 } finally { Pop-Location }
 
