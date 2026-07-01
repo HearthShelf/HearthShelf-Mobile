@@ -249,24 +249,47 @@ a 4-button secondary row (Finished/Share/Bookmarks/Details); **Chapters** previe
 opening the chapters sheet; a length/chapters/published stat strip; an editorial italic **About**
 blurb + narrator.
 
-**This repo:** [app/item/[id].tsx](app/item/[id].tsx) exists — verify current contents and gaps.
+**Built — this section is DONE.** [app/item/[id].tsx](app/item/[id].tsx) reskinned in full:
 
-**Build:** Reskin/extend the item screen to the mock. Real data from ABS (title/author/duration/
-chapters/progress). **Data gaps / decisions:** ratings and "readers" avatars aren't standard ABS —
-stub or hide (recommend hide ratings unless the server provides them; drop the social "readers" stack
-for v1). Series link uses the same grouping as Library. Bookmarks/playlist-add need ABS endpoints
-(stub buttons that no-op with a toast, or hide).
+- **Header:** hue `CoverGlow` (320px, behind the scroll content) + a back button. Share/bookmark/more
+  are **omitted, not stubbed** — they're real ABS-shaped affordances (bookmarks are a genuine ABS
+  feature) the app doesn't wire up yet, and a dead icon that does nothing is worse than no icon.
+- **Hero:** real cover (typeset fallback via `coverHue`/title-initial), title, author.
+- **Ratings / "readers" avatar stack:** hidden — no ABS field for ratings in this app's data path, and
+  the social readers stack has no backing data at all. Not shown as fake UI.
+- **Series link:** resolves the book's series via `getLibrarySeries(libraryId)` (same call the Library
+  screen's Series view uses) and links into the identical `/group/series/:id` drilldown, so Detail and
+  Library agree on series membership and never diverge.
+- **Status card:** three real states off `/api/me` progress (`getMe()`, matched by `libraryItemId`) —
+  not-started (schedule icon), in-progress (% + chapters-left + remaining-time + a progress bar),
+  finished (gold check + "Finished"). No hardcoded status text.
+- **CTA:** label switches Start listening / Resume / Listen again by the same three states; tapping
+  calls `playItemById` then `requestSeek` to the saved position (skipped when finished, so "Listen
+  again" restarts from zero) and pushes `/player`. Playlist-add/download **omitted** — no backing
+  feature.
+- **Chapters:** first 4 shown inline; "View all" (or tapping any preview row) opens a `Sheet` with the
+  full chapter list. Selecting any chapter starts playback via `playItemById` + `requestSeek(chapter
+  .start)` and opens the player — verified against the store's `loadTrack`/`seekTo` flow (load sets
+  position synchronously, a follow-up `requestSeek` is picked up by `PlayerHost`'s effect on the next
+  render, the same sequencing `jumpBy`/`seekToChapter` already rely on elsewhere).
+- **Stat strip:** length (derived from the last chapter's end, or summed audio-file durations for
+  single-file books), chapter count, published year — all real.
+- **About:** editorial italic blurb (`variant="quote"`, Libre Baskerville) + "Narrated by," when present.
 
 **Validation pass — Detail:**
-- [ ] Cover, title, author, duration, chapter count, published year all reflect real ABS data.
-- [ ] Status card is correct for each case: not-started / in-progress (% + chapters left + remaining) /
-      finished, matching `detailInProgress|Finished|NotStarted` logic.
-- [ ] CTA label switches Start/Resume/Listen again and starts playback at the right position.
-- [ ] Chapters preview shows first 4; "View all" opens the chapters sheet with the full list; seeking
+- [x] Cover, title, author, duration, chapter count, published year all reflect real ABS data.
+- [x] Status card is correct for each case: not-started / in-progress (% + chapters left + remaining) /
+      finished.
+- [x] CTA label switches Start/Resume/Listen again and starts playback at the right position.
+- [x] Chapters preview shows first 4; "View all" opens the chapters sheet with the full list; seeking
       from a chapter starts/loads playback at that timestamp.
-- [ ] Series link (when present) opens the series group; absent when the book has no series.
-- [ ] Stubbed/hidden affordances (ratings, readers, bookmarks) are intentionally hidden — no dead UI.
-- [ ] Glow header uses the book's hue.
+- [x] Series link (when present) opens the same series group Library links to; absent when the book has
+      no series.
+- [x] Ratings/readers/playlist-add/download/share/bookmark are intentionally omitted — no dead UI.
+- [x] Glow header uses the book's hue (`coverHue` feeding `CoverGlow`).
+- [ ] **Not yet verified on-device**: glow layering behind the ScrollView, sheet feel, and real playback
+      from a chapter tap. Typecheck + Metro bundle pass; needs a real build per the verification-
+      boundary memory.
 
 ---
 
@@ -570,11 +593,16 @@ Library, and reconcile the Sleep sheet against the richer prototype model (§6).
    `CalmHero`; upgrading it to the prototype's spotlight treatment is separate follow-up work.
 5. Library **(DONE)** (§4): merge + inline search + Books/Series/Narrators/Authors view selector (real
    ABS data, no stubs) + filter chips/sort/view-options sheet + A-Z rail + group drilldown.
-6. Item detail reskin (§5).
-7. Player glow + scrubber thumb + reconcile (§6) — **confirm WIP decisions first**.
+6. Item detail **(DONE)** (§5): hue glow header, real status card (not-started/in-progress/finished),
+   CTA that plays at the right position, series link shared with Library, chapters preview + full-list
+   sheet with chapter-accurate seek, stat strip, editorial About. Ratings/readers/playlist-add/download/
+   share/bookmark intentionally omitted (no backing data or feature).
+7. Player — **explicitly deferred by the user ("Player details are coming soon").** Do not build glow/
+   scrubber-thumb/sleep-sheet reconciliation for §6 until asked; the current player (car mode + the
+   already-shipped Hearth Pill scrubber) stays as-is.
 8. More hub + My settings + Server settings + About (§7); stub the still-data-gated sub-screens
    (Collections, Playlists, History, admin Server stats).
-9. Sleep-sheet richness (follow-up).
+9. Sleep-sheet richness (follow-up, also gated on the Player go-ahead above).
 
 All §0.4 decisions are answered and reflected above (real-primary covers, both glow modes, all three
-fonts, 5 tabs, build-now-stub-the-rest for More). Next up: item detail (§5).
+fonts, 5 tabs, build-now-stub-the-rest for More). Next up: the More hub (§7) — Player is on hold.
