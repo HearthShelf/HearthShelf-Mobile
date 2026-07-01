@@ -22,7 +22,7 @@ export const icons = {
   // Tabs
   home: 'home',
   library: 'auto-stories',
-  nowPlaying: 'play-circle',
+  nowPlaying: 'graphic-eq',
   stats: 'insights',
   more: 'more-horiz',
   // Transport
@@ -84,7 +84,6 @@ export const icons = {
  */
 export const filledIcons = {
   home: 'home-filled',
-  nowPlaying: 'play-circle-filled',
   play: 'play-arrow',
   flame: 'local-fire-department',
 } as const satisfies Partial<Record<keyof typeof icons, IconName>>

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import type { ABSLibraryItem, ABSShelf, HSListeningStats } from '@hearthshelf/core'
-import { formatDuration } from '@hearthshelf/core'
+import { coverHue, formatDuration } from '@hearthshelf/core'
 import {
   fetchLinkedServers,
   setSessionExpiredHandler,
@@ -21,6 +21,7 @@ import {
   getItemsInProgress,
   getLibraries,
   getLibraryItems,
+  getMe,
   getPersonalized,
   itemAuthor,
   itemTitle,
@@ -33,11 +34,13 @@ import {
   IconButton,
   Loading,
   PrimaryButton,
+  ProgressBar,
   Row,
   Screen,
   SectionHeader,
   icons,
 } from '@/ui/primitives'
+import { CoverGlow } from '@/ui/CoverGlow'
 import { Icon } from '@/ui/icons'
 import { colors, radius, spacing } from '@/ui/theme'
 
@@ -60,6 +63,7 @@ export default function HomeScreen() {
   const router = useRouter()
   const [status, setStatus] = useState<Status>({ phase: 'connecting' })
   const [inProgress, setInProgress] = useState<ABSLibraryItem[]>([])
+  const [heroProgress, setHeroProgress] = useState(0)
   const [shelves, setShelves] = useState<ABSShelf[]>([])
   const [stats, setStats] = useState<HSListeningStats | null>(null)
 
@@ -95,6 +99,18 @@ export default function HomeScreen() {
 
         const progress = await getItemsInProgress()
         setInProgress(progress)
+
+        // The hero's progress bar needs per-item state, which items-in-progress
+        // doesn't carry - read it from the caller's progress map (best-effort).
+        const hero = progress[0]
+        if (hero) {
+          getMe()
+            .then((me) => {
+              const p = me.mediaProgress.find((mp) => mp.libraryItemId === hero.id)
+              setHeroProgress(p?.progress ?? 0)
+            })
+            .catch(() => setHeroProgress(0))
+        }
 
         // Stats strip is best-effort - a stats failure shouldn't block the rest
         // of Home from loading. Same getHSStats() the Stats tab reads, so the
@@ -240,7 +256,20 @@ export default function HomeScreen() {
         contentContainerStyle={{ paddingBottom: 140 }}
         showsVerticalScrollIndicator={false}
       >
-        {hero ? <CalmHero item={hero} onPress={() => playItemById(hero.id)} /> : null}
+        {hero ? (
+          <ContinueHero
+            item={hero}
+            progress={heroProgress}
+            onResume={async () => {
+              try {
+                await playItemById(hero.id)
+                router.push('/player')
+              } catch {
+                router.push(`/item/${hero.id}`)
+              }
+            }}
+          />
+        ) : null}
         {stats ? <HomeStatsStrip stats={stats} /> : null}
         {shelves.map((shelf) => (
           <Shelf key={shelf.id} shelf={shelf} />
@@ -250,23 +279,65 @@ export default function HomeScreen() {
   )
 }
 
-function CalmHero({ item, onPress }: { item: ABSLibraryItem; onPress: () => void }) {
+/**
+ * Continue-listening spotlight hero: cover with a color glow, title/author, a
+ * progress bar with a percent readout, and a Resume CTA (mirrors the web home's
+ * ResumeHero). progress is 0..1.
+ */
+function ContinueHero({
+  item,
+  progress,
+  onResume,
+}: {
+  item: ABSLibraryItem
+  progress: number
+  onResume: () => void
+}) {
+  const router = useRouter()
+  const pct = Math.round(Math.max(0, Math.min(1, progress)) * 100)
+  const started = progress > 0
   return (
-    <Pressable onPress={onPress} style={styles.hero}>
-      <Cover uri={coverUrl(item.id)} size={76} radius={radius.tile} />
-      <View style={styles.heroMeta}>
-        <AppText variant="caption" color={colors.accent}>
-          JUMP BACK IN
-        </AppText>
-        <AppText variant="title" numberOfLines={2}>
-          {itemTitle(item)}
-        </AppText>
-        <AppText variant="meta" color={colors.textMuted} numberOfLines={1}>
-          {itemAuthor(item)}
-        </AppText>
+    <View style={styles.hero}>
+      <CoverGlow hue={coverHue(item.id)} height={200} style={styles.heroGlow} />
+      <View style={styles.heroTop}>
+        <Pressable onPress={() => router.push(`/item/${item.id}`)}>
+          <Cover
+            uri={coverUrl(item.id)}
+            width={92}
+            aspectRatio={2 / 3}
+            radius={radius.tile}
+            fallback={{ hue: coverHue(item.id), initial: itemTitle(item).charAt(0).toUpperCase() }}
+          />
+        </Pressable>
+        <View style={styles.heroMeta}>
+          <AppText variant="eyebrow" color={colors.accent}>
+            {started ? 'Continue' : 'Up next'}
+          </AppText>
+          <AppText variant="title" numberOfLines={2}>
+            {itemTitle(item)}
+          </AppText>
+          <AppText variant="meta" color={colors.textMuted} numberOfLines={1}>
+            {itemAuthor(item)}
+          </AppText>
+        </View>
       </View>
-      <IconButton name={icons.play} size={34} color={colors.accent} onPress={onPress} />
-    </Pressable>
+
+      {started && (
+        <View style={styles.heroProgress}>
+          <ProgressBar progress={progress} style={{ flex: 1 }} />
+          <AppText variant="mono" color={colors.textMuted}>
+            {pct}%
+          </AppText>
+        </View>
+      )}
+
+      <PrimaryButton
+        label={started ? 'Resume' : 'Start listening'}
+        icon={icons.play}
+        onPress={onResume}
+        style={{ marginTop: spacing.md }}
+      />
+    </View>
   )
 }
 
@@ -304,12 +375,44 @@ function HomeStatsStrip({ stats }: { stats: HSListeningStats }) {
   )
 }
 
+/**
+ * Map a personalized shelf to a Library deep-link. "Recently added" just means
+ * the Library sorted by date added; anything else falls back to a genre filter on
+ * the shelf label so the "See all" tap always lands somewhere useful.
+ */
+function shelfToLibraryHref(shelf: ABSShelf): string {
+  const label = shelf.label.toLowerCase()
+  if (label.includes('recent') || label.includes('added') || label.includes('newest')) {
+    return '/(tabs)/library?sort=Date%20Added&desc=1'
+  }
+  if (label.includes('continue') || label.includes('listen again')) {
+    return '/(tabs)/library?filter=progress|In%20Progress'
+  }
+  // Discover / genre-ish shelves: filter by the shelf's own name as a genre.
+  return `/(tabs)/library?filter=genres|${encodeURIComponent(shelf.label)}`
+}
+
 function Shelf({ shelf }: { shelf: ABSShelf }) {
   const router = useRouter()
   if (shelf.type !== 'book') return null
+  const href = shelfToLibraryHref(shelf)
   return (
     <View style={{ marginTop: spacing.lg }}>
-      <SectionHeader title={shelf.label} />
+      <SectionHeader
+        title={shelf.label}
+        action={
+          <Pressable
+            onPress={() => router.push(href)}
+            hitSlop={8}
+            style={styles.seeAll}
+          >
+            <AppText variant="caption" color={colors.textMuted}>
+              See all
+            </AppText>
+            <Icon name={icons.chevronRight} size={16} color={colors.textMuted} />
+          </Pressable>
+        }
+      />
       <FlatList
         data={shelf.entities}
         keyExtractor={(it) => it.id}
@@ -341,17 +444,30 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   hero: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
     marginHorizontal: spacing.lg,
-    padding: spacing.md,
+    marginTop: spacing.sm,
+    padding: spacing.lg,
     backgroundColor: colors.high,
     borderRadius: radius.card,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairline,
+    overflow: 'hidden',
   },
-  heroMeta: { flex: 1, gap: 2 },
+  heroGlow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+  },
+  heroTop: { flexDirection: 'row', gap: spacing.md },
+  heroMeta: { flex: 1, gap: 3, justifyContent: 'center' },
+  heroProgress: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  seeAll: { flexDirection: 'row', alignItems: 'center', gap: 1 },
   tile: { width: 120 },
   statsStrip: {
     flexDirection: 'row',

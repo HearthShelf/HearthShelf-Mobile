@@ -11,8 +11,8 @@
  * the web app's Library page already proves out.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { FlatList, Pressable, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native'
-import { useRouter } from 'expo-router'
+import { FlatList, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native'
+import { useLocalSearchParams, useRouter } from 'expo-router'
 import type {
   ABSLibrary,
   ABSLibraryItem,
@@ -20,8 +20,17 @@ import type {
   ABSNarrator,
   ABSSeries,
   ABSMediaProgress,
+  LibrarySort,
 } from '@hearthshelf/core'
-import { letterOf, coverHue } from '@hearthshelf/core'
+import {
+  letterOf,
+  coverHue,
+  applyLibraryFilter,
+  filterLabel,
+  FILTER_GROUPS,
+  SORT_COMMON,
+  SORT_MORE,
+} from '@hearthshelf/core'
 import {
   coverUrl,
   getLibraries,
@@ -36,7 +45,7 @@ import {
 } from '@/api/abs'
 import { AppText, Centered, Cover, IconButton, Loading, Screen, Sheet, type SheetRef, icons } from '@/ui/primitives'
 import { BookTile } from '@/ui/BookTile'
-import { AzRail } from '@/ui/AzRail'
+import { AzRail, AZ_RAIL_WIDTH } from '@/ui/AzRail'
 import { colors, radius, spacing } from '@/ui/theme'
 
 const COLS = 3
@@ -53,6 +62,18 @@ const VIEW_MODES: { key: ViewMode; label: string }[] = [
 export default function LibraryScreen() {
   const router = useRouter()
   const { width } = useWindowDimensions()
+
+  // Home's shelf headers deep-link here with a sort/filter preset. Seed the Books
+  // view from those params (a new param object each time so navigating again
+  // re-applies), and force the Books view so the preset is visible.
+  const params = useLocalSearchParams<{ sort?: string; desc?: string; filter?: string }>()
+  const preset = useMemo<BooksPreset | undefined>(() => {
+    if (!params.sort && !params.filter) return undefined
+    const all = [...SORT_COMMON, ...SORT_MORE] as string[]
+    const sort = params.sort && all.includes(params.sort) ? (params.sort as LibrarySort) : undefined
+    return { sort, desc: params.desc === '1', filter: params.filter }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.sort, params.desc, params.filter])
 
   // ---- library resolution (auto-pick the primary book library; switcher for
   // multi-library servers) ----
@@ -113,6 +134,11 @@ export default function LibraryScreen() {
 
   // ---- view selector ----
   const [viewMode, setViewMode] = useState<ViewMode>('books')
+
+  // A deep-link preset always lands on the Books view so the preset is visible.
+  useEffect(() => {
+    if (preset) setViewMode('books')
+  }, [preset])
 
   const tileWidth = (width - GUTTER * 2 - GUTTER * (COLS - 1)) / COLS
 
@@ -192,7 +218,7 @@ export default function LibraryScreen() {
       ) : !libraryId ? (
         <Loading />
       ) : viewMode === 'books' ? (
-        <BooksView libraryId={libraryId} tileWidth={tileWidth} />
+        <BooksView libraryId={libraryId} width={width} preset={preset} />
       ) : (
         <GroupsView libraryId={libraryId} mode={viewMode} />
       )}
@@ -262,43 +288,113 @@ function SearchResults({
   )
 }
 
-type FilterKey = 'all' | 'progress' | 'finished'
-type SortKey = 'name' | 'added' | 'author' | 'duration'
 type DisplayMode = 'grid' | 'list'
 type CoverSize = 'comfortable' | 'compact'
 
-const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'progress', label: 'In progress' },
-  { key: 'finished', label: 'Finished' },
-]
-const SORT_LABEL: Record<SortKey, string> = {
-  name: 'A–Z',
-  added: 'Recent',
-  author: 'Author',
-  duration: 'Longest',
+interface ItemProgress {
+  progress: number
+  isFinished: boolean
+}
+type ProgressOf = (id: string) => ItemProgress | undefined
+
+// Curated sorts for the phone tray. One row per concept (no separate "Author
+// (Last, First)" row - the WebApp lists it twice, we don't); tap the active row
+// again to flip direction. Random lives under a "More" disclosure.
+const CURATED_SORTS: LibrarySort[] = ['Title', 'Author', 'Date Added', 'Duration', 'Progress', 'Published Year']
+const MORE_SORTS: LibrarySort[] = ['Random']
+// Sorts that read most naturally newest/longest-first when you first pick them.
+const DESC_BY_DEFAULT = new Set<LibrarySort>(['Date Added', 'Duration', 'Progress'])
+
+// Curated filter groups surfaced on the phone (the core model also has decade /
+// language / tags / explicit - left out here to keep the tray tidy; re-adding is
+// a one-line change to this list).
+const CURATED_FILTER_GROUPS = ['progress', 'genres', 'authors', 'series']
+
+const lastName = (n: string) => n.trim().split(/\s+/).pop() ?? n
+
+/** Port of the WebApp's per-sort comparators (LibraryPage.tsx). */
+function sortItems(
+  items: ABSLibraryItem[],
+  sort: LibrarySort,
+  desc: boolean,
+  progressOf: ProgressOf
+): ABSLibraryItem[] {
+  const out = items.slice()
+  const cmp: Record<LibrarySort, (a: ABSLibraryItem, b: ABSLibraryItem) => number> = {
+    Title: (a, b) =>
+      (a.media.metadata.titleIgnorePrefix || a.media.metadata.title || '').localeCompare(
+        b.media.metadata.titleIgnorePrefix || b.media.metadata.title || ''
+      ),
+    Author: (a, b) => a.media.metadata.authorName.localeCompare(b.media.metadata.authorName),
+    'Author (Last, First)': (a, b) =>
+      lastName(a.media.metadata.authorName).localeCompare(lastName(b.media.metadata.authorName)),
+    'Published Year': (a, b) =>
+      Number(a.media.metadata.publishedYear ?? 0) - Number(b.media.metadata.publishedYear ?? 0),
+    'Date Added': (a, b) => a.addedAt - b.addedAt,
+    Duration: (a, b) => (a.media.duration ?? 0) - (b.media.duration ?? 0),
+    Size: (a, b) => (a.media.size ?? 0) - (b.media.size ?? 0),
+    Progress: (a, b) => (progressOf(a.id)?.progress ?? 0) - (progressOf(b.id)?.progress ?? 0),
+    Random: () => 0,
+  }
+  out.sort(cmp[sort])
+  if (sort === 'Random') {
+    // Deterministic-per-render shuffle so the order is mixed but stable.
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor((((i * 9301 + 49297) % 233280) / 233280) * (i + 1))
+      const tmp = out[i]
+      out[i] = out[j]
+      out[j] = tmp
+    }
+  }
+  if (desc) out.reverse()
+  return out
+}
+
+interface BooksPreset {
+  sort?: LibrarySort
+  desc: boolean
+  filter?: string
 }
 
 /**
  * Books view: fetches the whole library once (ABS limit=0 - the pattern the web
  * app's Library page already proves out) plus the caller's progress map, then
- * filters/sorts/paginates-for-render entirely client-side. "Downloaded" from
- * the prototype has no ABS/app-side data source (no offline-download feature
- * exists here) so it's intentionally omitted rather than stubbed as a fake filter.
+ * filters/sorts/displays entirely client-side. Filtering + sorting use the shared
+ * @hearthshelf/core model (applyLibraryFilter / the WebApp's comparators) so the
+ * phone and web offer the same options and agree on results.
  */
-function BooksView({ libraryId, tileWidth: baseTileWidth }: { libraryId: string; tileWidth: number }) {
+function BooksView({
+  libraryId,
+  width,
+  preset,
+}: {
+  libraryId: string
+  width: number
+  preset?: BooksPreset
+}) {
   const [items, setItems] = useState<ABSLibraryItem[] | null>(null)
   const [progress, setProgress] = useState<Map<string, ABSMediaProgress>>(new Map())
   const [error, setError] = useState<string | null>(null)
 
-  const [filter, setFilter] = useState<FilterKey>('all')
-  const [sort, setSort] = useState<SortKey>('name')
+  const [filter, setFilter] = useState<string>('all')
+  const [sort, setSort] = useState<LibrarySort>('Title')
+  const [desc, setDesc] = useState(false)
   const [display, setDisplay] = useState<DisplayMode>('grid')
   const [size, setSize] = useState<CoverSize>('comfortable')
   const sheetRef = useRef<SheetRef>(null)
   const [sheetTab, setSheetTab] = useState<'display' | 'sort' | 'filter'>('sort')
+  // When drilling into a filter group's values (e.g. Genre -> pick one).
+  const [openGroup, setOpenGroup] = useState<string | null>(null)
 
   const listRef = useRef<FlatList<ABSLibraryItem>>(null)
+
+  // Apply an incoming deep-link preset (from Home's shelf headers).
+  useEffect(() => {
+    if (!preset) return
+    if (preset.sort) setSort(preset.sort)
+    setDesc(preset.desc)
+    if (preset.filter) setFilter(preset.filter)
+  }, [preset])
 
   useEffect(() => {
     let cancelled = false
@@ -324,38 +420,44 @@ function BooksView({ libraryId, tileWidth: baseTileWidth }: { libraryId: string;
     }
   }, [libraryId])
 
-  const filtered = useMemo(() => {
-    if (!items) return []
-    if (filter === 'all') return items
-    return items.filter((it) => {
-      const p = progress.get(it.id)
-      if (filter === 'finished') return p?.isFinished ?? false
-      return (p?.progress ?? 0) > 0 && !p?.isFinished
-    })
-  }, [items, progress, filter])
+  const progressOf = useCallback<ProgressOf>(
+    (id) => {
+      const p = progress.get(id)
+      return p ? { progress: p.progress, isFinished: p.isFinished } : undefined
+    },
+    [progress]
+  )
 
-  const sorted = useMemo(() => {
-    const out = filtered.slice()
-    if (sort === 'name') out.sort((a, b) => itemTitle(a).localeCompare(itemTitle(b)))
-    else if (sort === 'author') out.sort((a, b) => itemAuthor(a).localeCompare(itemAuthor(b)))
-    else if (sort === 'added') out.sort((a, b) => b.addedAt - a.addedAt)
-    else if (sort === 'duration') out.sort((a, b) => (b.media.duration ?? 0) - (a.media.duration ?? 0))
-    return out
-  }, [filtered, sort])
+  const filtered = useMemo(
+    () => (items ? applyLibraryFilter(items, filter, progressOf) : []),
+    [items, filter, progressOf]
+  )
+  const sorted = useMemo(
+    () => sortItems(filtered, sort, desc, progressOf),
+    [filtered, sort, desc, progressOf]
+  )
 
   const cols = size === 'compact' ? 4 : COLS
-  const tileWidth = size === 'compact' ? (baseTileWidth * COLS) / 4 - spacing.xs : baseTileWidth
+  // The rail only makes sense on the Title-sorted grid (ascending buckets).
+  const showAzRail = sort === 'Title' && !desc && display === 'grid'
+
+  // Tiles fill the row exactly; when the rail reserves space on the right, shrink
+  // them so the last column isn't pushed under the rail.
+  const railReserve = showAzRail ? AZ_RAIL_WIDTH : 0
+  const rowWidth = width - GUTTER * 2 - railReserve
+  const tileWidth = (rowWidth - GUTTER * (cols - 1)) / cols
 
   const letterIndex = useMemo(() => {
     const map = new Map<string, number>()
     sorted.forEach((it, i) => {
-      const l = letterOf(itemTitle(it))
+      // Bucket by the same key the Title comparator sorts on (ignoring "The"/"A"
+      // prefixes) so the rail's letters line up with the visual order.
+      const l = letterOf(it.media.metadata.titleIgnorePrefix || itemTitle(it))
       if (!map.has(l)) map.set(l, i)
     })
     return map
   }, [sorted])
   const available = useMemo(() => new Set(letterIndex.keys()), [letterIndex])
-  const showAzRail = sort === 'name' && display === 'grid'
 
   const onJump = useCallback(
     (letter: string) => {
@@ -366,6 +468,21 @@ function BooksView({ libraryId, tileWidth: baseTileWidth }: { libraryId: string;
     },
     [letterIndex, display, cols]
   )
+
+  const openSheet = (tab: 'display' | 'sort' | 'filter') => {
+    setOpenGroup(null)
+    setSheetTab(tab)
+    sheetRef.current?.present()
+  }
+
+  // Tapping the active sort flips direction; a new sort adopts its natural default.
+  const chooseSort = (s: LibrarySort) => {
+    if (s === sort) setDesc((d) => !d)
+    else {
+      setSort(s)
+      setDesc(DESC_BY_DEFAULT.has(s))
+    }
+  }
 
   if (!items && !error) return <Loading />
   if (error) {
@@ -378,46 +495,19 @@ function BooksView({ libraryId, tileWidth: baseTileWidth }: { libraryId: string;
     )
   }
 
+  const gridPadRight = showAzRail ? GUTTER + AZ_RAIL_WIDTH : GUTTER
+
   return (
     <View style={{ flex: 1 }}>
-      <View style={styles.filterRow}>
-        {FILTERS.map((f) => (
-          <Pressable
-            key={f.key}
-            onPress={() => setFilter(f.key)}
-            style={[styles.filterChip, filter === f.key && styles.filterChipActive]}
-          >
-            <AppText variant="caption" color={filter === f.key ? colors.onAccent : colors.textMuted}>
-              {f.label}
-            </AppText>
-          </Pressable>
-        ))}
-      </View>
-
       <View style={styles.controlsRow}>
         <AppText variant="caption" color={colors.textMuted}>
           {sorted.length} {sorted.length === 1 ? 'title' : 'titles'}
+          {filter !== 'all' ? ` · ${filterLabel(filter)}` : ''}
         </AppText>
-        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-          <Pressable
-            style={styles.sortChip}
-            onPress={() => {
-              setSheetTab('sort')
-              sheetRef.current?.present()
-            }}
-          >
-            <IconButton name={icons.sort} size={16} color={colors.textMuted} />
-            <AppText variant="caption">{SORT_LABEL[sort]}</AppText>
-          </Pressable>
-          <IconButton
-            name={icons.tune}
-            style={styles.tuneBtn}
-            onPress={() => {
-              setSheetTab('display')
-              sheetRef.current?.present()
-            }}
-          />
-        </View>
+        <Pressable style={styles.controlBtn} onPress={() => openSheet('sort')}>
+          <IconButton name={icons.tune} size={16} color={colors.text} />
+          <AppText variant="caption">Filter · Sort · View</AppText>
+        </Pressable>
       </View>
 
       {display === 'grid' ? (
@@ -428,7 +518,13 @@ function BooksView({ libraryId, tileWidth: baseTileWidth }: { libraryId: string;
           keyExtractor={(it) => it.id}
           numColumns={cols}
           columnWrapperStyle={{ gap: GUTTER }}
-          contentContainerStyle={{ padding: GUTTER, paddingBottom: 140, gap: spacing.xs }}
+          contentContainerStyle={{
+            paddingTop: GUTTER,
+            paddingLeft: GUTTER,
+            paddingRight: gridPadRight,
+            paddingBottom: 140,
+            gap: spacing.xs,
+          }}
           onScrollToIndexFailed={({ index }) => {
             listRef.current?.scrollToOffset({
               offset: Math.floor(index / cols) * (tileWidth * 1.5 + spacing.md),
@@ -453,7 +549,10 @@ function BooksView({ libraryId, tileWidth: baseTileWidth }: { libraryId: string;
           {(['display', 'sort', 'filter'] as const).map((t) => (
             <Pressable
               key={t}
-              onPress={() => setSheetTab(t)}
+              onPress={() => {
+                setOpenGroup(null)
+                setSheetTab(t)
+              }}
               style={[styles.sheetTab, sheetTab === t && styles.sheetTabActive]}
             >
               <AppText
@@ -469,85 +568,193 @@ function BooksView({ libraryId, tileWidth: baseTileWidth }: { libraryId: string;
 
         {sheetTab === 'display' && (
           <View style={{ gap: spacing.lg }}>
-            <View>
-              <AppText variant="eyebrow" style={{ marginBottom: spacing.sm }}>
-                Layout
-              </AppText>
-              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-                {(['list', 'grid'] as DisplayMode[]).map((d) => (
-                  <Pressable
-                    key={d}
-                    onPress={() => setDisplay(d)}
-                    style={[styles.segChoice, display === d && styles.segChoiceActive]}
-                  >
-                    <AppText
-                      variant="label"
-                      color={display === d ? colors.onAccent : colors.text}
-                      style={{ textTransform: 'capitalize' }}
-                    >
-                      {d}
-                    </AppText>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-            <View>
-              <AppText variant="eyebrow" style={{ marginBottom: spacing.sm }}>
-                Cover size
-              </AppText>
-              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-                {(['comfortable', 'compact'] as CoverSize[]).map((s) => (
-                  <Pressable
-                    key={s}
-                    onPress={() => setSize(s)}
-                    style={[styles.segChoice, size === s && styles.segChoiceActive]}
-                  >
-                    <AppText
-                      variant="label"
-                      color={size === s ? colors.onAccent : colors.text}
-                      style={{ textTransform: 'capitalize' }}
-                    >
-                      {s}
-                    </AppText>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
+            <SegRow
+              label="Layout"
+              options={['list', 'grid'] as DisplayMode[]}
+              value={display}
+              onChange={setDisplay}
+            />
+            <SegRow
+              label="Cover size"
+              options={['comfortable', 'compact'] as CoverSize[]}
+              value={size}
+              onChange={setSize}
+            />
           </View>
         )}
 
         {sheetTab === 'sort' && (
-          <View>
-            {(Object.keys(SORT_LABEL) as SortKey[]).map((k) => (
-              <Pressable key={k} onPress={() => setSort(k)} style={styles.sheetRow}>
-                <AppText variant="body" color={sort === k ? colors.accent : colors.text}>
-                  {k === 'name'
-                    ? 'Name (A–Z)'
-                    : k === 'added'
-                      ? 'Date added'
-                      : k === 'author'
-                        ? 'Author'
-                        : 'Duration'}
-                </AppText>
-                {sort === k && <IconButton name={icons.checkCircle} color={colors.accent} />}
-              </Pressable>
+          <ScrollView style={styles.sheetScroll}>
+            {CURATED_SORTS.map((s) => (
+              <SortRow key={s} label={s} active={sort === s} desc={desc} onPress={() => chooseSort(s)} />
             ))}
-          </View>
+            <AppText variant="eyebrow" color={colors.textMuted} style={styles.sheetGroupLabel}>
+              More
+            </AppText>
+            {MORE_SORTS.map((s) => (
+              <SortRow key={s} label={s} active={sort === s} desc={desc} onPress={() => chooseSort(s)} />
+            ))}
+          </ScrollView>
         )}
 
         {sheetTab === 'filter' && (
-          <View>
-            {FILTERS.map((f) => (
-              <Pressable key={f.key} onPress={() => setFilter(f.key)} style={styles.sheetRow}>
-                <AppText variant="body" color={filter === f.key ? colors.accent : colors.text}>
-                  {f.label}
-                </AppText>
-                {filter === f.key && <IconButton name={icons.checkCircle} color={colors.accent} />}
-              </Pressable>
-            ))}
-          </View>
+          <ScrollView style={styles.sheetScroll}>
+            {openGroup ? (
+              <FilterValues
+                group={openGroup}
+                items={items ?? []}
+                current={filter}
+                onBack={() => setOpenGroup(null)}
+                onPick={(f) => {
+                  setFilter(f)
+                  setOpenGroup(null)
+                }}
+              />
+            ) : (
+              <>
+                <Pressable onPress={() => setFilter('all')} style={styles.sheetRow}>
+                  <AppText variant="body" color={filter === 'all' ? colors.accent : colors.text}>
+                    All titles
+                  </AppText>
+                  {filter === 'all' && <IconButton name={icons.checkCircle} color={colors.accent} />}
+                </Pressable>
+                {CURATED_FILTER_GROUPS.map((gid) => {
+                  const group = FILTER_GROUPS.find((g) => g.id === gid)
+                  if (!group) return null
+                  const activeInGroup = filter.startsWith(`${gid}|`)
+                  return (
+                    <Pressable key={gid} onPress={() => setOpenGroup(gid)} style={styles.sheetRow}>
+                      <AppText variant="body" color={activeInGroup ? colors.accent : colors.text}>
+                        {group.label}
+                      </AppText>
+                      <View style={styles.filterRowTrail}>
+                        {activeInGroup && (
+                          <AppText variant="caption" color={colors.accent}>
+                            {filter.split('|')[1]}
+                          </AppText>
+                        )}
+                        <IconButton name={icons.chevronRight} color={colors.textMuted} />
+                      </View>
+                    </Pressable>
+                  )
+                })}
+              </>
+            )}
+          </ScrollView>
         )}
       </Sheet>
+    </View>
+  )
+}
+
+/** A labeled segmented control (Layout / Cover size) in the display tab. */
+function SegRow<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string
+  options: T[]
+  value: T
+  onChange: (v: T) => void
+}) {
+  return (
+    <View>
+      <AppText variant="eyebrow" style={{ marginBottom: spacing.sm }}>
+        {label}
+      </AppText>
+      <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+        {options.map((o) => (
+          <Pressable
+            key={o}
+            onPress={() => onChange(o)}
+            style={[styles.segChoice, value === o && styles.segChoiceActive]}
+          >
+            <AppText
+              variant="label"
+              color={value === o ? colors.onAccent : colors.text}
+              style={{ textTransform: 'capitalize' }}
+            >
+              {o}
+            </AppText>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  )
+}
+
+/** One sort row: active row shows an up/down arrow you tap again to flip. */
+function SortRow({
+  label,
+  active,
+  desc,
+  onPress,
+}: {
+  label: string
+  active: boolean
+  desc: boolean
+  onPress: () => void
+}) {
+  return (
+    <Pressable onPress={onPress} style={styles.sheetRow}>
+      <AppText variant="body" color={active ? colors.accent : colors.text}>
+        {label}
+      </AppText>
+      {active && (
+        <IconButton
+          name={desc ? icons.collapse : icons.expand}
+          size={20}
+          color={colors.accent}
+        />
+      )}
+    </Pressable>
+  )
+}
+
+/** Drill-in list of a filter group's available values (derived from the items). */
+function FilterValues({
+  group,
+  items,
+  current,
+  onBack,
+  onPick,
+}: {
+  group: string
+  items: ABSLibraryItem[]
+  current: string
+  onBack: () => void
+  onPick: (filter: string) => void
+}) {
+  const def = FILTER_GROUPS.find((g) => g.id === group)
+  const values = def ? def.values(items) : []
+  return (
+    <View>
+      <Pressable onPress={onBack} style={styles.filterBack}>
+        <IconButton name={icons.back} size={18} color={colors.textMuted} />
+        <AppText variant="label" color={colors.textMuted}>
+          {def?.label ?? 'Filter'}
+        </AppText>
+      </Pressable>
+      {values.length === 0 ? (
+        <AppText variant="meta" color={colors.textMuted} style={{ paddingVertical: spacing.md }}>
+          Nothing to filter by here.
+        </AppText>
+      ) : (
+        values.map((v) => {
+          const f = `${group}|${v}`
+          const active = current === f
+          return (
+            <Pressable key={v} onPress={() => onPick(f)} style={styles.sheetRow}>
+              <AppText variant="body" color={active ? colors.accent : colors.text} numberOfLines={1}>
+                {v}
+              </AppText>
+              {active && <IconButton name={icons.checkCircle} color={colors.accent} />}
+            </Pressable>
+          )
+        })
+      )}
     </View>
   )
 }
@@ -752,21 +959,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.row,
   },
   groupCovers: { width: 74, height: 54 },
-  filterRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-  },
-  filterChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 7,
-    borderRadius: radius.pill,
-    backgroundColor: colors.fill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-  },
-  filterChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
   controlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -774,22 +966,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-  sortChip: {
+  controlBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: spacing.md,
+    paddingLeft: spacing.sm,
+    paddingRight: spacing.md,
     paddingVertical: 7,
     borderRadius: radius.pill,
     backgroundColor: colors.fill,
-  },
-  tuneBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.fill,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairline,
   },
   listRow: {
     flexDirection: 'row',
@@ -830,5 +1017,17 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.hairline,
+  },
+  // Cap the scrolling option lists so long genre/author lists don't push the
+  // sheet past the screen.
+  sheetScroll: { maxHeight: 380 },
+  sheetGroupLabel: { marginTop: spacing.md, marginBottom: spacing.xs },
+  filterRowTrail: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, maxWidth: 180 },
+  filterBack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.xs,
   },
 })

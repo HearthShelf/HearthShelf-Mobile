@@ -1,0 +1,93 @@
+/**
+ * Presentational bottom tab bar. Used by the tabs layout (driven by the router's
+ * navigation state) and by the full player (so the nav stays visible there unless
+ * the player is in immersive mode). Purely visual - the caller decides what
+ * "active" is and what a tap does.
+ */
+import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { Icon, iconFor, icons } from './icons'
+import { colors, fonts, radius } from './theme'
+
+export const TAB_BAR_HEIGHT = 60
+
+export interface TabDef {
+  name: string
+  label: string
+  icon: keyof typeof icons
+}
+
+export const TABS: TabDef[] = [
+  { name: 'index', label: 'Home', icon: 'home' },
+  { name: 'library', label: 'Library', icon: 'library' },
+  { name: 'now', label: 'Now Playing', icon: 'nowPlaying' },
+  { name: 'stats', label: 'Stats', icon: 'stats' },
+  { name: 'more', label: 'More', icon: 'more' },
+]
+
+export function AppTabBar({
+  activeName,
+  onPressTab,
+}: {
+  /** Route name of the active tab, or null when none should read as active. */
+  activeName: string | null
+  onPressTab: (name: string) => void
+}) {
+  const insets = useSafeAreaInsets()
+  return (
+    <View style={[styles.bar, { height: TAB_BAR_HEIGHT + insets.bottom, paddingBottom: insets.bottom }]}>
+      {TABS.map((meta) => {
+        const focused = meta.name === activeName
+        const tint = focused ? colors.accent : colors.textMuted
+        return (
+          <Pressable
+            key={meta.name}
+            style={({ pressed }) => [styles.tab, pressed && styles.tabPressed]}
+            onPress={() => onPressTab(meta.name)}
+          >
+            <View style={[styles.pill, focused && styles.pillActive]}>
+              <Icon name={iconFor(meta.icon, focused)} size={22} color={tint} />
+            </View>
+            <Text style={[styles.tabLabel, { color: tint }, focused && styles.tabLabelActive]} numberOfLines={1}>
+              {meta.label}
+            </Text>
+          </Pressable>
+        )
+      })}
+    </View>
+  )
+}
+
+const styles = StyleSheet.create({
+  bar: {
+    flexDirection: 'row',
+    backgroundColor: colors.popover,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
+  },
+  // DS tab rhythm: 9/6/7 padding, 4px pill->label gap.
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingTop: 9,
+  },
+  tabPressed: { opacity: 0.6 },
+  // Ember-wash rounded pill behind the active icon (accent @ ~22%).
+  pill: {
+    width: 58,
+    height: 32,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pillActive: { backgroundColor: colors.accentTile },
+  tabLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    fontFamily: fonts.sans,
+    letterSpacing: 0.1,
+  },
+  tabLabelActive: { fontWeight: '700' },
+})
