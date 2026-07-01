@@ -41,6 +41,10 @@ export const icons = {
   flame: 'local-fire-department',
   schedule: 'schedule',
   car: 'directions-car',
+  check: 'check',
+  checkCircle: 'check-circle',
+  tune: 'tune',
+  sort: 'swap-vert',
   // Nav / actions
   search: 'search',
   back: 'arrow-back',

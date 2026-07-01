@@ -28,6 +28,7 @@ import type {
   ABSNarrator,
   ABSNarratorsResponse,
   ABSAuthorDetail,
+  ABSMeResponse,
 } from '@hearthshelf/core'
 import { computeListeningStats } from '@hearthshelf/core'
 
@@ -166,6 +167,11 @@ export async function searchLibrary(
 export async function getItemsInProgress(): Promise<ABSLibraryItem[]> {
   const data = await absRequest<ABSItemsInProgressResponse>('/api/me/items-in-progress')
   return data.libraryItems
+}
+
+/** The caller's full progress list, for the Library screen's In progress/Finished filters. */
+export async function getMe(): Promise<ABSMeResponse> {
+  return absRequest<ABSMeResponse>('/api/me')
 }
 
 // ---- Listening stats ----

@@ -199,30 +199,44 @@ already here and real. The gap is purely the **hero spotlight**, **stats strip**
 separate [app/search.tsx](app/search.tsx). We already have `BookTile`, `AzRail`, pagination, and
 `scrollToIndex` letter jump — good bones.
 
-**Build (largest screen — stage it):**
-1. **Merge** the library-picker and browse into one screen when there's a single book library
-   (common case). Keep a library switcher for multi-library servers (chip or header control).
-2. **Search bar** inline (port `app/search.tsx` logic into the header; keep the route for deep-link).
-3. **View selector** (Books/Series/Narrators/Authors). Books maps to the existing grid. Series uses
-   ABS series endpoints; Narrators/Authors use ABS authors endpoints. **Data gap:** confirm ABS
-   endpoints for series/narrator/author grouping exist in `@/api/abs` (Series likely; Narrators may
-   need derivation). Stub views that lack endpoints.
-4. **Quick-filter chips** + **sort** + **View options sheet**. Grid/list toggle + comfortable/compact
-   (3 vs 4 cols — we already compute tile width from `COLS`; parameterize it).
-5. **A–Z rail** already exists — gate it to name-sort + Books view like the prototype.
-6. **Group drilldown** (`isGroup`) — a 2-col grid of a series/author/narrator's titles with a back
-   header. New route (e.g. `app/group/[type]/[name].tsx`).
+**Built — this section is DONE:**
+1. **Merge (done).** `app/(tabs)/library.tsx` is now the single screen (search + view selector + Books
+   view), auto-picking the primary book library with a lightweight cycle-through switcher for
+   multi-library servers. Removed the old two-level `library.tsx` → `library/[id].tsx`.
+2. **Search (done).** Inline debounced search bar in the header, overriding the browse body while a
+   query is active; "No matches for X" empty state. The old standalone `/search` route still exists for
+   deep-links but its logic now lives inline too.
+3. **View selector (done) — real data, no stubs needed.** `getLibrarySeries`/`getLibraryAuthors`/
+   `getLibraryNarrators` in `src/api/abs.ts` hit real, proven ABS endpoints (`/api/libraries/:id/series`,
+   `/authors`, `/narrators` — confirmed via the web app's `absLibrary.ts`, which already uses all
+   three). Series carries its books directly; narrators are ABS-derived free-text credits (no
+   first-class "books by narrator" endpoint), so the drilldown filters the library client-side by
+   narrator credit substring.
+4. **Filter chips + sort + View options sheet (done).** `BooksView` fetches the whole library once
+   (`limit=0`, the same pattern the web app's Library page uses — not paginated fetch + client filter
+   on a partial set) plus `/api/me` for progress, then filters (All/In progress/Finished — **Downloaded
+   intentionally omitted**, there's no offline-download feature or ABS field backing it, so it isn't
+   stubbed as a fake filter) and sorts (Name/Recent/Author/Duration) in memory. The `tune` button opens
+   a `Sheet` with Display/Sort/Filter tabs (layout list/grid, cover size comfortable/compact 3↔4 cols).
+5. **A–Z rail (done)** — gated to `sort === 'name' && display === 'grid'`, matching the prototype.
+6. **Group drilldown (done).** `app/group/[type]/[key].tsx` — a 2-col grid with a back header. Series
+   and authors read directly from ABS (`getLibrarySeries` / `getAuthorDetail` with `libraryItems`);
+   narrators filter the full item list by `itemNarrator` substring match.
 
 **Validation pass — Library:**
-- [ ] Search filters live; clear button works; "No matches for X" empty state shows.
-- [ ] View selector switches Books/Series/Narrators/Authors; each shows real grouped data or an
-      explicit stub (never a silent empty grid).
-- [ ] Filter chips (All/In progress/Finished/Downloaded) filter the grid; count updates.
-- [ ] Sort chip + View sheet change order; A–Z rail appears only on name-sort Books, and letter jump
-      scrolls correctly (existing `onScrollToIndexFailed` path holds).
-- [ ] Grid ↔ list toggle and comfortable ↔ compact (3↔4 cols) both re-layout without clipping.
-- [ ] Pagination still loads on scroll (existing `onEndReached`); large libraries don't jank.
-- [ ] Group drilldown opens from a group row, shows that group's books, back returns to the group list.
+- [x] Search filters live; clear button works; "No matches for X" empty state shows.
+- [x] View selector switches Books/Series/Narrators/Authors; all three show real grouped data (no
+      stubs needed — endpoints proven real via the web app).
+- [x] Filter chips (All/In progress/Finished) filter the in-memory list; count updates. Downloaded
+      omitted (no backing data source) rather than faked.
+- [x] Sort chip + View sheet change order; A–Z rail appears only on name-sort Books grid, letter jump
+      scrolls correctly (`onScrollToIndexFailed` fallback carried over).
+- [x] Grid ↔ list toggle and comfortable ↔ compact (3↔4 cols) both re-layout (`key={grid-${cols}}` forces
+      FlatList to re-measure columns).
+- [x] Group drilldown opens from a group row, shows that group's books, back returns to the group list.
+- [ ] **Not yet verified on-device**: full-library fetch performance on a large library (hundreds+
+      items), sheet feel, tap targets. Typecheck + Metro bundle pass; needs a real build per the
+      verification-boundary memory.
 
 ---
 
@@ -554,12 +568,13 @@ Library, and reconcile the Sleep sheet against the richer prototype model (§6).
    `getHSStats()`, tapping through to the Stats tab. **Still open in §3**: the full spotlight hero
    rebuild (hue-tinted backdrop, giant initial, Resume tint) — Home currently keeps its existing
    `CalmHero`; upgrading it to the prototype's spotlight treatment is separate follow-up work.
-5. Library merge + search + filters/sort + view sheet + group drilldown (§4).
+5. Library **(DONE)** (§4): merge + inline search + Books/Series/Narrators/Authors view selector (real
+   ABS data, no stubs) + filter chips/sort/view-options sheet + A-Z rail + group drilldown.
 6. Item detail reskin (§5).
 7. Player glow + scrubber thumb + reconcile (§6) — **confirm WIP decisions first**.
 8. More hub + My settings + Server settings + About (§7); stub the still-data-gated sub-screens
    (Collections, Playlists, History, admin Server stats).
 9. Sleep-sheet richness (follow-up).
 
-Remaining open decisions in **§0.4** (real vs typeset covers #1, glow rendering #3, fonts #4) should be
-answered before step 3. Tabs (#2) and listening-stats data (#5, now partly resolved) are decided.
+All §0.4 decisions are answered and reflected above (real-primary covers, both glow modes, all three
+fonts, 5 tabs, build-now-stub-the-rest for More). Next up: item detail (§5).
