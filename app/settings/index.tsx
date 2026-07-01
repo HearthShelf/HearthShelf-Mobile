@@ -81,7 +81,12 @@ export default function SettingsScreen() {
               {displayName}
             </AppText>
             {email ? (
-              <AppText variant="caption" color={colors.textMuted} numberOfLines={1} style={{ marginTop: 2 }}>
+              <AppText
+                variant="caption"
+                color={colors.textMuted}
+                numberOfLines={1}
+                style={{ marginTop: 2 }}
+              >
                 {email}
               </AppText>
             ) : null}
@@ -142,7 +147,11 @@ export default function SettingsScreen() {
 
         <SettingsLabel>Listening</SettingsLabel>
 
-        <SectionAccordion icon="speed" title="Playback" subtitle={`Default ${s.defaultSpeed.toFixed(2).replace(/\.?0+$/, '')}× · skip ${s.skipBack}s/${s.skipForward}s`}>
+        <SectionAccordion
+          icon="speed"
+          title="Playback"
+          subtitle={`Default ${s.defaultSpeed.toFixed(2).replace(/\.?0+$/, '')}× · skip ${s.skipBack}s/${s.skipForward}s`}
+        >
           <SettingsGroup>
             <SettingsRow
               title="Default speed"
@@ -156,11 +165,7 @@ export default function SettingsScreen() {
                 unit="×"
               />
             </SettingsRow>
-            <SettingsRow
-              title="Skip forward"
-              desc="How far the forward button jumps."
-              stacked
-            >
+            <SettingsRow title="Skip forward" desc="How far the forward button jumps." stacked>
               <ChipRow
                 value={s.skipForward as (typeof SKIP_FWD_OPTIONS)[number]}
                 options={[...SKIP_FWD_OPTIONS]}
@@ -193,7 +198,12 @@ export default function SettingsScreen() {
             <SettingsRow
               title="Hearth background"
               desc="Show the cozy hearth artwork behind the full-screen player."
-              control={<SettingsToggle on={s.hearthBgPlayer} onChange={(v) => setSetting('hearthBgPlayer', v)} />}
+              control={
+                <SettingsToggle
+                  on={s.hearthBgPlayer}
+                  onChange={(v) => setSetting('hearthBgPlayer', v)}
+                />
+              }
             />
             <SettingsRow
               title="Player buttons"
@@ -219,7 +229,11 @@ export default function SettingsScreen() {
             </SettingsRow>
             {s.queueMode === 'auto' && (
               <View style={styles.autoRules}>
-                <AppText variant="caption" color={colors.textMuted} style={{ marginBottom: spacing.sm }}>
+                <AppText
+                  variant="caption"
+                  color={colors.textMuted}
+                  style={{ marginBottom: spacing.sm }}
+                >
                   Auto-queue rules
                 </AppText>
                 {s.queueAutoRules.map((r, i) => {
@@ -245,7 +259,11 @@ export default function SettingsScreen() {
           subtitle={s.sleepFade ? `Fades over ${s.sleepFadeLen}s` : 'No fade'}
         >
           <SettingsGroup>
-            <SettingsRow title="Rewind on wake" desc="Jump back this far when the timer pauses, so you don't lose your place." stacked>
+            <SettingsRow
+              title="Rewind on wake"
+              desc="Jump back this far when the timer pauses, so you don't lose your place."
+              stacked
+            >
               <SettingsSlider
                 value={s.sleepRewindSec}
                 min={0}
@@ -258,12 +276,19 @@ export default function SettingsScreen() {
             <SettingsRow
               title="Stay within the chapter"
               desc="When rewinding, don't cross back into the previous chapter."
-              control={<SettingsToggle on={s.sleepChapterBarrier} onChange={(v) => setSetting('sleepChapterBarrier', v)} />}
+              control={
+                <SettingsToggle
+                  on={s.sleepChapterBarrier}
+                  onChange={(v) => setSetting('sleepChapterBarrier', v)}
+                />
+              }
             />
             <SettingsRow
               title="Fade out"
               desc="Gradually lower the volume before the timer pauses."
-              control={<SettingsToggle on={s.sleepFade} onChange={(v) => setSetting('sleepFade', v)} />}
+              control={
+                <SettingsToggle on={s.sleepFade} onChange={(v) => setSetting('sleepFade', v)} />
+              }
               last={!s.sleepFade}
             />
             {s.sleepFade && (
@@ -323,8 +348,8 @@ function ReadingComingSoon() {
   return (
     <View style={{ gap: spacing.md }}>
       <AppText variant="caption" color={colors.textMuted}>
-        HearthShelf Mobile doesn't have an ebook reader yet. When it does, these
-        will match the self-hosted app's reader settings.
+        HearthShelf Mobile doesn't have an ebook reader yet. When it does, these will match the
+        self-hosted app's reader settings.
       </AppText>
       <SettingsGroup style={{ opacity: 0.5 }}>
         {rows.map((r, i) => (

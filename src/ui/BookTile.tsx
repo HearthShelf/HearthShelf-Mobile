@@ -2,6 +2,9 @@
  * Compact book tile for the 4-column library grid and search results. 2:3 cover
  * with title/author below, tap opens the item detail. Matches the web mobile
  * `.lib-grid .book` treatment.
+ *
+ * When a selection is active (long-press to begin), the tile shows a corner
+ * checkbox and tapping toggles selection instead of opening the book.
  */
 import { useSyncExternalStore } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
@@ -11,23 +14,48 @@ import { coverHue, coverInitial } from '@hearthshelf/core'
 import { coverUrl, itemAuthor, itemTitle } from '@/api/abs'
 import { getSettingsState, subscribeSettings, COVER_ASPECT_RATIO } from '@/store/settings'
 import { AppText, Cover } from './primitives'
-import { colors, spacing } from './theme'
+import { Icon, icons } from './icons'
+import { colors, radius, spacing } from './theme'
 
-export function BookTile({ item, width }: { item: ABSLibraryItem; width: number }) {
+export function BookTile({
+  item,
+  width,
+  selecting = false,
+  selected = false,
+  onLongPress,
+  onToggle,
+}: {
+  item: ABSLibraryItem
+  width: number
+  selecting?: boolean
+  selected?: boolean
+  onLongPress?: () => void
+  onToggle?: () => void
+}) {
   const router = useRouter()
   const { coverAspect } = useSyncExternalStore(subscribeSettings, getSettingsState)
   const title = itemTitle(item)
   return (
     <Pressable
       style={[styles.tile, { width }]}
-      onPress={() => router.push(`/item/${item.id}`)}
+      onPress={() => (selecting ? onToggle?.() : router.push(`/item/${item.id}`))}
+      onLongPress={onLongPress}
+      delayLongPress={300}
     >
-      <Cover
-        uri={coverUrl(item.id)}
-        width={width}
-        aspectRatio={COVER_ASPECT_RATIO[coverAspect]}
-        fallback={{ hue: coverHue(item.id), initial: coverInitial(title), title }}
-      />
+      <View>
+        <Cover
+          uri={coverUrl(item.id)}
+          width={width}
+          aspectRatio={COVER_ASPECT_RATIO[coverAspect]}
+          fallback={{ hue: coverHue(item.id), initial: coverInitial(title), title }}
+        />
+        {selecting ? (
+          <View style={[styles.check, selected && styles.checkOn]}>
+            {selected ? <Icon name={icons.check} size={16} color={colors.onAccent} /> : null}
+          </View>
+        ) : null}
+        {selected ? <View style={styles.selOverlay} pointerEvents="none" /> : null}
+      </View>
       <View style={styles.meta}>
         <AppText variant="caption" numberOfLines={2}>
           {title}
@@ -43,4 +71,28 @@ export function BookTile({ item, width }: { item: ABSLibraryItem; width: number 
 const styles = StyleSheet.create({
   tile: { marginBottom: spacing.md },
   meta: { marginTop: spacing.xs, gap: 1 },
+  check: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: colors.text,
+    backgroundColor: colors.scrim,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+  selOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: radius.tile,
+    borderWidth: 2,
+    borderColor: colors.accent,
+  },
 })

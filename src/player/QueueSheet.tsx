@@ -55,7 +55,10 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
                 style={[styles.seg, settings.queueMode === m.v && styles.segOn]}
                 onPress={() => setQueueMode(m.v)}
               >
-                <AppText variant="label" color={settings.queueMode === m.v ? colors.text : colors.textMuted}>
+                <AppText
+                  variant="label"
+                  color={settings.queueMode === m.v ? colors.text : colors.textMuted}
+                >
                   {m.label}
                 </AppText>
               </Touchable>
@@ -81,7 +84,10 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
                 uri={nowPlaying.artworkUrl}
                 size={46}
                 radius={radius.tile}
-                fallback={{ hue: coverHue(nowPlaying.itemId), initial: nowPlaying.title.charAt(0).toUpperCase() }}
+                fallback={{
+                  hue: coverHue(nowPlaying.itemId),
+                  initial: nowPlaying.title.charAt(0).toUpperCase(),
+                }}
               />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <AppText variant="label" numberOfLines={1}>
@@ -100,12 +106,20 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
               <AppText variant="label" style={{ marginTop: spacing.sm }}>
                 Nothing queued
               </AppText>
-              <AppText variant="caption" color={colors.textMuted} style={{ textAlign: 'center', marginTop: spacing.xs }}>
+              <AppText
+                variant="caption"
+                color={colors.textMuted}
+                style={{ textAlign: 'center', marginTop: spacing.xs }}
+              >
                 Playback stops when this book ends. Switch to Manual or Auto to keep going.
               </AppText>
             </View>
           ) : queue.items.length === 0 ? (
-            <AppText variant="meta" color={colors.textMuted} style={{ textAlign: 'center', marginTop: spacing.xl }}>
+            <AppText
+              variant="meta"
+              color={colors.textMuted}
+              style={{ textAlign: 'center', marginTop: spacing.xl }}
+            >
               Nothing queued yet.
             </AppText>
           ) : (
@@ -157,7 +171,7 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
         </Sheet>
       </>
     )
-  }
+  },
 )
 
 function QueueRow({
@@ -188,7 +202,10 @@ function QueueRow({
           uri={coverUrl(item.libraryItemId)}
           size={46}
           radius={radius.tile}
-          fallback={{ hue: coverHue(item.libraryItemId), initial: item.title.charAt(0).toUpperCase() }}
+          fallback={{
+            hue: coverHue(item.libraryItemId),
+            initial: item.title.charAt(0).toUpperCase(),
+          }}
         />
         <View style={{ flex: 1, minWidth: 0 }}>
           <AppText variant="label" numberOfLines={1}>
@@ -232,7 +249,11 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.xs,
   },
-  rowNow: { backgroundColor: colors.accentWash, borderRadius: radius.row, marginBottom: spacing.sm },
+  rowNow: {
+    backgroundColor: colors.accentWash,
+    borderRadius: radius.row,
+    marginBottom: spacing.sm,
+  },
   rowTap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md, minWidth: 0 },
   rowDragging: { backgroundColor: colors.high, borderRadius: radius.row },
   empty: { alignItems: 'center', paddingVertical: spacing.xxl, paddingHorizontal: spacing.xl },

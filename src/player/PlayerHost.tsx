@@ -27,7 +27,14 @@ import { syncProgress } from './playback'
 // Native module (added in HearthShelfAutoModule / HearthShelfPlayerService).
 // Typed loosely - it's a thin old-arch bridge.
 interface HSPlayer {
-  load(url: string, startSec: number, title: string, author: string, artworkUri: string, chaptersJson: string): void
+  load(
+    url: string,
+    startSec: number,
+    title: string,
+    author: string,
+    artworkUri: string,
+    chaptersJson: string,
+  ): void
   play(): void
   pause(): void
   seekTo(sec: number): void
@@ -51,9 +58,9 @@ export function PlayerHost() {
   // shows. Ask once on mount (no-op below API 33 / on iOS).
   useEffect(() => {
     if (Platform.OS !== 'android' || Platform.Version < 33) return
-    void PermissionsAndroid.request(
-      PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
-    ).catch(() => {})
+    void PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS).catch(
+      () => {},
+    )
   }, [])
 
   // ---- native -> store: progress / state / ended ----
@@ -116,7 +123,7 @@ export function PlayerHost() {
           np.title,
           np.author,
           np.artworkUrl ?? '',
-          JSON.stringify(np.chapters ?? [])
+          JSON.stringify(np.chapters ?? []),
         )
       }
 

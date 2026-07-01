@@ -1,15 +1,36 @@
 /**
  * Vertical A-Z jump rail, pinned to the right edge (mobile-only affordance from
  * the web library). Press or drag anywhere in the rail column to jump the list to
- * the first item in that letter's bucket; a floating bubble previews the current
- * letter while the finger is down so you can drag up and down the alphabet.
- * Letters with no items are dimmed and skipped.
+ * the first item in that letter's bucket; a floating teardrop bubble previews the
+ * current letter while the finger is down so you can drag up and down the
+ * alphabet. Letters with no items are dimmed and skipped.
+ *
+ * Uses react-native-gesture-handler's Pan gesture (not RN's raw responder
+ * system) so the touch coordinate stays relative to the rail view for the
+ * entire gesture. RN's `locationY` re-targets to whichever child (letter Text)
+ * is currently under the finger, which made the picked letter jump around once
+ * the finger drifted off the initial touch column - `e.y` from the gesture
+ * does not have that problem.
  */
-import { useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
+import { Gesture, GestureDetector } from 'react-native-gesture-handler'
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated'
 import { colors, fonts, radius, spacing } from './theme'
 
 const LETTERS = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')]
+const BUBBLE = 64
+const BUBBLE_RADIUS = BUBBLE / 2
+// Width of the rotated-square tail that pokes out the circle's right edge,
+// forming the teardrop's point toward the rail.
+const TAIL = 14
 
 export function AzRail({
   available,
@@ -25,66 +46,99 @@ export function AzRail({
   // The letter currently under the finger (drives the preview bubble + highlight).
   const [active, setActive] = useState<string | null>(null)
   // Y of the finger within the rail, so the bubble sits beside it (not centered).
-  const [bubbleY, setBubbleY] = useState(0)
-  const BUBBLE = 64
+  const bubbleY = useSharedValue(0)
+  const bubbleScale = useSharedValue(0)
 
-  // locationY is relative to the rail view, so map it directly onto the letters.
-  const pick = (locationY: number) => {
-    const height = railHeight.current
-    if (height <= 0) return
-    // Ignore stray out-of-range samples (fast drags / finger leaving the column)
-    // instead of clamping - clamping to 0 was yanking the list to "#" mid-scroll.
-    if (locationY < 0 || locationY > height) return
-    const idx = Math.min(LETTERS.length - 1, Math.floor((locationY / height) * LETTERS.length))
-    const letter = LETTERS[idx]
-    // Keep the bubble tracking the finger even when the letter doesn't change.
-    setBubbleY(Math.max(BUBBLE / 2, Math.min(height - BUBBLE / 2, locationY)))
-    if (letter === lastLetter.current) return
-    lastLetter.current = letter
-    setActive(letter)
-    if (available.has(letter)) onJump(letter)
-  }
+  const pick = useCallback(
+    (letter: string, y: number) => {
+      // bubbleY is the finger's Y; the tail (point) sits at the circle's
+      // vertical center, so centering the circle on bubbleY lands the point on
+      // the letter under the finger.
+      bubbleY.value = y
+      if (letter === lastLetter.current) return
+      lastLetter.current = letter
+      setActive(letter)
+      if (available.has(letter)) onJump(letter)
+    },
+    [available, onJump, bubbleY],
+  )
 
-  const end = () => {
+  const begin = useCallback(() => {
     lastLetter.current = null
-    setActive(null)
-  }
+    bubbleScale.value = withSpring(1, { damping: 13, stiffness: 380, mass: 0.5 })
+  }, [bubbleScale])
+
+  const end = useCallback(() => {
+    lastLetter.current = null
+    // Fade the shape out first, then clear the letter once it's hidden - so the
+    // glyph doesn't blink away while the bubble is still visibly shrinking.
+    bubbleScale.value = withTiming(0, { duration: 90, easing: Easing.in(Easing.ease) }, () => {
+      runOnJS(setActive)(null)
+    })
+  }, [bubbleScale])
+
+  // Runs on the JS thread. e.y is relative to the rail view for the whole
+  // gesture (unlike RN's responder locationY, which re-targets per child under
+  // the finger), so map it straight onto the letter list.
+  const sample = useCallback(
+    (y: number) => {
+      const height = railHeight.current
+      if (height <= 0) return
+      const clamped = Math.max(0, Math.min(height, y))
+      const idx = Math.min(LETTERS.length - 1, Math.floor((clamped / height) * LETTERS.length))
+      pick(LETTERS[idx], clamped)
+    },
+    [pick],
+  )
+
+  const pan = Gesture.Pan()
+    .minDistance(0)
+    .onBegin((e) => {
+      runOnJS(begin)()
+      runOnJS(sample)(e.y)
+    })
+    .onUpdate((e) => runOnJS(sample)(e.y))
+    .onEnd(() => runOnJS(end)())
+    .onFinalize((_e, success) => {
+      if (!success) runOnJS(end)()
+    })
+
+  const bubbleStyle = useAnimatedStyle(() => ({
+    top: bubbleY.value - BUBBLE / 2,
+    transform: [{ scale: bubbleScale.value }],
+  }))
 
   return (
     <View style={styles.zone} pointerEvents="box-none">
-      {active ? (
-        <View style={[styles.bubble, { top: bubbleY - BUBBLE / 2 }]} pointerEvents="none">
+      <Animated.View style={[styles.bubbleWrap, bubbleStyle]} pointerEvents="none">
+        {/* Rotated square tucked behind the circle's right edge, pointing at
+            the rail - the classic map-pin teardrop, laid on its side. */}
+        <View style={styles.bubbleTail} />
+        <View style={styles.bubble}>
           <Text style={styles.bubbleText}>{active}</Text>
         </View>
-      ) : null}
-      <View
-        style={styles.rail}
-        onLayout={(e) => {
-          railHeight.current = e.nativeEvent.layout.height
-        }}
-        onStartShouldSetResponder={() => true}
-        onMoveShouldSetResponder={() => true}
-        onResponderGrant={(e) => {
-          lastLetter.current = null
-          pick(e.nativeEvent.locationY)
-        }}
-        onResponderMove={(e) => pick(e.nativeEvent.locationY)}
-        onResponderRelease={end}
-        onResponderTerminate={end}
-      >
-        {LETTERS.map((l) => (
-          <Text
-            key={l}
-            style={[
-              styles.letter,
-              !available.has(l) && styles.letterEmpty,
-              active === l && available.has(l) && styles.letterActive,
-            ]}
-          >
-            {l}
-          </Text>
-        ))}
-      </View>
+      </Animated.View>
+      <GestureDetector gesture={pan}>
+        <View
+          style={styles.rail}
+          onLayout={(e) => {
+            railHeight.current = e.nativeEvent.layout.height
+          }}
+        >
+          {LETTERS.map((l) => (
+            <Text
+              key={l}
+              style={[
+                styles.letter,
+                !available.has(l) && styles.letterEmpty,
+                active === l && available.has(l) && styles.letterActive,
+              ]}
+            >
+              {l}
+            </Text>
+          ))}
+        </View>
+      </GestureDetector>
     </View>
   )
 }
@@ -123,13 +177,40 @@ const styles = StyleSheet.create({
   },
   letterEmpty: { color: colors.textFaint, opacity: 0.35 },
   letterActive: { color: colors.accent, fontWeight: '800' },
-  // Big preview to the left of the rail; `top` is set inline to track the finger.
-  bubble: {
+  // Positioned + scaled as a unit; `top` tracks the finger (set via animated
+  // style) and the whole thing pops in/out with bubbleScale.
+  bubbleWrap: {
     position: 'absolute',
     right: AZ_RAIL_WIDTH + spacing.sm,
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: BUBBLE,
+    height: BUBBLE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Small rotated square centered on the circle's right edge, same color, so
+  // together they read as one sideways teardrop with its point toward the
+  // rail (the classic map-pin shape, laid on its side). Half tucked under the
+  // circle, half poking out - the circle is drawn after it, on top.
+  bubbleTail: {
+    position: 'absolute',
+    top: '50%',
+    left: BUBBLE - TAIL / 2,
+    width: TAIL,
+    height: TAIL,
+    marginTop: -TAIL / 2,
+    borderRadius: 3,
+    backgroundColor: colors.accent,
+    transform: [{ rotate: '45deg' }],
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 7,
+  },
+  bubble: {
+    width: BUBBLE,
+    height: BUBBLE,
+    borderRadius: BUBBLE_RADIUS,
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',

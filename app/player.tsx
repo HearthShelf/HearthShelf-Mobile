@@ -58,7 +58,13 @@ import { AppTabBar } from '@/ui/AppTabBar'
 import { useToast, Toast } from '@/ui/Toast'
 import { colors, radius, shadow, spacing } from '@/ui/theme'
 import { Scrubber } from '@/player/Scrubber'
-import { ChaptersSheet, SpeedSheet, SleepSheet, BookmarksSheet, type SheetHandle } from '@/player/sheets'
+import {
+  ChaptersSheet,
+  SpeedSheet,
+  SleepSheet,
+  BookmarksSheet,
+  type SheetHandle,
+} from '@/player/sheets'
 import { AddToListSheet } from '@/player/AddToListSheet'
 import { QueueSheet } from '@/player/QueueSheet'
 import { buildActions, type ActionContext } from '@/player/actions'
@@ -73,7 +79,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter()
   const { nowPlaying, isPlaying, position, sleepTimer, rate } = useSyncExternalStore(
     subscribe,
-    getState
+    getState,
   )
   const queue = useSyncExternalStore(subscribeQueue, getQueueState)
   const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
@@ -154,22 +160,26 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const bookProgress = duration > 0 ? Math.min(1, Math.max(0, position / duration)) : 0
   const hue = coverHue(nowPlaying.itemId)
 
-  // Chapter-relative scrubber: position/remaining are relative to the current
-  // chapter, not the whole book.
-  const chStart = chapter?.start ?? 0
-  const chEnd = chapter?.end ?? duration
+  // Honor the user's Progress bar setting: the main scrubber tracks the current
+  // chapter or the whole book. Chapter scope needs chapters to exist; without
+  // them it falls back to whole-book.
+  const scrubChapter = settings.scrubber === 'chapter' && hasChapters
+  const chStart = scrubChapter ? (chapter?.start ?? 0) : 0
+  const chEnd = scrubChapter ? (chapter?.end ?? duration) : duration
   const chSpan = Math.max(1, chEnd - chStart)
   const shownPos = previewRatio !== null ? chStart + previewRatio * chSpan : position
   const chPos = Math.max(0, shownPos - chStart)
-  const chRatio = hasChapters ? Math.min(1, chPos / chSpan) : bookProgress
-  const elapsedLabel = formatTimestamp(hasChapters ? chPos : shownPos)
+  const chRatio = scrubChapter
+    ? Math.min(1, chPos / chSpan)
+    : Math.min(1, Math.max(0, shownPos / Math.max(1, duration)))
+  const elapsedLabel = formatTimestamp(scrubChapter ? chPos : shownPos)
   const remainLabel = formatTimestamp(
-    Math.max(0, hasChapters ? chSpan - chPos : duration - shownPos)
+    Math.max(0, scrubChapter ? chSpan - chPos : duration - shownPos),
   )
-  const chapterLabel = hasChapters ? chapter?.title : undefined
+  const chapterLabel = scrubChapter ? chapter?.title : undefined
 
   const seekToRatio = (r: number) => {
-    if (hasChapters) requestSeek(chStart + r * chSpan)
+    if (scrubChapter) requestSeek(chStart + r * chSpan)
     else if (duration > 0) requestSeek(r * duration)
   }
 
@@ -314,7 +324,11 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
               width={coverWidth}
               aspectRatio={coverAspect}
               radius={radius.card}
-              fallback={{ hue, initial: nowPlaying.title.charAt(0).toUpperCase(), title: nowPlaying.title }}
+              fallback={{
+                hue,
+                initial: nowPlaying.title.charAt(0).toUpperCase(),
+                title: nowPlaying.title,
+              }}
               style={styles.cover}
             />
             {!immersive && (
@@ -355,7 +369,10 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
             <TransportBtn icon={icons.skipPrev} onPress={() => skipChapter(-1)} />
           ) : null}
           <TransportBtn icon={icons.rewind} onPress={() => jumpBy(-15)} />
-          <Pressable onPress={togglePlay} style={({ pressed }) => [styles.play, pressed && styles.pressed]}>
+          <Pressable
+            onPress={togglePlay}
+            style={({ pressed }) => [styles.play, pressed && styles.pressed]}
+          >
             <Icon name={isPlaying ? icons.pause : icons.play} size={44} color={colors.onAccent} />
           </Pressable>
           <TransportBtn icon={icons.forward} onPress={() => jumpBy(30)} />
@@ -435,7 +452,12 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
           router.push('/settings/player-buttons')
         }}
       />
-      <RecentSheet ref={recentRef} itemId={nowPlaying.itemId} chapters={chapters} onSeek={requestSeek} />
+      <RecentSheet
+        ref={recentRef}
+        itemId={nowPlaying.itemId}
+        chapters={chapters}
+        onSeek={requestSeek}
+      />
       <BookmarksSheet ref={bookmarksRef} itemId={nowPlaying.itemId} onSeek={requestSeek} />
       {libraryId && (
         <AddToListSheet
@@ -455,7 +477,13 @@ export default function PlayerScreen() {
 }
 
 /** A borderless, tappable transport button (rewind / skip / forward). */
-function TransportBtn({ icon, onPress }: { icon: (typeof icons)[keyof typeof icons]; onPress: () => void }) {
+function TransportBtn({
+  icon,
+  onPress,
+}: {
+  icon: (typeof icons)[keyof typeof icons]
+  onPress: () => void
+}) {
   return (
     <Pressable
       onPress={onPress}
@@ -500,7 +528,11 @@ function ActionBtn({
     >
       <Icon name={icon} size={21} color={active ? colors.accent : colors.text} />
       {!iconOnly && (
-        <AppText variant="caption" color={active ? colors.accent : colors.textMuted} numberOfLines={1}>
+        <AppText
+          variant="caption"
+          color={active ? colors.accent : colors.textMuted}
+          numberOfLines={1}
+        >
           {label}
         </AppText>
       )}
@@ -622,7 +654,14 @@ const MoreSheet = forwardRef<
   SheetHandle,
   {
     /** The tray-placed action descriptors, already resolved by the player. */
-    actions: { key: PlayerActionKey; icon: (typeof icons)[keyof typeof icons]; label: string; disabled?: boolean; active?: boolean; onPress: () => void }[]
+    actions: {
+      key: PlayerActionKey
+      icon: (typeof icons)[keyof typeof icons]
+      label: string
+      disabled?: boolean
+      active?: boolean
+      onPress: () => void
+    }[]
     onImmersive: () => void
     onEdit: () => void
   }
@@ -650,7 +689,11 @@ const MoreSheet = forwardRef<
             }
           >
             <Icon name={a.icon} size={22} color={colors.accent} />
-            <AppText variant="label" style={{ flex: 1 }} color={a.active ? colors.accent : colors.text}>
+            <AppText
+              variant="label"
+              style={{ flex: 1 }}
+              color={a.active ? colors.accent : colors.text}
+            >
               {a.label}
             </AppText>
             <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />
@@ -710,7 +753,11 @@ interface RecentSession {
 
 const RecentSheet = forwardRef<
   SheetHandle,
-  { itemId: string; chapters: { title: string; start: number; end: number }[]; onSeek: (sec: number) => void }
+  {
+    itemId: string
+    chapters: { title: string; start: number; end: number }[]
+    onSeek: (sec: number) => void
+  }
 >(function RecentSheet({ itemId, chapters, onSeek }, ref) {
   const sheetRef = useRef<SheetRef>(null)
   const [sessions, setSessions] = useState<RecentSession[] | null>(null)
@@ -743,13 +790,17 @@ const RecentSheet = forwardRef<
   }
 
   return (
-    <Sheet ref={sheetRef} title="Recent listens" snapPoints={['60%']}>
+    <Sheet ref={sheetRef} kicker="Recent listens" snapPoints={['60%']}>
       {!sessions ? (
         <AppText variant="meta" color={colors.textMuted}>
           Loading...
         </AppText>
       ) : sessions.length === 0 ? (
-        <AppText variant="meta" color={colors.textMuted} style={{ textAlign: 'center', paddingVertical: spacing.xl }}>
+        <AppText
+          variant="meta"
+          color={colors.textMuted}
+          style={{ textAlign: 'center', paddingVertical: spacing.xl }}
+        >
           You haven't listened to this book yet.
         </AppText>
       ) : (

@@ -27,9 +27,7 @@ export async function getServerSettings(): Promise<ServerSettings> {
   return (await res.json()) as ServerSettings
 }
 
-export async function putServerSettings(
-  values: Record<string, unknown>
-): Promise<ServerSettings> {
+export async function putServerSettings(values: Record<string, unknown>): Promise<ServerSettings> {
   const { serverUrl, token } = requireSession()
   const res = await fetch(`${serverUrl}/hs/settings`, {
     method: 'PUT',

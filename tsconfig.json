@@ -3,19 +3,10 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
-      "@/*": [
-        "./src/*"
-      ],
-      "@hearthshelf/core": [
-        "./packages/core/src/index.ts"
-      ],
-      "@hearthshelf/core/*": [
-        "./packages/core/src/*"
-      ]
+      "@/*": ["./src/*"],
+      "@hearthshelf/core": ["./packages/core/src/index.ts"],
+      "@hearthshelf/core/*": ["./packages/core/src/*"]
     }
   },
-  "include": [
-    "**/*.ts",
-    "**/*.tsx"
-  ]
+  "include": ["**/*.ts", "**/*.tsx"]
 }

@@ -11,7 +11,14 @@
  * the web app's Library page already proves out.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { FlatList, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native'
+import {
+  FlatList,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from 'react-native'
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import { runOnJS } from 'react-native-reanimated'
@@ -47,8 +54,23 @@ import {
   narratorImageUrl,
   searchLibrary,
 } from '@/api/abs'
-import { AppText, Avatar, Centered, Cover, IconButton, Loading, Screen, Sheet, type SheetRef, Touchable, icons } from '@/ui/primitives'
+import {
+  AppText,
+  Avatar,
+  Centered,
+  Cover,
+  IconButton,
+  Loading,
+  Screen,
+  Sheet,
+  type SheetRef,
+  Touchable,
+  icons,
+} from '@/ui/primitives'
+import { Icon } from '@/ui/icons'
 import { BookTile } from '@/ui/BookTile'
+import { BookSelectionToolbar } from '@/ui/BookSelectionToolbar'
+import { useBookSelection } from '@/ui/useBookSelection'
 import { AzRail, AZ_RAIL_WIDTH } from '@/ui/AzRail'
 import { colors, radius, spacing } from '@/ui/theme'
 
@@ -109,7 +131,7 @@ export default function LibraryScreen() {
       return () => {
         cancelled = true
       }
-    }, [libraryId, libError])
+    }, [libraryId, libError]),
   )
 
   // ---- search ----
@@ -137,7 +159,7 @@ export default function LibraryScreen() {
         setSearching(false)
       }
     },
-    [libraryId]
+    [libraryId],
   )
 
   useEffect(() => {
@@ -172,11 +194,7 @@ export default function LibraryScreen() {
       <View style={styles.header}>
         <AppText variant="hero">Library</AppText>
         {libraries.length > 1 && (
-          <LibrarySwitcher
-            libraries={libraries}
-            activeId={libraryId}
-            onSelect={setLibraryId}
-          />
+          <LibrarySwitcher libraries={libraries} activeId={libraryId} onSelect={setLibraryId} />
         )}
       </View>
 
@@ -313,7 +331,14 @@ type ProgressOf = (id: string) => ItemProgress | undefined
 // Curated sorts for the phone tray. One row per concept (no separate "Author
 // (Last, First)" row - the WebApp lists it twice, we don't); tap the active row
 // again to flip direction. Random lives under a "More" disclosure.
-const CURATED_SORTS: LibrarySort[] = ['Title', 'Author', 'Date Added', 'Duration', 'Progress', 'Published Year']
+const CURATED_SORTS: LibrarySort[] = [
+  'Title',
+  'Author',
+  'Date Added',
+  'Duration',
+  'Progress',
+  'Published Year',
+]
 const MORE_SORTS: LibrarySort[] = ['Random']
 // Sorts that read most naturally newest/longest-first when you first pick them.
 const DESC_BY_DEFAULT = new Set<LibrarySort>(['Date Added', 'Duration', 'Progress'])
@@ -330,13 +355,13 @@ function sortItems(
   items: ABSLibraryItem[],
   sort: LibrarySort,
   desc: boolean,
-  progressOf: ProgressOf
+  progressOf: ProgressOf,
 ): ABSLibraryItem[] {
   const out = items.slice()
   const cmp: Record<LibrarySort, (a: ABSLibraryItem, b: ABSLibraryItem) => number> = {
     Title: (a, b) =>
       (a.media.metadata.titleIgnorePrefix || a.media.metadata.title || '').localeCompare(
-        b.media.metadata.titleIgnorePrefix || b.media.metadata.title || ''
+        b.media.metadata.titleIgnorePrefix || b.media.metadata.title || '',
       ),
     Author: (a, b) => a.media.metadata.authorName.localeCompare(b.media.metadata.authorName),
     'Author (Last, First)': (a, b) =>
@@ -388,6 +413,13 @@ function BooksView({
   const [items, setItems] = useState<ABSLibraryItem[] | null>(null)
   const [progress, setProgress] = useState<Map<string, ABSMediaProgress>>(new Map())
   const [error, setError] = useState<string | null>(null)
+  const selection = useBookSelection()
+
+  const refreshProgress = useCallback(() => {
+    void getMe()
+      .then((me) => setProgress(new Map(me.mediaProgress.map((p) => [p.libraryItemId, p]))))
+      .catch(() => {})
+  }, [])
 
   const [filter, setFilter] = useState<string>('all')
   const [sort, setSort] = useState<LibrarySort>('Title')
@@ -441,16 +473,16 @@ function BooksView({
       const p = progress.get(id)
       return p ? { progress: p.progress, isFinished: p.isFinished } : undefined
     },
-    [progress]
+    [progress],
   )
 
   const filtered = useMemo(
     () => (items ? applyLibraryFilter(items, filter, progressOf) : []),
-    [items, filter, progressOf]
+    [items, filter, progressOf],
   )
   const sorted = useMemo(
     () => sortItems(filtered, sort, desc, progressOf),
-    [filtered, sort, desc, progressOf]
+    [filtered, sort, desc, progressOf],
   )
 
   const cols = gridCols
@@ -478,7 +510,7 @@ function BooksView({
         .onUpdate((e) => {
           runOnJS(applyPinch)(e.scale)
         }),
-    [captureCols, applyPinch]
+    [captureCols, applyPinch],
   )
   // The rail only makes sense on the Title-sorted grid (ascending buckets).
   const showAzRail = sort === 'Title' && !desc && display === 'grid'
@@ -508,7 +540,7 @@ function BooksView({
       const rowIndex = display === 'grid' ? Math.floor(idx / cols) : idx
       listRef.current?.scrollToIndex({ index: rowIndex, animated: true, viewPosition: 0 })
     },
-    [letterIndex, display, cols]
+    [letterIndex, display, cols],
   )
 
   const openSheet = (tab: 'display' | 'sort' | 'filter') => {
@@ -541,15 +573,25 @@ function BooksView({
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={styles.controlsRow}>
-        <AppText variant="caption" color={colors.textMuted}>
-          {sorted.length} {sorted.length === 1 ? 'title' : 'titles'}
-        </AppText>
-        <Touchable style={styles.controlBtn} onPress={() => openSheet('sort')}>
-          <IconButton name={icons.tune} size={16} color={colors.text} />
-          <AppText variant="caption">Filter · Sort · View</AppText>
-        </Touchable>
-      </View>
+      {selection.selecting ? (
+        <BookSelectionToolbar
+          selection={selection}
+          books={sorted}
+          libraryId={libraryId}
+          progressById={progress}
+          onProgressChanged={refreshProgress}
+        />
+      ) : (
+        <View style={styles.controlsRow}>
+          <AppText variant="caption" color={colors.textMuted}>
+            {sorted.length} {sorted.length === 1 ? 'title' : 'titles'}
+          </AppText>
+          <Touchable style={styles.controlBtn} onPress={() => openSheet('sort')}>
+            <IconButton name={icons.tune} size={16} color={colors.text} />
+            <AppText variant="caption">Filter · Sort · View</AppText>
+          </Touchable>
+        </View>
+      )}
 
       {/* Applied filters as removable chips + a clear-all, so it's obvious what's
           active and easy to undo without opening the tray. */}
@@ -591,7 +633,16 @@ function BooksView({
                 animated: true,
               })
             }}
-            renderItem={({ item }) => <BookTile item={item} width={tileWidth} />}
+            renderItem={({ item }) => (
+              <BookTile
+                item={item}
+                width={tileWidth}
+                selecting={selection.selecting}
+                selected={selection.isSelected(item.id)}
+                onLongPress={() => selection.begin(item.id)}
+                onToggle={() => selection.toggle(item.id)}
+              />
+            )}
           />
         </GestureDetector>
       ) : (
@@ -600,7 +651,15 @@ function BooksView({
           data={sorted}
           keyExtractor={(it) => it.id}
           contentContainerStyle={{ padding: GUTTER, paddingBottom: 140, gap: spacing.sm }}
-          renderItem={({ item }) => <BookListRow item={item} />}
+          renderItem={({ item }) => (
+            <BookListRow
+              item={item}
+              selecting={selection.selecting}
+              selected={selection.isSelected(item.id)}
+              onLongPress={() => selection.begin(item.id)}
+              onToggle={() => selection.toggle(item.id)}
+            />
+          )}
         />
       )}
       {showAzRail && <AzRail available={available} onJump={onJump} />}
@@ -650,13 +709,25 @@ function BooksView({
         {sheetTab === 'sort' && (
           <ScrollView style={styles.sheetScroll}>
             {CURATED_SORTS.map((s) => (
-              <SortRow key={s} label={s} active={sort === s} desc={desc} onPress={() => chooseSort(s)} />
+              <SortRow
+                key={s}
+                label={s}
+                active={sort === s}
+                desc={desc}
+                onPress={() => chooseSort(s)}
+              />
             ))}
             <AppText variant="eyebrow" color={colors.textMuted} style={styles.sheetGroupLabel}>
               More
             </AppText>
             {MORE_SORTS.map((s) => (
-              <SortRow key={s} label={s} active={sort === s} desc={desc} onPress={() => chooseSort(s)} />
+              <SortRow
+                key={s}
+                label={s}
+                active={sort === s}
+                desc={desc}
+                onPress={() => chooseSort(s)}
+              />
             ))}
           </ScrollView>
         )}
@@ -680,7 +751,9 @@ function BooksView({
                   <AppText variant="body" color={filter === 'all' ? colors.accent : colors.text}>
                     All titles
                   </AppText>
-                  {filter === 'all' && <IconButton name={icons.checkCircle} color={colors.accent} />}
+                  {filter === 'all' && (
+                    <IconButton name={icons.checkCircle} color={colors.accent} />
+                  )}
                 </Touchable>
                 {CURATED_FILTER_GROUPS.map((gid) => {
                   const group = FILTER_GROUPS.find((g) => g.id === gid)
@@ -767,11 +840,7 @@ function SortRow({
         {label}
       </AppText>
       {active && (
-        <IconButton
-          name={desc ? icons.collapse : icons.expand}
-          size={20}
-          color={colors.accent}
-        />
+        <IconButton name={desc ? icons.collapse : icons.expand} size={20} color={colors.accent} />
       )}
     </Touchable>
   )
@@ -811,7 +880,11 @@ function FilterValues({
           const active = current === f
           return (
             <Touchable key={v} onPress={() => onPick(f)} style={styles.sheetRow}>
-              <AppText variant="body" color={active ? colors.accent : colors.text} numberOfLines={1}>
+              <AppText
+                variant="body"
+                color={active ? colors.accent : colors.text}
+                numberOfLines={1}
+              >
                 {v}
               </AppText>
               {active && <IconButton name={icons.checkCircle} color={colors.accent} />}
@@ -823,10 +896,31 @@ function FilterValues({
   )
 }
 
-function BookListRow({ item }: { item: ABSLibraryItem }) {
+function BookListRow({
+  item,
+  selecting = false,
+  selected = false,
+  onLongPress,
+  onToggle,
+}: {
+  item: ABSLibraryItem
+  selecting?: boolean
+  selected?: boolean
+  onLongPress?: () => void
+  onToggle?: () => void
+}) {
   const router = useRouter()
   return (
-    <Touchable style={styles.listRow} onPress={() => router.push(`/item/${item.id}`)}>
+    <Touchable
+      style={[styles.listRow, selected && styles.listRowSelected]}
+      onPress={() => (selecting ? onToggle?.() : router.push(`/item/${item.id}`))}
+      onLongPress={onLongPress}
+    >
+      {selecting ? (
+        <View style={[styles.rowCheck, selected && styles.rowCheckOn]}>
+          {selected ? <Icon name={icons.check} size={15} color={colors.onAccent} /> : null}
+        </View>
+      ) : null}
       <Cover
         uri={coverUrl(item.id)}
         size={46}
@@ -841,7 +935,7 @@ function BookListRow({ item }: { item: ABSLibraryItem }) {
           {itemAuthor(item)}
         </AppText>
       </View>
-      <IconButton name={icons.chevronRight} color={colors.textMuted} />
+      {!selecting ? <IconButton name={icons.chevronRight} color={colors.textMuted} /> : null}
     </Touchable>
   )
 }
@@ -920,7 +1014,7 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
             router.push(
               mode === 'series'
                 ? `/series/${encodeURIComponent(item.key)}?libraryId=${encodeURIComponent(libraryId)}`
-                : `/group/${mode}/${encodeURIComponent(item.key)}?libraryId=${encodeURIComponent(libraryId)}&name=${encodeURIComponent(item.name)}`
+                : `/group/${mode}/${encodeURIComponent(item.key)}?libraryId=${encodeURIComponent(libraryId)}&name=${encodeURIComponent(item.name)}`,
             )
           }
         >
@@ -936,7 +1030,10 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
                   size={46}
                   radius={7}
                   style={{ position: 'absolute', left: i * 16, zIndex: 3 - i }}
-                  fallback={{ hue: coverHue(book.id), initial: itemTitle(book).charAt(0).toUpperCase() }}
+                  fallback={{
+                    hue: coverHue(book.id),
+                    initial: itemTitle(book).charAt(0).toUpperCase(),
+                  }}
                 />
               ))}
             </View>
@@ -1084,6 +1181,17 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     borderRadius: radius.row,
   },
+  listRowSelected: { backgroundColor: colors.accentWash },
+  rowCheck: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: colors.textFaint,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowCheckOn: { backgroundColor: colors.accent, borderColor: colors.accent },
   sheetTabs: {
     flexDirection: 'row',
     gap: 4,

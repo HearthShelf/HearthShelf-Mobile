@@ -42,7 +42,7 @@ export default function SignInScreen() {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(
-    reason === 'expired' ? 'Your session expired. Please sign in again.' : null
+    reason === 'expired' ? 'Your session expired. Please sign in again.' : null,
   )
 
   // Warm up the browser on Android so the OAuth tab opens snappily.
@@ -153,11 +153,7 @@ export default function SignInScreen() {
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <TouchableOpacity style={styles.button} onPress={onSignIn} disabled={busy}>
-        {busy ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Sign in</Text>
-        )}
+        {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Sign in</Text>}
       </TouchableOpacity>
     </KeyboardAvoidingView>
   )

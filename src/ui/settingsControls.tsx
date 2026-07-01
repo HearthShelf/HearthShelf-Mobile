@@ -112,7 +112,9 @@ export function SettingsRow({
   const content = (
     <>
       <View style={[styles.row, !last && styles.rowDivider]}>
-        {icon ? <Icon name={icon} size={22} color={danger ? colors.destructive : colors.textMuted} /> : null}
+        {icon ? (
+          <Icon name={icon} size={22} color={danger ? colors.destructive : colors.textMuted} />
+        ) : null}
         <View style={{ flex: 1 }}>
           <AppText variant="body" color={tint}>
             {title}
@@ -124,7 +126,9 @@ export function SettingsRow({
           ) : null}
         </View>
         {control}
-        {onPress && !danger ? <Icon name="chevron-right" size={22} color={colors.textMuted} /> : null}
+        {onPress && !danger ? (
+          <Icon name="chevron-right" size={22} color={colors.textMuted} />
+        ) : null}
       </View>
       {stacked && children ? (
         <View style={[styles.stackedChild, !last && styles.rowDivider]}>{children}</View>
@@ -160,9 +164,17 @@ export function Seg<T extends string>({
             key={o.value}
             onPress={() => onChange(o.value)}
             android_ripple={{ color: colors.fillStrong }}
-            style={({ pressed }) => [styles.segItem, on && styles.segItemOn, pressed && styles.pressed]}
+            style={({ pressed }) => [
+              styles.segItem,
+              on && styles.segItemOn,
+              pressed && styles.pressed,
+            ]}
           >
-            <AppText variant="caption" color={on ? colors.onAccent : colors.textMuted} style={on && styles.segTextOn}>
+            <AppText
+              variant="caption"
+              color={on ? colors.onAccent : colors.textMuted}
+              style={on && styles.segTextOn}
+            >
               {o.label}
             </AppText>
           </Pressable>
@@ -179,7 +191,11 @@ export function SettingsToggle({ on, onChange }: { on: boolean; onChange: (v: bo
     <Pressable
       onPress={() => onChange(!on)}
       hitSlop={8}
-      style={({ pressed }) => [styles.toggleTrack, on && styles.toggleTrackOn, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        styles.toggleTrack,
+        on && styles.toggleTrackOn,
+        pressed && styles.pressed,
+      ]}
     >
       <View style={[styles.toggleKnob, on && styles.toggleKnobOn]} />
     </Pressable>

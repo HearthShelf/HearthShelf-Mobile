@@ -30,7 +30,7 @@ export function useBookmarks(libraryItemId: string | null) {
       await createBookmark(libraryItemId, time, title)
       refresh()
     },
-    [libraryItemId, refresh]
+    [libraryItemId, refresh],
   )
 
   const removeBookmark = useCallback(
@@ -39,7 +39,7 @@ export function useBookmarks(libraryItemId: string | null) {
       await deleteBookmark(libraryItemId, time)
       refresh()
     },
-    [libraryItemId, refresh]
+    [libraryItemId, refresh],
   )
 
   return { bookmarks, addBookmark, removeBookmark }

@@ -34,21 +34,29 @@ function copyKotlin(config) {
         'src',
         'main',
         'java',
-        ...PKG.split('.')
+        ...PKG.split('.'),
       )
       fs.mkdirSync(dest, { recursive: true })
-      for (const f of ['HearthShelfAutoService.kt', 'HearthShelfAutoModule.kt', 'HearthShelfPlayerService.kt']) {
+      for (const f of [
+        'HearthShelfAutoService.kt',
+        'HearthShelfAutoModule.kt',
+        'HearthShelfPlayerService.kt',
+      ]) {
         fs.copyFileSync(path.join(src, f), path.join(dest, f))
       }
       // The automotive_app_desc declares HearthShelf to Android Auto as MEDIA.
       const resXml = path.join(
         cfg.modRequest.platformProjectRoot,
-        'app', 'src', 'main', 'res', 'xml'
+        'app',
+        'src',
+        'main',
+        'res',
+        'xml',
       )
       fs.mkdirSync(resXml, { recursive: true })
       fs.copyFileSync(
         path.join(src, 'automotive_app_desc.xml'),
-        path.join(resXml, 'automotive_app_desc.xml')
+        path.join(resXml, 'automotive_app_desc.xml'),
       )
 
       // Custom media-control vector icons (circular skip / chapter / play /
@@ -56,7 +64,11 @@ function copyKotlin(config) {
       const drawSrc = path.join(src, 'res', 'drawable')
       const drawDest = path.join(
         cfg.modRequest.platformProjectRoot,
-        'app', 'src', 'main', 'res', 'drawable'
+        'app',
+        'src',
+        'main',
+        'res',
+        'drawable',
       )
       fs.mkdirSync(drawDest, { recursive: true })
       for (const f of fs.readdirSync(drawSrc)) {
@@ -85,9 +97,7 @@ function addManifestService(config) {
 
     const app = AndroidConfig.Manifest.getMainApplicationOrThrow(cfg.modResults)
     app.service = app.service || []
-    const already = app.service.find(
-      (s) => s.$ && s.$['android:name'] === SERVICE
-    )
+    const already = app.service.find((s) => s.$ && s.$['android:name'] === SERVICE)
     if (!already) {
       app.service.push({
         $: {
@@ -109,9 +119,7 @@ function addManifestService(config) {
 
     // The phone media engine: a MediaSessionService that owns the ExoPlayer +
     // notification (chapter-relative progress + custom skip icons).
-    const hasPlayer = app.service.find(
-      (s) => s.$ && s.$['android:name'] === PLAYER_SERVICE
-    )
+    const hasPlayer = app.service.find((s) => s.$ && s.$['android:name'] === PLAYER_SERVICE)
     if (!hasPlayer) {
       app.service.push({
         $: {
@@ -121,9 +129,7 @@ function addManifestService(config) {
         },
         'intent-filter': [
           {
-            action: [
-              { $: { 'android:name': 'androidx.media3.session.MediaSessionService' } },
-            ],
+            action: [{ $: { 'android:name': 'androidx.media3.session.MediaSessionService' } }],
           },
         ],
       })
@@ -134,7 +140,7 @@ function addManifestService(config) {
     // enough). Without it the app never appears in the AA launcher.
     app['meta-data'] = app['meta-data'] || []
     const hasCarMeta = app['meta-data'].find(
-      (m) => m.$ && m.$['android:name'] === 'com.google.android.gms.car.application'
+      (m) => m.$ && m.$['android:name'] === 'com.google.android.gms.car.application',
     )
     if (!hasCarMeta) {
       app['meta-data'].push({
@@ -171,7 +177,7 @@ function registerPackage(config) {
     // a hint comment for custom packages.
     src = src.replace(
       /(PackageList\(this\)\.packages\.apply\s*\{)/,
-      `$1\n          add(HearthShelfAutoPackage())`
+      `$1\n          add(HearthShelfAutoPackage())`,
     )
     cfg.modResults.contents = src
     return cfg

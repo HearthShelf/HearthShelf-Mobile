@@ -87,7 +87,12 @@ export default function StatsTab() {
           <>
             {/* Day streak + hours listened */}
             <View style={styles.tileRow}>
-              <StatCard icon={icons.flame} value={String(stats.dayStreak)} label="Day streak" tint={colors.brandHearth} />
+              <StatCard
+                icon={icons.flame}
+                value={String(stats.dayStreak)}
+                label="Day streak"
+                tint={colors.brandHearth}
+              />
               <StatCard
                 icon={icons.schedule}
                 value={formatDuration(stats.totalTimeSec)}
@@ -219,7 +224,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   weekBars: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, height: 90 },
-  weekBarCol: { flex: 1, alignItems: 'center', gap: spacing.xs, height: '100%', justifyContent: 'flex-end' },
+  weekBarCol: {
+    flex: 1,
+    alignItems: 'center',
+    gap: spacing.xs,
+    height: '100%',
+    justifyContent: 'flex-end',
+  },
   weekBarTrack: { width: '100%', flex: 1, justifyContent: 'flex-end' },
   weekBarFill: { width: '100%', borderRadius: 6, backgroundColor: colors.accent },
   weekBarLabel: { fontSize: 10 },

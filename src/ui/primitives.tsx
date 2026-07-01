@@ -123,6 +123,7 @@ export function Row({
 export function Touchable({
   children,
   onPress,
+  onLongPress,
   disabled,
   style,
   hitSlop,
@@ -130,6 +131,7 @@ export function Touchable({
 }: {
   children: React.ReactNode
   onPress?: () => void
+  onLongPress?: () => void
   disabled?: boolean
   style?: StyleProp<ViewStyle>
   hitSlop?: number
@@ -138,10 +140,15 @@ export function Touchable({
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
       disabled={disabled}
       hitSlop={hitSlop}
       android_ripple={{ color: rippleColor }}
-      style={({ pressed }) => [style, pressed && styles.touchablePressed, disabled && styles.touchableDisabled]}
+      style={({ pressed }) => [
+        style,
+        pressed && styles.touchablePressed,
+        disabled && styles.touchableDisabled,
+      ]}
     >
       {children}
     </Pressable>
@@ -162,11 +169,7 @@ export function Chip({
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.chip,
-        active && styles.chipActive,
-        pressed && styles.pressed,
-      ]}
+      style={({ pressed }) => [styles.chip, active && styles.chipActive, pressed && styles.pressed]}
     >
       <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
     </Pressable>
@@ -355,10 +358,7 @@ export function Avatar({
           { width: size, height: size, borderRadius: size / 2, backgroundColor: hue },
         ]}
       >
-        <Text
-          allowFontScaling={false}
-          style={[styles.avatarInitials, { fontSize: size * 0.36 }]}
-        >
+        <Text allowFontScaling={false} style={[styles.avatarInitials, { fontSize: size * 0.36 }]}>
           {initialsOf(name)}
         </Text>
       </View>

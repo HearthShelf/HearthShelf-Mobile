@@ -12,7 +12,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import type { ABSChapter, ABSLibraryItemDetail, ABSMediaProgress, ABSSeries } from '@hearthshelf/core'
+import type {
+  ABSChapter,
+  ABSLibraryItemDetail,
+  ABSMediaProgress,
+  ABSSeries,
+} from '@hearthshelf/core'
 import { coverHue, formatDuration, formatTimestamp, stripHtml } from '@hearthshelf/core'
 import { coverUrl, getItemDetail, getLibrarySeries, getMe } from '@/api/abs'
 import { requestSeek } from '@/player/store'
@@ -141,7 +146,10 @@ export default function ItemDetailScreen() {
       </View>
 
       <Header onBack={() => router.back()} />
-      <ScrollView contentContainerStyle={{ paddingBottom: 160 }} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 160 }}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.hero}>
           <Cover
             uri={coverUrl(detail.id)}
@@ -162,7 +170,7 @@ export default function ItemDetailScreen() {
             style={styles.seriesCard}
             onPress={() =>
               router.push(
-                `/series/${encodeURIComponent(series.id)}?libraryId=${encodeURIComponent(detail.libraryId)}`
+                `/series/${encodeURIComponent(series.id)}?libraryId=${encodeURIComponent(detail.libraryId)}`,
               )
             }
           >
@@ -173,7 +181,10 @@ export default function ItemDetailScreen() {
                   size={42}
                   radius={radius.tile}
                   style={{ position: 'absolute', left: i * 11, zIndex: 3 - i }}
-                  fallback={{ hue: coverHue(b.id), initial: (b.media.metadata.title || '?').charAt(0).toUpperCase() }}
+                  fallback={{
+                    hue: coverHue(b.id),
+                    initial: (b.media.metadata.title || '?').charAt(0).toUpperCase(),
+                  }}
                 />
               ))}
             </View>
@@ -187,7 +198,14 @@ export default function ItemDetailScreen() {
           </Pressable>
         )}
 
-        <StatusCard isFinished={isFinished} isInProgress={isInProgress} isNotStarted={isNotStarted} progress={progress} duration={duration} chapterCount={chapters.length} />
+        <StatusCard
+          isFinished={isFinished}
+          isInProgress={isInProgress}
+          isNotStarted={isNotStarted}
+          progress={progress}
+          duration={duration}
+          chapterCount={chapters.length}
+        />
 
         <PrimaryButton label={ctaLabel} icon={icons.play} onPress={play} style={styles.playBtn} />
 
@@ -213,7 +231,10 @@ export default function ItemDetailScreen() {
 
         {chapters.length > 0 ? (
           <View style={styles.section}>
-            <Pressable style={styles.chaptersHeader} onPress={() => chaptersSheetRef.current?.present()}>
+            <Pressable
+              style={styles.chaptersHeader}
+              onPress={() => chaptersSheetRef.current?.present()}
+            >
               <AppText variant="title">Chapters</AppText>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
                 <AppText variant="caption" color={colors.textMuted}>
@@ -439,5 +460,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairline,
   },
-  statDivider: { width: StyleSheet.hairlineWidth, height: '100%', backgroundColor: colors.hairline },
+  statDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: '100%',
+    backgroundColor: colors.hairline,
+  },
 })

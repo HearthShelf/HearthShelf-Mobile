@@ -9,7 +9,9 @@ import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react
 import type { ABSCollection, ABSPlaylist } from '@hearthshelf/core'
 import {
   addBookToCollection,
+  addBooksToCollection,
   addItemToPlaylist,
+  addItemsToPlaylist,
   createCollection,
   createPlaylist,
   getLibraryCollections,
@@ -24,8 +26,16 @@ type Tab = 'collection' | 'playlist'
 
 export const AddToListSheet = forwardRef<
   SheetHandle,
-  { libraryId: string; libraryItemId: string; onAdded: (message: string) => void }
->(function AddToListSheet({ libraryId, libraryItemId, onAdded }, ref) {
+  {
+    libraryId: string
+    /** A single book, or several for a bulk add. Exactly one of these is set. */
+    libraryItemId?: string
+    libraryItemIds?: string[]
+    onAdded: (message: string) => void
+  }
+>(function AddToListSheet({ libraryId, libraryItemId, libraryItemIds, onAdded }, ref) {
+  // Normalize single/bulk callers to one id list.
+  const ids = libraryItemIds ?? (libraryItemId ? [libraryItemId] : [])
   const sheetRef = useRef<SheetRef>(null)
   useImperativeHandle(ref, () => ({
     present: () => sheetRef.current?.present(),
@@ -52,33 +62,44 @@ export const AddToListSheet = forwardRef<
     sheetRef.current?.dismiss()
   }
 
+  const suffix = ids.length > 1 ? ` (${ids.length})` : ''
+
   const addToCollection = async (id: string, name: string) => {
+    if (!ids.length) return
     setBusy(true)
     try {
-      await addBookToCollection(id, libraryItemId)
-      finish(`Added to ${name}`)
+      if (ids.length === 1) await addBookToCollection(id, ids[0])
+      else await addBooksToCollection(id, ids)
+      finish(`Added to ${name}${suffix}`)
     } finally {
       setBusy(false)
     }
   }
   const addToPlaylist = async (id: string, name: string) => {
+    if (!ids.length) return
     setBusy(true)
     try {
-      await addItemToPlaylist(id, libraryItemId)
-      finish(`Added to ${name}`)
+      if (ids.length === 1) await addItemToPlaylist(id, ids[0])
+      else await addItemsToPlaylist(id, ids)
+      finish(`Added to ${name}${suffix}`)
     } finally {
       setBusy(false)
     }
   }
   const createNew = async () => {
     const name = newName.trim()
-    if (!name) return
+    if (!name || !ids.length) return
     setBusy(true)
     try {
-      if (tab === 'collection') await createCollection(libraryId, name, [libraryItemId])
-      else await createPlaylist(libraryId, name, [{ libraryItemId }])
+      if (tab === 'collection') await createCollection(libraryId, name, ids)
+      else
+        await createPlaylist(
+          libraryId,
+          name,
+          ids.map((libraryItemId) => ({ libraryItemId })),
+        )
       setNewName('')
-      finish(`Created ${name}`)
+      finish(`Created ${name}${suffix}`)
     } finally {
       setBusy(false)
     }
@@ -91,7 +112,11 @@ export const AddToListSheet = forwardRef<
     <Sheet ref={sheetRef} title="Add to list" snapPoints={['70%']}>
       <View style={styles.segFull}>
         {(['collection', 'playlist'] as Tab[]).map((t) => (
-          <Pressable key={t} style={[styles.seg, tab === t && styles.segOn]} onPress={() => setTab(t)}>
+          <Pressable
+            key={t}
+            style={[styles.seg, tab === t && styles.segOn]}
+            onPress={() => setTab(t)}
+          >
             <AppText
               variant="label"
               color={tab === t ? colors.text : colors.textMuted}
@@ -127,7 +152,11 @@ export const AddToListSheet = forwardRef<
       {loading ? (
         <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.xl }} />
       ) : lists.length === 0 ? (
-        <AppText variant="meta" color={colors.textMuted} style={{ textAlign: 'center', marginTop: spacing.xl }}>
+        <AppText
+          variant="meta"
+          color={colors.textMuted}
+          style={{ textAlign: 'center', marginTop: spacing.xl }}
+        >
           No {tab}s yet. Create one above.
         </AppText>
       ) : (
@@ -138,7 +167,9 @@ export const AddToListSheet = forwardRef<
               style={styles.row}
               disabled={busy}
               onPress={() =>
-                tab === 'collection' ? void addToCollection(l.id, l.name) : void addToPlaylist(l.id, l.name)
+                tab === 'collection'
+                  ? void addToCollection(l.id, l.name)
+                  : void addToPlaylist(l.id, l.name)
               }
             >
               <View style={styles.rowIcon}>

@@ -1,9 +1,11 @@
 /**
  * Player buttons editor. One draggable list split by three section headers -
  * On screen (the row under the transport), In tray (the More sheet), and Hidden.
- * Drag an action across a header to change its placement; drag within a section
- * to reorder. An "Icon only" switch drops labels from the on-screen row so more
- * buttons fit.
+ * Long-press anywhere on a row (not just the handle icon) to drag it across a
+ * header and change its placement, or within a section to reorder. Each row
+ * also has a Quick Hide eye button that toggles it straight to/from Hidden
+ * without a drag. An "Icon only" switch drops labels from the on-screen row so
+ * more buttons fit.
  *
  * The single list is a flattened sequence of header sentinels + action rows.
  * On drag end we walk the new order, tracking which header each action fell
@@ -44,8 +46,7 @@ const SECTIONS: { placement: ActionPlacement; title: string; hint: string }[] = 
 
 /** One entry in the flat draggable list: a section header, or an action row. */
 type ListItem =
-  | { type: 'header'; placement: ActionPlacement }
-  | { type: 'action'; action: PlayerActionPref }
+  { type: 'header'; placement: ActionPlacement } | { type: 'action'; action: PlayerActionPref }
 
 const ITEM_KEY = (i: ListItem) =>
   i.type === 'header' ? `header:${i.placement}` : `action:${i.action.key}`
@@ -104,9 +105,6 @@ export default function PlayerButtonsScreen() {
       <View style={styles.iconOnlyRow}>
         <View style={{ flex: 1 }}>
           <AppText variant="body">Icon only</AppText>
-          <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
-            Hide labels on the on-screen buttons so more fit in the row.
-          </AppText>
         </View>
         <SettingsToggle
           on={s.playerActionsIconOnly}
@@ -115,7 +113,7 @@ export default function PlayerButtonsScreen() {
       </View>
 
       <AppText variant="caption" color={colors.textFaint} style={styles.dragHint}>
-        Hold the handle and drag a button under a heading to move it.
+        Hold a button and drag it under a heading to move it, or tap the eye to quick hide.
       </AppText>
 
       <GestureHandlerRootView style={{ flex: 1 }}>
@@ -168,11 +166,14 @@ function SectionHeader({
 function ActionRow({ item, drag, isActive }: RenderItemParams<ListItem>) {
   if (item.type !== 'action') return null
   const meta = ACTION_META[item.action.key]
+  const hidden = item.action.placement === 'hidden'
   return (
-    <View style={[styles.row, isActive && styles.rowDragging]}>
-      <Pressable onLongPress={drag} hitSlop={8}>
-        <Icon name={icons.dragHandle} size={22} color={colors.textMuted} />
-      </Pressable>
+    <Pressable
+      onLongPress={drag}
+      delayLongPress={150}
+      style={[styles.row, isActive && styles.rowDragging]}
+    >
+      <Icon name={icons.dragHandle} size={22} color={colors.textMuted} />
       <Icon name={meta.icon} size={20} color={colors.textMuted} />
       <View style={{ flex: 1 }}>
         <AppText variant="meta">{meta.label}</AppText>
@@ -182,8 +183,22 @@ function ActionRow({ item, drag, isActive }: RenderItemParams<ListItem>) {
           </AppText>
         ) : null}
       </View>
-    </View>
+      <Pressable onPress={() => toggleHidden(item.action.key)} hitSlop={8} style={styles.hideBtn}>
+        <Icon name={hidden ? icons.hidden : icons.visible} size={20} color={colors.textMuted} />
+      </Pressable>
+    </Pressable>
   )
+}
+
+/** Quick Hide: toggle one action between Hidden and its last visible placement. */
+function toggleHidden(key: PlayerActionKey): void {
+  const s = getSettingsState()
+  const next = s.playerActions.map((a) => {
+    if (a.key !== key) return a
+    if (a.placement === 'hidden') return { ...a, placement: 'tray' as ActionPlacement }
+    return { ...a, placement: 'hidden' as ActionPlacement }
+  })
+  setPlayerActions(next)
 }
 
 const styles = StyleSheet.create({
@@ -238,4 +253,5 @@ const styles = StyleSheet.create({
     borderColor: colors.hairline,
   },
   rowDragging: { backgroundColor: colors.high, borderColor: colors.accent },
+  hideBtn: { padding: spacing.xs },
 })

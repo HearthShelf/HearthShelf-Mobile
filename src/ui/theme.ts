@@ -113,7 +113,12 @@ export const type = {
     letterSpacing: 1.6,
     textTransform: 'uppercase' as const,
   },
-  quote: { fontSize: 16, fontWeight: '400' as const, fontFamily: fonts.brand, fontStyle: 'italic' as const },
+  quote: {
+    fontSize: 16,
+    fontWeight: '400' as const,
+    fontFamily: fonts.brand,
+    fontStyle: 'italic' as const,
+  },
 } as const
 
 /** Elevation - --shadow-lift: 0 18px 48px rgba(0,0,0,0.55). */

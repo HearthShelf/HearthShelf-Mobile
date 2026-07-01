@@ -47,6 +47,7 @@ export const icons = {
   removeDone: 'remove-done',
   taskAlt: 'task-alt',
   checklist: 'checklist',
+  selectAll: 'select-all',
   listNumbered: 'format-list-numbered',
   tune: 'tune',
   sort: 'swap-vert',

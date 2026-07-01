@@ -23,7 +23,7 @@ export const CONTROL_PLANE_URL = cfg('EXPO_PUBLIC_CONTROL_PLANE_URL', 'https://a
 // Clerk publishable key (public by design - same one the SPA ships).
 export const CLERK_PUBLISHABLE_KEY = cfg(
   'EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY',
-  'pk_live_Y2xlcmsuaGVhcnRoc2hlbGYuY29tJA'
+  'pk_live_Y2xlcmsuaGVhcnRoc2hlbGYuY29tJA',
 )
 
 // Deep-link scheme for Clerk OAuth redirects (matches app.json "scheme").

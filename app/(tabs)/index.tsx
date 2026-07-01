@@ -5,14 +5,9 @@ import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
 import type { ABSLibraryItem, ABSShelf, HSListeningStats } from '@hearthshelf/core'
 import { coverHue, formatDuration, formatTimestamp } from '@hearthshelf/core'
-import {
-  fetchLinkedServers,
-  setSessionExpiredHandler,
-  type LinkedServer,
-} from '@/api/controlPlane'
-import { CLERK_JWT_TEMPLATE } from '@/lib/config'
-import { connectServer } from '@/api/connect'
-import { setSession, clearSession, setLastServerId, getLastServerId } from '@/api/session'
+import { setSessionExpiredHandler } from '@/api/controlPlane'
+import { clearSession } from '@/api/session'
+import { useConnection } from '@/api/ConnectionProvider'
 import {
   clearTrack,
   getState,
@@ -23,8 +18,8 @@ import {
   currentChapter,
 } from '@/player/store'
 import { getSettingsState, subscribeSettings, COVER_ASPECT_RATIO } from '@/store/settings'
-import { setAutoSession, clearAutoSession } from '@/player/autoBridge'
-import { startQueueSync, stopQueueSync } from '@/player/queueSync'
+import { clearAutoSession } from '@/player/autoBridge'
+import { stopQueueSync } from '@/player/queueSync'
 import {
   coverUrl,
   getHSStats,
@@ -39,13 +34,10 @@ import {
 import { playItemById } from '@/player/playback'
 import {
   AppText,
-  Centered,
   Cover,
   IconButton,
   Loading,
-  PrimaryButton,
   ProgressBar,
-  Row,
   Screen,
   SectionHeader,
   Sheet,
@@ -58,205 +50,100 @@ import { Icon, type IconName } from '@/ui/icons'
 import { Scrubber } from '@/player/Scrubber'
 import { colors, radius, shadow, spacing } from '@/ui/theme'
 
-type Status =
-  | { phase: 'connecting' }
-  | { phase: 'error'; message: string }
-  | { phase: 'no-servers' }
-  | { phase: 'select-server'; servers: LinkedServer[] }
-  | { phase: 'ready'; serverName: string }
-
-class NoLinkedServersError extends Error {
-  constructor() {
-    super('No linked servers on this account')
-    this.name = 'NoLinkedServersError'
-  }
-}
-
 export default function HomeScreen() {
-  const { getToken, signOut } = useAuth()
+  const { signOut } = useAuth()
   const { user } = useUser()
   const firstName = user?.firstName ?? null
   const { nowPlaying, isPlaying, position } = useSyncExternalStore(subscribe, getState)
   const router = useRouter()
-  const [status, setStatus] = useState<Status>({ phase: 'connecting' })
+  // The root gate overlays the splash until connected, but the tabs (this screen
+  // included) mount underneath from app start - so Home must wait for the
+  // connection to be `ready` before loading, or getItemsInProgress() throws
+  // not_connected. `loading` then covers just the first content fetch.
+  const { status, serverName } = useConnection()
+  const connected = status.phase === 'ready'
+  const [loading, setLoading] = useState(true)
   const [inProgress, setInProgress] = useState<ABSLibraryItem[]>([])
   const [heroProgress, setHeroProgress] = useState(0)
   const [shelves, setShelves] = useState<ABSShelf[]>([])
   const [stats, setStats] = useState<HSListeningStats | null>(null)
 
-  async function handleSignOut(reason?: 'expired') {
-    clearTrack()
-    clearAutoSession()
-    stopQueueSync()
-    await clearSession()
-    await signOut()
-    router.replace(reason ? `/sign-in?reason=${reason}` : '/sign-in')
-  }
-
-  const getTokenRef = useRef(getToken)
-  getTokenRef.current = getToken
-
-  const tokenFn = useCallback(async () => {
-    try {
-      return await getTokenRef.current({ template: CLERK_JWT_TEMPLATE })
-    } catch {
-      return null
-    }
-  }, [])
-
-  const connectTo = useCallback(
-    async (server: LinkedServer) => {
-      setStatus({ phase: 'connecting' })
-      try {
-        const { serverUrl, token: absToken } = await connectServer(tokenFn, server.id, server.url)
-        await setSession({ serverUrl, token: absToken })
-        await setLastServerId(server.id)
-        setAutoSession(serverUrl, absToken)
-        startQueueSync()
-
-        const progress = await getItemsInProgress()
-        setInProgress(progress)
-
-        // The hero's progress bar needs per-item state, which items-in-progress
-        // doesn't carry - read it from the caller's progress map (best-effort).
-        const hero = progress[0]
-        if (hero) {
-          getMe()
-            .then((me) => {
-              const p = me.mediaProgress.find((mp) => mp.libraryItemId === hero.id)
-              setHeroProgress(p?.progress ?? 0)
-            })
-            .catch(() => setHeroProgress(0))
-        }
-
-        // Stats strip is best-effort - a stats failure shouldn't block the rest
-        // of Home from loading. Same getHSStats() the Stats tab reads, so the
-        // two never disagree.
-        getHSStats()
-          .then(setStats)
-          .catch(() => setStats(null))
-
-        // Personalized shelves from the first book library (matches the web home).
-        const libs = await getLibraries()
-        const firstBookLib = libs.find((l) => l.mediaType === 'book') ?? libs[0]
-        if (firstBookLib) {
-          try {
-            const personalized = await getPersonalized(firstBookLib.id)
-            setShelves(personalized.filter((s) => s.type === 'book' && s.entities.length > 0))
-          } catch {
-            // Personalized is best-effort; fall back to first-page items as one shelf.
-            const items = await getLibraryItems(firstBookLib.id, 0, 20)
-            setShelves(
-              items.length
-                ? [{ id: 'all', label: firstBookLib.name, type: 'book', entities: items }]
-                : []
-            )
-          }
-        }
-        setStatus({ phase: 'ready', serverName: server.name })
-      } catch (e) {
-        setStatus({ phase: 'error', message: (e as Error).message })
-      }
+  const handleSignOut = useCallback(
+    async (reason?: 'expired') => {
+      clearTrack()
+      clearAutoSession()
+      stopQueueSync()
+      await clearSession()
+      await signOut()
+      router.replace(reason ? `/sign-in?reason=${reason}` : '/sign-in')
     },
-    [tokenFn]
+    [signOut, router],
   )
 
-  const connect = useCallback(async () => {
-    setStatus({ phase: 'connecting' })
-    try {
-      const servers = await fetchLinkedServers(tokenFn)
-      if (servers.length === 0) throw new NoLinkedServersError()
-      if (servers.length === 1) {
-        await connectTo(servers[0])
-        return
-      }
-      const lastId = await getLastServerId()
-      const remembered = lastId ? servers.find((s) => s.id === lastId) : undefined
-      if (remembered) await connectTo(remembered)
-      else setStatus({ phase: 'select-server', servers })
-    } catch (e) {
-      if (e instanceof NoLinkedServersError) setStatus({ phase: 'no-servers' })
-      else setStatus({ phase: 'error', message: (e as Error).message })
+  const loadHome = useCallback(async () => {
+    setLoading(true)
+    const progress = await getItemsInProgress()
+    setInProgress(progress)
+
+    // The hero's progress bar needs per-item state, which items-in-progress
+    // doesn't carry - read it from the caller's progress map (best-effort).
+    const hero = progress[0]
+    if (hero) {
+      getMe()
+        .then((me) => {
+          const p = me.mediaProgress.find((mp) => mp.libraryItemId === hero.id)
+          setHeroProgress(p?.progress ?? 0)
+        })
+        .catch(() => setHeroProgress(0))
     }
-  }, [connectTo, tokenFn])
+
+    // Stats strip is best-effort - a stats failure shouldn't block the rest of
+    // Home from loading. Same getHSStats() the Stats tab reads, so the two never
+    // disagree.
+    getHSStats()
+      .then(setStats)
+      .catch(() => setStats(null))
+
+    // Personalized shelves from the first book library (matches the web home).
+    const libs = await getLibraries()
+    const firstBookLib = libs.find((l) => l.mediaType === 'book') ?? libs[0]
+    if (firstBookLib) {
+      try {
+        const personalized = await getPersonalized(firstBookLib.id)
+        setShelves(personalized.filter((s) => s.type === 'book' && s.entities.length > 0))
+      } catch {
+        // Personalized is best-effort; fall back to first-page items as one shelf.
+        const items = await getLibraryItems(firstBookLib.id, 0, 20)
+        setShelves(
+          items.length
+            ? [{ id: 'all', label: firstBookLib.name, type: 'book', entities: items }]
+            : [],
+        )
+      }
+    }
+    setLoading(false)
+  }, [])
 
   useEffect(() => {
-    connect()
-  }, [connect])
+    // Only load once the session exists (reconnects re-fire this too, e.g. after
+    // switching servers from the splash's "Manage servers").
+    if (!connected) return
+    loadHome().catch(() => setLoading(false))
+  }, [connected, loadHome])
 
   useEffect(() => {
     setSessionExpiredHandler(() => {
       void handleSignOut('expired')
     })
     return () => setSessionExpiredHandler(null)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [handleSignOut])
 
-  if (status.phase === 'connecting') {
+  // The gate guarantees a live session before Home mounts; this only covers the
+  // brief first content fetch.
+  if (loading) {
     return (
       <Screen>
-        <Loading label="Connecting to your server..." />
-      </Screen>
-    )
-  }
-
-  if (status.phase === 'no-servers') {
-    return (
-      <Screen>
-        <Centered>
-          <AppText variant="hero">No server linked</AppText>
-          <AppText variant="meta" color={colors.textMuted} style={{ textAlign: 'center' }}>
-            Link an AudiobookShelf server at app.hearthshelf.com, then come back and retry.
-          </AppText>
-          <PrimaryButton label="Retry" icon={icons.retry} onPress={connect} />
-          <Pressable onPress={() => handleSignOut()}>
-            <AppText variant="meta" color={colors.textMuted}>
-              Sign out
-            </AppText>
-          </Pressable>
-        </Centered>
-      </Screen>
-    )
-  }
-
-  if (status.phase === 'select-server') {
-    return (
-      <Screen>
-        <SectionHeader title="Choose a server" />
-        <FlatList
-          data={status.servers}
-          keyExtractor={(s) => s.id}
-          contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}
-          renderItem={({ item }) => (
-            <Row onPress={() => connectTo(item)}>
-              <View style={{ flex: 1 }}>
-                <AppText variant="label">{item.name}</AppText>
-                <AppText variant="meta" color={colors.textMuted} numberOfLines={1}>
-                  {item.url}
-                </AppText>
-              </View>
-              <IconButton name={icons.chevronRight} color={colors.textMuted} />
-            </Row>
-          )}
-        />
-      </Screen>
-    )
-  }
-
-  if (status.phase === 'error') {
-    return (
-      <Screen>
-        <Centered>
-          <AppText variant="meta" color={colors.destructive} style={{ textAlign: 'center' }}>
-            {status.message}
-          </AppText>
-          <PrimaryButton label="Retry" icon={icons.retry} onPress={connect} />
-          <Pressable onPress={() => handleSignOut()}>
-            <AppText variant="meta" color={colors.textMuted}>
-              Sign out
-            </AppText>
-          </Pressable>
-        </Centered>
+        <Loading label={serverName ? `Loading ${serverName}...` : 'Loading your library...'} />
       </Screen>
     )
   }
@@ -308,9 +195,16 @@ export default function HomeScreen() {
 /** Two-line personalized greeting: "Hello <name>" + a time-of-day subtext that
  *  nods to what's playing when there is something. Deterministic per render (no
  *  Math.random in the hot path - a small rotation keyed off the hour). */
-function Greeting({ firstName, nowPlayingTitle }: { firstName: string | null; nowPlayingTitle?: string }) {
+function Greeting({
+  firstName,
+  nowPlayingTitle,
+}: {
+  firstName: string | null
+  nowPlayingTitle?: string
+}) {
   const h = new Date().getHours()
-  const partOfDay = h < 5 ? 'night' : h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 21 ? 'evening' : 'night'
+  const partOfDay =
+    h < 5 ? 'night' : h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 21 ? 'evening' : 'night'
   const hello = firstName ? `Hello ${firstName}` : 'Hello'
   const subs =
     partOfDay === 'morning'
@@ -381,7 +275,12 @@ function ContinueHero({
           <AppText variant="title" numberOfLines={2} style={{ marginTop: 6 }}>
             {itemTitle(item)}
           </AppText>
-          <AppText variant="meta" color={colors.textMuted} numberOfLines={1} style={{ marginTop: 4 }}>
+          <AppText
+            variant="meta"
+            color={colors.textMuted}
+            numberOfLines={1}
+            style={{ marginTop: 4 }}
+          >
             {itemAuthor(item)}
           </AppText>
 
@@ -428,7 +327,10 @@ function PlayerHero({
   greeting: React.ReactNode
   onOpen: () => void
 }) {
-  const { scrubber, skipForward, skipBack } = useSyncExternalStore(subscribeSettings, getSettingsState)
+  const { scrubber, skipForward, skipBack } = useSyncExternalStore(
+    subscribeSettings,
+    getSettingsState,
+  )
   const [previewRatio, setPreviewRatio] = useState<number | null>(null)
 
   const duration = nowPlaying.duration
@@ -447,9 +349,7 @@ function PlayerHero({
   const chPos = Math.max(0, shownPos - chStart)
   const ratio = chapterScope ? Math.min(1, chPos / chSpan) : bookProgress
   const elapsed = formatTimestamp(chapterScope ? chPos : shownPos)
-  const remain = formatTimestamp(
-    Math.max(0, chapterScope ? chSpan - chPos : duration - shownPos)
-  )
+  const remain = formatTimestamp(Math.max(0, chapterScope ? chSpan - chPos : duration - shownPos))
 
   const seekToRatio = (r: number) => {
     if (chapterScope) requestSeek(chStart + r * chSpan)
@@ -483,11 +383,21 @@ function PlayerHero({
           <AppText variant="title" numberOfLines={2} style={{ marginTop: 6 }}>
             {nowPlaying.title}
           </AppText>
-          <AppText variant="meta" color={colors.textMuted} numberOfLines={1} style={{ marginTop: 4 }}>
+          <AppText
+            variant="meta"
+            color={colors.textMuted}
+            numberOfLines={1}
+            style={{ marginTop: 4 }}
+          >
             {nowPlaying.author}
           </AppText>
           {isPlaying && chapterScope && chapter?.title ? (
-            <AppText variant="caption" color={colors.textMuted} numberOfLines={1} style={{ marginTop: 2 }}>
+            <AppText
+              variant="caption"
+              color={colors.textMuted}
+              numberOfLines={1}
+              style={{ marginTop: 2 }}
+            >
               {chapter.title}
             </AppText>
           ) : null}
@@ -512,8 +422,18 @@ function PlayerHero({
                 <Icon name={icons.pause} size={28} color={colors.onAccent} />
               </Touchable>
               <View style={{ flex: 1 }} />
-              <IconButton name={icons.rewind} size={30} color={colors.text} onPress={() => jumpBy(-skipBack)} />
-              <IconButton name={icons.forward} size={30} color={colors.text} onPress={() => jumpBy(skipForward)} />
+              <IconButton
+                name={icons.rewind}
+                size={30}
+                color={colors.text}
+                onPress={() => jumpBy(-skipBack)}
+              />
+              <IconButton
+                name={icons.forward}
+                size={30}
+                color={colors.text}
+                onPress={() => jumpBy(skipForward)}
+              />
             </View>
           </>
         ) : (
@@ -572,7 +492,6 @@ function HomeStatsStrip({ stats }: { stats: HSListeningStats }) {
   )
 }
 
-
 /** A small leading icon per home section, keyed off its label. */
 function sectionIcon(label: string): IconName {
   const l = label.toLowerCase()
@@ -612,7 +531,11 @@ function Shelf({ shelf }: { shelf: ABSShelf }) {
         contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.md }}
         renderItem={({ item }) => (
           <Touchable style={styles.tile} onPress={() => router.push(`/item/${item.id}`)}>
-            <Cover uri={coverUrl(item.id)} width={120} aspectRatio={COVER_ASPECT_RATIO[coverAspect]} />
+            <Cover
+              uri={coverUrl(item.id)}
+              width={120}
+              aspectRatio={COVER_ASPECT_RATIO[coverAspect]}
+            />
             <AppText variant="meta" numberOfLines={1} style={{ marginTop: spacing.xs }}>
               {itemTitle(item)}
             </AppText>
@@ -644,7 +567,10 @@ function Shelf({ shelf }: { shelf: ABSShelf }) {
                 uri={coverUrl(item.id)}
                 width={100}
                 aspectRatio={COVER_ASPECT_RATIO[coverAspect]}
-                fallback={{ hue: coverHue(item.id), initial: itemTitle(item).charAt(0).toUpperCase() }}
+                fallback={{
+                  hue: coverHue(item.id),
+                  initial: itemTitle(item).charAt(0).toUpperCase(),
+                }}
               />
               <AppText variant="caption" numberOfLines={1} style={{ marginTop: spacing.xs }}>
                 {itemTitle(item)}

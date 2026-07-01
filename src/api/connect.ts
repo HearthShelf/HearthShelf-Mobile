@@ -18,7 +18,7 @@ export interface ConnectResult {
 export async function connectServer(
   getToken: GetToken,
   serverId: string,
-  serverUrl: string
+  serverUrl: string,
 ): Promise<ConnectResult> {
   const origin = serverUrl.replace(/\/$/, '')
 

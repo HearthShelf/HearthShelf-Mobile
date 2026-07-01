@@ -78,7 +78,10 @@ function EmptyState() {
                 width={132}
                 aspectRatio={2 / 3}
                 radius={radius.tile}
-                fallback={{ hue: coverHue(last.id), initial: itemTitle(last).charAt(0).toUpperCase() }}
+                fallback={{
+                  hue: coverHue(last.id),
+                  initial: itemTitle(last).charAt(0).toUpperCase(),
+                }}
               />
               <View style={styles.resumeMeta}>
                 <AppText variant="caption" color={colors.accent}>

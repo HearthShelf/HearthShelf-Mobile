@@ -63,9 +63,7 @@ export default function GroupDrilldown() {
           // ABS stores narrators as a free-text comma-joined field.
           const page = await getLibraryItemsPage(libraryId, 0, 0)
           const target = decodeURIComponent(name).toLowerCase()
-          result = page.results.filter((it) =>
-            itemNarrator(it).toLowerCase().includes(target)
-          )
+          result = page.results.filter((it) => itemNarrator(it).toLowerCase().includes(target))
         }
         if (!cancelled) setBooks(result)
       } catch (e) {

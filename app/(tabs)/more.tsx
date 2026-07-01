@@ -39,7 +39,9 @@ export default function MoreScreen() {
   return (
     <Screen>
       <SectionHeader title="More" />
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 140, gap: spacing.sm }}>
+      <ScrollView
+        contentContainerStyle={{ padding: spacing.lg, paddingBottom: 140, gap: spacing.sm }}
+      >
         <Pressable
           onPress={() => router.push('/settings')}
           style={({ pressed }) => [styles.profileCard, pressed && styles.pressed]}
@@ -54,7 +56,12 @@ export default function MoreScreen() {
               {displayName}
             </AppText>
             {email ? (
-              <AppText variant="caption" color={colors.textMuted} numberOfLines={1} style={{ marginTop: 2 }}>
+              <AppText
+                variant="caption"
+                color={colors.textMuted}
+                numberOfLines={1}
+                style={{ marginTop: 2 }}
+              >
                 {email}
               </AppText>
             ) : null}

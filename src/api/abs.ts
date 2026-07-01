@@ -82,6 +82,15 @@ export function coverUrl(itemId: string): string {
   return mediaUrl(`/api/items/${itemId}/cover`)
 }
 
+/** Tokenized URL to download a set of items as a single zip (bulk download).
+ *  '' when disconnected. Opened in the browser/download manager, since native
+ *  loaders can't stream a zip inline. */
+export function libraryDownloadUrl(libraryId: string, itemIds: string[]): string {
+  return mediaUrl(
+    `/api/libraries/${encodeURIComponent(libraryId)}/download?ids=${encodeURIComponent(itemIds.join(','))}`,
+  )
+}
+
 // ---- Library browsing ----
 
 export async function getLibraries(): Promise<ABSLibrary[]> {
@@ -92,10 +101,10 @@ export async function getLibraries(): Promise<ABSLibrary[]> {
 export async function getLibraryItems(
   libraryId: string,
   page = 0,
-  limit = 50
+  limit = 50,
 ): Promise<ABSLibraryItem[]> {
   const data = await absRequest<ABSLibraryItemsResponse>(
-    `/api/libraries/${libraryId}/items?page=${page}&limit=${limit}&minified=1`
+    `/api/libraries/${libraryId}/items?page=${page}&limit=${limit}&minified=1`,
   )
   return data.results
 }
@@ -104,10 +113,10 @@ export async function getLibraryItems(
 export async function getLibraryItemsPage(
   libraryId: string,
   page = 0,
-  limit = 50
+  limit = 50,
 ): Promise<LibraryItemsPage> {
   const data = await absRequest<ABSLibraryItemsResponse>(
-    `/api/libraries/${libraryId}/items?page=${page}&limit=${limit}&minified=1`
+    `/api/libraries/${libraryId}/items?page=${page}&limit=${limit}&minified=1`,
   )
   return { results: data.results, total: data.total, page: data.page, limit: data.limit }
 }
@@ -127,7 +136,7 @@ export async function getLibrarySeries(libraryId: string): Promise<ABSSeries[]> 
   const limit = 500
   for (let page = 0; page < 50; page++) {
     const data = await absRequest<ABSSeriesResponse>(
-      `/api/libraries/${libraryId}/series?limit=${limit}&page=${page}`
+      `/api/libraries/${libraryId}/series?limit=${limit}&page=${page}`,
     )
     const results = data.results ?? []
     out.push(...results)
@@ -186,11 +195,11 @@ export async function getItemChapters(itemId: string): Promise<ABSChapter[]> {
 export async function searchLibrary(
   libraryId: string,
   query: string,
-  limit = 25
+  limit = 25,
 ): Promise<ABSLibraryItem[]> {
   const q = encodeURIComponent(query)
   const data = await absRequest<ABSSearchResponse>(
-    `/api/libraries/${libraryId}/search?q=${q}&limit=${limit}`
+    `/api/libraries/${libraryId}/search?q=${q}&limit=${limit}`,
   )
   return (data.book ?? []).map((b) => b.libraryItem)
 }
@@ -226,12 +235,12 @@ export async function getBookmarks(): Promise<ABSBookmark[]> {
 export async function createBookmark(
   libraryItemId: string,
   time: number,
-  title: string
+  title: string,
 ): Promise<ABSBookmark> {
-  const b = await absRequest<ABSBookmark | undefined>(
-    `/api/me/item/${libraryItemId}/bookmark`,
-    { method: 'POST', body: JSON.stringify({ time: Math.round(time), title }) }
-  )
+  const b = await absRequest<ABSBookmark | undefined>(`/api/me/item/${libraryItemId}/bookmark`, {
+    method: 'POST',
+    body: JSON.stringify({ time: Math.round(time), title }),
+  })
   return b ?? { libraryItemId, title, time: Math.round(time), createdAt: Date.now() }
 }
 
@@ -245,7 +254,7 @@ export async function deleteBookmark(libraryItemId: string, time: number): Promi
 
 export async function getRecentSessions(itemsPerPage = 100) {
   const data = await absRequest<ABSListeningSessionsResponse>(
-    `/api/me/listening-sessions?page=0&itemsPerPage=${itemsPerPage}`
+    `/api/me/listening-sessions?page=0&itemsPerPage=${itemsPerPage}`,
   )
   return data.sessions ?? []
 }
@@ -253,9 +262,7 @@ export async function getRecentSessions(itemsPerPage = 100) {
 // ---- Collections / Playlists (Add to list) ----
 
 export async function getLibraryCollections(libraryId: string): Promise<ABSCollection[]> {
-  const data = await absRequest<ABSCollectionsResponse>(
-    `/api/libraries/${libraryId}/collections`
-  )
+  const data = await absRequest<ABSCollectionsResponse>(`/api/libraries/${libraryId}/collections`)
   return data.results ?? []
 }
 
@@ -267,7 +274,7 @@ export async function getLibraryPlaylists(libraryId: string): Promise<ABSPlaylis
 export async function createCollection(
   libraryId: string,
   name: string,
-  books: string[]
+  books: string[],
 ): Promise<void> {
   await absRequest<void>('/api/collections', {
     method: 'POST',
@@ -277,7 +284,7 @@ export async function createCollection(
 
 export async function addBookToCollection(
   collectionId: string,
-  libraryItemId: string
+  libraryItemId: string,
 ): Promise<void> {
   await absRequest<void>(`/api/collections/${collectionId}/book`, {
     method: 'POST',
@@ -288,7 +295,7 @@ export async function addBookToCollection(
 export async function createPlaylist(
   libraryId: string,
   name: string,
-  items: { libraryItemId: string }[]
+  items: { libraryItemId: string }[],
 ): Promise<void> {
   await absRequest<void>('/api/playlists', {
     method: 'POST',
@@ -300,6 +307,28 @@ export async function addItemToPlaylist(playlistId: string, libraryItemId: strin
   await absRequest<void>(`/api/playlists/${playlistId}/item`, {
     method: 'POST',
     body: JSON.stringify({ libraryItemId }),
+  })
+}
+
+/** Add several books to a collection at once (ABS batch route). */
+export async function addBooksToCollection(
+  collectionId: string,
+  libraryItemIds: string[],
+): Promise<void> {
+  await absRequest<void>(`/api/collections/${collectionId}/batch/add`, {
+    method: 'POST',
+    body: JSON.stringify({ books: libraryItemIds }),
+  })
+}
+
+/** Add several items to a playlist at once (ABS batch route). */
+export async function addItemsToPlaylist(
+  playlistId: string,
+  libraryItemIds: string[],
+): Promise<void> {
+  await absRequest<void>(`/api/playlists/${playlistId}/batch/add`, {
+    method: 'POST',
+    body: JSON.stringify({ items: libraryItemIds.map((libraryItemId) => ({ libraryItemId })) }),
   })
 }
 
@@ -344,13 +373,7 @@ export async function startPlay(itemId: string): Promise<ABSPlaybackSession> {
         clientName: 'HearthShelf Mobile',
         clientVersion: '0.0.1',
       },
-      supportedMimeTypes: [
-        'audio/mpeg',
-        'audio/mp4',
-        'audio/aac',
-        'audio/flac',
-        'audio/ogg',
-      ],
+      supportedMimeTypes: ['audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/flac', 'audio/ogg'],
     }),
   })
 }

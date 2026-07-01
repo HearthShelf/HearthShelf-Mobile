@@ -126,7 +126,10 @@ export function buildActions(ctx: ActionContext): Record<PlayerActionKey, Player
 }
 
 /** Static label/icon for the reorder editor, where no live context exists. */
-export const ACTION_META: Record<PlayerActionKey, { icon: (typeof icons)[keyof typeof icons]; label: string; comingSoon?: boolean }> = {
+export const ACTION_META: Record<
+  PlayerActionKey,
+  { icon: (typeof icons)[keyof typeof icons]; label: string; comingSoon?: boolean }
+> = {
   chapters: { icon: icons.chapters, label: 'Chapters' },
   speed: { icon: icons.speed, label: 'Speed' },
   sleep: { icon: icons.sleep, label: 'Sleep' },

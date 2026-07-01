@@ -35,7 +35,7 @@ export async function getServerQueue(): Promise<ServerQueue> {
 export async function putServerQueue(
   items: QueueEntry[],
   playlistId: string | null,
-  updatedAt: number
+  updatedAt: number,
 ): Promise<ServerQueue> {
   const { serverUrl, token } = requireSession()
   const res = await fetch(`${serverUrl}/hs/queue`, {

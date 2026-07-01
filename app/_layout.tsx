@@ -1,7 +1,8 @@
 import { ClerkProvider, useAuth } from '@clerk/expo'
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { StyleSheet, View } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
@@ -10,16 +11,38 @@ import * as SplashScreen from 'expo-splash-screen'
 import { tokenCache } from '@/lib/tokenCache'
 import { CLERK_PUBLISHABLE_KEY } from '@/lib/config'
 import { PlayerHost } from '@/player/PlayerHost'
-import { Loading } from '@/ui/primitives'
+import { SplashScreen as HearthSplash, type SplashPhase } from '@/ui/SplashScreen'
+import { ConnectionProvider, useConnection } from '@/api/ConnectionProvider'
+import { clearSession } from '@/api/session'
+import { clearTrack } from '@/player/store'
+import { clearAutoSession } from '@/player/autoBridge'
+import { stopQueueSync } from '@/player/queueSync'
 import { colors, fonts } from '@/ui/theme'
 
-// Hold the splash until fonts resolve so text doesn't flash in a system face.
+// Hold the OS splash until the hearth splash has painted (see hideOsSplash).
 void SplashScreen.preventAutoHideAsync()
+// Cross-fade the OS static logo out (rather than a hard cut) so it dissolves into
+// our animated hearth splash, whose first frame is the same logo on the same bg.
+SplashScreen.setOptions({ duration: 220, fade: true })
+
+// Dismiss the native OS splash exactly once, the moment the hearth splash reports
+// its first frame is on screen. Hiding any earlier (e.g. on root layout) uncovers
+// a black frame while the JS bundle is still loading.
+let osSplashHidden = false
+function hideOsSplash() {
+  if (osSplashHidden) return
+  osSplashHidden = true
+  void SplashScreen.hideAsync()
+}
 
 /**
  * Auth gate. Signed-out users are pushed to /sign-in; signed-in users sitting on
  * the sign-in screen are sent into the tabs. Runs as an effect off Clerk state so
  * there is no standalone `/` route competing with the tabs index.
+ *
+ * While Clerk is still resolving, the hearth splash covers everything. Once signed
+ * in, the ConnectionProvider + ConnectionGate keep that same splash up through the
+ * server connect, so there's one continuous warm boot screen (see ConnectionGate).
  */
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth()
@@ -33,8 +56,80 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     else if (isSignedIn && onSignIn) router.replace('/(tabs)')
   }, [isLoaded, isSignedIn, segments, router])
 
-  if (!isLoaded) return <Loading />
-  return <>{children}</>
+  if (!isLoaded) return <HearthSplash phase={{ kind: 'connecting' }} onReady={hideOsSplash} />
+
+  // Signed out: let the routes render (the /sign-in screen), no connect gate.
+  if (!isSignedIn) return <>{children}</>
+
+  // Signed in: run the connect flow and keep the splash up until it's ready.
+  return (
+    <ConnectionProvider>
+      <ConnectionGate>{children}</ConnectionGate>
+    </ConnectionProvider>
+  )
+}
+
+/**
+ * Keeps the hearth splash layered over the app until the server connection is
+ * ready. On failure it turns the splash into an error screen; "Manage servers"
+ * dismisses the overlay so the settings route underneath is reachable, and any
+ * later retry or arrival at `ready` re-syncs. The Stack always stays mounted so
+ * routing (settings, sign-in) keeps working behind the overlay.
+ */
+function ConnectionGate({ children }: { children: React.ReactNode }) {
+  const { status, retry, connectTo } = useConnection()
+  const { signOut } = useAuth()
+  const router = useRouter()
+  // Lets the user step out to the servers screen while still not connected.
+  const [peekingServers, setPeekingServers] = useState(false)
+
+  const handleLogout = useCallback(async () => {
+    clearTrack()
+    clearAutoSession()
+    stopQueueSync()
+    await clearSession()
+    await signOut()
+    router.replace('/sign-in')
+  }, [signOut, router])
+
+  const covered = status.phase !== 'ready' && !peekingServers
+
+  const phase: SplashPhase =
+    status.phase === 'connecting'
+      ? { kind: 'connecting' }
+      : status.phase === 'no-servers'
+        ? { kind: 'no-servers' }
+        : status.phase === 'error'
+          ? { kind: 'error', message: status.message }
+          : status.phase === 'select-server'
+            ? { kind: 'select-server', servers: status.servers }
+            : { kind: 'connecting' }
+
+  return (
+    <View style={styles.gateRoot}>
+      {children}
+      {covered ? (
+        <View style={StyleSheet.absoluteFill}>
+          <HearthSplash
+            phase={phase}
+            onReady={hideOsSplash}
+            actions={{
+              onRetry: () => {
+                setPeekingServers(false)
+                retry()
+              },
+              onManageServers: () => {
+                setPeekingServers(true)
+                router.push('/settings/servers')
+              },
+              onLogout: handleLogout,
+              onSelectServer: (s) => connectTo(s),
+            }}
+          />
+        </View>
+      ) : null}
+    </View>
+  )
 }
 
 export default function RootLayout() {
@@ -44,16 +139,17 @@ export default function RootLayout() {
     [fonts.brand]: require('../assets/fonts/LibreBaskerville-VariableFont_wght.ttf'),
   })
 
-  const onLayout = useCallback(() => {
-    // Reveal the app once fonts are ready (or failed - don't block forever).
-    if (fontsLoaded || fontError) void SplashScreen.hideAsync()
-  }, [fontsLoaded, fontError])
+  // Keep the native OS splash up until fonts are ready AND the hearth splash has
+  // painted its first frame (it calls SplashScreen.hideAsync itself). Hiding on
+  // root layout instead left a black gap: the OS splash dismissed seconds before
+  // the JS bundle finished loading and React rendered anything.
+  const fontsReady = fontsLoaded || fontError
 
-  if (!fontsLoaded && !fontError) return null
+  if (!fontsReady) return null
 
   return (
     <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
-      <GestureHandlerRootView style={{ flex: 1 }} onLayout={onLayout}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <BottomSheetModalProvider>
             <StatusBar style="light" />
@@ -73,3 +169,7 @@ export default function RootLayout() {
     </ClerkProvider>
   )
 }
+
+const styles = StyleSheet.create({
+  gateRoot: { flex: 1 },
+})

@@ -16,7 +16,12 @@ import { getQueueState, setQueueItems, setQueuePlaylistId, subscribeQueue } from
 import { getState as getPlayerState } from './store'
 import { getServerQueue, putServerQueue } from '@/api/queue'
 import { getServerSettings, putServerSettings } from '@/api/settings'
-import { applyServerSettings, getSettingsState, settingsValues, subscribeSettings } from '@/store/settings'
+import {
+  applyServerSettings,
+  getSettingsState,
+  settingsValues,
+  subscribeSettings,
+} from '@/store/settings'
 
 const QUEUE_PUSH_DEBOUNCE_MS = 400
 const SETTINGS_PUSH_DEBOUNCE_MS = 1200

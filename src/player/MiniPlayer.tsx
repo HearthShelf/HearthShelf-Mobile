@@ -9,17 +9,34 @@ import { useRouter } from 'expo-router'
 import { formatTimestamp } from '@hearthshelf/core'
 import { AppText, IconButton, ProgressBar, icons } from '@/ui/primitives'
 import { colors, radius, shadow, spacing } from '@/ui/theme'
-import { getState, subscribe, togglePlay, jumpBy } from './store'
+import { getSettingsState, subscribeSettings } from '@/store/settings'
+import { getState, subscribe, togglePlay, jumpBy, currentChapter } from './store'
 
 export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
   const router = useRouter()
   const { nowPlaying, isPlaying, position } = useSyncExternalStore(subscribe, getState)
+  const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
   if (!nowPlaying) return null
 
-  const progress = nowPlaying.duration > 0 ? position / nowPlaying.duration : 0
+  // Honor the user's Progress bar setting (chapter vs. whole book). Chapter scope
+  // needs chapters to exist; without them it falls back to whole-book.
+  const chapter = currentChapter()
+  const useChapter = settings.scrubber === 'chapter' && nowPlaying.chapters.length > 0
+  const chStart = chapter?.start ?? 0
+  const chEnd = chapter?.end ?? nowPlaying.duration
+  const chSpan = Math.max(1, chEnd - chStart)
+  const chPos = Math.max(0, position - chStart)
+
+  const progress = useChapter
+    ? Math.min(1, chPos / chSpan)
+    : nowPlaying.duration > 0
+      ? position / nowPlaying.duration
+      : 0
+  const elapsed = useChapter ? chPos : position
+  const total = useChapter ? chSpan : nowPlaying.duration
 
   return (
-    <View style={[styles.wrap, { bottom: bottomOffset + spacing.sm }]} pointerEvents="box-none">
+    <View style={[styles.wrap, { bottom: bottomOffset }]} pointerEvents="box-none">
       <View style={styles.bar}>
         <Pressable style={styles.tap} onPress={() => router.push('/player')}>
           {nowPlaying.artworkUrl ? (
@@ -32,18 +49,28 @@ export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
               {nowPlaying.title}
             </AppText>
             <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
-              {formatTimestamp(position)} / {formatTimestamp(nowPlaying.duration)}
+              {formatTimestamp(elapsed)} / {formatTimestamp(total)}
             </AppText>
           </View>
         </Pressable>
-        <IconButton name={icons.rewind} size={24} color={colors.textMuted} onPress={() => jumpBy(-15)} />
+        <IconButton
+          name={icons.rewind}
+          size={24}
+          color={colors.textMuted}
+          onPress={() => jumpBy(-15)}
+        />
         <IconButton
           name={isPlaying ? icons.pause : icons.play}
           size={30}
           onPress={togglePlay}
           style={styles.play}
         />
-        <IconButton name={icons.forward} size={24} color={colors.textMuted} onPress={() => jumpBy(30)} />
+        <IconButton
+          name={icons.forward}
+          size={24}
+          color={colors.textMuted}
+          onPress={() => jumpBy(30)}
+        />
       </View>
       <ProgressBar progress={progress} height={2} style={styles.progress} />
     </View>

@@ -35,7 +35,9 @@ export function AppTabBar({
 }) {
   const insets = useSafeAreaInsets()
   return (
-    <View style={[styles.bar, { height: TAB_BAR_HEIGHT + insets.bottom, paddingBottom: insets.bottom }]}>
+    <View
+      style={[styles.bar, { height: TAB_BAR_HEIGHT + insets.bottom, paddingBottom: insets.bottom }]}
+    >
       {TABS.map((meta) => {
         const focused = meta.name === activeName
         const tint = focused ? colors.accent : colors.textMuted
@@ -48,7 +50,10 @@ export function AppTabBar({
             <View style={[styles.pill, focused && styles.pillActive]}>
               <Icon name={iconFor(meta.icon, focused)} size={22} color={tint} />
             </View>
-            <Text style={[styles.tabLabel, { color: tint }, focused && styles.tabLabelActive]} numberOfLines={1}>
+            <Text
+              style={[styles.tabLabel, { color: tint }, focused && styles.tabLabelActive]}
+              numberOfLines={1}
+            >
               {meta.label}
             </Text>
           </Pressable>

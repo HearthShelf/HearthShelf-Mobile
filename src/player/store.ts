@@ -251,7 +251,8 @@ export function reportPosition(position: number): void {
         return
       }
       const { fade, fadeLen } = state.sleepBehavior
-      const volume = fade && fadeLen > 0 ? Math.max(0, Math.min(1, remaining / fadeLen)) : state.volume
+      const volume =
+        fade && fadeLen > 0 ? Math.max(0, Math.min(1, remaining / fadeLen)) : state.volume
       set({ position, sleepTimer: { ...timer, remainingSec: remaining }, volume })
       return
     }

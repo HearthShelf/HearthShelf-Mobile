@@ -10,10 +10,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import { fetchLinkedServers, type LinkedServer } from '@/api/controlPlane'
-import { connectServer } from '@/api/connect'
-import { getSession, setSession, setLastServerId } from '@/api/session'
-import { setAutoSession } from '@/player/autoBridge'
-import { startQueueSync } from '@/player/queueSync'
+import { getSession } from '@/api/session'
+import { useConnection } from '@/api/ConnectionProvider'
 import { CLERK_JWT_TEMPLATE } from '@/lib/config'
 import { AppText, Centered, IconButton, Screen } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
@@ -24,6 +22,7 @@ type Status = { phase: 'loading' } | { phase: 'error'; message: string } | { pha
 export default function ServersScreen() {
   const router = useRouter()
   const { getToken } = useAuth()
+  const { connectTo } = useConnection()
   const [status, setStatus] = useState<Status>({ phase: 'loading' })
   const [servers, setServers] = useState<LinkedServer[]>([])
   const [switchingId, setSwitchingId] = useState<string | null>(null)
@@ -54,23 +53,12 @@ export default function ServersScreen() {
   async function switchTo(server: LinkedServer) {
     if (server.url === activeUrl) return
     setSwitchingId(server.id)
-    try {
-      const token = async () => {
-        try {
-          return await getToken({ template: CLERK_JWT_TEMPLATE })
-        } catch {
-          return null
-        }
-      }
-      const { serverUrl, token: absToken } = await connectServer(token, server.id, server.url)
-      await setSession({ serverUrl, token: absToken })
-      await setLastServerId(server.id)
-      setAutoSession(serverUrl, absToken)
-      startQueueSync()
-      router.replace('/(tabs)')
-    } catch {
-      setSwitchingId(null)
-    }
+    // Delegate to the connection provider so the session, "last server" memory,
+    // Auto bridge, queue sync, and the root gate's status all update together.
+    // (Doing the handshake here directly would leave the provider's status stale,
+    // so the boot gate wouldn't know the connection had recovered.)
+    connectTo(server)
+    router.replace('/(tabs)')
   }
 
   return (
@@ -114,7 +102,12 @@ export default function ServersScreen() {
                   <AppText variant="label" numberOfLines={1}>
                     {server.name}
                   </AppText>
-                  <AppText variant="caption" color={colors.textMuted} numberOfLines={1} style={{ marginTop: 2 }}>
+                  <AppText
+                    variant="caption"
+                    color={colors.textMuted}
+                    numberOfLines={1}
+                    style={{ marginTop: 2 }}
+                  >
                     {server.url} · {server.role === 'admin' ? 'Admin' : 'Member'}
                   </AppText>
                 </View>

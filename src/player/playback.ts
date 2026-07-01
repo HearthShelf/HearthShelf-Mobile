@@ -5,18 +5,8 @@
  * the store (the <Video> host picks it up and plays). Both the phone UI and the
  * car screens call playItemById().
  */
-import {
-  startPlay,
-  mediaUrl,
-  coverUrl,
-  closeSession,
-  syncSession,
-} from '@/api/abs'
-import {
-  loadTrack,
-  getState,
-  type NowPlaying,
-} from './store'
+import { startPlay, mediaUrl, coverUrl, closeSession, syncSession } from '@/api/abs'
+import { loadTrack, getState, type NowPlaying } from './store'
 
 interface ActiveSession {
   sessionId: string

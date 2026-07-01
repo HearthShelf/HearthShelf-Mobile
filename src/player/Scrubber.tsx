@@ -14,7 +14,8 @@
  * Visual: a 30px rounded pill, ember fill (two-tone gradient toward a warmer
  * orange at the leading edge), interior elapsed / chapter / remain labels
  * (plain text, no background chips), and a full-height cream leading line
- * with an ember glow that thickens while dragging.
+ * with an ember glow (faked with stacked translucent layers, since Android
+ * ignores shadow* on Views) that thickens while dragging.
  */
 import { useCallback, useRef, useState } from 'react'
 import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
@@ -73,7 +74,7 @@ export function Scrubber({
       setDragRatio(r)
       onDrag?.(r)
     },
-    [ratioFromX, onDrag]
+    [ratioFromX, onDrag],
   )
   const move = useCallback(
     (x: number) => {
@@ -81,7 +82,7 @@ export function Scrubber({
       setDragRatio(r)
       onDrag?.(r)
     },
-    [ratioFromX, onDrag]
+    [ratioFromX, onDrag],
   )
   const end = useCallback(
     (x: number) => {
@@ -90,7 +91,7 @@ export function Scrubber({
       onDrag?.(null)
       onSeek(r)
     },
-    [ratioFromX, onDrag, onSeek]
+    [ratioFromX, onDrag, onSeek],
   )
   const cancel = useCallback(() => {
     setDragRatio(null)
@@ -126,12 +127,15 @@ export function Scrubber({
         </View>
 
         {/* full-height cream leading line, behind the labels like web (the
-            marker passes behind the text instead of overlapping it) */}
+            marker passes behind the text instead of overlapping it). The
+            glow is faked with stacked translucent layers rather than
+            shadow*/}
         {knob && (
-          <View
-            style={[styles.line, { left: `${pct}%`, width: dragging ? 3 : 2 }]}
-            pointerEvents="none"
-          />
+          <View style={[styles.lineWrap, { left: `${pct}%` }]} pointerEvents="none">
+            <View style={styles.glowOuter} />
+            <View style={styles.glowInner} />
+            <View style={[styles.line, { width: dragging ? 3 : 2 }]} />
+          </View>
         )}
 
         {/* interior labels - plain text over the fill/track, no background
@@ -201,19 +205,41 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     opacity: 0.85,
   },
-  line: {
+  lineWrap: {
     position: 'absolute',
     top: 0,
     bottom: 0,
     marginLeft: -1,
+    alignItems: 'center',
+  },
+  line: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
     backgroundColor: CREAM,
-    // Dual-layer glow matches web's `box-shadow: 0 0 8px 1px accent, 0 0 2px
-    // 0 cream` - RN only supports one shadow, so the ember bloom (the more
-    // visible layer) wins; a plain shadowRadius:4 was much too faint.
-    shadowColor: EMBER,
-    shadowOpacity: 0.9,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 4,
+  },
+  // Android ignores shadow*/shadowRadius on plain Views (iOS-only), so the
+  // web's `box-shadow: 0 0 8px 1px accent, 0 0 2px 0 cream` glow is faked
+  // here with two wider, translucent, ember-tinted bars stacked behind the
+  // cream line instead - renders identically on both platforms.
+  glowOuter: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 16,
+    marginLeft: -8,
+    backgroundColor: EMBER,
+    opacity: 0.35,
+    borderRadius: 8,
+  },
+  glowInner: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 8,
+    marginLeft: -4,
+    backgroundColor: EMBER,
+    opacity: 0.55,
+    borderRadius: 4,
   },
 })

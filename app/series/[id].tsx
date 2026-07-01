@@ -37,6 +37,8 @@ import {
   icons,
 } from '@/ui/primitives'
 import { CoverGlow } from '@/ui/CoverGlow'
+import { BookSelectionToolbar } from '@/ui/BookSelectionToolbar'
+import { useBookSelection } from '@/ui/useBookSelection'
 import { colors, radius, spacing } from '@/ui/theme'
 
 /** ABS stores a book's sequence in the denormalized seriesName ("Foundation #2").
@@ -56,10 +58,14 @@ export default function SeriesDetailScreen() {
   const [error, setError] = useState<string | null>(null)
   // Per-item progress, keyed by libraryItemId, refetched after mark-finished.
   const [progressById, setProgressById] = useState<Map<string, ABSMediaProgress>>(() => new Map())
-
-  const [selectMode, setSelectMode] = useState(false)
-  const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [marking, setMarking] = useState(false)
+  const selection = useBookSelection()
+
+  const refreshProgress = () => {
+    void getMe()
+      .then((me) => setProgressById(new Map(me.mediaProgress.map((p) => [p.libraryItemId, p]))))
+      .catch(() => {})
+  }
 
   useEffect(() => {
     if (!id || !libraryId) return
@@ -135,43 +141,18 @@ export default function SeriesDetailScreen() {
   const allSeriesFinished =
     books.length > 0 && books.every((b) => progressById.get(b.id)?.isFinished)
 
-  const toggleSel = (bookId: string) =>
-    setSelected((s) => {
-      const next = new Set(s)
-      if (next.has(bookId)) next.delete(bookId)
-      else next.add(bookId)
-      return next
-    })
-  const clearSel = () => {
-    setSelected(new Set())
-    setSelectMode(false)
-  }
-  const selectAll = () => setSelected(new Set(books.map((b) => b.id)))
-
-  // Mark a set of ids finished/unfinished, then refetch progress so the segment
-  // track, counts and next-up all reflect the change.
-  const applyFinished = async (ids: string[], finished: boolean) => {
-    if (!ids.length || marking) return
+  // Mark the whole series finished/unfinished, then refetch so the track updates.
+  const markSeries = async () => {
+    if (!books.length || marking) return
     setMarking(true)
     try {
-      await Promise.all(ids.map((bookId) => setItemFinished(bookId, finished)))
-      const me = await getMe()
-      setProgressById(new Map(me.mediaProgress.map((p) => [p.libraryItemId, p])))
+      await Promise.all(books.map((b) => setItemFinished(b.id, !allSeriesFinished)))
+      refreshProgress()
     } catch {
       // A best-effort action; leave the UI as-is on failure.
     } finally {
       setMarking(false)
     }
-  }
-
-  const markSeries = () =>
-    void applyFinished(books.map((b) => b.id), !allSeriesFinished)
-
-  const markSelection = () => {
-    const ids = [...selected]
-    if (!ids.length) return
-    const allFinished = ids.every((bookId) => progressById.get(bookId)?.isFinished)
-    void applyFinished(ids, !allFinished).then(clearSel)
   }
 
   const play = async (bookId: string) => {
@@ -182,9 +163,6 @@ export default function SeriesDetailScreen() {
     router.push('/player')
   }
 
-  const selectionAllFinished =
-    selected.size > 0 && [...selected].every((bookId) => progressById.get(bookId)?.isFinished)
-
   return (
     <Screen>
       <View style={StyleSheet.absoluteFill}>
@@ -192,7 +170,10 @@ export default function SeriesDetailScreen() {
       </View>
 
       <Header onBack={() => router.back()} />
-      <ScrollView contentContainerStyle={{ paddingBottom: 160 }} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 160 }}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Hero */}
         <View style={styles.hero}>
           <HeroCovers books={books} />
@@ -242,11 +223,7 @@ export default function SeriesDetailScreen() {
             />
           ) : null}
         </View>
-        <Touchable
-          onPress={markSeries}
-          disabled={marking}
-          style={styles.markSeriesBtn}
-        >
+        <Touchable onPress={markSeries} disabled={marking} style={styles.markSeriesBtn}>
           <IconButton
             name={allSeriesFinished ? icons.removeDone : icons.doneAll}
             size={18}
@@ -257,44 +234,21 @@ export default function SeriesDetailScreen() {
           </AppText>
         </Touchable>
 
-        {/* List head / selection toolbar */}
-        {selected.size > 0 ? (
-          <View style={styles.toolbar}>
-            <IconButton name={icons.close} onPress={clearSel} style={styles.toolbarClose} />
-            <AppText variant="label" color={colors.accent} style={{ flex: 1 }}>
-              {selected.size} selected
-            </AppText>
-            {selected.size < books.length ? (
-              <Touchable onPress={selectAll} style={styles.pill}>
-                <AppText variant="meta" color={colors.textMuted}>
-                  Select all {books.length}
-                </AppText>
-              </Touchable>
-            ) : null}
-            <Touchable onPress={markSelection} disabled={marking} style={styles.pill}>
-              <IconButton name={icons.taskAlt} size={16} color={colors.text} />
-              <AppText variant="meta">{selectionAllFinished ? 'Not finished' : 'Finished'}</AppText>
-            </Touchable>
-          </View>
+        {/* List head / selection toolbar. Long-press a book to start selecting. */}
+        {selection.selecting ? (
+          <BookSelectionToolbar
+            selection={selection}
+            books={books}
+            libraryId={libraryId}
+            progressById={progressById}
+            onProgressChanged={refreshProgress}
+          />
         ) : (
           <View style={styles.listHead}>
             <View style={styles.listHeadTitle}>
               <IconButton name={icons.listNumbered} size={20} color={colors.accent} />
               <AppText variant="title">In reading order</AppText>
             </View>
-            <Touchable
-              onPress={() => setSelectMode((v) => !v)}
-              style={[styles.pill, selectMode && styles.pillOn]}
-            >
-              <IconButton
-                name={icons.checklist}
-                size={16}
-                color={selectMode ? colors.text : colors.textMuted}
-              />
-              <AppText variant="meta" color={selectMode ? colors.text : colors.textMuted}>
-                {selectMode ? 'Done' : 'Select'}
-              </AppText>
-            </Touchable>
           </View>
         )}
 
@@ -306,12 +260,13 @@ export default function SeriesDetailScreen() {
               book={b}
               index={i}
               progress={progressById.get(b.id) ?? null}
-              selecting={selectMode || selected.size > 0}
-              selected={selected.has(b.id)}
+              selecting={selection.selecting}
+              selected={selection.isSelected(b.id)}
               onPress={() =>
-                selectMode || selected.size > 0 ? toggleSel(b.id) : router.push(`/item/${b.id}`)
+                selection.selecting ? selection.toggle(b.id) : router.push(`/item/${b.id}`)
               }
-              onToggle={() => toggleSel(b.id)}
+              onLongPress={() => selection.begin(b.id)}
+              onToggle={() => selection.toggle(b.id)}
               onPlay={() => play(b.id)}
             />
           ))}
@@ -332,7 +287,11 @@ function HeroCovers({ books }: { books: ABSLibraryItem[] }) {
         uri={coverUrl(shown[0].id)}
         size={160}
         radius={radius.card}
-        fallback={{ hue: coverHue(shown[0].id), initial: itemTitle(shown[0]).charAt(0).toUpperCase(), title: itemTitle(shown[0]) }}
+        fallback={{
+          hue: coverHue(shown[0].id),
+          initial: itemTitle(shown[0]).charAt(0).toUpperCase(),
+          title: itemTitle(shown[0]),
+        }}
       />
     )
   }
@@ -394,6 +353,7 @@ function BookRow({
   selecting,
   selected,
   onPress,
+  onLongPress,
   onToggle,
   onPlay,
 }: {
@@ -403,6 +363,7 @@ function BookRow({
   selecting: boolean
   selected: boolean
   onPress: () => void
+  onLongPress: () => void
   onToggle: () => void
   onPlay: () => void
 }) {
@@ -414,7 +375,11 @@ function BookRow({
   const sub = [narrator, hours > 0 && `${hours}h`].filter(Boolean).join(' · ')
 
   return (
-    <Touchable onPress={onPress} style={[styles.row, selected && styles.rowSelected]}>
+    <Touchable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      style={[styles.row, selected && styles.rowSelected]}
+    >
       {selecting ? (
         <Pressable
           onPress={onToggle}
@@ -442,12 +407,20 @@ function BookRow({
           {fin ? <IconButton name={icons.checkCircle} size={15} color={colors.textMuted} /> : null}
         </View>
         {sub ? (
-          <AppText variant="caption" color={colors.textMuted} numberOfLines={1} style={{ marginTop: 2 }}>
+          <AppText
+            variant="caption"
+            color={colors.textMuted}
+            numberOfLines={1}
+            style={{ marginTop: 2 }}
+          >
             {sub}
           </AppText>
         ) : null}
         {part ? (
-          <ProgressBar progress={progress?.progress ?? 0} style={{ marginTop: spacing.sm, maxWidth: 240 }} />
+          <ProgressBar
+            progress={progress?.progress ?? 0}
+            style={{ marginTop: spacing.sm, maxWidth: 240 }}
+          />
         ) : null}
       </View>
       {!selecting ? (
@@ -513,7 +486,11 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairline,
   },
-  statDivider: { width: StyleSheet.hairlineWidth, height: '100%', backgroundColor: colors.hairline },
+  statDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: '100%',
+    backgroundColor: colors.hairline,
+  },
   progCard: {
     marginHorizontal: spacing.lg,
     marginTop: spacing.lg,
@@ -562,32 +539,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   listHeadTitle: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  toolbar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.xl,
-    marginBottom: spacing.sm,
-  },
-  toolbarClose: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.fill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.pill,
-    backgroundColor: colors.fill,
-  },
-  pillOn: { backgroundColor: colors.accentTile },
   list: { paddingHorizontal: spacing.lg, gap: spacing.xs },
   row: {
     flexDirection: 'row',

@@ -31,12 +31,14 @@
     "react-native-reanimated": "4.3.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "^4.25.2",
+    "react-native-svg": "15.15.4",
     "react-native-video": "^6.19.2",
     "react-native-worklets": "0.8.3"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
     "babel-preset-expo": "^56.0.15",
+    "prettier": "^3.4.2",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -45,7 +47,10 @@
     "ios": "expo run:ios",
     "emulator": "powershell -ExecutionPolicy Bypass -File scripts/run-emulator.ps1",
     "emulator:native": "powershell -ExecutionPolicy Bypass -File scripts/run-emulator.ps1 -Prebuild",
-    "sync-core": "git submodule update --remote packages/core"
+    "live": "powershell -ExecutionPolicy Bypass -File scripts/dev-server.ps1",
+    "sync-core": "git submodule update --remote packages/core",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "private": true
 }
