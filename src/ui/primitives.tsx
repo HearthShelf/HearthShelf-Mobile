@@ -3,7 +3,7 @@
  * these so colors/radii/spacing come from src/ui/theme.ts rather than per-screen
  * hardcoded hex. Bottom sheets use @gorhom/bottom-sheet (see Sheet below).
  */
-import { forwardRef } from 'react'
+import { forwardRef, useState } from 'react'
 import {
   ActivityIndicator,
   Image,
@@ -23,6 +23,7 @@ import {
   type BottomSheetModalProps,
 } from '@gorhom/bottom-sheet'
 import { Icon, icons, type IconName } from './icons'
+import { TypesetCover } from './TypesetCover'
 import { colors, radius, spacing, type as typeScale } from './theme'
 
 // ---- Screen ----
@@ -199,28 +200,49 @@ export function SectionHeader({ title, action }: { title: string; action?: React
 
 // ---- Cover ----
 
+/** Typeset-fallback content for a cover, when real artwork is missing/fails. */
+export type CoverFallback = { hue: string; initial: string; kicker?: string; title?: string }
+
 export function Cover({
   uri,
   size,
   width,
   aspectRatio = 1,
   radius: r = radius.tile,
+  fallback,
   style,
 }: {
-  uri: string
+  uri?: string
   size?: number
   width?: number
   aspectRatio?: number
   radius?: number
+  /** Shown when there's no uri or the image fails to load. Real artwork wins. */
+  fallback?: CoverFallback
   style?: StyleProp<ImageStyle>
 }) {
+  const [failed, setFailed] = useState(false)
   const w = size ?? width
-  const dims: ImageStyle = size
-    ? { width: size, height: size }
-    : { width: w, aspectRatio }
+  const dims: ImageStyle = size ? { width: size, height: size } : { width: w, aspectRatio }
+
+  const showFallback = fallback && (!uri || failed)
+  if (showFallback) {
+    return (
+      <TypesetCover
+        hue={fallback.hue}
+        initial={fallback.initial}
+        kicker={fallback.kicker}
+        title={fallback.title}
+        radius={r}
+        style={[dims as StyleProp<ViewStyle>, style as StyleProp<ViewStyle>]}
+      />
+    )
+  }
+
   return (
     <Image
       source={{ uri }}
+      onError={() => setFailed(true)}
       style={[styles.cover, dims, { borderRadius: r }, style]}
     />
   )
