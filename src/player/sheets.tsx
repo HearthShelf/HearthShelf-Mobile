@@ -96,7 +96,10 @@ export const ChaptersSheet = forwardRef<SheetHandle>(function ChaptersSheet(_pro
 
 // ---- Speed ----
 
-const SPEED_PRESETS = [0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3]
+// The handful of speeds people actually reach for (surveys put the median at
+// 1.5x, with 1x and 2x the top single picks). The slider fills in everything
+// between.
+const SPEED_PRESETS = [0.75, 1, 1.5, 2]
 
 function speedLabel(s: number): string {
   return s.toFixed(2).replace(/\.?0+$/, '') + '×'
@@ -114,6 +117,8 @@ export const SpeedSheet = forwardRef<SheetHandle>(function SpeedSheet(_props, re
         </AppText>
       </View>
       <Slider
+        style={styles.slider}
+        tapToSeek
         minimumValue={0.5}
         maximumValue={3}
         step={0.05}
@@ -131,7 +136,9 @@ export const SpeedSheet = forwardRef<SheetHandle>(function SpeedSheet(_props, re
       </View>
       <View style={[styles.grid, { marginTop: spacing.lg }]}>
         {SPEED_PRESETS.map((s) => {
-          const on = Math.abs(s - rate) < 0.001
+          // Widened so a preset still highlights when the slider lands on it
+          // (the slider steps by 0.05).
+          const on = Math.abs(s - rate) < 0.025
           return (
             <Touchable
               key={s}
@@ -139,7 +146,7 @@ export const SpeedSheet = forwardRef<SheetHandle>(function SpeedSheet(_props, re
               onPress={() => setRate(s)}
             >
               <AppText variant="label" color={on ? colors.onAccent : colors.text}>
-                {s}×
+                {speedLabel(s)}
               </AppText>
             </Touchable>
           )
