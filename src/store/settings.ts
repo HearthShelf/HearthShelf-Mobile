@@ -17,6 +17,9 @@ import { DEFAULT_AUTO_RULES } from '@hearthshelf/core'
 export type ThemePref = 'dark' | 'oled'
 export type GlowMode = 'gradient' | 'image'
 export type ScrubberScope = 'chapter' | 'book'
+export type CoverAspect = 'square' | 'portrait'
+/** Aspect ratio (width/height) for cover tiles, per the CoverAspect setting. */
+export const COVER_ASPECT_RATIO: Record<CoverAspect, number> = { square: 1, portrait: 2 / 3 }
 
 export interface SettingsState {
   queueMode: QueueMode
@@ -25,6 +28,7 @@ export interface SettingsState {
   // Appearance
   theme: ThemePref
   glowMode: GlowMode
+  coverAspect: CoverAspect
 
   // Playback
   scrubber: ScrubberScope
@@ -46,6 +50,7 @@ let state: SettingsState = {
 
   theme: 'dark',
   glowMode: 'gradient',
+  coverAspect: 'square',
 
   scrubber: 'chapter',
   defaultSpeed: 1,

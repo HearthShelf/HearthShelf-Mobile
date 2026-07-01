@@ -135,7 +135,7 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
           )}
         </Sheet>
 
-        <Sheet ref={rulesRef} title="What gets added" kicker="Auto-queue">
+        <Sheet ref={rulesRef} title="What gets added" kicker="Auto-queue" stackBehavior="push">
           <View>
             {settings.queueAutoRules.map((r) => {
               const copy = RULE_COPY[r.id]

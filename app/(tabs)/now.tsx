@@ -1,8 +1,8 @@
 /**
- * Now Playing tab. Placeholder until the docked player surface lands (plan
- * section 6): if something is playing it points into the full player, otherwise
- * it shows a calm hearth empty state that offers to resume the last book (the
- * "resume last book" affordance the web app's home hero has).
+ * Now Playing tab. When something is playing, the tab IS the full player
+ * (rendered inline via PlayerSurface) - not a splash that punts to /player. When
+ * nothing is playing it shows a calm hearth empty state that offers to resume the
+ * last book (the "resume last book" affordance the web app's home hero has).
  */
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { ImageBackground, StyleSheet, View } from 'react-native'
@@ -15,37 +15,16 @@ import { playItemById } from '@/player/playback'
 import { AppText, Cover, PrimaryButton, Screen, icons } from '@/ui/primitives'
 import { colors, radius, spacing } from '@/ui/theme'
 import { getState, subscribe } from '@/player/store'
+import { PlayerSurface } from '../player'
 
 const HEARTH = require('../../assets/images/sitting-in-the-hearth.webp')
 
 export default function NowPlayingTab() {
-  const router = useRouter()
   const { nowPlaying } = useSyncExternalStore(subscribe, getState)
 
-  if (!nowPlaying) return <EmptyState />
-
-  return (
-    <Screen>
-      <HearthBackground>
-        <View style={styles.centerBlock}>
-          <AppText variant="caption" color={colors.accent}>
-            NOW PLAYING
-          </AppText>
-          <AppText variant="title" numberOfLines={2} style={styles.centerText}>
-            {nowPlaying.title}
-          </AppText>
-          <AppText variant="meta" color={colors.textMuted} numberOfLines={1}>
-            {nowPlaying.author}
-          </AppText>
-          <PrimaryButton
-            label="Open player"
-            icon={icons.play}
-            onPress={() => router.push('/player')}
-          />
-        </View>
-      </HearthBackground>
-    </Screen>
-  )
+  // Playing -> show the real player inline; otherwise the hearth resume state.
+  if (nowPlaying) return <PlayerSurface embedded />
+  return <EmptyState />
 }
 
 /**

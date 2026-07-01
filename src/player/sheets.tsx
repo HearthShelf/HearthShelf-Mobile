@@ -6,7 +6,7 @@
  * design-system mock, which never got past a bare tap-to-cycle speed control.
  */
 import { forwardRef, useImperativeHandle, useRef, useState, useSyncExternalStore } from 'react'
-import { Pressable, StyleSheet, TextInput, View } from 'react-native'
+import { Pressable, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import Slider from '@react-native-community/slider'
 import { formatTimestamp } from '@hearthshelf/core'
@@ -163,6 +163,7 @@ function fmtRewind(sec: number): string {
 
 export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, ref) {
   const sheetRef = useSheetHandle(ref)
+  const { height } = useWindowDimensions()
   const { sleepTimer, sleepBehavior, nowPlaying, position } = useSyncExternalStore(
     subscribe,
     getState
@@ -232,8 +233,11 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
   }
 
   return (
-    <Sheet ref={sheetRef} title="Sleep timer" snapPoints={['82%']}>
-      <BottomSheetScrollView contentContainerStyle={{ paddingBottom: spacing.xl }}>
+    <Sheet ref={sheetRef} title="Sleep timer">
+      <BottomSheetScrollView
+        style={{ maxHeight: height * 0.72 }}
+        contentContainerStyle={{ paddingBottom: spacing.md }}
+      >
         <View style={styles.segFull}>
           {(['duration', 'chapter', 'time'] as SleepTab[]).map((t) => (
             <Pressable

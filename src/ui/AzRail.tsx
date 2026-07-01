@@ -24,14 +24,21 @@ export function AzRail({
   const lastLetter = useRef<string | null>(null)
   // The letter currently under the finger (drives the preview bubble + highlight).
   const [active, setActive] = useState<string | null>(null)
+  // Y of the finger within the rail, so the bubble sits beside it (not centered).
+  const [bubbleY, setBubbleY] = useState(0)
+  const BUBBLE = 64
 
   // locationY is relative to the rail view, so map it directly onto the letters.
   const pick = (locationY: number) => {
     const height = railHeight.current
     if (height <= 0) return
-    const rel = Math.max(0, Math.min(height, locationY))
-    const idx = Math.min(LETTERS.length - 1, Math.floor((rel / height) * LETTERS.length))
+    // Ignore stray out-of-range samples (fast drags / finger leaving the column)
+    // instead of clamping - clamping to 0 was yanking the list to "#" mid-scroll.
+    if (locationY < 0 || locationY > height) return
+    const idx = Math.min(LETTERS.length - 1, Math.floor((locationY / height) * LETTERS.length))
     const letter = LETTERS[idx]
+    // Keep the bubble tracking the finger even when the letter doesn't change.
+    setBubbleY(Math.max(BUBBLE / 2, Math.min(height - BUBBLE / 2, locationY)))
     if (letter === lastLetter.current) return
     lastLetter.current = letter
     setActive(letter)
@@ -46,7 +53,7 @@ export function AzRail({
   return (
     <View style={styles.zone} pointerEvents="box-none">
       {active ? (
-        <View style={styles.bubble} pointerEvents="none">
+        <View style={[styles.bubble, { top: bubbleY - BUBBLE / 2 }]} pointerEvents="none">
           <Text style={styles.bubbleText}>{active}</Text>
         </View>
       ) : null}
@@ -116,7 +123,7 @@ const styles = StyleSheet.create({
   },
   letterEmpty: { color: colors.textFaint, opacity: 0.35 },
   letterActive: { color: colors.accent, fontWeight: '800' },
-  // Big preview to the left of the rail, vertically centered on the strip.
+  // Big preview to the left of the rail; `top` is set inline to track the finger.
   bubble: {
     position: 'absolute',
     right: AZ_RAIL_WIDTH + spacing.sm,

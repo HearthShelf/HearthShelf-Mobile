@@ -107,6 +107,21 @@ export default function SettingsScreen() {
               }
             />
             <SettingsRow
+              icon="crop"
+              title="Cover shape"
+              desc="How book covers are cropped in lists and the player. Doesn't change the home spotlight background."
+              control={
+                <Seg
+                  value={s.coverAspect}
+                  onChange={(v) => setSetting('coverAspect', v)}
+                  options={[
+                    { value: 'square', label: 'Square' },
+                    { value: 'portrait', label: 'Portrait' },
+                  ]}
+                />
+              }
+            />
+            <SettingsRow
               icon="blur-on"
               title="Cover glow style"
               desc="Gradient blooms live; Image is the lighter-weight option."

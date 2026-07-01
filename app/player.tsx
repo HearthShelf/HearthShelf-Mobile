@@ -34,7 +34,7 @@ import {
   currentChapter,
 } from '@/player/store'
 import { getQueueState, subscribeQueue } from '@/player/queue'
-import { getSettingsState, subscribeSettings } from '@/store/settings'
+import { getSettingsState, subscribeSettings, COVER_ASPECT_RATIO } from '@/store/settings'
 import { useBookmarks } from '@/player/useBookmarks'
 import { coverUrl, getItemDetail, getRecentSessions } from '@/api/abs'
 import { playItemById } from '@/player/playback'
@@ -59,7 +59,12 @@ import { ChaptersSheet, SpeedSheet, SleepSheet, type SheetHandle } from '@/playe
 import { AddToListSheet } from '@/player/AddToListSheet'
 import { QueueSheet } from '@/player/QueueSheet'
 
-export default function PlayerScreen() {
+/**
+ * The full player UI. Rendered as the pushed `/player` route (with a collapse
+ * button) and inline in the Now Playing tab (`embedded`, no collapse button - the
+ * tab bar is the way out).
+ */
+export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter()
   const { nowPlaying, isPlaying, position, sleepTimer, rate } = useSyncExternalStore(
     subscribe,
@@ -125,6 +130,8 @@ export default function PlayerScreen() {
   })
 
   if (!nowPlaying) {
+    // In the tab, the Now Playing screen owns the empty state (hearth + resume).
+    if (embedded) return null
     return (
       <Screen edges={['top', 'bottom']}>
         <Centered>
@@ -186,8 +193,12 @@ export default function PlayerScreen() {
       : null
 
   // Cover: fill the width (up to a cap), but never taller than the space we have.
+  // Honor the cover-shape setting; height = width / aspect, so cap width so the
+  // (possibly portrait) cover still fits the available height.
+  const coverAspect = COVER_ASPECT_RATIO[settings.coverAspect]
   const coverMaxW = Math.min(width - spacing.xl * 2, immersive ? width - 48 : 360)
   const coverMaxH = height * (immersive ? 0.62 : 0.46)
+  const coverWidth = Math.min(coverMaxW, coverMaxH * coverAspect)
 
   const goToTab = (name: string) => {
     // The player already IS the now-playing surface; tapping that tab is a no-op.
@@ -205,7 +216,11 @@ export default function PlayerScreen() {
       {!immersive && (
         <>
           <View style={styles.header}>
-            <IconButton name={icons.collapse} size={28} onPress={() => router.back()} />
+            {embedded ? (
+              <View style={{ width: 28 }} />
+            ) : (
+              <IconButton name={icons.collapse} size={28} onPress={() => router.back()} />
+            )}
             <View style={{ flex: 1, alignItems: 'center' }}>
               <AppText variant="eyebrow">Now playing</AppText>
               <AppText variant="caption" numberOfLines={1} style={{ marginTop: 2, opacity: 0.8 }}>
@@ -235,8 +250,8 @@ export default function PlayerScreen() {
           <Pressable onPress={onCoverTap} style={styles.coverTap}>
             <Cover
               uri={nowPlaying.artworkUrl}
-              width={Math.min(coverMaxW, coverMaxH)}
-              aspectRatio={1}
+              width={coverWidth}
+              aspectRatio={coverAspect}
               radius={radius.card}
               fallback={{ hue, initial: nowPlaying.title.charAt(0).toUpperCase(), title: nowPlaying.title }}
               style={styles.cover}
@@ -316,7 +331,9 @@ export default function PlayerScreen() {
       </View>
 
       {/* Nav stays visible unless immersive. */}
-      {!immersive && <AppTabBar activeName="now" onPressTab={goToTab} />}
+      {/* The pushed route shows its own tab bar; embedded, the real tab bar is
+          already there (the Now Playing tab), so don't double it. */}
+      {!immersive && !embedded && <AppTabBar activeName="now" onPressTab={goToTab} />}
 
       {lightbox && (
         <Lightbox
@@ -357,6 +374,11 @@ export default function PlayerScreen() {
       )}
     </Screen>
   )
+}
+
+/** The pushed `/player` route: the full surface with a collapse button. */
+export default function PlayerScreen() {
+  return <PlayerSurface />
 }
 
 /** A bordered, tappable transport button (rewind / skip / forward). */

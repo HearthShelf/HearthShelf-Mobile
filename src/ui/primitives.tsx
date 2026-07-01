@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import {
   BottomSheetModal,
   BottomSheetBackdrop,
+  BottomSheetView,
   type BottomSheetModalProps,
 } from '@gorhom/bottom-sheet'
 import { Icon, icons, type IconName } from './icons'
@@ -308,14 +309,33 @@ export const Sheet = forwardRef<
     title?: string
     kicker?: string
     snapPoints?: BottomSheetModalProps['snapPoints']
+    /** How this modal behaves when presented over another (default 'replace').
+     *  Use 'push' to layer a sub-sheet on top of its opener. */
+    stackBehavior?: BottomSheetModalProps['stackBehavior']
     onDismiss?: () => void
   }
->(function Sheet({ children, title, kicker, snapPoints, onDismiss }, ref) {
+>(function Sheet({ children, title, kicker, snapPoints, stackBehavior, onDismiss }, ref) {
+  const header = (kicker || title) && (
+    <View style={styles.sheetHeader}>
+      {kicker ? (
+        <AppText variant="caption" color={colors.textMuted}>
+          {kicker.toUpperCase()}
+        </AppText>
+      ) : null}
+      {title ? <AppText variant="title">{title}</AppText> : null}
+    </View>
+  )
+  // No snapPoints -> dynamic sizing, which must measure a BottomSheetView. With
+  // snapPoints the sheet has a fixed height and the child (often a
+  // BottomSheetScrollView) manages its own scroll, so a plain View is correct
+  // there - wrapping scroll content in BottomSheetView would break scrolling.
+  const dynamic = !snapPoints
   return (
     <BottomSheetModal
       ref={ref}
       snapPoints={snapPoints}
-      enableDynamicSizing={!snapPoints}
+      enableDynamicSizing={dynamic}
+      stackBehavior={stackBehavior}
       onDismiss={onDismiss}
       handleIndicatorStyle={{ backgroundColor: colors.textFaint }}
       backgroundStyle={{ backgroundColor: colors.sheet }}
@@ -323,19 +343,17 @@ export const Sheet = forwardRef<
         <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.55} />
       )}
     >
-      <View style={styles.sheetBody}>
-        {(kicker || title) && (
-          <View style={styles.sheetHeader}>
-            {kicker ? (
-              <AppText variant="caption" color={colors.textMuted}>
-                {kicker.toUpperCase()}
-              </AppText>
-            ) : null}
-            {title ? <AppText variant="title">{title}</AppText> : null}
-          </View>
-        )}
-        {children}
-      </View>
+      {dynamic ? (
+        <BottomSheetView style={styles.sheetBody}>
+          {header}
+          {children}
+        </BottomSheetView>
+      ) : (
+        <View style={styles.sheetBody}>
+          {header}
+          {children}
+        </View>
+      )}
     </BottomSheetModal>
   )
 })

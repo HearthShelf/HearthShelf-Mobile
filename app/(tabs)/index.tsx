@@ -1,6 +1,7 @@
-import { useAuth } from '@clerk/expo'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native'
+import { useAuth, useUser } from '@clerk/expo'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { FlatList, ImageBackground, Pressable, ScrollView, StyleSheet, View } from 'react-native'
+import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
 import type { ABSLibraryItem, ABSShelf, HSListeningStats } from '@hearthshelf/core'
 import { coverHue, formatDuration } from '@hearthshelf/core'
@@ -12,7 +13,8 @@ import {
 import { CLERK_JWT_TEMPLATE } from '@/lib/config'
 import { connectServer } from '@/api/connect'
 import { setSession, clearSession, setLastServerId, getLastServerId } from '@/api/session'
-import { clearTrack } from '@/player/store'
+import { clearTrack, getState, subscribe } from '@/player/store'
+import { getSettingsState, subscribeSettings, COVER_ASPECT_RATIO } from '@/store/settings'
 import { setAutoSession, clearAutoSession } from '@/player/autoBridge'
 import { startQueueSync, stopQueueSync } from '@/player/queueSync'
 import {
@@ -40,7 +42,6 @@ import {
   SectionHeader,
   icons,
 } from '@/ui/primitives'
-import { CoverGlow } from '@/ui/CoverGlow'
 import { Icon } from '@/ui/icons'
 import { colors, radius, spacing } from '@/ui/theme'
 
@@ -60,6 +61,9 @@ class NoLinkedServersError extends Error {
 
 export default function HomeScreen() {
   const { getToken, signOut } = useAuth()
+  const { user } = useUser()
+  const firstName = user?.firstName ?? null
+  const { nowPlaying } = useSyncExternalStore(subscribe, getState)
   const router = useRouter()
   const [status, setStatus] = useState<Status>({ phase: 'connecting' })
   const [inProgress, setInProgress] = useState<ABSLibraryItem[]>([])
@@ -248,10 +252,6 @@ export default function HomeScreen() {
 
   return (
     <Screen>
-      <View style={styles.topBar}>
-        <AppText variant="hero">{status.serverName}</AppText>
-        <IconButton name={icons.search} onPress={() => router.push('/search')} />
-      </View>
       <ScrollView
         contentContainerStyle={{ paddingBottom: 140 }}
         showsVerticalScrollIndicator={false}
@@ -260,6 +260,7 @@ export default function HomeScreen() {
           <ContinueHero
             item={hero}
             progress={heroProgress}
+            greeting={<Greeting firstName={firstName} nowPlayingTitle={nowPlaying?.title} />}
             onResume={async () => {
               try {
                 await playItemById(hero.id)
@@ -269,7 +270,11 @@ export default function HomeScreen() {
               }
             }}
           />
-        ) : null}
+        ) : (
+          <View style={styles.topBar}>
+            <Greeting firstName={firstName} nowPlayingTitle={nowPlaying?.title} />
+          </View>
+        )}
         {stats ? <HomeStatsStrip stats={stats} /> : null}
         {shelves.map((shelf) => (
           <Shelf key={shelf.id} shelf={shelf} />
@@ -279,64 +284,109 @@ export default function HomeScreen() {
   )
 }
 
+/** Two-line personalized greeting: "Hello <name>" + a time-of-day subtext that
+ *  nods to what's playing when there is something. Deterministic per render (no
+ *  Math.random in the hot path - a small rotation keyed off the hour). */
+function Greeting({ firstName, nowPlayingTitle }: { firstName: string | null; nowPlayingTitle?: string }) {
+  const h = new Date().getHours()
+  const partOfDay = h < 5 ? 'night' : h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 21 ? 'evening' : 'night'
+  const hello = firstName ? `Hello ${firstName}` : 'Hello'
+  const subs =
+    partOfDay === 'morning'
+      ? ['Good morning', 'A fresh chapter awaits', 'Coffee and a good book?']
+      : partOfDay === 'afternoon'
+        ? ['Good afternoon', 'Pick up where you left off', 'A little listening break?']
+        : partOfDay === 'evening'
+          ? ['Good evening', 'Wind down with a chapter', 'Settle in by the hearth']
+          : ['Burning the midnight oil', 'A late-night listen', 'The hearth is still warm']
+  const sub = nowPlayingTitle ? `Still on ${nowPlayingTitle}` : subs[h % subs.length]
+  return (
+    <View>
+      <AppText variant="hero">{hello}</AppText>
+      <AppText variant="meta" color={colors.textMuted} numberOfLines={1}>
+        {sub}
+      </AppText>
+    </View>
+  )
+}
+
 /**
- * Continue-listening spotlight hero: cover with a color glow, title/author, a
- * progress bar with a percent readout, and a Resume CTA (mirrors the web home's
- * ResumeHero). progress is 0..1.
+ * Continue-listening spotlight hero: the book's artwork blown up as the
+ * background, fading down to the scaffold just below the Resume button and
+ * running up off the top of the screen (behind the greeting). Borderless.
  */
 function ContinueHero({
   item,
   progress,
+  greeting,
   onResume,
 }: {
   item: ABSLibraryItem
   progress: number
+  greeting: React.ReactNode
   onResume: () => void
 }) {
   const router = useRouter()
+  const { coverAspect } = useSyncExternalStore(subscribeSettings, getSettingsState)
   const pct = Math.round(Math.max(0, Math.min(1, progress)) * 100)
   const started = progress > 0
   return (
     <View style={styles.hero}>
-      <CoverGlow hue={coverHue(item.id)} height={200} style={styles.heroGlow} />
-      <View style={styles.heroTop}>
-        <Pressable onPress={() => router.push(`/item/${item.id}`)}>
-          <Cover
-            uri={coverUrl(item.id)}
-            width={92}
-            aspectRatio={2 / 3}
-            radius={radius.tile}
-            fallback={{ hue: coverHue(item.id), initial: itemTitle(item).charAt(0).toUpperCase() }}
-          />
-        </Pressable>
-        <View style={styles.heroMeta}>
-          <AppText variant="eyebrow" color={colors.accent}>
-            {started ? 'Continue' : 'Up next'}
-          </AppText>
-          <AppText variant="title" numberOfLines={2}>
-            {itemTitle(item)}
-          </AppText>
-          <AppText variant="meta" color={colors.textMuted} numberOfLines={1}>
+      {/* Blown-up artwork background; the gradient fades it down to the scaffold
+          and up off the top so it reads as a borderless spotlight, not a card. */}
+      <ImageBackground
+        source={{ uri: coverUrl(item.id) }}
+        style={styles.heroBg}
+        imageStyle={styles.heroBgImg}
+      >
+        <LinearGradient
+          colors={['rgba(27,26,24,0.35)', 'rgba(27,26,24,0.55)', colors.scaffold]}
+          locations={[0, 0.55, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+      </ImageBackground>
+
+      <View style={styles.heroContent}>
+        <View style={styles.heroGreeting}>{greeting}</View>
+        <View style={styles.heroTop}>
+          <Pressable onPress={() => router.push(`/item/${item.id}`)}>
+            <Cover
+              uri={coverUrl(item.id)}
+              width={92}
+              aspectRatio={COVER_ASPECT_RATIO[coverAspect]}
+              radius={radius.tile}
+              fallback={{ hue: coverHue(item.id), initial: itemTitle(item).charAt(0).toUpperCase() }}
+            />
+          </Pressable>
+          <View style={styles.heroMeta}>
+            <AppText variant="eyebrow" color={colors.accent}>
+              {started ? 'Continue' : 'Up next'}
+            </AppText>
+            <AppText variant="title" numberOfLines={2}>
+              {itemTitle(item)}
+            </AppText>
+            <AppText variant="meta" color={colors.textMuted} numberOfLines={1}>
             {itemAuthor(item)}
           </AppText>
         </View>
       </View>
 
-      {started && (
-        <View style={styles.heroProgress}>
-          <ProgressBar progress={progress} style={{ flex: 1 }} />
-          <AppText variant="mono" color={colors.textMuted}>
-            {pct}%
-          </AppText>
-        </View>
-      )}
+        {started && (
+          <View style={styles.heroProgress}>
+            <ProgressBar progress={progress} style={{ flex: 1 }} />
+            <AppText variant="mono" color={colors.textMuted}>
+              {pct}%
+            </AppText>
+          </View>
+        )}
 
-      <PrimaryButton
-        label={started ? 'Resume' : 'Start listening'}
-        icon={icons.play}
-        onPress={onResume}
-        style={{ marginTop: spacing.md }}
-      />
+        <PrimaryButton
+          label={started ? 'Resume' : 'Start listening'}
+          icon={icons.play}
+          onPress={onResume}
+          style={{ marginTop: spacing.md }}
+        />
+      </View>
     </View>
   )
 }
@@ -394,6 +444,7 @@ function shelfToLibraryHref(shelf: ABSShelf): string {
 
 function Shelf({ shelf }: { shelf: ABSShelf }) {
   const router = useRouter()
+  const { coverAspect } = useSyncExternalStore(subscribeSettings, getSettingsState)
   if (shelf.type !== 'book') return null
   const href = shelfToLibraryHref(shelf)
   return (
@@ -421,7 +472,7 @@ function Shelf({ shelf }: { shelf: ABSShelf }) {
         contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.md }}
         renderItem={({ item }) => (
           <Pressable style={styles.tile} onPress={() => router.push(`/item/${item.id}`)}>
-            <Cover uri={coverUrl(item.id)} width={120} aspectRatio={2 / 3} />
+            <Cover uri={coverUrl(item.id)} width={120} aspectRatio={COVER_ASPECT_RATIO[coverAspect]} />
             <AppText variant="meta" numberOfLines={1} style={{ marginTop: spacing.xs }}>
               {itemTitle(item)}
             </AppText>
@@ -443,22 +494,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
   },
+  // Borderless spotlight: the artwork background bleeds up past the top of the
+  // screen (negative top margin under the safe area) and fades to scaffold below.
   hero: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.sm,
-    padding: spacing.lg,
-    backgroundColor: colors.high,
-    borderRadius: radius.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-    overflow: 'hidden',
+    marginTop: -60,
+    paddingTop: 60,
+    position: 'relative',
   },
-  heroGlow: {
+  heroBg: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
+    height: 340,
   },
+  heroBgImg: { resizeMode: 'cover' },
+  heroContent: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+  },
+  heroGreeting: { marginBottom: spacing.lg },
   heroTop: { flexDirection: 'row', gap: spacing.md },
   heroMeta: { flex: 1, gap: 3, justifyContent: 'center' },
   heroProgress: {
