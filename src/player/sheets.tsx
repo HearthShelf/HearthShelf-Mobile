@@ -7,6 +7,7 @@
  */
 import { forwardRef, useImperativeHandle, useRef, useState, useSyncExternalStore } from 'react'
 import { StyleSheet, TextInput, View } from 'react-native'
+import { ScrollView } from 'react-native-gesture-handler'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import Slider from '@react-native-community/slider'
 import { formatTimestamp } from '@hearthshelf/core'
@@ -278,27 +279,30 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
             <AppText variant="caption" color={colors.textMuted} style={{ marginBottom: spacing.sm }}>
               Stop at
             </AppText>
-            <BottomSheetScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.md }}>
-              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-                {chapters.map((c, i) =>
-                  i >= curIdx ? (
-                    <Touchable
-                      key={i}
-                      style={[styles.chapterChip, targetIdx === i && styles.speedOn]}
-                      onPress={() => pickChapter(i, targetAt)}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ marginBottom: spacing.md }}
+              contentContainerStyle={{ flexDirection: 'row', gap: spacing.sm }}
+            >
+              {chapters.map((c, i) =>
+                i >= curIdx ? (
+                  <Touchable
+                    key={i}
+                    style={[styles.chapterChip, targetIdx === i && styles.speedOn]}
+                    onPress={() => pickChapter(i, targetAt)}
+                  >
+                    <AppText
+                      variant="caption"
+                      color={targetIdx === i ? colors.onAccent : colors.text}
+                      numberOfLines={1}
                     >
-                      <AppText
-                        variant="caption"
-                        color={targetIdx === i ? colors.onAccent : colors.text}
-                        numberOfLines={1}
-                      >
-                        {c.title}
-                      </AppText>
-                    </Touchable>
-                  ) : null
-                )}
-              </View>
-            </BottomSheetScrollView>
+                      {c.title}
+                    </AppText>
+                  </Touchable>
+                ) : null
+              )}
+            </ScrollView>
             <View style={styles.segFull}>
               <Touchable
                 style={[styles.seg, sleepTimer?.kind === 'endOfChapter' && targetAt === 'start' && styles.segOn]}

@@ -136,7 +136,12 @@ export function togglePlay(): void {
 }
 
 export function requestSeek(seconds: number): void {
-  if (state.nowPlaying) set({ seekTo: Math.max(0, seconds) })
+  if (!state.nowPlaying) return
+  const target = Math.max(0, seconds)
+  // Optimistically move `position` so the UI (scrubber, time labels, chapter)
+  // updates instantly - even while paused, where the native progress callback
+  // won't fire to confirm the seek for a while. The host still applies seekTo.
+  set({ seekTo: target, position: target })
 }
 
 export function jumpBy(delta: number): void {
