@@ -36,6 +36,7 @@ import {
   currentChapter,
 } from '@/player/store'
 import { getQueueState, subscribeQueue } from '@/player/queue'
+import { getImmersive, subscribeImmersive, setImmersive } from '@/player/immersive'
 import { getSettingsState, subscribeSettings, COVER_ASPECT_RATIO } from '@/store/settings'
 import { useBookmarks } from '@/player/useBookmarks'
 import { coverUrl, getItemDetail, getRecentSessions } from '@/api/abs'
@@ -132,9 +133,13 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   }, [])
 
   // Immersive mode: swipe up on the cover enlarges it and hides the chrome + nav.
-  const [immersive, setImmersive] = useState(false)
+  // Kept in a shared store (not local state) so the bottom-tab navigator - which
+  // owns the tab bar when the player is embedded in the Now Playing tab - can hide
+  // it too. Reset on unmount so leaving the player never strands the nav hidden.
+  const immersive = useSyncExternalStore(subscribeImmersive, getImmersive)
   const enter = useCallback(() => setImmersive(true), [])
   const exit = useCallback(() => setImmersive(false), [])
+  useEffect(() => () => setImmersive(false), [])
 
   const swipe = Gesture.Pan().onEnd((e) => {
     if (e.velocityY < -400) runOnJS(enter)()
@@ -364,22 +369,38 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
           />
         </View>
 
-        <View style={styles.transport}>
-          {hasChapters ? (
-            <TransportBtn icon={icons.skipPrev} onPress={() => skipChapter(-1)} />
+        {/* In immersive (Car Mode) the chapter-skip buttons drop to a second row
+            beneath the play button, leaving the top row an evenly spaced
+            rewind / play / forward trio for easy in-car reach. */}
+        <View style={[styles.transport, immersive && styles.transportImmersive]}>
+          {hasChapters && !immersive ? (
+            <>
+              <TransportBtn icon={icons.skipPrev} onPress={() => skipChapter(-1)} />
+              <TransportBtn icon={icons.rewind} onPress={() => jumpBy(-15)} />
+            </>
           ) : null}
-          <TransportBtn icon={icons.rewind} onPress={() => jumpBy(-15)} />
           <Pressable
             onPress={togglePlay}
             style={({ pressed }) => [styles.play, pressed && styles.pressed]}
           >
             <Icon name={isPlaying ? icons.pause : icons.play} size={44} color={colors.onAccent} />
           </Pressable>
-          <TransportBtn icon={icons.forward} onPress={() => jumpBy(30)} />
-          {hasChapters ? (
-            <TransportBtn icon={icons.skipNext} onPress={() => skipChapter(1)} />
+          {hasChapters && !immersive ? (
+            <>
+              <TransportBtn icon={icons.forward} onPress={() => jumpBy(30)} />
+              <TransportBtn icon={icons.skipNext} onPress={() => skipChapter(1)} />
+            </>
           ) : null}
         </View>
+
+        {immersive && hasChapters && (
+          <View style={styles.chapterSkipRow}>
+            <TransportBtn icon={icons.skipPrev} onPress={() => skipChapter(-1)} />
+            <TransportBtn icon={icons.rewind} onPress={() => jumpBy(-15)} />
+            <TransportBtn icon={icons.forward} onPress={() => jumpBy(30)} />
+            <TransportBtn icon={icons.skipNext} onPress={() => skipChapter(1)} />
+          </View>
+        )}
 
         {!immersive && (
           <View style={styles.actionRow}>
@@ -914,6 +935,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignSelf: 'stretch',
     paddingHorizontal: spacing.lg,
+    marginTop: spacing.md,
+  },
+  transportImmersive: {
+    justifyContent: 'center',
+    gap: spacing.xl,
+  },
+  chapterSkipRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.xl * 2,
     marginTop: spacing.md,
   },
   transportBtn: {

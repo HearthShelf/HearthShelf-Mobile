@@ -12,16 +12,21 @@ import { useSyncExternalStore } from 'react'
 import { AppTabBar, TAB_BAR_HEIGHT } from '@/ui/AppTabBar'
 import { MiniPlayer } from '@/player/MiniPlayer'
 import { getState, subscribe } from '@/player/store'
+import { getImmersive, subscribeImmersive } from '@/player/immersive'
 
 function TabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets()
   const { nowPlaying } = useSyncExternalStore(subscribe, getState)
+  const immersive = useSyncExternalStore(subscribeImmersive, getImmersive)
   const barHeight = TAB_BAR_HEIGHT + insets.bottom
   // Hide the docked mini-player when the Now Playing tab is active - the tab is
   // itself a player surface, so the mini-bar would be redundant. Also hide it on
   // Home while something plays: the hero there IS the live player.
   const activeName = state.routes[state.index]?.name
   const hideMini = activeName === 'now' || (activeName === 'index' && nowPlaying !== null)
+
+  // The player's immersive (Car Mode) hides all app chrome, including this nav.
+  if (immersive) return null
 
   return (
     <View pointerEvents="box-none">
