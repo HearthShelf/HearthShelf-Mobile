@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ABSBookmark } from '@hearthshelf/core'
 import { createBookmark, deleteBookmark, getBookmarks } from '@/api/abs'
+import { haptics } from '@/ui/haptics'
 
 export function useBookmarks(libraryItemId: string | null) {
   const [all, setAll] = useState<ABSBookmark[]>([])
@@ -28,6 +29,7 @@ export function useBookmarks(libraryItemId: string | null) {
     async (time: number, title: string) => {
       if (!libraryItemId) return
       await createBookmark(libraryItemId, time, title)
+      haptics.success()
       refresh()
     },
     [libraryItemId, refresh],

@@ -16,6 +16,7 @@
  * Settings and the player popovers read the same store.
  */
 import { getSettingsState } from '@/store/settings'
+import { haptics } from '@/ui/haptics'
 
 /** A chapter mark within the now-playing item (seconds, absolute in the book). */
 export interface ChapterMark {
@@ -132,7 +133,10 @@ export function setPlaying(isPlaying: boolean): void {
 }
 
 export function togglePlay(): void {
-  if (state.nowPlaying) set({ isPlaying: !state.isPlaying })
+  if (state.nowPlaying) {
+    haptics.transport()
+    set({ isPlaying: !state.isPlaying })
+  }
 }
 
 export function requestSeek(seconds: number): void {
@@ -146,6 +150,7 @@ export function requestSeek(seconds: number): void {
 
 export function jumpBy(delta: number): void {
   if (!state.nowPlaying) return
+  haptics.transport()
   requestSeek(state.position + delta)
 }
 
@@ -163,6 +168,7 @@ export function currentChapter(): ChapterMark | null {
 export function skipChapter(direction: 1 | -1): void {
   const chapters = state.nowPlaying?.chapters
   if (!chapters || chapters.length === 0) return
+  haptics.transport()
   const idx = chapters.findIndex((c) => state.position >= c.start && state.position < c.end)
   const cur = idx >= 0 ? idx : chapters.length - 1
   // Going back near the start of a chapter (>3s in) restarts it instead of skipping.
@@ -175,6 +181,7 @@ export function skipChapter(direction: 1 | -1): void {
 }
 
 export function seekToChapter(chapter: ChapterMark): void {
+  haptics.transport()
   requestSeek(chapter.start)
 }
 
@@ -183,12 +190,16 @@ export function seekToChapter(chapter: ChapterMark): void {
 /** Set the playback speed (clamped 0.5x-3.0x). Persists across the session. */
 export function setRate(rate: number): void {
   const clamped = Math.max(0.5, Math.min(3, rate))
-  if (state.rate !== clamped) set({ rate: clamped })
+  if (state.rate !== clamped) {
+    haptics.select()
+    set({ rate: clamped })
+  }
 }
 
 // ---- sleep timer ----
 
 export function setSleepTimer(timer: SleepTimer): void {
+  if (timer) haptics.mode()
   set({ sleepTimer: timer })
 }
 

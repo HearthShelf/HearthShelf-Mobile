@@ -18,6 +18,9 @@ export type ThemePref = 'dark' | 'oled'
 export type GlowMode = 'gradient' | 'image'
 export type ScrubberScope = 'chapter' | 'book'
 export type CoverAspect = 'square' | 'portrait'
+/** How much haptic feedback to fire. See src/ui/haptics.ts for what each covers. */
+export type HapticLevel = 'off' | 'minimal' | 'all'
+export type HapticIntensity = 'light' | 'medium'
 /** Aspect ratio (width/height) for cover tiles, per the CoverAspect setting. */
 export const COVER_ASPECT_RATIO: Record<CoverAspect, number> = { square: 1, portrait: 2 / 3 }
 
@@ -81,6 +84,8 @@ export interface SettingsState {
   skipForward: number
   skipBack: number
   hearthBgPlayer: boolean
+  haptics: HapticLevel
+  hapticIntensity: HapticIntensity
 
   // Sleep timer defaults (seed player/store.ts's sleepBehavior on a fresh session)
   sleepRewindSec: number
@@ -107,6 +112,8 @@ let state: SettingsState = {
   skipForward: 30,
   skipBack: 15,
   hearthBgPlayer: true,
+  haptics: 'minimal',
+  hapticIntensity: 'light',
 
   sleepRewindSec: 30,
   sleepChapterBarrier: true,
@@ -197,6 +204,8 @@ export function settingsValues(s: SettingsState = state): Record<string, unknown
     skipForward: s.skipForward,
     skipBack: s.skipBack,
     hearthBgPlayer: s.hearthBgPlayer,
+    haptics: s.haptics,
+    hapticIntensity: s.hapticIntensity,
     sleepRewindSec: s.sleepRewindSec,
     sleepChapterBarrier: s.sleepChapterBarrier,
     sleepFade: s.sleepFade,

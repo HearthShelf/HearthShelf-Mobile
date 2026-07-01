@@ -7,6 +7,7 @@
  * the WebApp's `selected`/`selectMode`/`toggleSel`/`selectAll`/`clearSel` set.
  */
 import { useCallback, useMemo, useState } from 'react'
+import { haptics } from './haptics'
 
 export interface BookSelection {
   /** True once a long-press has entered select mode (checkboxes visible). */
@@ -37,6 +38,8 @@ export function useBookSelection(): BookSelection {
   }, [])
 
   const begin = useCallback((id: string) => {
+    // Entering multi-select is the canonical long-press "mode on" cue.
+    haptics.mode()
     setSelecting(true)
     setSelected((s) => {
       const next = new Set(s)

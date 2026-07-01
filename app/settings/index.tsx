@@ -39,7 +39,13 @@ import { QUEUE_MODES, QUEUE_MODE_SUB, AUTO_RULE_COPY } from '@/player/queue'
 
 const SKIP_FWD_OPTIONS = [15, 30, 60] as const
 const SKIP_BACK_OPTIONS = [10, 15, 30] as const
-const SPEED_OPTIONS = [0.75, 1, 1.25, 1.5, 1.75, 2] as const
+const SPEED_OPTIONS = [0.75, 1, 1.5, 2] as const
+
+const HAPTIC_SUBTITLE: Record<'off' | 'minimal' | 'all', string> = {
+  off: 'Off',
+  minimal: 'Minimal',
+  all: 'All the things',
+}
 
 function fmtRewind(sec: number): string {
   if (sec === 0) return 'Off'
@@ -150,19 +156,15 @@ export default function SettingsScreen() {
         <SectionAccordion
           icon="speed"
           title="Playback"
-          subtitle={`Default ${s.defaultSpeed.toFixed(2).replace(/\.?0+$/, '')}× · skip ${s.skipBack}s/${s.skipForward}s`}
+          subtitle={`Default ${s.defaultSpeed.toFixed(2).replace(/\.?0+$/, '')}x · skip ${s.skipBack}s/${s.skipForward}s`}
         >
           <SettingsGroup>
-            <SettingsRow
-              title="Default speed"
-              desc="The speed a fresh book starts at. Adjusting speed mid-book (the player's Speed sheet) doesn't change this."
-              stacked
-            >
+            <SettingsRow title="Default speed" stacked>
               <ChipRow
                 value={s.defaultSpeed as (typeof SPEED_OPTIONS)[number]}
                 options={[...SPEED_OPTIONS]}
                 onChange={(v) => setSetting('defaultSpeed', v)}
-                unit="×"
+                unit="x"
               />
             </SettingsRow>
             <SettingsRow title="Skip forward" desc="How far the forward button jumps." stacked>
@@ -302,6 +304,43 @@ export default function SettingsScreen() {
                   formatLabel={(v) => `${v}s`}
                 />
               </SettingsRow>
+            )}
+          </SettingsGroup>
+        </SectionAccordion>
+
+        <SectionAccordion icon="vibration" title="Haptics" subtitle={HAPTIC_SUBTITLE[s.haptics]}>
+          <SettingsGroup>
+            <SettingsRow
+              title="Feedback"
+              stacked
+              last={s.haptics === 'off'}
+              control={
+                <Seg
+                  value={s.haptics}
+                  onChange={(v) => setSetting('haptics', v)}
+                  options={[
+                    { value: 'off', label: 'Off' },
+                    { value: 'minimal', label: 'Minimal' },
+                    { value: 'all', label: 'All the things' },
+                  ]}
+                />
+              }
+            />
+            {s.haptics !== 'off' && (
+              <SettingsRow
+                title="Intensity"
+                last
+                control={
+                  <Seg
+                    value={s.hapticIntensity}
+                    onChange={(v) => setSetting('hapticIntensity', v)}
+                    options={[
+                      { value: 'light', label: 'Light' },
+                      { value: 'medium', label: 'Medium' },
+                    ]}
+                  />
+                }
+              />
             )}
           </SettingsGroup>
         </SectionAccordion>

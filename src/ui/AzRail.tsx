@@ -24,6 +24,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated'
 import { colors, fonts, radius, spacing } from './theme'
+import { haptics } from './haptics'
 
 const LETTERS = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')]
 const BUBBLE = 64
@@ -58,6 +59,9 @@ export function AzRail({
       if (letter === lastLetter.current) return
       lastLetter.current = letter
       setActive(letter)
+      // Tick each time the finger crosses into a new letter, so scrubbing the
+      // rail feels like ratcheting through the alphabet.
+      haptics.select()
       if (available.has(letter)) onJump(letter)
     },
     [available, onJump, bubbleY],
@@ -148,12 +152,14 @@ export function AzRail({
 export const AZ_RAIL_WIDTH = 28
 
 const styles = StyleSheet.create({
-  // Anchored strip down the right edge (top/bottom insets, not a magic offset).
+  // Anchored strip down the right edge. The generous bottom inset keeps the rail
+  // clear of the floating mini-player that docks over the list's lower edge, and
+  // a matching top inset keeps the shortened rail vertically centered.
   zone: {
     position: 'absolute',
     right: 0,
-    top: 8,
-    bottom: 8,
+    top: 24,
+    bottom: 96,
     width: AZ_RAIL_WIDTH,
     alignItems: 'center',
     justifyContent: 'center',

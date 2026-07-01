@@ -17,6 +17,7 @@ import type { SheetHandle } from '@/player/sheets'
 import { libraryDownloadUrl, itemAuthor, itemTitle, setItemFinished } from '@/api/abs'
 import { AppText, IconButton, icons } from '@/ui/primitives'
 import { colors, spacing } from '@/ui/theme'
+import { haptics } from './haptics'
 import type { BookSelection } from './useBookSelection'
 
 export function BookSelectionToolbar({
@@ -49,6 +50,7 @@ export function BookSelectionToolbar({
     try {
       await Promise.all(ids.map((id) => setItemFinished(id, !selectionAllFinished)))
       onProgressChanged?.()
+      haptics.success()
       onToast?.(selectionAllFinished ? 'Marked not finished' : 'Marked finished')
       selection.clear()
     } catch {
@@ -63,6 +65,7 @@ export function BookSelectionToolbar({
     for (const b of selectedBooks) {
       addToQueue({ libraryItemId: b.id, title: itemTitle(b), author: itemAuthor(b) })
     }
+    haptics.success()
     onToast?.(`Added ${selectedBooks.length} to queue`)
     selection.clear()
   }
