@@ -65,7 +65,6 @@ class HearthShelfPlayerService : MediaSessionService() {
 
   override fun onCreate() {
     super.onCreate()
-    instance = this
     val player = ExoPlayer.Builder(this).build()
     exo = player
 
@@ -91,10 +90,16 @@ class HearthShelfPlayerService : MediaSessionService() {
     if (sessionActivity != null) builder.setSessionActivity(sessionActivity)
     session = builder.build()
 
-    // Drain a load that arrived from JS before the service finished starting
-    // (startService is async, so the first load() can beat onCreate).
-    pendingLoad?.let { pl ->
+    // Publish the instance and drain any load stashed while the service was still
+    // starting - atomically, so a direct load() racing in can't be clobbered by a
+    // stale pending value. Guarded by the companion lock the module also holds.
+    val pending: PendingLoad?
+    synchronized(lock) {
+      instance = this
+      pending = pendingLoad
       pendingLoad = null
+    }
+    pending?.let { pl ->
       load(pl.url, pl.startSec, pl.title, pl.author, pl.artworkUri, pl.chaptersJson)
     }
 
@@ -109,7 +114,12 @@ class HearthShelfPlayerService : MediaSessionService() {
     exo?.release()
     session = null
     exo = null
-    if (instance === this) instance = null
+    synchronized(lock) {
+      if (instance === this) instance = null
+      // Drop any stashed load so a later, unrelated startService can't resurrect
+      // a stale track.
+      pendingLoad = null
+    }
     super.onDestroy()
   }
 
@@ -183,7 +193,11 @@ class HearthShelfPlayerService : MediaSessionService() {
     override fun getContentDuration(): Long = duration
     override fun getBufferedPosition(): Long {
       val c = ch() ?: return super.getBufferedPosition()
-      return (super.getBufferedPosition() - (c.first * 1000).toLong()).coerceAtLeast(0)
+      // Buffered is absolute (usually well past this chapter's end); clamp into
+      // [0, chapterDuration] so the scrubber's buffer bar doesn't overflow.
+      val rel = (super.getBufferedPosition() - (c.first * 1000).toLong()).coerceAtLeast(0)
+      val chapterDur = ((c.second - c.first) * 1000).toLong()
+      return rel.coerceAtMost(chapterDur)
     }
     override fun seekTo(positionMs: Long) {
       val c = ch()
@@ -251,6 +265,8 @@ class HearthShelfPlayerService : MediaSessionService() {
   )
 
   companion object {
+    /** Guards the instance/pendingLoad handoff between the module and onCreate. */
+    val lock = Any()
     @Volatile var instance: HearthShelfPlayerService? = null
     /** A load requested before the service finished starting (startService is
      *  async). onCreate drains it once the player exists. */
