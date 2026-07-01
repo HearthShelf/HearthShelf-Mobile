@@ -56,9 +56,11 @@ import { AppTabBar } from '@/ui/AppTabBar'
 import { useToast, Toast } from '@/ui/Toast'
 import { colors, radius, shadow, spacing } from '@/ui/theme'
 import { Scrubber } from '@/player/Scrubber'
-import { ChaptersSheet, SpeedSheet, SleepSheet, type SheetHandle } from '@/player/sheets'
+import { ChaptersSheet, SpeedSheet, SleepSheet, BookmarksSheet, type SheetHandle } from '@/player/sheets'
 import { AddToListSheet } from '@/player/AddToListSheet'
 import { QueueSheet } from '@/player/QueueSheet'
+import { buildActions, type ActionContext } from '@/player/actions'
+import type { PlayerActionKey } from '@/store/settings'
 
 /**
  * The full player UI. Rendered as the pushed `/player` route (with a collapse
@@ -81,6 +83,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const sleepRef = useRef<SheetHandle>(null)
   const moreRef = useRef<SheetHandle>(null)
   const recentRef = useRef<SheetHandle>(null)
+  const bookmarksRef = useRef<SheetHandle>(null)
   const addToListRef = useRef<SheetHandle>(null)
   const queueRef = useRef<SheetHandle>(null)
 
@@ -205,6 +208,49 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
     router.replace(name === 'index' ? '/(tabs)' : `/(tabs)/${name}`)
   }
 
+  // Resolve each configurable action to its live icon/label/handler. `present`
+  // maps an action key to the sheet (or navigation) that owns it; stubs route
+  // through a toast. The arrangement in settings.playerActions decides which of
+  // these land on-screen vs. in the tray vs. hidden.
+  const presentAction = (key: PlayerActionKey) => {
+    switch (key) {
+      case 'chapters':
+        return chaptersRef.current?.present()
+      case 'speed':
+        return speedRef.current?.present()
+      case 'sleep':
+        return sleepRef.current?.present()
+      case 'recent':
+        return recentRef.current?.present()
+      case 'bookmarks':
+        return bookmarksRef.current?.present()
+      case 'addList':
+        return addToListRef.current?.present()
+      case 'details':
+        router.push(`/item/${nowPlaying.itemId}`)
+        return
+    }
+  }
+  const actionCtx: ActionContext = {
+    present: presentAction,
+    comingSoon: (label) => toast.show(`${label} coming soon`),
+    hasChapters,
+    speedLabel: `${rate.toFixed(2).replace(/\.?0+$/, '')}×`,
+    sleepLabel,
+    sleepActive: sleepTimer !== null,
+    sleepDepletion,
+  }
+  const actionMap = buildActions(actionCtx)
+  const onScreenKeys = settings.playerActions
+    .filter((a) => a.placement === 'onscreen')
+    .map((a) => a.key)
+  const trayKeys = settings.playerActions.filter((a) => a.placement === 'tray').map((a) => a.key)
+  // Show More whenever anything isn't on-screen: the tray needs it to reach its
+  // actions, and even with an empty tray it's the player-side door to the button
+  // editor (via "Edit buttons"), so a fully-hidden set can still be recovered.
+  const showMore = onScreenKeys.length < settings.playerActions.length
+  const iconOnly = settings.playerActionsIconOnly
+
   return (
     <Screen edges={immersive ? ['top', 'bottom'] : ['top']}>
       <View style={StyleSheet.absoluteFill}>
@@ -298,26 +344,29 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
 
         {!immersive && (
           <View style={styles.actionRow}>
-            <ActionBtn
-              icon={icons.chapters}
-              label="Chapters"
-              disabled={!hasChapters}
-              onPress={() => chaptersRef.current?.present()}
-            />
-            <ActionBtn
-              icon={icons.speed}
-              label={`${rate.toFixed(2).replace(/\.?0+$/, '')}×`}
-              onPress={() => speedRef.current?.present()}
-            />
-            <ActionBtn
-              icon={icons.sleep}
-              label={sleepLabel}
-              active={sleepTimer !== null}
-              depletion={sleepDepletion}
-              onPress={() => sleepRef.current?.present()}
-            />
-            <ActionBtn icon={icons.recent} label="Recent" onPress={() => recentRef.current?.present()} />
-            <ActionBtn icon={icons.more} label="More" onPress={() => moreRef.current?.present()} />
+            {onScreenKeys.map((key) => {
+              const a = actionMap[key]
+              return (
+                <ActionBtn
+                  key={key}
+                  icon={a.icon}
+                  label={a.label}
+                  iconOnly={iconOnly}
+                  disabled={a.disabled}
+                  active={a.active}
+                  depletion={a.depletion}
+                  onPress={a.onPress}
+                />
+              )
+            })}
+            {showMore && (
+              <ActionBtn
+                icon={icons.more}
+                label="More"
+                iconOnly={iconOnly}
+                onPress={() => moreRef.current?.present()}
+              />
+            )}
           </View>
         )}
       </View>
@@ -341,7 +390,13 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
 
       <ChaptersSheet ref={chaptersRef} />
       <SpeedSheet ref={speedRef} />
-      <SleepSheet ref={sleepRef} />
+      <SleepSheet
+        ref={sleepRef}
+        onEditBehavior={() => {
+          sleepRef.current?.dismiss()
+          router.push('/settings')
+        }}
+      />
       <QueueSheet
         ref={queueRef}
         onJump={async (itemId) => {
@@ -351,11 +406,15 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
       />
       <MoreSheet
         ref={moreRef}
-        itemId={nowPlaying.itemId}
-        onAddToList={() => addToListRef.current?.present()}
+        actions={trayKeys.map((k) => actionMap[k])}
         onImmersive={enter}
+        onEdit={() => {
+          moreRef.current?.dismiss()
+          router.push('/settings/player-buttons')
+        }}
       />
       <RecentSheet ref={recentRef} itemId={nowPlaying.itemId} chapters={chapters} onSeek={requestSeek} />
+      <BookmarksSheet ref={bookmarksRef} itemId={nowPlaying.itemId} onSeek={requestSeek} />
       {libraryId && (
         <AddToListSheet
           ref={addToListRef}
@@ -393,6 +452,7 @@ function ActionBtn({
   disabled,
   active,
   depletion,
+  iconOnly,
 }: {
   icon: (typeof icons)[keyof typeof icons]
   label: string
@@ -401,11 +461,14 @@ function ActionBtn({
   active?: boolean
   /** 0..1 remaining fraction for the sleep timer's winding-down bar. */
   depletion?: number | null
+  /** Drop the label to fit more buttons per row (the "Icon only" setting). */
+  iconOnly?: boolean
 }) {
   return (
     <Pressable
       style={({ pressed }) => [
         styles.actionBtn,
+        iconOnly && styles.actionBtnIconOnly,
         active && styles.actionBtnActive,
         disabled && { opacity: 0.35 },
         pressed && styles.pressed,
@@ -414,10 +477,12 @@ function ActionBtn({
       disabled={disabled}
     >
       <Icon name={icon} size={21} color={active ? colors.accent : colors.text} />
-      <AppText variant="caption" color={active ? colors.accent : colors.textMuted} numberOfLines={1}>
-        {label}
-      </AppText>
-      {active && depletion != null && (
+      {!iconOnly && (
+        <AppText variant="caption" color={active ? colors.accent : colors.textMuted} numberOfLines={1}>
+          {label}
+        </AppText>
+      )}
+      {active && depletion != null && !iconOnly && (
         <View style={styles.depletionTrack}>
           <View style={[styles.depletionFill, { width: `${depletion * 100}%` }]} />
         </View>
@@ -532,54 +597,65 @@ function Lightbox({
 
 const MoreSheet = forwardRef<
   SheetHandle,
-  { itemId: string; onAddToList: () => void; onImmersive: () => void }
->(function MoreSheet({ itemId, onAddToList, onImmersive }, ref) {
-  const router = useRouter()
+  {
+    /** The tray-placed action descriptors, already resolved by the player. */
+    actions: { key: PlayerActionKey; icon: (typeof icons)[keyof typeof icons]; label: string; disabled?: boolean; active?: boolean; onPress: () => void }[]
+    onImmersive: () => void
+    onEdit: () => void
+  }
+>(function MoreSheet({ actions, onImmersive, onEdit }, ref) {
   const sheetRef = useRef<SheetRef>(null)
   useImperativeHandle(ref, () => ({
     present: () => sheetRef.current?.present(),
     dismiss: () => sheetRef.current?.dismiss(),
   }))
 
-  const rows: { icon: (typeof icons)[keyof typeof icons]; label: string; onPress: () => void }[] = [
-    {
-      icon: icons.info,
-      label: 'Book details',
-      onPress: () => {
-        sheetRef.current?.dismiss()
-        router.push(`/item/${itemId}`)
-      },
-    },
-    {
-      icon: icons.addList,
-      label: 'Add to list',
-      onPress: () => {
-        sheetRef.current?.dismiss()
-        onAddToList()
-      },
-    },
-    {
-      icon: icons.expandLess,
-      label: 'Immersive mode',
-      onPress: () => {
-        sheetRef.current?.dismiss()
-        onImmersive()
-      },
-    },
-  ]
-
   return (
     <Sheet ref={sheetRef} title="Player">
       <View>
-        {rows.map((r) => (
-          <Touchable key={r.label} style={moreStyles.row} onPress={r.onPress}>
-            <Icon name={r.icon} size={22} color={colors.accent} />
-            <AppText variant="label" style={{ flex: 1 }}>
-              {r.label}
+        {actions.map((a) => (
+          <Touchable
+            key={a.key}
+            style={[moreStyles.row, a.disabled && { opacity: 0.35 }]}
+            onPress={
+              a.disabled
+                ? undefined
+                : () => {
+                    sheetRef.current?.dismiss()
+                    a.onPress()
+                  }
+            }
+          >
+            <Icon name={a.icon} size={22} color={colors.accent} />
+            <AppText variant="label" style={{ flex: 1 }} color={a.active ? colors.accent : colors.text}>
+              {a.label}
             </AppText>
             <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />
           </Touchable>
         ))}
+
+        <Touchable
+          style={moreStyles.row}
+          onPress={() => {
+            sheetRef.current?.dismiss()
+            onImmersive()
+          }}
+        >
+          <Icon name={icons.expandLess} size={22} color={colors.accent} />
+          <AppText variant="label" style={{ flex: 1 }}>
+            Immersive mode
+          </AppText>
+          <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />
+        </Touchable>
+
+        <View style={moreStyles.divider} />
+        <Touchable style={moreStyles.row} onPress={onEdit}>
+          <Icon name={icons.tune} size={22} color={colors.textMuted} />
+          <AppText variant="label" style={{ flex: 1 }} color={colors.textMuted}>
+            Edit buttons
+          </AppText>
+          <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />
+        </Touchable>
       </View>
     </Sheet>
   )
@@ -591,6 +667,11 @@ const moreStyles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
     paddingVertical: spacing.md,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.hairline,
+    marginVertical: spacing.sm,
   },
 })
 
@@ -792,6 +873,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.fill,
   },
+  actionBtnIconOnly: { paddingVertical: spacing.md },
   actionBtnActive: { backgroundColor: colors.accentWash, borderColor: colors.accent },
   depletionTrack: {
     width: '70%',

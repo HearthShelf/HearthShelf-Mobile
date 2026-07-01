@@ -7,7 +7,6 @@
  */
 import { forwardRef, useImperativeHandle, useRef, useState, useSyncExternalStore } from 'react'
 import { StyleSheet, TextInput, View } from 'react-native'
-import { ScrollView } from 'react-native-gesture-handler'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import Slider from '@react-native-community/slider'
 import { formatTimestamp } from '@hearthshelf/core'
@@ -19,10 +18,10 @@ import {
   setRate,
   setSleepTimer,
   cancelSleepTimer,
-  setSleepBehavior,
   addSleepMinutes,
   type ChapterMark,
 } from './store'
+import { useBookmarks } from './useBookmarks'
 import { AppText, Sheet, type SheetRef, Touchable } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
 import { colors, radius, shadow, spacing } from '@/ui/theme'
@@ -90,6 +89,56 @@ export const ChaptersSheet = forwardRef<SheetHandle>(function ChaptersSheet(_pro
           )
         })}
       </BottomSheetScrollView>
+    </Sheet>
+  )
+})
+
+// ---- Bookmarks ----
+
+export const BookmarksSheet = forwardRef<
+  SheetHandle,
+  { itemId: string | null; onSeek: (sec: number) => void }
+>(function BookmarksSheet({ itemId, onSeek }, ref) {
+  const sheetRef = useSheetHandle(ref)
+  const { bookmarks, removeBookmark } = useBookmarks(itemId)
+
+  return (
+    <Sheet ref={sheetRef} title="Bookmarks" snapPoints={['60%']}>
+      {bookmarks.length === 0 ? (
+        <AppText
+          variant="meta"
+          color={colors.textMuted}
+          style={{ textAlign: 'center', paddingVertical: spacing.xl }}
+        >
+          No bookmarks yet. Tap the ribbon on the cover to save your spot.
+        </AppText>
+      ) : (
+        <BottomSheetScrollView>
+          {bookmarks.map((b) => (
+            <Touchable
+              key={`${b.time}-${b.createdAt ?? ''}`}
+              style={styles.bookmarkRow}
+              onPress={() => {
+                onSeek(b.time)
+                sheetRef.current?.dismiss()
+              }}
+            >
+              <Icon name={icons.bookmarkFilled} size={18} color={colors.accent} />
+              <View style={{ flex: 1 }}>
+                <AppText variant="meta" numberOfLines={1}>
+                  {b.title || formatTimestamp(b.time)}
+                </AppText>
+                <AppText variant="mono" color={colors.textMuted}>
+                  {formatTimestamp(b.time)}
+                </AppText>
+              </View>
+              <Touchable hitSlop={8} onPress={() => removeBookmark(b.time)}>
+                <Icon name={icons.close} size={18} color={colors.textMuted} />
+              </Touchable>
+            </Touchable>
+          ))}
+        </BottomSheetScrollView>
+      )}
     </Sheet>
   )
 })
@@ -169,7 +218,10 @@ function fmtRewind(sec: number): string {
   return s ? `${m}m ${s}s` : `${m}m`
 }
 
-export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, ref) {
+export const SleepSheet = forwardRef<SheetHandle, { onEditBehavior: () => void }>(function SleepSheet(
+  { onEditBehavior },
+  ref
+) {
   const sheetRef = useSheetHandle(ref)
   const { sleepTimer, sleepBehavior, nowPlaying, position } = useSyncExternalStore(
     subscribe,
@@ -283,47 +335,55 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
 
         {tab === 'chapter' && chapters.length > 0 && (
           <View>
+            <View style={styles.segFull}>
+              <Touchable
+                style={[styles.seg, targetAt === 'start' && styles.segOn]}
+                onPress={() => pickChapter(targetIdx, 'start')}
+              >
+                <AppText variant="label" color={targetAt === 'start' ? colors.text : colors.textMuted}>
+                  Chapter start
+                </AppText>
+              </Touchable>
+              <Touchable
+                style={[styles.seg, targetAt === 'end' && styles.segOn]}
+                onPress={() => pickChapter(targetIdx, 'end')}
+              >
+                <AppText variant="label" color={targetAt === 'end' ? colors.text : colors.textMuted}>
+                  Chapter end
+                </AppText>
+              </Touchable>
+            </View>
             <AppText variant="caption" color={colors.textMuted} style={{ marginBottom: spacing.sm }}>
-              Stop at
+              Stop at the {targetAt} of
             </AppText>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={{ marginBottom: spacing.md }}
-              contentContainerStyle={{ flexDirection: 'row', gap: spacing.sm }}
-            >
+            <BottomSheetScrollView style={styles.chapterList}>
               {chapters.map((c, i) =>
                 i >= curIdx ? (
                   <Touchable
                     key={i}
-                    style={[styles.chapterChip, targetIdx === i && styles.speedOn]}
+                    style={styles.chapterRow}
                     onPress={() => pickChapter(i, targetAt)}
                   >
+                    <Icon
+                      name={targetIdx === i ? icons.checkCircle : icons.sleep}
+                      size={18}
+                      color={targetIdx === i ? colors.accent : colors.textFaint}
+                    />
                     <AppText
-                      variant="caption"
-                      color={targetIdx === i ? colors.onAccent : colors.text}
+                      variant="meta"
+                      color={targetIdx === i ? colors.accent : colors.text}
                       numberOfLines={1}
+                      style={{ flex: 1 }}
                     >
                       {c.title}
+                    </AppText>
+                    <AppText variant="caption" color={colors.textMuted}>
+                      {formatTimestamp(targetAt === 'start' ? c.start : c.end)}
                     </AppText>
                   </Touchable>
                 ) : null
               )}
-            </ScrollView>
-            <View style={styles.segFull}>
-              <Touchable
-                style={[styles.seg, sleepTimer?.kind === 'endOfChapter' && targetAt === 'start' && styles.segOn]}
-                onPress={() => pickChapter(targetIdx, 'start')}
-              >
-                <AppText variant="label">Chapter start</AppText>
-              </Touchable>
-              <Touchable
-                style={[styles.seg, sleepTimer?.kind === 'endOfChapter' && targetAt === 'end' && styles.segOn]}
-                onPress={() => pickChapter(targetIdx, 'end')}
-              >
-                <AppText variant="label">Chapter end</AppText>
-              </Touchable>
-            </View>
+            </BottomSheetScrollView>
           </View>
         )}
 
@@ -343,83 +403,18 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
           </View>
         )}
 
-        <View style={styles.divider} />
-        <AppText variant="eyebrow" style={{ marginBottom: spacing.sm }}>
-          When it stops
-        </AppText>
-
-        <View style={styles.row}>
-          <View style={{ flex: 1 }}>
-            <AppText variant="body">Rewind when it stops</AppText>
-            <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
-              {sleepBehavior.rewindSec > 0
-                ? `Backs up ${fmtRewind(sleepBehavior.rewindSec)} so you pick up with context`
-                : 'Resumes exactly where it stopped'}
-            </AppText>
-          </View>
-          <AppText variant="mono" color={sleepBehavior.rewindSec > 0 ? colors.text : colors.textMuted}>
-            {sleepBehavior.rewindSec > 0 ? fmtRewind(sleepBehavior.rewindSec) : 'Off'}
+        <Touchable style={styles.behaviorNote} onPress={onEditBehavior}>
+          <Icon name={icons.tune} size={16} color={colors.textMuted} />
+          <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
+            {sleepBehavior.rewindSec > 0
+              ? `Rewinds ${fmtRewind(sleepBehavior.rewindSec)}`
+              : 'No rewind'}
+            {sleepBehavior.fade ? ` · fades over ${sleepBehavior.fadeLen}s` : ' · no fade'}
           </AppText>
-        </View>
-        <Slider
-          style={styles.slider}
-          tapToSeek
-          minimumValue={0}
-          maximumValue={300}
-          step={5}
-          value={sleepBehavior.rewindSec}
-          onValueChange={(v) => setSleepBehavior({ rewindSec: v })}
-          minimumTrackTintColor={colors.accent}
-          maximumTrackTintColor={colors.fillStrong}
-          thumbTintColor={colors.accent}
-        />
-        {sleepBehavior.rewindSec > 0 && (
-          <Touchable
-            style={[styles.row, { paddingLeft: spacing.md }]}
-            onPress={() => setSleepBehavior({ chapterBarrier: !sleepBehavior.chapterBarrier })}
-          >
-            <View style={{ flex: 1 }}>
-              <AppText variant="body">Keep within chapter</AppText>
-              <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
-                Don't rewind past the chapter start
-              </AppText>
-            </View>
-            <Toggle on={sleepBehavior.chapterBarrier} />
-          </Touchable>
-        )}
-
-        <Touchable
-          style={[styles.row, { marginTop: spacing.sm }]}
-          onPress={() => setSleepBehavior({ fade: !sleepBehavior.fade })}
-        >
-          <View style={{ flex: 1 }}>
-            <AppText variant="body">Fade volume out</AppText>
-            <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
-              {sleepBehavior.fade ? `Eases down over ${sleepBehavior.fadeLen}s` : 'Stops abruptly'}
-            </AppText>
-          </View>
-          <Toggle on={sleepBehavior.fade} />
+          <AppText variant="caption" color={colors.accent}>
+            Edit
+          </AppText>
         </Touchable>
-        {sleepBehavior.fade && (
-          <View style={[styles.row, { gap: spacing.sm }]}>
-            <Icon name={icons.schedule} size={18} color={colors.textMuted} />
-            <Slider
-              style={[styles.slider, { flex: 1 }]}
-              tapToSeek
-              minimumValue={3}
-              maximumValue={60}
-              step={1}
-              value={sleepBehavior.fadeLen}
-              onValueChange={(v) => setSleepBehavior({ fadeLen: v })}
-              minimumTrackTintColor={colors.accent}
-              maximumTrackTintColor={colors.fillStrong}
-              thumbTintColor={colors.accent}
-            />
-            <AppText variant="mono" color={colors.textMuted}>
-              {sleepBehavior.fadeLen}s
-            </AppText>
-          </View>
-        )}
 
         {active && (
           <>
@@ -458,14 +453,6 @@ export const SleepSheet = forwardRef<SheetHandle>(function SleepSheet(_props, re
   )
 })
 
-function Toggle({ on }: { on: boolean }) {
-  return (
-    <View style={[styles.toggleTrack, on && styles.toggleTrackOn]}>
-      <View style={[styles.toggleKnob, on && styles.toggleKnobOn]} />
-    </View>
-  )
-}
-
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
@@ -500,12 +487,32 @@ const styles = StyleSheet.create({
   },
   seg: { flex: 1, alignItems: 'center', paddingVertical: spacing.sm + 2, borderRadius: radius.row },
   segOn: { backgroundColor: colors.card },
-  chapterChip: {
+  chapterList: { maxHeight: 220 },
+  chapterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.hairline,
+  },
+  bookmarkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.hairline,
+  },
+  behaviorNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.pill,
+    borderRadius: radius.row,
     backgroundColor: colors.fill,
-    maxWidth: 180,
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
@@ -538,22 +545,4 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     ...shadow.accentGlow,
   },
-  toggleTrack: {
-    width: 46,
-    height: 27,
-    borderRadius: 999,
-    backgroundColor: colors.elevated,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    justifyContent: 'center',
-  },
-  toggleTrackOn: { backgroundColor: colors.accent, borderColor: colors.accent },
-  toggleKnob: {
-    width: 21,
-    height: 21,
-    borderRadius: 11,
-    backgroundColor: '#fff',
-    marginLeft: 3,
-  },
-  toggleKnobOn: { marginLeft: 22 },
 })

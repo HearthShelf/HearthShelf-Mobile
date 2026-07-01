@@ -193,8 +193,13 @@ export default function SettingsScreen() {
             <SettingsRow
               title="Hearth background"
               desc="Show the cozy hearth artwork behind the full-screen player."
-              last
               control={<SettingsToggle on={s.hearthBgPlayer} onChange={(v) => setSetting('hearthBgPlayer', v)} />}
+            />
+            <SettingsRow
+              title="Player buttons"
+              desc="Choose which action buttons show on the player, tuck into More, or hide."
+              onPress={() => router.push('/settings/player-buttons')}
+              last
             />
           </SettingsGroup>
 
