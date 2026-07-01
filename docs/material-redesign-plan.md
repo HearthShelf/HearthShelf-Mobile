@@ -293,57 +293,67 @@ blurb + narrator.
 
 ---
 
-## 6. Now Playing  *(WIP — directional, confirm before finalizing)*
+## 6. Now Playing  *(DONE — rebuilt against DS commit `283f2895` + the WebApp's real mobile player)*
 
-The user flagged this as a work in progress. The prototype actually has **two** now-playing surfaces:
+The DS's "now playing updates" commit (`283f2895b86e3d4e99bb576c94212d491d85162c`) dropped the
+separate docked `isNowPlaying` tab entirely — the Now Playing tab now just opens the full player, so
+the earlier two-surface question is resolved. That commit's own `cycleSpeed()` is still a bare tap-
+cycle with no picker sheet, and its "Add to list" is a hardcoded single watchlist — both flagged by the
+user as gaps to close for real, not mimic. The WebApp's `MobilePlayer.tsx` (linked from
+`components/player/`) is the actual fleshed-out reference for behavior: real bookmarks, a working
+queue (manual/auto/playlist + auto-rules), `useSleepTimer`/`useBookmarks` hooks, and Speed/Sleep as
+shared popovers with sliders. Built to full parity with that, not just the DS mock.
 
-- **`isNowPlaying`** (docked tab): "Now playing" header, a **208px** cover you can **swipe up** to
-  expand, title/author/chapter, a **draggable scrubber** with thumb + pos/remaining, and a compact
-  3-button transport (replay30 / play / forward30).
-- **`isPlayer`** (full route, `mxRise` in): `expand_more` to dismiss, **248px** cover, chapter pill
-  opening the chapters sheet, a bigger scrubber, a **5-button** transport (prev-chapter / replay30 /
-  play / forward30 / next-chapter), and a bottom row of **speed / sleep / chapters** pills. Player
-  glow tinted by hue.
+**Built:**
+- **Screen** ([app/player.tsx](../app/player.tsx)): centered header (Now playing / HearthShelf ·
+  chapter) + a queue button; a whole-book pos/%/-remaining strip in mono; a portrait (3:4) cover with
+  a real ABS-backed **bookmark toggle** (top-right) and **double-tap-to-lightbox**; title/author;
+  the chapter-relative Hearth Pill scrubber; 5-button transport; a **5-action row** (Chapters, Speed,
+  Sleep, Recent, More); an **up-next peek bar** reading the real queue. Swipe-up **car mode** is kept
+  (truck-verified, the DS doesn't have it) with its own simplified speed/bookmark row.
+- **Scrubber is chapter-relative by default** (position/remaining relative to the current chapter,
+  matching the WebApp's `onChapter` model), reusing the existing Hearth Pill [Scrubber](../src/player/Scrubber.tsx)
+  unchanged — it was already ratio-agnostic.
+- **Speed — the flagged gap, fixed.** [sheets.tsx](../src/player/sheets.tsx) `SpeedSheet` now has a
+  live value, a `@react-native-community/slider` (0.5–3×), and preset chips — ported from the WebApp's
+  `SpeedPopover`, not the DS's tap-cycle.
+- **Sleep** rebuilt to full parity (`SleepSheet`): Duration/Chapter/Time tabs (Time is new — a real
+  clock-deadline stop), rewind-amount slider, chapter-barrier toggle, fade toggle + length slider,
+  live "stops at / in Xm" readout, +5 min while counting down. Store gained `SleepTimer.kind: 'clock'`
+  and a `SleepBehavior` (rewindSec/chapterBarrier/fade/fadeLen) with a shared `fireStop` in
+  [store.ts](../src/player/store.ts) that rewinds (barrier-clamped), pauses, and restores volume.
+- **Real Add-to-list — the other flagged gap, fixed.** [AddToListSheet.tsx](../src/player/AddToListSheet.tsx)
+  ports the WebApp's `AddToListModal`: Collection/Playlist tabs, lists existing ones via real ABS
+  endpoints, tap to add, or type-a-name-and-Create. No more hardcoded watchlist.
+- **Queue** ([QueueSheet.tsx](../src/player/QueueSheet.tsx) + [queue.ts](../src/player/queue.ts)):
+  Off/Manual/Auto/Playlist modes, now-playing row, **real drag-to-reorder** via
+  `react-native-draggable-flatlist` in Manual mode, an Auto-rules sub-sheet. **Session-only by
+  decision** — no persistence yet; a server-backed cross-device queue is planned for a later pass, so
+  no throwaway AsyncStorage plumbing was added now.
+- **Recent listens** sheet reads real ABS listening-session history, filtered to the playing item;
+  tapping a session seeks to where it started.
+- **Bookmarks** are real ABS data end-to-end ([useBookmarks.ts](../src/player/useBookmarks.ts) +
+  `getBookmarks`/`createBookmark`/`deleteBookmark` in `abs.ts`), not the DS's local-only toggle.
+- **Toast** ([Toast.tsx](../src/ui/Toast.tsx)): shared bottom-anchored confirmation used by bookmark
+  save, add-to-list, and recent-session jump.
+- **Glow:** `CoverGlow` behind the whole screen, tinted by the book's hue.
 
-**This repo:** [app/player.tsx](app/player.tsx) is already close to `isPlayer`: cover, scrubber
-(PanResponder), 5-button transport (chapter skips shown only when chapters exist), and a toolbar
-(Chapters/Speed/Sleep/Car). It also has a **swipe-up "car mode"** the prototype lacks, and reuses
-`ChaptersSheet`/`SpeedSheet`/`SleepSheet`. The mini-player + store are real.
-
-**Because this is WIP, the plan is to reconcile, not blindly rebuild:**
-- **Confirm the two-surface model.** Do we want the docked `isNowPlaying` **tab** (208px + swipe-to-
-  expand) *and* the full `isPlayer` route, or just the full player reached from the mini-bar? Our app
-  currently only has the full route + car mode. Recommend: keep the full player route as the primary;
-  add a Now-Playing **tab** only if 0.4 #2 keeps it (it can render the same player component).
-- **Scrubber: DONE.** Ported the WebApp's shipped `Scrubber.tsx` + design-system variant **2f** (the
-  final Hearth Pill) into [src/player/Scrubber.tsx](../src/player/Scrubber.tsx): a Gesture-pan bar that
-  drags with a local ratio, seeks **once on release** (so crossing a chapter boundary doesn't reload
-  audio mid-drag), taps-to-seek, and fires an `onDrag` preview so labels track the pointer without
-  committing. Visual: 30px pill, gold→ember `expo-linear-gradient` fill, interior elapsed/chapter/remain
-  chips, full-height cream leading line (thickens while dragging), shimmer while playing. Wired into
-  [app/player.tsx](../app/player.tsx) (replaced the old PanResponder track; labels follow the drag
-  preview). Source: `HearthShelf-DesignSystem` commit `5ccdc71`. **Follow-up:** reuse the same
-  component in the MiniPlayer (thin, knob-hidden) and Now-Playing tab; label chips pick up Geist Mono
-  once fonts land (§0.4 #4).
-- **Speed:** prototype cycles `[0.8,1,1.2,1.4,1.6,2.0]`; ours has a SpeedSheet. Keep the sheet (richer).
-- **Sleep:** prototype's SleepSheet is far richer (Duration/Chapter/Time modes, "when it stops"
-  toggles: rewind/keep-within-chapter/fade). Ours has a `SleepSheet` — compare and decide how much of
-  the richer model to adopt (this is a good incremental follow-up, not v1-blocking).
-- **Car mode:** ours has it; the prototype doesn't. Keep it (truck-verified per repo notes) — it's a
-  HearthShelf differentiator, don't drop it to match the mock.
-- **Glow:** add the hue-tinted `playerGlow` behind the player (currently absent).
-
-**Validation pass — Now Playing (hold to a lighter bar since it's WIP):**
-- [ ] Full player: cover, title, author, current chapter pill, scrubber with thumb, pos/remaining,
-      5-button transport, speed/sleep/chapters pills all render and are wired to the store.
-- [ ] Scrubbing seeks and does not fight the position clock (no jump-back while dragging).
-- [ ] Chapter pill + Chapters toolbar both open the chapters sheet; seeking works.
-- [ ] Speed sheet changes rate and the label reflects it; sleep sheet arms a timer and the label
-      reflects remaining/EOC.
-- [ ] Car mode still enters on swipe-up and exits on swipe-down (regression guard).
-- [ ] Player glow uses the now-playing hue.
-- [ ] **Explicitly deferred / to confirm:** docked Now-Playing tab, richer sleep model, thumb polish.
-      Don't mark these done — mark them decided.
+**Validation pass — Now Playing:**
+- [x] Full player: header, whole-book strip, portrait cover + bookmark + lightbox, chapter-relative
+      scrubber, 5-button transport, 5-action row all render and are wired to the store.
+- [x] Scrubbing seeks once on release and does not fight the position clock while dragging (unchanged
+      Scrubber behavior, now fed chapter-relative values).
+- [x] Speed sheet has a slider + presets (not a bare cycle) and updates the label live.
+- [x] Sleep sheet supports Duration/Chapter/Time, rewind/barrier/fade, and a live countdown; the
+      store's `fireStop` rewinds+pauses+restores volume correctly.
+- [x] Add-to-list lists real collections/playlists and can create new ones; no hardcoded list names.
+- [x] Queue: mode switch, drag-to-reorder in Manual, Auto-rules toggle, up-next peek bar all reflect
+      the same in-memory queue store.
+- [x] Car mode still enters on swipe-up and exits on swipe-down (regression guard held).
+- [x] Player glow uses the now-playing hue.
+- [ ] **Not yet verified on-device**: drag-to-reorder feel inside a bottom sheet, slider responsiveness,
+      volume fade audibility, lightbox double-tap timing. Typecheck + full Metro bundle (2048 modules)
+      pass; UI feel needs a real build per the verification-boundary memory.
 
 ---
 
@@ -597,12 +607,13 @@ Library, and reconcile the Sleep sheet against the richer prototype model (§6).
    CTA that plays at the right position, series link shared with Library, chapters preview + full-list
    sheet with chapter-accurate seek, stat strip, editorial About. Ratings/readers/playlist-add/download/
    share/bookmark intentionally omitted (no backing data or feature).
-7. Player — **explicitly deferred by the user ("Player details are coming soon").** Do not build glow/
-   scrubber-thumb/sleep-sheet reconciliation for §6 until asked; the current player (car mode + the
-   already-shipped Hearth Pill scrubber) stays as-is.
+7. Player **(DONE)** (§6): full rebuild against DS commit `283f2895` + the WebApp's real
+   `MobilePlayer.tsx` — header, portrait cover + bookmark + lightbox, chapter-relative scrubber,
+   5-action row, real Speed/Sleep sheets, real Add-to-list, session-only queue with drag reorder,
+   Recent listens, toast. Car mode kept.
 8. More hub + My settings + Server settings + About (§7); stub the still-data-gated sub-screens
    (Collections, Playlists, History, admin Server stats).
-9. Sleep-sheet richness (follow-up, also gated on the Player go-ahead above).
+9. Sleep-sheet richness — **done as part of step 7** (Duration/Chapter/Time + rewind/barrier/fade).
 
 All §0.4 decisions are answered and reflected above (real-primary covers, both glow modes, all three
 fonts, 5 tabs, build-now-stub-the-rest for More). Next up: the More hub (§7) — Player is on hold.
