@@ -47,7 +47,7 @@ import {
 } from '@/ui/primitives'
 import { BottomSheetFlatList } from '@gorhom/bottom-sheet'
 import { Icon, type IconName } from '@/ui/icons'
-import { colors, radius, spacing } from '@/ui/theme'
+import { colors, radius, shadow, spacing } from '@/ui/theme'
 
 type Status =
   | { phase: 'connecting' }
@@ -581,5 +581,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairline,
+    ...shadow.card,
   },
 })

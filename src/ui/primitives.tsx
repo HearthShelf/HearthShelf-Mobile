@@ -25,7 +25,7 @@ import {
 } from '@gorhom/bottom-sheet'
 import { Icon, icons, type IconName } from './icons'
 import { TypesetCover } from './TypesetCover'
-import { colors, radius, spacing, type as typeScale } from './theme'
+import { colors, radius, shadow, spacing, type as typeScale } from './theme'
 
 // ---- Screen ----
 
@@ -500,6 +500,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairline,
     padding: spacing.lg,
+    ...shadow.card,
   },
   row: {
     flexDirection: 'row',

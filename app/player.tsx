@@ -54,7 +54,7 @@ import { Icon } from '@/ui/icons'
 import { CoverGlow } from '@/ui/CoverGlow'
 import { AppTabBar } from '@/ui/AppTabBar'
 import { useToast, Toast } from '@/ui/Toast'
-import { colors, radius, spacing } from '@/ui/theme'
+import { colors, radius, shadow, spacing } from '@/ui/theme'
 import { Scrubber } from '@/player/Scrubber'
 import { ChaptersSheet, SpeedSheet, SleepSheet, type SheetHandle } from '@/player/sheets'
 import { AddToListSheet } from '@/player/AddToListSheet'
@@ -296,13 +296,9 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
             <TransportBtn icon={icons.skipPrev} onPress={() => skipChapter(-1)} />
           ) : null}
           <TransportBtn icon={icons.rewind} onPress={() => jumpBy(-15)} />
-          <View style={styles.playWrap}>
-            <View style={styles.playGlowOuter} pointerEvents="none" />
-            <View style={styles.playGlowInner} pointerEvents="none" />
-            <Pressable onPress={togglePlay} style={({ pressed }) => [styles.play, pressed && styles.pressed]}>
-              <Icon name={isPlaying ? icons.pause : icons.play} size={44} color={colors.onAccent} />
-            </Pressable>
-          </View>
+          <Pressable onPress={togglePlay} style={({ pressed }) => [styles.play, pressed && styles.pressed]}>
+            <Icon name={isPlaying ? icons.pause : icons.play} size={44} color={colors.onAccent} />
+          </Pressable>
           <TransportBtn icon={icons.forward} onPress={() => jumpBy(30)} />
           {hasChapters ? (
             <TransportBtn icon={icons.skipNext} onPress={() => skipChapter(1)} />
@@ -772,25 +768,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Wrapper holds two concentric accent halos behind the play button, giving a
-  // soft falloff glow (Android Views can't blur, so we fake it by layering).
-  playWrap: { alignItems: 'center', justifyContent: 'center' },
-  playGlowOuter: {
-    position: 'absolute',
-    width: 116,
-    height: 116,
-    borderRadius: 58,
-    backgroundColor: colors.accent,
-    opacity: 0.14,
-  },
-  playGlowInner: {
-    position: 'absolute',
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: colors.accent,
-    opacity: 0.22,
-  },
   play: {
     width: 76,
     height: 76,
@@ -798,6 +775,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
+    // Accent-tinted drop shadow for real height. iOS honors the color + blur;
+    // Android renders a soft shadow from elevation (its color is tinted on API28+
+    // by shadowColor, plain dark below - either way it reads as a lift).
+    ...shadow.accentLift,
   },
   pressed: { opacity: 0.6 },
   actionRow: {

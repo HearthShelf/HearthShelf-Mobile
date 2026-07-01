@@ -10,7 +10,7 @@ import { ScrollView, StyleSheet, View } from 'react-native'
 import { formatDuration, dayKey, coverHue, type HSListeningStats } from '@hearthshelf/core'
 import { getHSStats } from '@/api/abs'
 import { AppText, Centered, Cover, Loading, PrimaryButton, Screen } from '@/ui/primitives'
-import { colors, radius, spacing, fonts } from '@/ui/theme'
+import { colors, radius, shadow, spacing, fonts } from '@/ui/theme'
 import { Icon, icons } from '@/ui/icons'
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
@@ -209,6 +209,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairline,
     padding: spacing.lg,
+    ...shadow.card,
   },
   statCard: { flex: 1, alignItems: 'flex-start' },
   weekHeader: {

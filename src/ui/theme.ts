@@ -132,6 +132,15 @@ export const shadow = {
     shadowRadius: 6,
     elevation: 3,
   },
+  // Accent-tinted lift for the play button - a colored drop shadow, not a ring.
+  // iOS blurs the accent directly; Android tints the elevation shadow on API28+.
+  accentLift: {
+    shadowColor: colors.accent,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.55,
+    shadowRadius: 16,
+    elevation: 12,
+  },
 } as const
 
 export const theme = { colors, radius, spacing, type, shadow } as const
