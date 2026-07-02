@@ -130,7 +130,13 @@ class HearthShelfAutoService : MediaLibraryService() {
   // phone, and vice versa). Capped like the JS side.
   private val NOTE_SEEN_CAP = 500
   private val NOTE_CHANNEL_ID = "club-notes"
-  private fun noteSeenKey(clubId: String) = "notePops.seen.$clubId"
+  // Same key shape JS uses in AsyncStorage (hs.notePops.seen.<clubId>), even
+  // though this store is a SEPARATE SharedPreferences file (AsyncStorage is
+  // SQLite-backed on Android and not safely readable from this headless service,
+  // so a shared store isn't possible - one duplicate at the car<->phone handoff
+  // is the accepted tradeoff, see docs/social.md "Shared seen-set caveat"). The
+  // matching prefix keeps a future single-source-of-truth unification a drop-in.
+  private fun noteSeenKey(clubId: String) = "hs.notePops.seen.$clubId"
 
   /** The notePops master on/off, mirrored into our prefs by JS (the settings
    *  store persists to AsyncStorage, which we can't read here - see
@@ -837,10 +843,31 @@ class HearthShelfAutoService : MediaLibraryService() {
       .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
       .build()
 
+    // Mark-as-read: Android Auto requires a MessagingStyle notification to carry
+    // a MARK_AS_READ action (paired with reply) before it will read a
+    // conversation aloud - without it Auto silently drops the notification. It's
+    // added as an invisible action (no on-phone button); Auto consumes it.
+    val markReadIntent = Intent(this, NoteReplyReceiver::class.java).apply {
+      action = NoteReplyReceiver.ACTION_MARK_READ
+      putExtra(NoteReplyReceiver.EXTRA_NOTIF_ID, notifId)
+    }
+    val markReadPi = PendingIntent.getBroadcast(
+      this, notifId + 1, markReadIntent, pendingIntentFlags(),
+    )
+    val markReadAction = NotificationCompat.Action.Builder(
+      resources.getIdentifier("ic_hs_notification", "drawable", packageName),
+      "Mark as read",
+      markReadPi,
+    )
+      .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+      .setShowsUserInterface(false)
+      .build()
+
     val notification = NotificationCompat.Builder(this, NOTE_CHANNEL_ID)
       .setSmallIcon(resources.getIdentifier("ic_hs_notification", "drawable", packageName))
       .setStyle(messagingStyle)
       .setContentIntent(contentPi)
+      .addInvisibleAction(markReadAction)
       .addAction(replyAction)
       .setCategory(NotificationCompat.CATEGORY_MESSAGE)
       .setAutoCancel(true)
@@ -1048,7 +1075,10 @@ class HearthShelfAutoService : MediaLibraryService() {
   private data class Book(
     val id: String,
     val title: String,
-    val author: String
+    val author: String,
+    // Title with a leading article dropped, for alphabetical sorting. Matches the
+    // web/phone library ("The Wandering Inn" sorts under W, not T).
+    val sortKey: String = title
   )
 
   private fun httpGet(urlStr: String, tok: String): String? {
@@ -1150,14 +1180,13 @@ class HearthShelfAutoService : MediaLibraryService() {
   }
 
   private fun absLibraryItems(base: String, tok: String, libId: String): List<Book> {
-    // Sort by title ignoring a leading article ("The", "A"), so the list reads
-    // alphabetically the way the phone/web library does - "1-800-Starship" before
-    // "The Wandering Inn", not the other way around.
-    val body = httpGet(
-      "$base/api/libraries/$libId/items?limit=100&minified=1&sort=media.metadata.titleIgnorePrefix&desc=0",
-      tok
-    ) ?: return emptyList()
+    val body = httpGet("$base/api/libraries/$libId/items?limit=100&minified=1", tok)
+      ?: return emptyList()
+    // Sort alphabetically by title ignoring a leading article, client-side - the
+    // same approach the web/phone library uses ("1-800-Starship" before "The
+    // Wandering Inn"). ABS's own sort= param isn't relied on anywhere else.
     return parseBooks(JSONObject(body).optJSONArray("results"))
+      .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.sortKey })
   }
 
   /**
@@ -1190,11 +1219,13 @@ class HearthShelfAutoService : MediaLibraryService() {
       val media = item.optJSONObject("media") ?: continue
       val meta = media.optJSONObject("metadata") ?: continue
       // Minified items don't carry audioTracks; the file route works by item id.
+      val title = meta.optString("title", "Untitled")
       out.add(
         Book(
           id = id,
-          title = meta.optString("title", "Untitled"),
-          author = meta.optString("authorName", "")
+          title = title,
+          author = meta.optString("authorName", ""),
+          sortKey = meta.optString("titleIgnorePrefix", "").ifEmpty { title }
         )
       )
     }
@@ -1207,12 +1238,18 @@ class HearthShelfAutoService : MediaLibraryService() {
   private fun absSeries(base: String, tok: String, libId: String): List<Pair<String, String>> {
     val body = httpGet("$base/api/libraries/$libId/series?limit=200", tok) ?: return emptyList()
     val arr = JSONObject(body).optJSONArray("results") ?: return emptyList()
-    val out = mutableListOf<Pair<String, String>>()
+    // (sortKey, id, name); sort alphabetically ignoring a leading article, like
+    // the Books list, then drop the sort key.
+    val out = mutableListOf<Triple<String, String, String>>()
     for (i in 0 until arr.length()) {
       val s = arr.getJSONObject(i)
-      out.add(s.optString("id") to s.optString("name", "Series"))
+      val name = s.optString("name", "Series")
+      val sortKey = s.optString("nameIgnorePrefix", "").ifEmpty { name }
+      out.add(Triple(sortKey, s.optString("id"), name))
     }
     return out
+      .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.first })
+      .map { it.second to it.third }
   }
 
   /** Books in one series, in series order. The /series response embeds each

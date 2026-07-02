@@ -18,8 +18,9 @@
  */
 import { router } from 'expo-router'
 import { postNote } from '@/api/notes'
+import { getSession, hydrateSession } from '@/api/session'
 import type { NoteNotificationData } from './noteNotification'
-import { NOTE_REPLY_ACTION } from './noteNotification'
+import { NOTE_REPLY_ACTION, NOTE_MARK_READ_ACTION } from './noteNotification'
 
 /** Build the club deep-link path with the note to scroll to. */
 function clubNotePath(clubId: string, noteId: string): string {
@@ -59,17 +60,35 @@ async function handleEvent(
     return
   }
 
+  // Android Auto's mark-as-read action (and any explicit dismiss): just clear
+  // the card. No post, no navigation - the driver is done with it.
+  if (type === EventType.ACTION_PRESS && detail.pressAction?.id === NOTE_MARK_READ_ACTION) {
+    try {
+      const notifee = (await import('@notifee/react-native')).default
+      if (detail.notification?.id) await notifee.cancelNotification(detail.notification.id)
+    } catch {
+      // best-effort
+    }
+    return
+  }
+
   if (type === EventType.ACTION_PRESS && detail.pressAction?.id === NOTE_REPLY_ACTION) {
     const text = (detail.input ?? '').trim()
     if (text && data.itemId) {
-      await postNote({
-        libraryItemId: data.itemId,
-        clubId: data.clubId,
-        parentId: data.noteId,
-        // Replies inherit the parent's time gate; a reply carries no timestamp.
-        timeSec: null,
-        body: text,
-      })
+      // The process may have been woken cold by notifee with no UI, so the
+      // in-memory session is empty - rehydrate the ABS token from secure store
+      // before posting, or the reply silently drops.
+      if (!getSession()) await hydrateSession()
+      if (getSession()) {
+        await postNote({
+          libraryItemId: data.itemId,
+          clubId: data.clubId,
+          parentId: data.noteId,
+          // Replies inherit the parent's time gate; a reply carries no timestamp.
+          timeSec: null,
+          body: text,
+        })
+      }
     }
     // Clear the card once handled so a stale reply prompt doesn't linger.
     try {

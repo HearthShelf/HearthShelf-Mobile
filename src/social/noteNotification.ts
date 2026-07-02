@@ -29,6 +29,14 @@ import { CLUB_NOTES_CHANNEL_ID } from '@/lib/notifications'
 export const NOTE_REPLY_ACTION = 'note-reply'
 
 /**
+ * Action id for the mark-as-read action. Android Auto requires a MessagingStyle
+ * conversation notification to carry one (with the MARK_AS_READ semantic) before
+ * it will surface and read the notification aloud - without it Auto silently
+ * drops the notification. noteEvents.ts matches on this to clear the card.
+ */
+export const NOTE_MARK_READ_ACTION = 'note-mark-read'
+
+/**
  * The data payload carried on the notification so the tap/reply handlers know
  * which note to open or reply to without re-fetching. Notifee serializes
  * `data` values to strings on Android, so every field is a string.
@@ -100,6 +108,9 @@ export async function displayNoteNotification(note: HSNote, clubId: string, item
         },
         // Free-text reply -> posted as a reply in noteEvents.ts. In Android Auto
         // this becomes the voice-reply action; on the phone it's a quick reply.
+        // Mark-as-read is required by Android Auto's messaging contract before it
+        // will read a conversation notification aloud; without it Auto drops the
+        // notification. It's the REPLY + MARK_AS_READ semantic pair Auto expects.
         actions: [
           {
             title: 'Reply',
@@ -108,6 +119,10 @@ export async function displayNoteNotification(note: HSNote, clubId: string, item
               allowFreeFormInput: true,
               placeholder: 'Reply to the club…',
             },
+          },
+          {
+            title: 'Mark as read',
+            pressAction: { id: NOTE_MARK_READ_ACTION },
           },
         ],
       },

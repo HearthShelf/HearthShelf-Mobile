@@ -26,14 +26,11 @@ import java.util.concurrent.Executors
 class NoteReplyReceiver : BroadcastReceiver() {
 
   override fun onReceive(context: Context, intent: Intent) {
-    if (intent.action != ACTION_REPLY) return
-    val reply = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(KEY_REPLY)?.toString()?.trim()
-    val clubId = intent.getStringExtra(EXTRA_CLUB_ID)
-    val itemId = intent.getStringExtra(EXTRA_ITEM_ID)
-    val parentId = intent.getStringExtra(EXTRA_PARENT_ID)
+    if (intent.action != ACTION_REPLY && intent.action != ACTION_MARK_READ) return
     val notifId = intent.getIntExtra(EXTRA_NOTIF_ID, 0)
 
-    // Clear the notification regardless (the user acted on it).
+    // Clear the notification regardless (the user acted on it, by reply or by
+    // the mark-as-read action Android Auto requires on conversation notifs).
     if (notifId != 0) {
       try {
         NotificationManagerCompat.from(context).cancel(notifId)
@@ -41,6 +38,14 @@ class NoteReplyReceiver : BroadcastReceiver() {
         // best-effort
       }
     }
+
+    // Mark-as-read only dismisses; nothing to post.
+    if (intent.action == ACTION_MARK_READ) return
+
+    val reply = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(KEY_REPLY)?.toString()?.trim()
+    val clubId = intent.getStringExtra(EXTRA_CLUB_ID)
+    val itemId = intent.getStringExtra(EXTRA_ITEM_ID)
+    val parentId = intent.getStringExtra(EXTRA_PARENT_ID)
 
     if (reply.isNullOrEmpty() || clubId == null || itemId == null || parentId == null) return
 
@@ -95,6 +100,7 @@ class NoteReplyReceiver : BroadcastReceiver() {
     private val io = Executors.newSingleThreadExecutor()
 
     const val ACTION_REPLY = "com.hearthshelf.NOTE_REPLY"
+    const val ACTION_MARK_READ = "com.hearthshelf.NOTE_MARK_READ"
     const val KEY_REPLY = "hs_note_reply_text"
     const val EXTRA_CLUB_ID = "clubId"
     const val EXTRA_ITEM_ID = "libraryItemId"
