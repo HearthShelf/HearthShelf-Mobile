@@ -16,7 +16,6 @@ import {
   clearDefaultServer,
   type LinkedServer,
 } from '@/api/controlPlane'
-import { getSession } from '@/api/session'
 import { useConnection } from '@/api/ConnectionProvider'
 import { CLERK_JWT_TEMPLATE } from '@/lib/config'
 import { AppText, Centered } from '@/ui/primitives'
@@ -30,13 +29,15 @@ type Status = { phase: 'loading' } | { phase: 'error'; message: string } | { pha
 export default function ServersScreen() {
   const router = useRouter()
   const { getToken } = useAuth()
-  const { connectTo } = useConnection()
+  const { connectTo, serverName } = useConnection()
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const [status, setStatus] = useState<Status>({ phase: 'loading' })
   const [servers, setServers] = useState<LinkedServer[]>([])
   const [switchingId, setSwitchingId] = useState<string | null>(null)
-  const activeUrl = getSession()?.serverUrl
+  // The connected server, straight from the connection provider so it stays in
+  // sync with reconnects rather than a one-time getSession() read.
+  const activeName = serverName
 
   const tokenFn = useCallback(async () => {
     try {
@@ -46,33 +47,46 @@ export default function ServersScreen() {
     }
   }, [getToken])
 
-  const load = useCallback(async () => {
-    setStatus({ phase: 'loading' })
-    try {
-      const list = await fetchLinkedServers(tokenFn)
-      setServers(list)
-      setStatus({ phase: 'ready' })
-    } catch (e) {
-      setStatus({ phase: 'error', message: (e as Error).message })
-    }
-  }, [tokenFn])
+  // `silent` refreshes the list in place (e.g. after toggling a default) without
+  // flashing the spinner over an already-populated list.
+  const load = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!opts?.silent) setStatus((s) => (s.phase === 'ready' ? s : { phase: 'loading' }))
+      try {
+        const list = await fetchLinkedServers(tokenFn)
+        setServers(list)
+        setStatus({ phase: 'ready' })
+      } catch (e) {
+        setStatus({ phase: 'error', message: (e as Error).message })
+      }
+    },
+    [tokenFn],
+  )
 
   useEffect(() => {
-    load()
+    void load()
   }, [load])
 
   async function switchTo(server: LinkedServer) {
-    if (server.url === activeUrl) return
+    if (server.name === activeName || switchingId) return
     setSwitchingId(server.id)
-    connectTo(server)
-    router.replace('/(tabs)')
+    try {
+      // Await the reconnect so we only leave settings once the session actually
+      // points at the new server; the connection gate covers the reconnect.
+      await connectTo(server)
+      router.replace('/(tabs)')
+    } catch {
+      Alert.alert('Could not switch server', 'Please try again.')
+    } finally {
+      setSwitchingId(null)
+    }
   }
 
   async function toggleDefault(server: LinkedServer) {
     try {
       if (server.isDefault) await clearDefaultServer(tokenFn, server.id)
       else await setDefaultServer(tokenFn, server.id)
-      await load()
+      await load({ silent: true })
     } catch {
       Alert.alert('Could not update default', 'Please try again.')
     }
@@ -105,7 +119,7 @@ export default function ServersScreen() {
           <AppText variant="body" color={colors.textMuted}>
             Couldn't load your servers.
           </AppText>
-          <Pressable onPress={load} style={{ marginTop: spacing.md }}>
+          <Pressable onPress={() => void load()} style={{ marginTop: spacing.md }}>
             <AppText variant="label" color={colors.accent}>
               Retry
             </AppText>
@@ -117,7 +131,7 @@ export default function ServersScreen() {
             Tap to switch. Long-press to set the server new devices open to.
           </AppText>
           {servers.map((server) => {
-            const active = server.url === activeUrl
+            const active = server.name === activeName
             const busy = switchingId === server.id
             return (
               <Pressable
