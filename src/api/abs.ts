@@ -133,6 +133,16 @@ export async function getPersonalized(libraryId: string): Promise<ABSShelf[]> {
   return absRequest<ABSShelf[]>(`/api/libraries/${libraryId}/personalized`)
 }
 
+// The entire library in one request (limit=0), NOT minified - so items carry the
+// full metadata (genres, narrator, series) the taste engine needs. Feeds the
+// Home discovery shelves and the car's Discover snapshot.
+export async function getAllLibraryItems(libraryId: string): Promise<ABSLibraryItem[]> {
+  const data = await absRequest<ABSLibraryItemsResponse>(
+    `/api/libraries/${libraryId}/items?limit=0`,
+  )
+  return data.results
+}
+
 // ---- Series / Authors / Narrators (Library view selector) ----
 
 /** All series in a library, each carrying its books (for the group drilldown). */

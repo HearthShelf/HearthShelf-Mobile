@@ -4,8 +4,14 @@ import { FlatList, ImageBackground, Pressable, ScrollView, StyleSheet, View } fr
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
-import type { ABSLibraryItem, ABSShelf, ABSBookShelf, HSListeningStats } from '@hearthshelf/core'
-import { coverHue, formatDuration, formatTimestamp } from '@hearthshelf/core'
+import type { ABSLibraryItem, ABSShelf, HSListeningStats } from '@hearthshelf/core'
+import {
+  coverHue,
+  formatDuration,
+  formatTimestamp,
+  buildDiscoverShelves,
+  rankDiscoverShelves,
+} from '@hearthshelf/core'
 import { setSessionExpiredHandler } from '@/api/controlPlane'
 import { clearSession } from '@/api/session'
 import { useConnection } from '@/api/ConnectionProvider'
@@ -23,11 +29,10 @@ import { clearAutoSession, setAutoDiscover } from '@/player/autoBridge'
 import { stopQueueSync } from '@/player/queueSync'
 import {
   coverUrl,
+  getAllLibraryItems,
   getHSStats,
   getItemsInProgress,
   getLibraries,
-  getLibraryItems,
-  getPersonalized,
   itemAuthor,
   itemTitle,
 } from '@/api/abs'
@@ -108,8 +113,9 @@ export default function HomeScreen() {
     setInProgress(progress.filter((it) => !justFinishedRef.current.has(it.id)))
 
     // The hero's progress bar and the shelf tiles' finished marks read the
-    // shared progress store; refresh it alongside the rest of Home (best-effort).
-    void refreshProgress().catch(() => {})
+    // shared progress store; refresh it alongside the rest of Home. Awaited here
+    // so the taste engine below sees fresh finished/started state.
+    await refreshProgress().catch(() => {})
 
     // Stats strip is best-effort - a stats failure shouldn't block the rest of
     // Home from loading. Same getHSStats() the Stats tab reads, so the two never
@@ -118,31 +124,37 @@ export default function HomeScreen() {
       .then(setStats)
       .catch(() => setStats(null))
 
-    // Personalized shelves from the first book library (matches the web home).
+    // Discovery shelves come from HearthShelf's OWN taste engine, not ABS's
+    // cross-library personalized feed (which surfaces other household members'
+    // books). The engine is deterministic and offline - it always produces rows
+    // from the library + listening history, so there's content on first run with
+    // no QuestGiver setup needed.
     const libs = await getLibraries()
     const firstBookLib = libs.find((l) => l.mediaType === 'book') ?? libs[0]
     if (firstBookLib) {
-      let bookShelves: ABSBookShelf[] = []
-      try {
-        const personalized = await getPersonalized(firstBookLib.id)
-        bookShelves = personalized.filter(
-          (s): s is ABSBookShelf => s.type === 'book' && s.entities.length > 0,
-        )
-      } catch {
-        // Personalized is best-effort; fall back to first-page items as one shelf.
-        const items = await getLibraryItems(firstBookLib.id, 0, 20)
-        bookShelves = items.length
-          ? [{ id: 'all', label: firstBookLib.name, type: 'book', entities: items }]
-          : []
-      }
+      const items = await getAllLibraryItems(firstBookLib.id)
+      const progressMap = new Map(getProgressState().byId)
+      const { shelves: baseShelves } = buildDiscoverShelves(items, progressMap)
+      const byId = new Map(items.map((it) => [it.id, it] as const))
+      const ranked = rankDiscoverShelves(baseShelves, byId)
+      // Adapt the taste-engine shelves to the ABSShelf shape the Shelf renderer
+      // reads (id/label/type/entities).
+      const bookShelves: ABSShelf[] = ranked.map((s) => ({
+        id: s.id,
+        label: s.label,
+        type: 'book',
+        entities: s.items,
+      }))
       setShelves(bookShelves)
-      // Publish these shelves as the car's Discover feed (the car can't run the
-      // taste engine itself, so it browses this phone-computed snapshot).
+      // Publish the SAME taste-engine shelves as the car's Discover feed (the car
+      // can't run the engine itself, so it browses this phone-computed snapshot).
+      // Because the engine works offline/first-run, the car is populated even
+      // before the user ever opens Discover or QuestGiver.
       setAutoDiscover(
-        bookShelves.map((s) => ({
+        ranked.map((s) => ({
           id: s.id,
           label: s.label,
-          items: s.entities.map((it) => ({
+          items: s.items.map((it) => ({
             id: it.id,
             title: it.media.metadata.title ?? 'Untitled',
             author: it.media.metadata.authorName ?? '',
