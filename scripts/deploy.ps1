@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
   Build an APK for the attached device (emulator or phone) and launch it. Debug
-  by default (loads JS from Metro); -Release builds a standalone APK that runs
-  unplugged with no bundler.
+  by default (loads JS from Metro); -StandaloneDebug bundles JS into the APK so
+  it runs away from the PC with no Metro needed.
 
 .DESCRIPTION
   Wraps the local build/install/launch loop documented in TESTING.md so you don't
@@ -11,7 +11,7 @@
 
   Device pick: one attached -> use it; several -> prompt a menu (emulator or a
   plugged-in phone). The build ABI follows the pick - x86_64 for emulators,
-  arm64-v8a for real phones - so `npm run emulator` loads onto your Android too.
+  arm64-v8a for real phones - so `npm run emulator` loads onto your Android also.
 
   Steps:
     1. pick the device (auto or menu) and its build ABI
@@ -20,6 +20,15 @@
     4. gradlew :app:assemble{Debug|Release} -PreactNativeArchitectures=<abi>
     5. adb install -r  (auto-uninstalls first if a version-downgrade blocks it)
     6. force-stop + launch the app
+
+  Debug mode (default): Metro is required. If nothing is listening on port 8081 the
+  script starts Metro in a background window automatically, then runs `adb reverse`
+  so the device can reach it.
+
+  Away mode (-StandaloneDebug): runs expo prebuild with HEARTHSHELF_STANDALONE_DEBUG=1
+  so the debug APK bundles its own JS. The installed APK works offline with no PC
+  nearby. Uses the debug keystore (matches Clerk's assetlinks) - correct for
+  sideload testing and in-car use.
 
 .PARAMETER Prebuild
   Run `expo prebuild --platform android` first. REQUIRED after editing anything under
@@ -30,9 +39,13 @@
   Use when the build fails with: ninja: error '...libworklets.so' ... missing and no known rule.
 
 .PARAMETER Release
-  Build :app:assembleRelease instead of debug. The release APK embeds
-  index.android.bundle, so it runs standalone (unplugged, no Metro). Signed with
-  the Expo default debug keystore - fine for sideload testing, not for the Play Store.
+  Build :app:assembleRelease instead of debug. Requires a signing keystore configured
+  in android/gradle.properties. For untethered testing use -StandaloneDebug instead.
+
+.PARAMETER StandaloneDebug
+  Bundle JS into the debug APK so it runs with no Metro server (away from the PC).
+  Runs expo prebuild with HEARTHSHELF_STANDALONE_DEBUG=1 then assembles debug.
+  Uses the debug signing key so Clerk assetlinks work. Implies -Prebuild.
 
 .PARAMETER NoLaunch
   Build and install but don't launch the app.
@@ -43,7 +56,7 @@
 
 .EXAMPLE
   ./scripts/deploy.ps1
-  JS-only change: build, install, launch on emulator-5554.
+  JS-only change: build, install, launch. Metro is started automatically if needed.
 
 .EXAMPLE
   ./scripts/deploy.ps1 -Prebuild
@@ -54,19 +67,20 @@
   Native change plus a wiped CMake cache (the libworklets.so ninja fix).
 
 .EXAMPLE
-  ./scripts/deploy.ps1 -Release -Serial 58100DLCQ0039Z
-  Standalone release APK on a physical phone: embeds the JS bundle, runs unplugged
-  with no Metro. Use this for DHU / real-drive testing away from the PC.
+  ./scripts/deploy.ps1 -StandaloneDebug -Serial 58100DLCQ0039Z
+  Away build: JS is bundled into the APK. Runs on the phone with no PC, no Metro.
 #>
 [CmdletBinding()]
 param(
   [switch]$Prebuild,
   [switch]$Clean,
   [switch]$NoLaunch,
-  # Build a standalone release APK (embeds index.android.bundle) instead of debug.
-  # Release runs unplugged with no Metro server. Debug (default) loads JS from Metro
-  # at localhost:8081 and needs `adb reverse` + a running bundler.
+  # Build a standalone release APK. For untethered/away testing prefer -StandaloneDebug
+  # (debug key, no keystore config needed, Clerk assetlinks compatible).
   [switch]$Release,
+  # Bundle JS into the debug APK so it runs with no Metro server (away from the PC).
+  # Runs expo prebuild with HEARTHSHELF_STANDALONE_DEBUG=1 before building.
+  [switch]$StandaloneDebug,
   # Target device serial. Omit to auto-pick: one device -> use it; several ->
   # prompt to choose (emulator or a plugged-in phone). The build ABI follows the
   # picked device (x86_64 for emulators, arm64-v8a for real phones).
@@ -77,11 +91,15 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# -StandaloneDebug implies -Prebuild (needs the gradle plugin reapplied).
+if ($StandaloneDebug) { $Prebuild = $true }
+
 # --- config (matches TESTING.md) ---
 $JdkPath = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot'
 $Package = 'com.hearthshelf.mobile'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-# Debug loads JS from Metro; release embeds the bundle and runs standalone.
+# Release: explicit release variant. StandaloneDebug: debug APK with bundled JS.
+# Default debug: loads JS from Metro.
 $Variant = if ($Release) { 'release' } else { 'debug' }
 $GradleTask = if ($Release) { ':app:assembleRelease' } else { ':app:assembleDebug' }
 $Apk = Join-Path $RepoRoot "android\app\build\outputs\apk\$Variant\app-$Variant.apk"
@@ -142,11 +160,56 @@ if (-not $Abi) {
 }
 Write-Host "Target: $Serial  (abi: $Abi)" -ForegroundColor Green
 
-# --- 1. prebuild (native changes only) ---
+# --- Metro: ensure it is running for debug builds that load JS at runtime ---
+# StandaloneDebug and Release APKs embed their own JS - no Metro needed.
+if (-not $Release -and -not $StandaloneDebug) {
+  $metroRunning = $false
+  try {
+    $tcp = [System.Net.Sockets.TcpClient]::new()
+    $tcp.Connect('127.0.0.1', 8081)
+    $tcp.Close()
+    $metroRunning = $true
+  } catch { }
+
+  if ($metroRunning) {
+    Write-Host 'Metro already running on :8081' -ForegroundColor DarkGray
+  } else {
+    Write-Step 'Starting Metro bundler in background window'
+    Start-Process powershell -ArgumentList "-NoProfile -Command `"Set-Location '$RepoRoot'; npx expo start --dev-client`"" -WindowStyle Normal
+    # Give Metro a moment to bind the port before we run adb reverse.
+    Write-Host 'Waiting for Metro to be ready...' -ForegroundColor DarkGray
+    $deadline = [DateTime]::UtcNow.AddSeconds(60)
+    while ([DateTime]::UtcNow -lt $deadline) {
+      Start-Sleep -Milliseconds 500
+      try {
+        $tcp = [System.Net.Sockets.TcpClient]::new()
+        $tcp.Connect('127.0.0.1', 8081)
+        $tcp.Close()
+        break
+      } catch { }
+    }
+    if ([DateTime]::UtcNow -ge $deadline) {
+      Write-Warning 'Metro did not start within 60 s. adb reverse may fail - check the Metro window.'
+    }
+  }
+
+  Write-Step "Forwarding adb reverse tcp:8081 tcp:8081 on $Serial"
+  & $adb -s $Serial reverse tcp:8081 tcp:8081 | Out-Null
+}
+
+# --- 1. prebuild (native changes only, or always for StandaloneDebug) ---
 if ($Prebuild) {
   Write-Step 'expo prebuild --platform android'
   Push-Location $RepoRoot
-  try { npx expo prebuild --platform android } finally { Pop-Location }
+  try {
+    if ($StandaloneDebug) {
+      $env:HEARTHSHELF_STANDALONE_DEBUG = '1'
+      npx expo prebuild --platform android
+      Remove-Item Env:\HEARTHSHELF_STANDALONE_DEBUG
+    } else {
+      npx expo prebuild --platform android
+    }
+  } finally { Pop-Location }
 
   # prebuild can wipe the JDK pin in android/gradle.properties - re-assert it.
   $gp = Join-Path $RepoRoot 'android\gradle.properties'
