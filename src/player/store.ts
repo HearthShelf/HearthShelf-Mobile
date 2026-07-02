@@ -217,12 +217,13 @@ export function addSleepMinutes(mins: number): void {
   const timer = state.sleepTimer
   if (!timer || timer.kind === 'endOfChapter') return
   const add = mins * 60
+  const remainingSec = timer.remainingSec + add
+  const totalSec = Math.max(timer.totalSec, remainingSec)
   set({
-    sleepTimer: {
-      ...timer,
-      remainingSec: timer.remainingSec + add,
-      totalSec: Math.max(timer.totalSec, timer.remainingSec + add),
-    },
+    sleepTimer:
+      timer.kind === 'clock'
+        ? { ...timer, remainingSec, totalSec, atMs: timer.atMs + add * 1000 }
+        : { ...timer, remainingSec, totalSec },
   })
 }
 

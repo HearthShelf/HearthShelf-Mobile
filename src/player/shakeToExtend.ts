@@ -47,6 +47,7 @@ export function useShakeToExtend(onExtend: (mins: number) => void): void {
     let sub: { remove: () => void } | null = null
     let lastShakeAt = 0
     let available = true
+    let cancelled = false
 
     const handle = (m: DeviceMotionMeasurement) => {
       const a = m.acceleration
@@ -81,6 +82,7 @@ export function useShakeToExtend(onExtend: (mins: number) => void): void {
     // Guard availability so web/emulators without a sensor don't crash.
     DeviceMotion.isAvailableAsync()
       .then((ok) => {
+        if (cancelled) return
         available = ok
         evaluate()
       })
@@ -91,6 +93,7 @@ export function useShakeToExtend(onExtend: (mins: number) => void): void {
     const unsubPlayer = subscribe(evaluate)
     const unsubSettings = subscribeSettings(evaluate)
     return () => {
+      cancelled = true
       unsubPlayer()
       unsubSettings()
       stop()
