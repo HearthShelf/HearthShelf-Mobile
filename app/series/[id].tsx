@@ -8,20 +8,18 @@
  * left out - it's an admin surface with no mobile equivalent yet; selection here
  * drives mark-finished, the primary action people reach for on a series.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type { ABSLibraryItem, ABSMediaProgress, ABSSeries } from '@hearthshelf/core'
 import { coverHue } from '@hearthshelf/core'
+import { coverUrl, getLibrarySeries, itemAuthor, itemNarrator, itemTitle } from '@/api/abs'
 import {
-  coverUrl,
-  getLibrarySeries,
-  getMe,
-  itemAuthor,
-  itemNarrator,
-  itemTitle,
-  setItemFinished,
-} from '@/api/abs'
+  getProgressState,
+  subscribeProgress,
+  refreshProgress,
+  markItemsFinished,
+} from '@/store/progress'
 import { requestSeek } from '@/player/store'
 import { playItemById } from '@/player/playback'
 import {
@@ -60,16 +58,10 @@ export default function SeriesDetailScreen() {
   const { id, libraryId } = useLocalSearchParams<{ id: string; libraryId: string }>()
   const [series, setSeries] = useState<ABSSeries | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // Per-item progress, keyed by libraryItemId, refetched after mark-finished.
-  const [progressById, setProgressById] = useState<Map<string, ABSMediaProgress>>(() => new Map())
   const [marking, setMarking] = useState(false)
   const selection = useBookSelection()
-
-  const refreshProgress = () => {
-    void getMe()
-      .then((me) => setProgressById(new Map(me.mediaProgress.map((p) => [p.libraryItemId, p]))))
-      .catch(() => {})
-  }
+  // Shared per-item progress; mutations anywhere in the app update this page live.
+  const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
 
   useEffect(() => {
     if (!id || !libraryId) return
@@ -81,14 +73,8 @@ export default function SeriesDetailScreen() {
         const found = all.find((s) => s.id === id)
         if (!found) throw new Error('Series not found')
         setSeries(found)
-
         // Progress is best-effort - a failure shouldn't block the page.
-        getMe()
-          .then((me) => {
-            if (cancelled) return
-            setProgressById(new Map(me.mediaProgress.map((p) => [p.libraryItemId, p])))
-          })
-          .catch(() => setProgressById(new Map()))
+        void refreshProgress().catch(() => {})
       } catch (e) {
         if (!cancelled) setError((e as Error).message)
       }
@@ -145,39 +131,20 @@ export default function SeriesDetailScreen() {
   const allSeriesFinished =
     books.length > 0 && books.every((b) => progressById.get(b.id)?.isFinished)
 
-  // Mark the whole series finished/unfinished. Update local state optimistically -
-  // refetching via getMe() right after the PATCH can race ABS's own propagation,
-  // so a refetch-only approach leaves the UI stuck on the old state (item/[id].tsx
-  // hits the same issue and fixes it the same way).
+  // Mark the whole series finished/unfinished through the shared progress
+  // store: optimistic flip, serial writes, and refresh protection so the UI
+  // can't blink back to stale state.
   const markSeries = async () => {
     if (!books.length || marking) return
     const next = !allSeriesFinished
     setMarking(true)
-    const prev = progressById
-    setProgressById((cur) => {
-      const updated = new Map(cur)
-      for (const b of books) {
-        const p = updated.get(b.id)
-        updated.set(
-          b.id,
-          p
-            ? { ...p, isFinished: next }
-            : {
-                libraryItemId: b.id,
-                duration: b.media.duration ?? 0,
-                progress: next ? 1 : 0,
-                currentTime: 0,
-                isFinished: next,
-              },
-        )
-      }
-      return updated
-    })
     try {
-      await Promise.all(books.map((b) => setItemFinished(b.id, next)))
-      refreshProgress()
+      await markItemsFinished(
+        books.map((b) => ({ id: b.id, duration: b.media.duration ?? 0 })),
+        next,
+      )
     } catch {
-      setProgressById(prev)
+      // Store rolled the optimistic state back.
     } finally {
       setMarking(false)
     }
@@ -272,14 +239,7 @@ export default function SeriesDetailScreen() {
 
         {/* List head / selection toolbar. Long-press a book to start selecting. */}
         {selection.selecting ? (
-          <BookSelectionToolbar
-            selection={selection}
-            books={books}
-            libraryId={libraryId}
-            progressById={progressById}
-            setProgressById={setProgressById}
-            onProgressChanged={refreshProgress}
-          />
+          <BookSelectionToolbar selection={selection} books={books} libraryId={libraryId} />
         ) : (
           <View style={styles.listHead}>
             <View style={styles.listHeadTitle}>
@@ -367,7 +327,7 @@ function SegmentTrack({
   progressById,
 }: {
   books: ABSLibraryItem[]
-  progressById: Map<string, ABSMediaProgress>
+  progressById: ReadonlyMap<string, ABSMediaProgress>
 }) {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])

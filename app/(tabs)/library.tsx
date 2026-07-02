@@ -10,7 +10,7 @@
  * once (ABS limit=0) and filters/sorts/displays client-side, the same pattern
  * the web app's Library page already proves out.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   FlatList,
   ScrollView,
@@ -28,7 +28,6 @@ import type {
   ABSLibraryAuthor,
   ABSNarrator,
   ABSSeries,
-  ABSMediaProgress,
   LibrarySort,
 } from '@hearthshelf/core'
 import {
@@ -48,7 +47,6 @@ import {
   getLibraryItemsPage,
   getLibraryNarrators,
   getLibrarySeries,
-  getMe,
   itemAuthor,
   itemTitle,
   narratorImageUrl,
@@ -71,6 +69,7 @@ import { Icon } from '@/ui/icons'
 import { DUR } from '@/ui/motion'
 import { BookTile } from '@/ui/BookTile'
 import { BookSelectionToolbar } from '@/ui/BookSelectionToolbar'
+import { getProgressState, subscribeProgress, refreshProgress } from '@/store/progress'
 import { useBookSelection } from '@/ui/useBookSelection'
 import { AzRail, AZ_RAIL_WIDTH } from '@/ui/AzRail'
 import { radius, spacing, type Palette } from '@/ui/theme'
@@ -422,15 +421,10 @@ function BooksView({
   const colors = useColors()
   const styles = useStyles()
   const [items, setItems] = useState<ABSLibraryItem[] | null>(null)
-  const [progress, setProgress] = useState<Map<string, ABSMediaProgress>>(new Map())
+  // Shared per-item progress; mark-finished anywhere updates this view live.
+  const progress = useSyncExternalStore(subscribeProgress, getProgressState).byId
   const [error, setError] = useState<string | null>(null)
   const selection = useBookSelection()
-
-  const refreshProgress = useCallback(() => {
-    void getMe()
-      .then((me) => setProgress(new Map(me.mediaProgress.map((p) => [p.libraryItemId, p]))))
-      .catch(() => {})
-  }, [])
 
   const [filter, setFilter] = useState<string>('all')
   const [sort, setSort] = useState<LibrarySort>('Title')
@@ -461,15 +455,12 @@ function BooksView({
     setError(null)
     void (async () => {
       try {
-        const [page, me] = await Promise.all([
+        const [page] = await Promise.all([
           getLibraryItemsPage(libraryId, 0, 0),
-          getMe().catch(() => null),
+          refreshProgress().catch(() => null),
         ])
         if (cancelled) return
         setItems(page.results)
-        if (me) {
-          setProgress(new Map(me.mediaProgress.map((p) => [p.libraryItemId, p])))
-        }
       } catch (e) {
         if (!cancelled) setError((e as Error).message)
       }
@@ -585,14 +576,7 @@ function BooksView({
   return (
     <Animated.View entering={FadeIn.duration(DUR.base)} style={{ flex: 1 }}>
       {selection.selecting ? (
-        <BookSelectionToolbar
-          selection={selection}
-          books={sorted}
-          libraryId={libraryId}
-          progressById={progress}
-          setProgressById={setProgress}
-          onProgressChanged={refreshProgress}
-        />
+        <BookSelectionToolbar selection={selection} books={sorted} libraryId={libraryId} />
       ) : (
         <View style={[styles.controlsRow, showAzRail && { paddingRight: 30 }]}>
           <AppText variant="caption" color={colors.textMuted}>

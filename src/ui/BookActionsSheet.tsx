@@ -14,7 +14,8 @@ import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'reac
 import { Linking, StyleSheet, View } from 'react-native'
 import type { ABSLibraryItem } from '@hearthshelf/core'
 import { coverHue } from '@hearthshelf/core'
-import { coverUrl, itemAuthor, itemTitle, libraryDownloadUrl, setItemFinished } from '@/api/abs'
+import { coverUrl, itemAuthor, itemTitle, libraryDownloadUrl } from '@/api/abs'
+import { markFinished as markFinishedShared } from '@/store/progress'
 import { AddToListSheet } from '@/player/AddToListSheet'
 import type { SheetHandle } from '@/player/sheets'
 import { AppText, Cover, Sheet, type SheetRef, Touchable } from '@/ui/primitives'
@@ -60,11 +61,13 @@ export const BookActionsSheet = forwardRef<
     const next = !finished
     setBusy(true)
     haptics.success()
+    // Close right away - the optimistic store flip means the screen behind is
+    // already correct, and holding the tray open on a network wait feels stuck.
+    sheetRef.current?.dismiss()
     try {
-      await setItemFinished(item.id, next)
+      await markFinishedShared(item.id, next, item.media.duration ?? 0)
       onMarkedFinished?.(item, next)
       onToast?.(next ? 'Marked finished' : 'Marked not finished')
-      sheetRef.current?.dismiss()
     } catch {
       onToast?.('Could not update')
     } finally {

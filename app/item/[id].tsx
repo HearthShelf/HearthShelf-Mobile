@@ -13,7 +13,7 @@
  * No ratings-less star rows, no dead taps. Rating renders only when the server
  * has one.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   Linking,
   Modal,
@@ -46,11 +46,15 @@ import {
   deleteBookmark,
   getItemDetail,
   getLibrarySeries,
-  getMe,
   getRecentSessions,
   libraryDownloadUrl,
-  setItemFinished,
 } from '@/api/abs'
+import {
+  getProgressState,
+  subscribeProgress,
+  refreshProgress,
+  markFinished,
+} from '@/store/progress'
 import { requestSeek } from '@/player/store'
 import { playItemById } from '@/player/playback'
 import { AddToListSheet } from '@/player/AddToListSheet'
@@ -97,7 +101,10 @@ export default function ItemDetailScreen() {
   const { message, show } = useToast()
 
   const [detail, setDetail] = useState<ABSLibraryItemDetail | null>(null)
-  const [progress, setProgress] = useState<ABSMediaProgress | null>(null)
+  // Progress comes from the shared store, so mark-finished anywhere (here, a
+  // long-press sheet, the series page) updates this screen immediately.
+  const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
+  const progress: ABSMediaProgress | null = (id && progressById.get(id)) || null
   const [bookmarks, setBookmarks] = useState<ABSBookmark[]>([])
   const [series, setSeries] = useState<ABSSeries | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -121,10 +128,9 @@ export default function ItemDetailScreen() {
         setDetail(d)
 
         // Progress + bookmarks ride the same /api/me call; both are best-effort.
-        getMe()
+        refreshProgress()
           .then((me) => {
             if (cancelled) return
-            setProgress(me.mediaProgress.find((p) => p.libraryItemId === id) ?? null)
             setBookmarks((me.bookmarks ?? []).filter((b) => b.libraryItemId === id))
           })
           .catch(() => undefined)
@@ -223,20 +229,14 @@ export default function ItemDetailScreen() {
   }
 
   const toggleFinished = async () => {
-    const prev = progress
     const next = !isFinished
     haptics.success()
     if (next) setFinishBurst((b) => b + 1)
-    setProgress(
-      prev
-        ? { ...prev, isFinished: next }
-        : { libraryItemId: detail.id, duration, progress: 1, currentTime: 0, isFinished: next },
-    )
     try {
-      await setItemFinished(detail.id, next)
+      // Optimistic flip + rollback live in the shared progress store.
+      await markFinished(detail.id, next, duration)
       show(next ? 'Marked finished' : 'Back in progress')
     } catch {
-      setProgress(prev)
       show('Could not update')
     }
   }

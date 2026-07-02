@@ -27,11 +27,11 @@ import {
   getItemsInProgress,
   getLibraries,
   getLibraryItems,
-  getMe,
   getPersonalized,
   itemAuthor,
   itemTitle,
 } from '@/api/abs'
+import { getProgressState, subscribeProgress, refreshProgress } from '@/store/progress'
 import { playItemById } from '@/player/playback'
 import {
   AppText,
@@ -71,12 +71,10 @@ export default function HomeScreen() {
   const connected = status.phase === 'ready'
   const [loading, setLoading] = useState(true)
   const [inProgress, setInProgress] = useState<ABSLibraryItem[]>([])
-  const [heroProgress, setHeroProgress] = useState(0)
   const [shelves, setShelves] = useState<ABSShelf[]>([])
   const [stats, setStats] = useState<HSListeningStats | null>(null)
-  // Ids of books the caller's /api/me marks finished. Long-press -> mark-finished
-  // updates this optimistically so tiles reflect it before the silent reload.
-  const [finishedIds, setFinishedIds] = useState<Set<string>>(() => new Set())
+  // Shared per-item progress; mark-finished anywhere updates tiles here live.
+  const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
   const { message: toast, show: showToast } = useToast()
   const actionsRef = useRef<BookActionsHandle>(null)
   // Books just marked finished here. A silent reload's items-in-progress can lag
@@ -107,23 +105,9 @@ export default function HomeScreen() {
       if (!stillPresent.has(id)) justFinishedRef.current.delete(id)
     setInProgress(progress.filter((it) => !justFinishedRef.current.has(it.id)))
 
-    // The hero's progress bar needs per-item state, which items-in-progress
-    // doesn't carry - read it from the caller's progress map (best-effort). The
-    // same call seeds the finished-id set so shelf tiles can show a finished mark.
-    const hero = progress[0]
-    getMe()
-      .then((me) => {
-        setFinishedIds(
-          new Set(me.mediaProgress.filter((mp) => mp.isFinished).map((mp) => mp.libraryItemId)),
-        )
-        if (hero) {
-          const p = me.mediaProgress.find((mp) => mp.libraryItemId === hero.id)
-          setHeroProgress(p?.progress ?? 0)
-        }
-      })
-      .catch(() => {
-        if (hero) setHeroProgress(0)
-      })
+    // The hero's progress bar and the shelf tiles' finished marks read the
+    // shared progress store; refresh it alongside the rest of Home (best-effort).
+    void refreshProgress().catch(() => {})
 
     // Stats strip is best-effort - a stats failure shouldn't block the rest of
     // Home from loading. Same getHSStats() the Stats tab reads, so the two never
@@ -164,12 +148,6 @@ export default function HomeScreen() {
   // so the shelves/hero re-derive from the server.
   const handleMarkedFinished = useCallback(
     (item: ABSLibraryItem, finished: boolean) => {
-      setFinishedIds((cur) => {
-        const next = new Set(cur)
-        if (finished) next.add(item.id)
-        else next.delete(item.id)
-        return next
-      })
       if (finished) {
         justFinishedRef.current.add(item.id)
         setInProgress((cur) => cur.filter((it) => it.id !== item.id))
@@ -184,9 +162,9 @@ export default function HomeScreen() {
   const openActions = useCallback(
     (item: ABSLibraryItem) => {
       haptics.mode()
-      actionsRef.current?.present(item, finishedIds.has(item.id))
+      actionsRef.current?.present(item, progressById.get(item.id)?.isFinished === true)
     },
-    [finishedIds],
+    [progressById],
   )
 
   useEffect(() => {
@@ -228,7 +206,7 @@ export default function HomeScreen() {
         ) : hero ? (
           <ContinueHero
             item={hero}
-            progress={heroProgress}
+            progress={progressById.get(hero.id)?.progress ?? 0}
             greeting={<Greeting firstName={firstName} />}
             onResume={async () => {
               try {

@@ -8,13 +8,14 @@
  * component runs the actions against the selected ids and reports progress
  * changes back so segment tracks / status update.
  */
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useSyncExternalStore } from 'react'
 import { Linking, StyleSheet, View } from 'react-native'
-import type { ABSLibraryItem, ABSMediaProgress } from '@hearthshelf/core'
+import type { ABSLibraryItem } from '@hearthshelf/core'
 import { addToQueue } from '@/player/queue'
 import { AddToListSheet } from '@/player/AddToListSheet'
 import type { SheetHandle } from '@/player/sheets'
-import { libraryDownloadUrl, itemAuthor, itemTitle, setItemFinished } from '@/api/abs'
+import { libraryDownloadUrl, itemAuthor, itemTitle } from '@/api/abs'
+import { getProgressState, subscribeProgress, markItemsFinished } from '@/store/progress'
 import { AppText, IconButton, icons } from '@/ui/primitives'
 import { spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
@@ -25,67 +26,41 @@ export function BookSelectionToolbar({
   selection,
   books,
   libraryId,
-  progressById,
-  setProgressById,
-  onProgressChanged,
   onToast,
 }: {
   selection: BookSelection
   /** All books in the current surface (for select-all + finished-state). */
   books: ABSLibraryItem[]
   libraryId: string
-  progressById: Map<string, ABSMediaProgress>
-  /** Applies the mark-finished result immediately, since a getMe() refetch
-   *  right after the PATCH can race ABS's own propagation and read stale. */
-  setProgressById: (
-    update: (cur: Map<string, ABSMediaProgress>) => Map<string, ABSMediaProgress>,
-  ) => void
-  /** Called after mark-finished so the parent can reconcile with the server. */
-  onProgressChanged?: () => void
   onToast?: (message: string) => void
 }) {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const addSheetRef = useRef<SheetHandle>(null)
   const busy = useRef(false)
+  const { byId } = useSyncExternalStore(subscribeProgress, getProgressState)
 
   const ids = [...selection.selected]
   const total = books.length
-  const selectionAllFinished = ids.length > 0 && ids.every((id) => progressById.get(id)?.isFinished)
+  const selectionAllFinished = ids.length > 0 && ids.every((id) => byId.get(id)?.isFinished)
 
   const markFinished = async () => {
     if (!ids.length || busy.current) return
     busy.current = true
     const next = !selectionAllFinished
     const idSet = new Set(ids)
-    setProgressById((cur) => {
-      const updated = new Map(cur)
-      for (const b of books) {
-        if (!idSet.has(b.id)) continue
-        const p = updated.get(b.id)
-        updated.set(
-          b.id,
-          p
-            ? { ...p, isFinished: next }
-            : {
-                libraryItemId: b.id,
-                duration: b.media.duration ?? 0,
-                progress: next ? 1 : 0,
-                currentTime: 0,
-                isFinished: next,
-              },
-        )
-      }
-      return updated
-    })
     try {
-      await Promise.all(ids.map((id) => setItemFinished(id, next)))
-      onProgressChanged?.()
+      await markItemsFinished(
+        books
+          .filter((b) => idSet.has(b.id))
+          .map((b) => ({ id: b.id, duration: b.media.duration ?? 0 })),
+        next,
+      )
       haptics.success()
       onToast?.(next ? 'Marked finished' : 'Marked not finished')
       selection.clear()
     } catch {
-      // best-effort
+      onToast?.('Could not update')
     } finally {
       busy.current = false
     }

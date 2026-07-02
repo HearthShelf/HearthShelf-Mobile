@@ -62,9 +62,16 @@ async function absRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     throw new Error(`abs_request_failed ${res.status} ${path}`)
   }
-  // Some endpoints (sync/close) return empty / non-JSON; guard it.
+  // Some endpoints (sync/close, progress PATCH) return empty or plain-text
+  // bodies on success; a 2xx must never surface as a failure just because the
+  // body isn't JSON.
   const text = await res.text()
-  return (text ? JSON.parse(text) : undefined) as T
+  if (!text) return undefined as T
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    return undefined as T
+  }
 }
 
 /** Build an absolute, token-bearing media URL (covers, audio files). Returns ''
