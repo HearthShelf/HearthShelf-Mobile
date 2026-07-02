@@ -1,27 +1,54 @@
 /**
- * Book detail, reskinned to the "Material, warmed" mock (plan section 5): a hue
- * glow header, cover + title/author, an optional series link, a progress/
- * finished/not-started status card, the primary CTA, a chapters preview that
- * opens a full chapter list, a stat strip, and an editorial About blurb.
+ * Book detail, phone-first. The screen is state-aware: its sections REORDER by
+ * where the listener is with the book, because the job of the screen changes.
+ *  - In progress: resume is the job. Status card + CTA up top, then the chapter
+ *    list starting at the current chapter (tap a row to play from it).
+ *  - Not started: convincing is the job. CTA, then About, series, chapters.
+ *  - Finished: what's-next is the job. Finished card, then the series link,
+ *    then "Listen again", About, chapters.
  *
- * Hidden on purpose (no ABS/app data source, so not stubbed as fake UI):
- * ratings, the social "readers" avatar stack, playlist-add, download. Bookmark
- * and share are ABS-real affordances the app doesn't wire up yet, so their
- * buttons are omitted rather than shown as dead taps.
+ * Everything visible is a real affordance backed by ABS data or an OS feature:
+ * finished toggle (PATCH /api/me/progress), add-to-list, bookmarks (jump/
+ * delete), share (OS sheet), download (browser), previous sessions, cover zoom.
+ * No ratings-less star rows, no dead taps. Rating renders only when the server
+ * has one.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Linking,
+  Modal,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from 'react-native'
+import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type {
+  ABSBookmark,
   ABSChapter,
   ABSLibraryItemDetail,
+  ABSListeningSession,
   ABSMediaProgress,
   ABSSeries,
 } from '@hearthshelf/core'
 import { coverHue, formatDuration, formatTimestamp, stripHtml } from '@hearthshelf/core'
-import { coverUrl, getItemDetail, getLibrarySeries, getMe } from '@/api/abs'
+import {
+  coverUrl,
+  deleteBookmark,
+  getItemDetail,
+  getLibrarySeries,
+  getMe,
+  getRecentSessions,
+  libraryDownloadUrl,
+  setItemFinished,
+} from '@/api/abs'
 import { requestSeek } from '@/player/store'
 import { playItemById } from '@/player/playback'
+import { AddToListSheet } from '@/player/AddToListSheet'
+import type { SheetHandle } from '@/player/sheets'
 import {
   AppText,
   Centered,
@@ -31,25 +58,47 @@ import {
   PrimaryButton,
   Screen,
   Sheet,
+  Touchable,
   type SheetRef,
   icons,
 } from '@/ui/primitives'
+import { Icon } from '@/ui/icons'
 import { CoverGlow } from '@/ui/CoverGlow'
+import { Toast, useToast } from '@/ui/Toast'
+import { haptics } from '@/ui/haptics'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 
 const CHAPTER_PREVIEW_COUNT = 4
+const DESCRIPTION_CLAMP_LINES = 6
+
+function formatBytes(bytes: number): string {
+  if (!bytes) return ''
+  const mb = bytes / (1024 * 1024)
+  return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`
+}
+
+type SectionKey = 'status' | 'cta' | 'about' | 'series' | 'chapters'
 
 export default function ItemDetailScreen() {
   const router = useRouter()
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const { id } = useLocalSearchParams<{ id: string }>()
+  const { message, show } = useToast()
+
   const [detail, setDetail] = useState<ABSLibraryItemDetail | null>(null)
   const [progress, setProgress] = useState<ABSMediaProgress | null>(null)
+  const [bookmarks, setBookmarks] = useState<ABSBookmark[]>([])
   const [series, setSeries] = useState<ABSSeries | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [zoomed, setZoomed] = useState(false)
+
   const chaptersSheetRef = useRef<SheetRef>(null)
+  const overflowSheetRef = useRef<SheetRef>(null)
+  const bookmarksSheetRef = useRef<SheetRef>(null)
+  const sessionsSheetRef = useRef<SheetRef>(null)
+  const addToListRef = useRef<SheetHandle>(null)
 
   useEffect(() => {
     if (!id) return
@@ -60,15 +109,15 @@ export default function ItemDetailScreen() {
         if (cancelled) return
         setDetail(d)
 
-        // Progress is best-effort - a failure shouldn't block the rest of Detail.
+        // Progress + bookmarks ride the same /api/me call; both are best-effort.
         getMe()
           .then((me) => {
             if (cancelled) return
             setProgress(me.mediaProgress.find((p) => p.libraryItemId === id) ?? null)
+            setBookmarks((me.bookmarks ?? []).filter((b) => b.libraryItemId === id))
           })
-          .catch(() => setProgress(null))
+          .catch(() => undefined)
 
-        // Series link: find this book's series among the library's series list.
         const seriesRef = d.media.metadata.series?.[0]
         if (seriesRef) {
           getLibrarySeries(d.libraryId)
@@ -121,25 +170,163 @@ export default function ItemDetailScreen() {
   const description = meta.description ? stripHtml(meta.description) : ''
   const title = meta.title || 'Untitled'
   const hue = coverHue(detail.id)
+  // The detail endpoint omits the flattened authorName/narratorName the list
+  // shape carries; it exposes authors[]/narrators[] instead.
+  const authorName = meta.authors?.map((a) => a.name).join(', ') || meta.authorName || ''
+  const narratorName = meta.narrators?.join(', ') || meta.narratorName || ''
 
   const isFinished = progress?.isFinished ?? false
   const isInProgress = !isFinished && (progress?.progress ?? 0) > 0
-  const isNotStarted = !isFinished && !isInProgress
+  const currentTime = isInProgress ? (progress?.currentTime ?? 0) : 0
+  const currentChapterIndex = isInProgress
+    ? chapters.findIndex((c) => currentTime >= c.start && currentTime < c.end)
+    : -1
 
+  // No "· Ch. N" suffix on Resume: books with prologues make the marker ordinal
+  // disagree with the chapter's own title, and the pinned chapter row right
+  // below already names where you are.
   const ctaLabel = isFinished ? 'Listen again' : isInProgress ? 'Resume' : 'Start listening'
-  const startPosition = isFinished ? 0 : (progress?.currentTime ?? 0)
 
   const play = async () => {
+    haptics.transport()
     await playItemById(detail.id)
-    if (startPosition > 0) requestSeek(startPosition)
+    if (!isFinished && currentTime > 0) requestSeek(currentTime)
     router.push('/player')
   }
 
-  const playFromChapter = async (chapter: ABSChapter) => {
+  const playFrom = async (startSec: number) => {
+    haptics.transport()
     await playItemById(detail.id)
-    requestSeek(chapter.start)
+    requestSeek(startSec)
     chaptersSheetRef.current?.dismiss()
+    bookmarksSheetRef.current?.dismiss()
+    sessionsSheetRef.current?.dismiss()
     router.push('/player')
+  }
+
+  const toggleFinished = async () => {
+    const prev = progress
+    const next = !isFinished
+    haptics.success()
+    setProgress(
+      prev
+        ? { ...prev, isFinished: next }
+        : { libraryItemId: detail.id, duration, progress: 1, currentTime: 0, isFinished: next },
+    )
+    try {
+      await setItemFinished(detail.id, next)
+      show(next ? 'Marked finished' : 'Back in progress')
+    } catch {
+      setProgress(prev)
+      show('Could not update')
+    }
+  }
+
+  const removeBookmark = async (b: ABSBookmark) => {
+    haptics.warn()
+    setBookmarks((list) => list.filter((x) => x.time !== b.time))
+    try {
+      await deleteBookmark(detail.id, b.time)
+    } catch {
+      setBookmarks((list) => [...list, b].sort((x, y) => x.time - y.time))
+      show('Could not delete bookmark')
+    }
+  }
+
+  const shareBook = async () => {
+    overflowSheetRef.current?.dismiss()
+    const narr = narratorName ? `, narrated by ${narratorName}` : ''
+    await Share.share({ message: `${title} by ${authorName || 'Unknown author'}${narr}` })
+  }
+
+  const downloadBook = () => {
+    overflowSheetRef.current?.dismiss()
+    const url = libraryDownloadUrl(detail.libraryId, [detail.id])
+    if (url) {
+      void Linking.openURL(url)
+      show('Download started in browser')
+    }
+  }
+
+  const openAuthor = () => {
+    const author = meta.authors?.[0]
+    if (!author) return
+    router.push(
+      `/group/authors/${encodeURIComponent(author.id)}?libraryId=${encodeURIComponent(detail.libraryId)}&name=${encodeURIComponent(author.name)}`,
+    )
+  }
+
+  const openNarrator = () => {
+    if (!narratorName) return
+    router.push(
+      `/group/narrators/${encodeURIComponent(narratorName)}?libraryId=${encodeURIComponent(detail.libraryId)}&name=${encodeURIComponent(narratorName)}`,
+    )
+  }
+
+  // The job of the screen changes with listening state; so does the order.
+  const sectionOrder: SectionKey[] = isInProgress
+    ? ['status', 'cta', 'chapters', 'series', 'about']
+    : isFinished
+      ? ['status', 'series', 'cta', 'about', 'chapters']
+      : ['cta', 'about', 'series', 'chapters']
+
+  const sections: Record<SectionKey, React.ReactNode> = {
+    status: (
+      <StatusCard
+        key="status"
+        isFinished={isFinished}
+        progress={progress}
+        duration={duration}
+        chapterCount={chapters.length}
+      />
+    ),
+    cta: (
+      <View key="cta" style={styles.ctaRow}>
+        <PrimaryButton label={ctaLabel} icon={icons.play} onPress={play} style={{ flex: 1 }} />
+        <ActionSquare
+          icon={isFinished ? icons.taskAlt : icons.check}
+          label={isFinished ? 'Done' : 'Finish'}
+          active={isFinished}
+          onPress={toggleFinished}
+        />
+        <ActionSquare
+          icon={icons.addList}
+          label="Add to"
+          onPress={() => addToListRef.current?.present()}
+        />
+      </View>
+    ),
+    about: (
+      <AboutSection
+        key="about"
+        description={description}
+        narratorName={narratorName}
+        onNarrator={openNarrator}
+      />
+    ),
+    series: series ? (
+      <SeriesCard
+        key="series"
+        series={series}
+        highlight={isFinished}
+        onPress={() =>
+          router.push(
+            `/series/${encodeURIComponent(series.id)}?libraryId=${encodeURIComponent(detail.libraryId)}`,
+          )
+        }
+      />
+    ) : null,
+    chapters:
+      chapters.length > 0 ? (
+        <ChaptersPreview
+          key="chapters"
+          chapters={chapters}
+          currentChapterIndex={currentChapterIndex}
+          currentTime={currentTime}
+          onOpenAll={() => chaptersSheetRef.current?.present()}
+          onPlayFrom={playFrom}
+        />
+      ) : null,
   }
 
   return (
@@ -148,250 +335,624 @@ export default function ItemDetailScreen() {
         <CoverGlow hue={hue} height={320} />
       </View>
 
-      <Header onBack={() => router.back()} />
+      <Header
+        onBack={() => router.back()}
+        bookmarkCount={bookmarks.length}
+        onBookmarks={() => bookmarksSheetRef.current?.present()}
+        onOverflow={() => overflowSheetRef.current?.present()}
+      />
+
       <ScrollView
         contentContainerStyle={{ paddingBottom: 160 }}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.hero}>
-          <Cover
-            uri={coverUrl(detail.id)}
-            size={172}
-            radius={radius.card}
-            fallback={{ hue, initial: title.charAt(0).toUpperCase(), title }}
-          />
-          <AppText variant="hero" style={styles.title}>
-            {title}
-          </AppText>
-          <AppText variant="label" color={colors.textMuted}>
-            {meta.authorName || 'Unknown author'}
-          </AppText>
-        </View>
-
-        {series && (
-          <Pressable
-            style={styles.seriesCard}
-            onPress={() =>
-              router.push(
-                `/series/${encodeURIComponent(series.id)}?libraryId=${encodeURIComponent(detail.libraryId)}`,
-              )
-            }
-          >
-            <View style={styles.seriesCovers}>
-              {series.books.slice(0, 3).map((b, i) => (
-                <Cover
-                  key={b.id}
-                  size={42}
-                  radius={radius.tile}
-                  style={{ position: 'absolute', left: i * 11, zIndex: 3 - i }}
-                  fallback={{
-                    hue: coverHue(b.id),
-                    initial: (b.media.metadata.title || '?').charAt(0).toUpperCase(),
-                  }}
-                />
-              ))}
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <AppText variant="eyebrow">Series</AppText>
-              <AppText variant="label" numberOfLines={1} style={{ marginTop: 2 }}>
-                {series.name}
-              </AppText>
-            </View>
-            <IconButton name={icons.chevronRight} color={colors.textMuted} />
-          </Pressable>
-        )}
-
-        <StatusCard
-          isFinished={isFinished}
-          isInProgress={isInProgress}
-          isNotStarted={isNotStarted}
-          progress={progress}
+        <Hero
+          detail={detail}
+          title={title}
+          authorName={authorName}
+          hue={hue}
           duration={duration}
           chapterCount={chapters.length}
+          onZoom={() => setZoomed(true)}
+          onAuthor={meta.authors?.[0] ? openAuthor : undefined}
         />
-
-        <PrimaryButton label={ctaLabel} icon={icons.play} onPress={play} style={styles.playBtn} />
-
-        {description ? (
-          <View style={styles.section}>
-            <AppText variant="eyebrow">About</AppText>
-            <AppText variant="quote" style={{ marginTop: spacing.sm }}>
-              {description}
-            </AppText>
-            {meta.narratorName ? (
-              <AppText variant="meta" color={colors.textMuted} style={{ marginTop: spacing.md }}>
-                Narrated by {meta.narratorName}
-              </AppText>
-            ) : null}
-          </View>
-        ) : meta.narratorName ? (
-          <View style={styles.section}>
-            <AppText variant="meta" color={colors.textMuted}>
-              Narrated by {meta.narratorName}
-            </AppText>
-          </View>
-        ) : null}
-
-        {chapters.length > 0 ? (
-          <View style={styles.section}>
-            <Pressable
-              style={styles.chaptersHeader}
-              onPress={() => chaptersSheetRef.current?.present()}
-            >
-              <AppText variant="title">Chapters</AppText>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-                <AppText variant="caption" color={colors.textMuted}>
-                  {chapters.length} · View all
-                </AppText>
-                <IconButton name={icons.chevronRight} size={18} color={colors.textMuted} />
-              </View>
-            </Pressable>
-            {chapters.slice(0, CHAPTER_PREVIEW_COUNT).map((c, i) => (
-              <Pressable
-                key={c.id ?? i}
-                style={styles.chapterRow}
-                onPress={() => chaptersSheetRef.current?.present()}
-              >
-                <IconButton name={icons.play} size={20} color={colors.textMuted} />
-                <AppText variant="meta" numberOfLines={1} style={{ flex: 1 }}>
-                  {c.title || `Chapter ${i + 1}`}
-                </AppText>
-                <AppText variant="caption" color={colors.textMuted}>
-                  {formatTimestamp(c.start)}
-                </AppText>
-              </Pressable>
-            ))}
-          </View>
-        ) : null}
-
-        <View style={styles.statStrip}>
-          <StatCell value={formatDuration(duration)} label="Length" />
-          <View style={styles.statDivider} />
-          <StatCell value={String(chapters.length)} label="Chapters" />
-          <View style={styles.statDivider} />
-          <StatCell value={meta.publishedYear || '—'} label="Published" />
-        </View>
+        {sectionOrder.map((k) => sections[k])}
       </ScrollView>
 
       <Sheet ref={chaptersSheetRef} title="Chapters" snapPoints={['70%']}>
-        <ChaptersList chapters={chapters} onSelect={playFromChapter} />
+        <BottomSheetScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }}>
+          {chapters.map((c, i) => (
+            <ChapterRow
+              key={c.id ?? i}
+              chapter={c}
+              index={i}
+              current={i === currentChapterIndex}
+              currentTime={currentTime}
+              onPress={() => void playFrom(i === currentChapterIndex ? currentTime : c.start)}
+            />
+          ))}
+        </BottomSheetScrollView>
       </Sheet>
+
+      <Sheet ref={overflowSheetRef} title={title}>
+        <SheetRow icon={icons.share} label="Share" onPress={() => void shareBook()} />
+        <SheetRow icon={icons.download} label="Download" onPress={downloadBook} />
+        <SheetRow
+          icon={icons.recent}
+          label="Previous sessions"
+          onPress={() => {
+            overflowSheetRef.current?.dismiss()
+            sessionsSheetRef.current?.present()
+          }}
+        />
+        <FileInfoLine detail={detail} />
+      </Sheet>
+
+      <Sheet ref={bookmarksSheetRef} title="Bookmarks">
+        {bookmarks.length === 0 ? (
+          <AppText variant="meta" color={colors.textMuted} style={{ paddingVertical: spacing.lg }}>
+            No bookmarks yet. Add them from the player.
+          </AppText>
+        ) : (
+          bookmarks.map((b) => (
+            <View key={b.time} style={styles.bookmarkRow}>
+              <Touchable style={styles.bookmarkTap} onPress={() => void playFrom(b.time)}>
+                <Icon name={icons.bookmarkFilled} size={20} color={colors.brandHearth} />
+                <AppText variant="meta" numberOfLines={1} style={{ flex: 1 }}>
+                  {b.title || 'Bookmark'}
+                </AppText>
+                <AppText variant="mono" color={colors.textMuted}>
+                  {formatTimestamp(b.time)}
+                </AppText>
+              </Touchable>
+              <IconButton
+                name={icons.close}
+                size={18}
+                color={colors.textFaint}
+                onPress={() => void removeBookmark(b)}
+              />
+            </View>
+          ))
+        )}
+      </Sheet>
+
+      <SessionsSheet ref={sessionsSheetRef} itemId={detail.id} onJump={playFrom} />
+
+      <AddToListSheet
+        ref={addToListRef}
+        libraryId={detail.libraryId}
+        libraryItemId={detail.id}
+        onAdded={show}
+      />
+
+      <CoverZoom
+        visible={zoomed}
+        itemId={detail.id}
+        title={title}
+        hue={hue}
+        onClose={() => setZoomed(false)}
+      />
+
+      <Toast message={message} />
     </Screen>
   )
 }
 
+// ---- Hero ----
+
+function Hero({
+  detail,
+  title,
+  authorName,
+  hue,
+  duration,
+  chapterCount,
+  onZoom,
+  onAuthor,
+}: {
+  detail: ABSLibraryItemDetail
+  title: string
+  authorName: string
+  hue: string
+  duration: number
+  chapterCount: number
+  onZoom: () => void
+  onAuthor?: () => void
+}) {
+  const colors = useColors()
+  const styles = useStyles()
+  const meta = detail.media.metadata
+  const rating = meta.rating
+
+  // One compact meta line instead of a stat-strip card: same facts, less chrome.
+  const metaParts = [
+    formatDuration(duration),
+    chapterCount > 0 ? `${chapterCount} chapters` : null,
+    meta.genres?.[0] ?? null,
+    meta.publishedYear ?? null,
+  ].filter(Boolean)
+
+  return (
+    <View style={styles.hero}>
+      <Pressable onPress={onZoom}>
+        <Cover
+          uri={coverUrl(detail.id)}
+          size={172}
+          radius={radius.card}
+          fallback={{ hue, initial: title.charAt(0).toUpperCase(), title }}
+        />
+      </Pressable>
+      <AppText variant="hero" style={styles.title}>
+        {title}
+      </AppText>
+      {meta.subtitle ? (
+        <AppText variant="quote" color={colors.textMuted} style={styles.subtitle}>
+          {meta.subtitle}
+        </AppText>
+      ) : null}
+      <View style={styles.byline}>
+        <Pressable onPress={onAuthor} disabled={!onAuthor} hitSlop={6}>
+          <AppText variant="label" color={onAuthor ? colors.text : colors.textMuted}>
+            {authorName || 'Unknown author'}
+          </AppText>
+        </Pressable>
+        {rating != null && rating > 0 ? (
+          <>
+            <AppText variant="label" color={colors.textFaint}>
+              ·
+            </AppText>
+            <Icon name="star" size={15} color={colors.brandHearth} />
+            <AppText variant="mono">{rating.toFixed(1)}</AppText>
+          </>
+        ) : null}
+      </View>
+      {metaParts.length > 0 ? (
+        <AppText variant="mono" color={colors.textMuted} style={{ marginTop: spacing.sm }}>
+          {metaParts.join(' · ')}
+        </AppText>
+      ) : null}
+    </View>
+  )
+}
+
+// ---- Status ----
+
 function StatusCard({
   isFinished,
-  isInProgress,
-  isNotStarted,
   progress,
   duration,
   chapterCount,
 }: {
   isFinished: boolean
-  isInProgress: boolean
-  isNotStarted: boolean
   progress: ABSMediaProgress | null
   duration: number
   chapterCount: number
 }) {
   const colors = useColors()
-  const styles = useMemo(() => makeStyles(colors), [colors])
+  const styles = useStyles()
   if (isFinished) {
     return (
       <View style={[styles.statusCard, styles.statusCardRow]}>
-        <IconButton name={icons.checkCircle} size={22} color={colors.brandHearth} />
+        <Icon name={icons.checkCircle} size={22} color={colors.brandHearth} />
         <AppText variant="label">Finished</AppText>
       </View>
     )
   }
-  if (isInProgress && progress) {
-    const pct = Math.round(progress.progress * 100)
-    const chaptersLeft = Math.max(0, Math.round((1 - progress.progress) * chapterCount))
-    const remaining = formatDuration(Math.max(0, duration - progress.currentTime))
-    return (
-      <View style={styles.statusCard}>
-        <View style={styles.statusCardRow}>
-          <AppText variant="label">
-            {pct}% · {chaptersLeft} chapters left
-          </AppText>
-          <AppText variant="mono" color={colors.textMuted}>
-            {remaining}
-          </AppText>
-        </View>
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${pct}%` }]} />
-        </View>
-      </View>
-    )
-  }
-  if (isNotStarted) {
-    return (
-      <View style={[styles.statusCard, styles.statusCardRow]}>
-        <IconButton name={icons.schedule} size={21} color={colors.textMuted} />
-        <AppText variant="meta" color={colors.textMuted}>
-          Not started yet
+  if (!progress || progress.progress <= 0) return null
+  const pct = Math.round(progress.progress * 100)
+  const chaptersLeft = Math.max(0, Math.round((1 - progress.progress) * chapterCount))
+  const remaining = formatDuration(Math.max(0, duration - progress.currentTime))
+  return (
+    <View style={styles.statusCard}>
+      <View style={styles.statusCardRow}>
+        <AppText variant="label">
+          {pct}%{chapterCount > 0 ? ` · ${chaptersLeft} chapters left` : ''}
+        </AppText>
+        <AppText variant="mono" color={colors.textMuted}>
+          {remaining} left
         </AppText>
       </View>
-    )
-  }
-  return null
-}
-
-function StatCell({ value, label }: { value: string; label: string }) {
-  const colors = useColors()
-  return (
-    <View style={{ flex: 1, alignItems: 'center' }}>
-      <AppText variant="mono" style={{ fontWeight: '600' }}>
-        {value}
-      </AppText>
-      <AppText variant="caption" color={colors.textMuted} style={{ marginTop: spacing.xs }}>
-        {label}
-      </AppText>
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: `${pct}%` }]} />
+      </View>
     </View>
   )
 }
 
-function ChaptersList({
-  chapters,
-  onSelect,
+// ---- CTA squares ----
+
+function ActionSquare({
+  icon,
+  label,
+  active,
+  onPress,
 }: {
-  chapters: ABSChapter[]
-  onSelect: (c: ABSChapter) => void
+  icon: (typeof icons)[keyof typeof icons]
+  label: string
+  active?: boolean
+  onPress: () => void
 }) {
   const colors = useColors()
-  const styles = useMemo(() => makeStyles(colors), [colors])
-  const rows = useMemo(() => chapters, [chapters])
+  const styles = useStyles()
   return (
-    <View>
-      {rows.map((c, i) => (
-        <Pressable key={c.id ?? i} style={styles.sheetChapterRow} onPress={() => onSelect(c)}>
-          <IconButton name={icons.play} size={20} color={colors.textMuted} />
-          <AppText variant="body" numberOfLines={1} style={{ flex: 1 }}>
-            {c.title || `Chapter ${i + 1}`}
+    <Touchable style={[styles.square, active && styles.squareActive]} onPress={onPress}>
+      <Icon name={icon} size={22} color={active ? colors.brandHearth : colors.text} />
+      <AppText variant="caption" color={active ? colors.brandHearth : colors.textMuted}>
+        {label}
+      </AppText>
+    </Touchable>
+  )
+}
+
+// ---- About ----
+
+function AboutSection({
+  description,
+  narratorName,
+  onNarrator,
+}: {
+  description: string
+  narratorName: string
+  onNarrator: () => void
+}) {
+  const colors = useColors()
+  const styles = useStyles()
+  const [expanded, setExpanded] = useState(false)
+  // Rough clamp check; RN can't cheaply report "did numberOfLines truncate".
+  const clampable = description.length > 320
+  if (!description && !narratorName) return null
+  return (
+    <View style={styles.section}>
+      {description ? (
+        <>
+          <AppText variant="eyebrow" color={colors.textMuted}>
+            About
           </AppText>
-          <AppText variant="mono" color={colors.textMuted}>
-            {formatTimestamp(c.start)}
+          <AppText
+            variant="quote"
+            numberOfLines={expanded || !clampable ? undefined : DESCRIPTION_CLAMP_LINES}
+            style={{ marginTop: spacing.sm, lineHeight: 24 }}
+          >
+            {description}
+          </AppText>
+          {clampable ? (
+            <Pressable onPress={() => setExpanded((e) => !e)} hitSlop={8}>
+              <AppText variant="label" color={colors.accent} style={{ marginTop: spacing.sm }}>
+                {expanded ? 'Read less' : 'Read more'}
+              </AppText>
+            </Pressable>
+          ) : null}
+        </>
+      ) : null}
+      {narratorName ? (
+        <Pressable onPress={onNarrator} hitSlop={6}>
+          <AppText variant="meta" color={colors.textMuted} style={{ marginTop: spacing.md }}>
+            Narrated by <AppText variant="label">{narratorName}</AppText>
           </AppText>
         </Pressable>
-      ))}
+      ) : null}
     </View>
   )
 }
 
-function Header({ onBack }: { onBack: () => void }) {
+// ---- Series ----
+
+function SeriesCard({
+  series,
+  highlight,
+  onPress,
+}: {
+  series: ABSSeries
+  /** Finished books promote the series card: the next book is the story now. */
+  highlight: boolean
+  onPress: () => void
+}) {
   const colors = useColors()
-  const styles = useMemo(() => makeStyles(colors), [colors])
+  const styles = useStyles()
+  return (
+    <Touchable style={styles.seriesCard} onPress={onPress}>
+      <View style={styles.seriesCovers}>
+        {series.books.slice(0, 3).map((b, i) => (
+          <Cover
+            key={b.id}
+            uri={coverUrl(b.id)}
+            size={42}
+            radius={radius.tile}
+            style={{ position: 'absolute', left: i * 11, zIndex: 3 - i }}
+            fallback={{
+              hue: coverHue(b.id),
+              initial: (b.media.metadata.title || '?').charAt(0).toUpperCase(),
+            }}
+          />
+        ))}
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <AppText variant="eyebrow" color={colors.textMuted}>
+          {highlight ? 'Next in series' : 'Series'}
+        </AppText>
+        <AppText variant="label" numberOfLines={1} style={{ marginTop: 2 }}>
+          {series.name}
+        </AppText>
+      </View>
+      <Icon name={icons.chevronRight} size={22} color={colors.textMuted} />
+    </Touchable>
+  )
+}
+
+// ---- Chapters ----
+
+function ChapterRow({
+  chapter,
+  index,
+  current,
+  currentTime,
+  onPress,
+}: {
+  chapter: ABSChapter
+  index: number
+  current: boolean
+  currentTime: number
+  onPress: () => void
+}) {
+  const colors = useColors()
+  const styles = useStyles()
+  return (
+    <Touchable style={[styles.chapterRow, current && styles.chapterRowNow]} onPress={onPress}>
+      <Icon
+        name={current ? icons.nowPlaying : icons.play}
+        size={20}
+        color={current ? colors.accent : colors.textMuted}
+      />
+      <AppText
+        variant="meta"
+        numberOfLines={1}
+        style={[{ flex: 1 }, current && { fontWeight: '600' }]}
+      >
+        {chapter.title || `Chapter ${index + 1}`}
+      </AppText>
+      <AppText variant="mono" color={current ? colors.text : colors.textMuted}>
+        {current
+          ? `${formatDuration(Math.max(0, chapter.end - currentTime))} left`
+          : formatTimestamp(chapter.start)}
+      </AppText>
+    </Touchable>
+  )
+}
+
+function ChaptersPreview({
+  chapters,
+  currentChapterIndex,
+  currentTime,
+  onOpenAll,
+  onPlayFrom,
+}: {
+  chapters: ABSChapter[]
+  currentChapterIndex: number
+  currentTime: number
+  onOpenAll: () => void
+  onPlayFrom: (startSec: number) => Promise<void>
+}) {
+  const colors = useColors()
+  const styles = useStyles()
+  // In progress, the preview window starts at the current chapter; otherwise the top.
+  const start = currentChapterIndex > 0 ? currentChapterIndex : 0
+  const window = chapters.slice(start, start + CHAPTER_PREVIEW_COUNT)
+  return (
+    <View style={styles.section}>
+      <Pressable style={styles.chaptersHeader} onPress={onOpenAll}>
+        <AppText variant="title">Chapters</AppText>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+          <AppText variant="caption" color={colors.textMuted}>
+            {chapters.length} · View all
+          </AppText>
+          <Icon name={icons.chevronRight} size={18} color={colors.textMuted} />
+        </View>
+      </Pressable>
+      {window.map((c, i) => {
+        const idx = start + i
+        const current = idx === currentChapterIndex
+        return (
+          <ChapterRow
+            key={c.id ?? idx}
+            chapter={c}
+            index={idx}
+            current={current}
+            currentTime={currentTime}
+            onPress={() => void onPlayFrom(current ? currentTime : c.start)}
+          />
+        )
+      })}
+    </View>
+  )
+}
+
+// ---- Sessions sheet ----
+
+const SessionsSheet = ({
+  ref,
+  itemId,
+  onJump,
+}: {
+  ref: React.RefObject<SheetRef | null>
+  itemId: string
+  onJump: (sec: number) => Promise<void>
+}) => {
+  const colors = useColors()
+  const styles = useStyles()
+  const [sessions, setSessions] = useState<ABSListeningSession[] | null>(null)
+
+  const load = useCallback(() => {
+    getRecentSessions()
+      .then((all) => setSessions(all.filter((s) => s.libraryItemId === itemId)))
+      .catch(() => setSessions([]))
+  }, [itemId])
+
+  return (
+    <Sheet ref={ref} title="Previous sessions" snapPoints={['50%']}>
+      <BottomSheetScrollView
+        contentContainerStyle={{ paddingBottom: spacing.xxl }}
+        onLayout={() => {
+          if (sessions === null) load()
+        }}
+      >
+        {sessions === null ? (
+          <AppText variant="meta" color={colors.textMuted} style={{ paddingVertical: spacing.lg }}>
+            Loading…
+          </AppText>
+        ) : sessions.length === 0 ? (
+          <AppText variant="meta" color={colors.textMuted} style={{ paddingVertical: spacing.lg }}>
+            No recent sessions for this book.
+          </AppText>
+        ) : (
+          sessions.map((s) => (
+            <Touchable
+              key={s.id}
+              style={styles.sessionRow}
+              onPress={() => void onJump(s.currentTime)}
+            >
+              <Icon name={icons.recent} size={20} color={colors.textMuted} />
+              <View style={{ flex: 1 }}>
+                <AppText variant="meta">
+                  {new Date(s.updatedAt).toLocaleDateString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                  {' · '}
+                  {formatDuration(s.timeListening)} listened
+                </AppText>
+              </View>
+              <AppText variant="mono" color={colors.textMuted}>
+                {formatTimestamp(s.currentTime)}
+              </AppText>
+            </Touchable>
+          ))
+        )}
+      </BottomSheetScrollView>
+    </Sheet>
+  )
+}
+
+// ---- Overflow bits ----
+
+function SheetRow({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: (typeof icons)[keyof typeof icons]
+  label: string
+  onPress: () => void
+}) {
+  const colors = useColors()
+  const styles = useStyles()
+  return (
+    <Touchable style={styles.sheetRow} onPress={onPress}>
+      <Icon name={icon} size={21} color={colors.textMuted} />
+      <AppText variant="body">{label}</AppText>
+    </Touchable>
+  )
+}
+
+function FileInfoLine({ detail }: { detail: ABSLibraryItemDetail }) {
+  const colors = useColors()
+  const files = detail.media.audioFiles
+  if (files.length === 0) return null
+  const first = files[0]
+  const parts = [
+    `${files.length} file${files.length === 1 ? '' : 's'}`,
+    first.codec ? first.codec.toUpperCase() : null,
+    first.bitRate ? `${Math.round(first.bitRate / 1000)} kbps` : null,
+    formatBytes(detail.media.size) || null,
+  ].filter(Boolean)
+  return (
+    <AppText variant="mono" color={colors.textFaint} style={{ paddingTop: spacing.md }}>
+      {parts.join(' · ')}
+    </AppText>
+  )
+}
+
+// ---- Cover zoom ----
+
+function CoverZoom({
+  visible,
+  itemId,
+  title,
+  hue,
+  onClose,
+}: {
+  visible: boolean
+  itemId: string
+  title: string
+  hue: string
+  onClose: () => void
+}) {
+  const styles = useStyles()
+  const { width } = useWindowDimensions()
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.zoomScrim} onPress={onClose}>
+        <Cover
+          uri={coverUrl(itemId)}
+          size={width - spacing.xl * 2}
+          radius={radius.sheet}
+          fallback={{ hue, initial: title.charAt(0).toUpperCase(), title }}
+        />
+      </Pressable>
+    </Modal>
+  )
+}
+
+// ---- Header ----
+
+function Header({
+  onBack,
+  bookmarkCount = 0,
+  onBookmarks,
+  onOverflow,
+}: {
+  onBack: () => void
+  bookmarkCount?: number
+  onBookmarks?: () => void
+  onOverflow?: () => void
+}) {
+  const colors = useColors()
+  const styles = useStyles()
   return (
     <View style={styles.header}>
       <IconButton name={icons.back} onPress={onBack} style={styles.headerBtn} />
+      <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+        {onBookmarks && bookmarkCount > 0 ? (
+          <View>
+            <IconButton
+              name={icons.bookmarks}
+              size={20}
+              onPress={onBookmarks}
+              style={styles.headerBtn}
+            />
+            <View style={styles.badge}>
+              <AppText variant="caption" color={colors.onAccent} style={styles.badgeText}>
+                {bookmarkCount}
+              </AppText>
+            </View>
+          </View>
+        ) : null}
+        {onOverflow ? (
+          <IconButton name={icons.more} onPress={onOverflow} style={styles.headerBtn} />
+        ) : null}
+      </View>
     </View>
   )
 }
 
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
-    header: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm,
+    },
     headerBtn: {
       width: 42,
       height: 42,
@@ -400,24 +961,31 @@ const makeStyles = (colors: Palette) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-    hero: { alignItems: 'center', paddingHorizontal: spacing.xl, gap: spacing.xs },
-    title: { textAlign: 'center', marginTop: spacing.md },
-    seriesCard: {
+    badge: {
+      position: 'absolute',
+      top: -3,
+      right: -3,
+      minWidth: 17,
+      height: 17,
+      borderRadius: 9,
+      paddingHorizontal: 4,
+      backgroundColor: colors.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    badgeText: { fontSize: 10, fontWeight: '700', lineHeight: 12 },
+    hero: { alignItems: 'center', paddingHorizontal: spacing.xl },
+    title: { textAlign: 'center', marginTop: spacing.lg },
+    subtitle: { textAlign: 'center', marginTop: spacing.xs, fontSize: 14 },
+    byline: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.md,
-      marginHorizontal: spacing.lg,
-      marginTop: spacing.lg,
-      padding: spacing.md,
-      borderRadius: radius.card,
-      backgroundColor: colors.card,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.hairline,
+      gap: spacing.sm,
+      marginTop: spacing.sm,
     },
-    seriesCovers: { width: 56, height: 46 },
     statusCard: {
       marginHorizontal: spacing.lg,
-      marginTop: spacing.md,
+      marginTop: spacing.lg,
       padding: spacing.md,
       borderRadius: radius.card,
       backgroundColor: colors.card,
@@ -438,8 +1006,40 @@ const makeStyles = (colors: Palette) =>
       overflow: 'hidden',
     },
     progressFill: { height: '100%', backgroundColor: colors.accent, borderRadius: 3 },
-    playBtn: { marginHorizontal: spacing.lg, marginTop: spacing.md },
+    ctaRow: {
+      flexDirection: 'row',
+      gap: spacing.sm + 2,
+      marginHorizontal: spacing.lg,
+      marginTop: spacing.md,
+    },
+    square: {
+      width: 52,
+      borderRadius: radius.card,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 2,
+    },
+    squareActive: {
+      backgroundColor: colors.accentWash,
+      borderColor: colors.accent,
+    },
     section: { paddingHorizontal: spacing.lg, marginTop: spacing.xl },
+    seriesCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      marginHorizontal: spacing.lg,
+      marginTop: spacing.lg,
+      padding: spacing.md,
+      borderRadius: radius.card,
+      backgroundColor: colors.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    seriesCovers: { width: 56, height: 46 },
     chaptersHeader: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -450,30 +1050,53 @@ const makeStyles = (colors: Palette) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.sm,
-      paddingVertical: spacing.sm,
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.xs,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.hairline,
     },
-    sheetChapterRow: {
+    chapterRowNow: {
+      backgroundColor: colors.rowNow,
+      borderRadius: radius.row,
+      borderBottomWidth: 0,
+      paddingHorizontal: spacing.md,
+      marginHorizontal: -spacing.sm,
+    },
+    bookmarkRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.xs,
+    },
+    bookmarkTap: {
+      flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.md,
       paddingVertical: spacing.md,
     },
-    statStrip: {
+    sessionRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      marginHorizontal: spacing.lg,
-      marginTop: spacing.xl,
-      padding: spacing.lg,
-      borderRadius: radius.card,
-      backgroundColor: colors.card,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.hairline,
+      gap: spacing.md,
+      paddingVertical: spacing.md,
     },
-    statDivider: {
-      width: StyleSheet.hairlineWidth,
-      height: '100%',
-      backgroundColor: colors.hairline,
+    sheetRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.lg,
+      paddingVertical: spacing.md + 2,
+    },
+    zoomScrim: {
+      flex: 1,
+      backgroundColor: 'rgba(10,9,8,0.92)',
+      alignItems: 'center',
+      justifyContent: 'center',
     },
   })
+
+// Memoized stylesheet for the active theme, shared by the section components.
+function useStyles() {
+  const colors = useColors()
+  return useMemo(() => makeStyles(colors), [colors])
+}
