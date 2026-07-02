@@ -114,6 +114,14 @@ export interface SettingsState {
   playerActions: PlayerActionPref[]
   playerActionsIconOnly: boolean
 
+  // Social / community (account). Tri-state presence sharing: null = never chose
+  // (follow the server's community default, which ships OFF for presence).
+  shareCurrentlyListening: boolean | null
+
+  // Social pops (device). Show a toast when playback crosses a club note; can be
+  // silenced on one device without leaving the club.
+  notePops: boolean
+
   // Device-scoped: when false, this device ignores account settings pulled from
   // the server and runs on its local values only (see queueSync.ts).
   useSharedSettings: boolean
@@ -146,6 +154,9 @@ let state: SettingsState = {
 
   playerActions: DEFAULT_PLAYER_ACTIONS,
   playerActionsIconOnly: false,
+
+  shareCurrentlyListening: null,
+  notePops: true,
 
   useSharedSettings: true,
 }

@@ -20,6 +20,27 @@ const UNAVAILABLE_FINISHED_BY: HSFinishedByResponse = { available: false, users:
 const UNAVAILABLE_LISTENING_NOW: HSListeningNowResponse = { available: false, users: [] }
 const UNAVAILABLE_LISTENING_NOW_BULK: HSListeningNowBulkResponse = { available: false, byItem: {} }
 
+/** Instance-wide community defaults, plus whether the caller may edit them
+ *  (admin). Used so the presence-sharing toggle can show the inherited default
+ *  the user follows when they've made no explicit choice. */
+export interface CommunityConfig {
+  /** Default reading-list sharing (opt-out on by default). */
+  defaultShare: boolean
+  /** Default presence sharing (ships OFF - more sensitive than a reading list). */
+  defaultShareListening: boolean
+  notesEnabled: boolean
+  clubsEnabled: boolean
+  canEdit: boolean
+}
+
+const DEFAULT_COMMUNITY_CONFIG: CommunityConfig = {
+  defaultShare: true,
+  defaultShareListening: false,
+  notesEnabled: true,
+  clubsEnabled: true,
+  canEdit: false,
+}
+
 export async function getLeaderboard(window?: LeaderboardWindow): Promise<HSLeaderboardResponse> {
   const session = getSession()
   if (!session) return UNAVAILABLE_LEADERBOARD
@@ -93,5 +114,25 @@ export async function getListeningNowBulk(
     return (await res.json()) as HSListeningNowBulkResponse
   } catch {
     return UNAVAILABLE_LISTENING_NOW_BULK
+  }
+}
+
+/**
+ * The instance's community defaults, so the presence-sharing toggle can show the
+ * inherited default. Degrades to a sensible default shape (presence OFF, notes/
+ * clubs on) on any failure so the settings screen still renders.
+ */
+export async function getCommunityConfig(): Promise<CommunityConfig> {
+  const session = getSession()
+  if (!session) return DEFAULT_COMMUNITY_CONFIG
+  const { serverUrl, token } = session
+  try {
+    const res = await fetch(`${serverUrl}/hs/social/community-config`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) return DEFAULT_COMMUNITY_CONFIG
+    return { ...DEFAULT_COMMUNITY_CONFIG, ...((await res.json()) as Partial<CommunityConfig>) }
+  } catch {
+    return DEFAULT_COMMUNITY_CONFIG
   }
 }

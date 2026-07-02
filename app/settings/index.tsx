@@ -44,6 +44,7 @@ const GROUPS: { label: string; items: MenuItem[] }[] = [
   {
     label: 'HearthShelf',
     items: [
+      { icon: 'person', title: 'Social', desc: 'Listening-now sharing and club note pops.', href: '/settings/social' },
       { icon: 'hub', title: 'Connections', desc: 'Hardcover and external links.', href: '/settings/connections' },
       { icon: 'dns', title: 'My servers', desc: 'Switch and manage linked servers.', href: '/settings/servers' },
     ],
