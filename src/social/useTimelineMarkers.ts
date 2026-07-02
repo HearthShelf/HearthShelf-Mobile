@@ -8,17 +8,9 @@
  * anonymous ticks - the server withholds their author, so the marker does too.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { HSNote, HSNoteStub, TimelineMarker } from '@hearthshelf/core'
+import type { HSNote, HSNoteStub, MarkerItem, TimelineMarker } from '@hearthshelf/core'
 import { clusterTimelineMarkers } from '@hearthshelf/core'
 import { getNotes } from '@/api/notes'
-
-interface MarkerItem {
-  id: string
-  timeSec: number
-  kind: 'note' | 'stub'
-  userId?: string
-  username?: string
-}
 
 export function useTimelineMarkers(
   itemId: string | null,
