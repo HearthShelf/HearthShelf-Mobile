@@ -21,6 +21,7 @@ import { clearTrack } from '@/player/store'
 import { clearAutoSession } from '@/player/autoBridge'
 import { stopQueueSync } from '@/player/queueSync'
 import { stopClubSync } from '@/player/clubSync'
+import { ensureNotificationChannels } from '@/lib/notifications'
 import { fonts } from '@/ui/theme'
 import { ThemeProvider, useColors, useTheme } from '@/ui/ThemeProvider'
 
@@ -29,6 +30,11 @@ void SplashScreen.preventAutoHideAsync()
 // Cross-fade the OS static logo out (rather than a hard cut) so it dissolves into
 // our animated hearth splash, whose first frame is the same logo on the same bg.
 SplashScreen.setOptions({ duration: 220, fade: true })
+
+// Create the club-notes notification channel once at app start (Phase 7
+// foundation - see docs/social.md). No permission prompt: POST_NOTIFICATIONS
+// is already requested by PlayerHost on Android 13+.
+void ensureNotificationChannels()
 
 // Dismiss the native OS splash exactly once, the moment the hearth splash reports
 // its first frame is on screen. Hiding any earlier (e.g. on root layout) uncovers

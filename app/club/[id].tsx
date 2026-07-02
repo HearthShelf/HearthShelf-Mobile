@@ -62,7 +62,12 @@ export default function ClubRoomScreen() {
   const router = useRouter()
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
-  const { id } = useLocalSearchParams<{ id: string }>()
+  // `note` is an optional deep-link param (hearthshelf://club/:id?note=:noteId),
+  // used by Phase 7 note-pop notifications - see docs/social.md. Scrolling to
+  // the note on open is a later phase; this just declares the param so the
+  // route/type accepts it.
+  const { id, note: deepLinkNoteId } = useLocalSearchParams<{ id: string; note?: string }>()
+  void deepLinkNoteId
   const { message, show } = useToast()
   const meId = getMeId()
 
