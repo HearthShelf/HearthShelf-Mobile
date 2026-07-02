@@ -19,6 +19,7 @@ import { setSession, setLastServerId, getLastServerId } from './session'
 import { CLERK_JWT_TEMPLATE } from '@/lib/config'
 import { setAutoSession } from '@/player/autoBridge'
 import { startQueueSync } from '@/player/queueSync'
+import { startClubSync } from '@/player/clubSync'
 import { ensureDeviceId } from '@/store/settings'
 import type { SplashServer } from '@/ui/SplashScreen'
 
@@ -75,6 +76,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         await ensureDeviceId()
         setAutoSession(serverUrl, token)
         startQueueSync()
+        startClubSync()
         setStatus({ phase: 'ready', serverName: server.name })
       } catch (e) {
         setStatus({ phase: 'error', message: (e as Error).message })

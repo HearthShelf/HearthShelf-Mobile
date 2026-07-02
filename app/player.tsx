@@ -76,6 +76,9 @@ import {
 import { AddToListSheet } from '@/player/AddToListSheet'
 import { QueueSheet } from '@/player/QueueSheet'
 import { buildActions, type ActionContext } from '@/player/actions'
+import { PlayerNotesSheet, type PlayerNotesSheetHandle } from '@/social/PlayerNotesSheet'
+import { TimelineMarkers } from '@/social/TimelineMarkers'
+import { useTimelineMarkers } from '@/social/useTimelineMarkers'
 import type { PlayerActionKey } from '@/store/settings'
 
 const HEARTH_BG = require('../assets/images/sitting-in-the-hearth.webp')
@@ -106,6 +109,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const bookmarksRef = useRef<SheetHandle>(null)
   const addToListRef = useRef<SheetHandle>(null)
   const queueRef = useRef<SheetHandle>(null)
+  const notesRef = useRef<PlayerNotesSheetHandle>(null)
 
   const duration = nowPlaying?.duration ?? 0
   const { bookmarks, addBookmark } = useBookmarks(nowPlaying?.itemId ?? null)
@@ -167,6 +171,14 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // so progress reads as flowing time. Computed before the no-track early return
   // (hooks must run unconditionally).
   const bookProgress = duration > 0 ? Math.min(1, Math.max(0, position / duration)) : 0
+  // Timeline note markers on the seek bar. Suppressed in immersive/car mode
+  // (distraction; the car UI is native anyway). Hook runs unconditionally.
+  const timelineMarkers = useTimelineMarkers(
+    nowPlaying?.itemId ?? null,
+    duration,
+    position,
+    !immersive,
+  )
   const bookBar = useSharedValue(bookProgress)
   useEffect(() => {
     bookBar.value = withTiming(bookProgress, {
@@ -272,6 +284,8 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         return bookmarksRef.current?.present()
       case 'addList':
         return addToListRef.current?.present()
+      case 'notes':
+        return notesRef.current?.present()
       case 'details':
         router.push(`/item/${nowPlaying.itemId}`)
         return
@@ -400,6 +414,13 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         </AppText>
 
         <View style={styles.scrub}>
+          {!immersive && (
+            <TimelineMarkers
+              markers={timelineMarkers}
+              onOpenNote={(timeSec) => notesRef.current?.presentAt(timeSec)}
+              onAheadTeaser={(timeSec) => toast.show(`A note awaits at ${formatTimestamp(timeSec)}`)}
+            />
+          )}
           <Scrubber
             ratio={chRatio}
             playing={isPlaying}
@@ -530,6 +551,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         onSeek={requestSeek}
       />
       <BookmarksSheet ref={bookmarksRef} itemId={nowPlaying.itemId} onSeek={requestSeek} />
+      <PlayerNotesSheet ref={notesRef} onToast={(msg) => toast.show(msg)} />
       {libraryId && (
         <AddToListSheet
           ref={addToListRef}

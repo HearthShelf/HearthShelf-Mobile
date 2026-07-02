@@ -119,8 +119,7 @@ export function buildActions(ctx: ActionContext): Record<PlayerActionKey, Player
       key: 'notes',
       icon: icons.notes,
       label: 'Notes',
-      comingSoon: true,
-      onPress: () => ctx.comingSoon('Notes'),
+      onPress: () => ctx.present('notes'),
     },
   }
 }
@@ -140,5 +139,5 @@ export const ACTION_META: Record<
   cast: { icon: icons.cast, label: 'Cast', comingSoon: true },
   carMode: { icon: icons.carMode, label: 'Car mode', comingSoon: true },
   download: { icon: icons.download, label: 'Download', comingSoon: true },
-  notes: { icon: icons.notes, label: 'Notes', comingSoon: true },
+  notes: { icon: icons.notes, label: 'Notes' },
 }

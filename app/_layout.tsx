@@ -12,12 +12,15 @@ import { tokenCache } from '@/lib/tokenCache'
 import { CLERK_PUBLISHABLE_KEY } from '@/lib/config'
 import { PlayerHost } from '@/player/PlayerHost'
 import { MiniPlayerDock } from '@/player/MiniPlayerDock'
+import { PopToast } from '@/social/PopToast'
 import { SplashScreen as HearthSplash, type SplashPhase } from '@/ui/SplashScreen'
 import { ConnectionProvider, useConnection } from '@/api/ConnectionProvider'
 import { clearSession } from '@/api/session'
+import { clearMeId } from '@/api/me'
 import { clearTrack } from '@/player/store'
 import { clearAutoSession } from '@/player/autoBridge'
 import { stopQueueSync } from '@/player/queueSync'
+import { stopClubSync } from '@/player/clubSync'
 import { fonts } from '@/ui/theme'
 import { ThemeProvider, useColors, useTheme } from '@/ui/ThemeProvider'
 
@@ -90,6 +93,8 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
     clearTrack()
     clearAutoSession()
     stopQueueSync()
+    stopClubSync()
+    clearMeId()
     await clearSession()
     await signOut()
     router.replace('/sign-in')
@@ -190,6 +195,8 @@ export default function RootLayout() {
                     player surfaces and settings). Inside the gate so the boot
                     splash still covers it. */}
                 <MiniPlayerDock />
+                {/* Note-pop toasts fired by the club watcher (notePops.ts). */}
+                <PopToast />
               </AuthGate>
               {/* Persistent audio engine - mounted once, never unmounted. */}
               <PlayerHost />

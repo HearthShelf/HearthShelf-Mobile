@@ -28,6 +28,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import type { HSClubBook, HSClubDetail, HSClubMember, HSNote } from '@hearthshelf/core'
 import { coverHue, formatTimestamp, sortMembersByProgress } from '@hearthshelf/core'
 import { getClub, setClubMembership, markClubRead, archiveClub, kickClubMember } from '@/api/clubs'
+import { holdClubPolling } from '@/player/clubSync'
 import { postNote, deleteNote } from '@/api/notes'
 import { getMeId } from '@/api/me'
 import { coverUrl, avatarUrl } from '@/api/abs'
@@ -120,6 +121,10 @@ export default function ClubRoomScreen() {
     const t = setInterval(() => void load(), ROOM_POLL_MS)
     return () => clearInterval(t)
   }, [load])
+
+  // While the room is open, force the club/notes background poll on so the pop
+  // watcher's stubs stay fresh even if the playing book isn't this club's book.
+  useEffect(() => holdClubPolling(), [])
 
   const goToTab = (name: string) => {
     router.dismissAll?.()
