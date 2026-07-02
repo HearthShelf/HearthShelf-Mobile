@@ -168,6 +168,14 @@ export function narratorImageUrl(name: string): string {
   return mediaUrl(`/hs/narrators/${encodeURIComponent(name)}/image`)
 }
 
+/** A user's HearthShelf profile photo (NOT ABS - lives at /hs/avatars/:userId,
+ *  public GET so no token is required, but mediaUrl's session-gated '' fallback
+ *  still applies mid server-switch). 404s to Gravatar or initials server-side;
+ *  the client just falls back to the Avatar component's initials on load failure. */
+export function avatarUrl(userId: string): string {
+  return mediaUrl(`/hs/avatars/${encodeURIComponent(userId)}`)
+}
+
 /** An author's books (for the group drilldown) - richer than the library list. */
 export async function getAuthorDetail(authorId: string): Promise<ABSAuthorDetail> {
   return absRequest<ABSAuthorDetail>(`/api/authors/${authorId}?include=items`)
