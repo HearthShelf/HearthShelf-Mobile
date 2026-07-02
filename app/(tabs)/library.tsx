@@ -974,9 +974,7 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
   const sorted = useMemo(() => {
     if (!groups) return groups
     const rows = [...groups]
-    rows.sort((a, b) =>
-      sort === 'count' ? a.count - b.count : a.name.localeCompare(b.name),
-    )
+    rows.sort((a, b) => (sort === 'count' ? a.count - b.count : a.name.localeCompare(b.name)))
     if (desc) rows.reverse()
     return rows
   }, [groups, sort, desc])
@@ -1056,48 +1054,48 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
         data={sorted}
         keyExtractor={(g) => g.key}
         contentContainerStyle={{ padding: spacing.md, paddingBottom: 140 }}
-      renderItem={({ item }) => (
-        <Touchable
-          style={styles.groupRow}
-          onPress={() =>
-            router.push(
-              mode === 'series'
-                ? `/series/${encodeURIComponent(item.key)}?libraryId=${encodeURIComponent(libraryId)}`
-                : `/group/${mode}/${encodeURIComponent(item.key)}?libraryId=${encodeURIComponent(libraryId)}&name=${encodeURIComponent(item.name)}`,
-            )
-          }
-        >
-          {item.avatarUri !== undefined ? (
-            // Authors/narrators: a single round avatar, centered-initials fallback.
-            <Avatar uri={item.avatarUri} size={48} name={item.name} hue={coverHue(item.key)} />
-          ) : (
-            <View style={styles.groupCovers}>
-              {item.covers.slice(0, 3).map((book, i) => (
-                <Cover
-                  key={book.id}
-                  uri={coverUrl(book.id)}
-                  size={46}
-                  radius={7}
-                  style={{ position: 'absolute', left: i * 16, zIndex: 3 - i }}
-                  fallback={{
-                    hue: coverHue(book.id),
-                    initial: itemTitle(book).charAt(0).toUpperCase(),
-                  }}
-                />
-              ))}
+        renderItem={({ item }) => (
+          <Touchable
+            style={styles.groupRow}
+            onPress={() =>
+              router.push(
+                mode === 'series'
+                  ? `/series/${encodeURIComponent(item.key)}?libraryId=${encodeURIComponent(libraryId)}`
+                  : `/group/${mode}/${encodeURIComponent(item.key)}?libraryId=${encodeURIComponent(libraryId)}&name=${encodeURIComponent(item.name)}`,
+              )
+            }
+          >
+            {item.avatarUri !== undefined ? (
+              // Authors/narrators: a single round avatar, centered-initials fallback.
+              <Avatar uri={item.avatarUri} size={48} name={item.name} hue={coverHue(item.key)} />
+            ) : (
+              <View style={styles.groupCovers}>
+                {item.covers.slice(0, 3).map((book, i) => (
+                  <Cover
+                    key={book.id}
+                    uri={coverUrl(book.id)}
+                    size={46}
+                    radius={7}
+                    style={{ position: 'absolute', left: i * 16, zIndex: 3 - i }}
+                    fallback={{
+                      hue: coverHue(book.id),
+                      initial: itemTitle(book).charAt(0).toUpperCase(),
+                    }}
+                  />
+                ))}
+              </View>
+            )}
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <AppText variant="label" numberOfLines={1}>
+                {item.name}
+              </AppText>
+              <AppText variant="caption" color={colors.textMuted}>
+                {item.sub}
+              </AppText>
             </View>
-          )}
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <AppText variant="label" numberOfLines={1}>
-              {item.name}
-            </AppText>
-            <AppText variant="caption" color={colors.textMuted}>
-              {item.sub}
-            </AppText>
-          </View>
-          <IconButton name={icons.chevronRight} color={colors.textMuted} />
-        </Touchable>
-      )}
+            <IconButton name={icons.chevronRight} color={colors.textMuted} />
+          </Touchable>
+        )}
       />
     </>
   )
@@ -1115,16 +1113,11 @@ function GroupSortBtn({
   onPress: () => void
 }) {
   return (
-    <Touchable
-      style={[styles.groupSortBtn, active && styles.groupSortBtnActive]}
-      onPress={onPress}
-    >
+    <Touchable style={[styles.groupSortBtn, active && styles.groupSortBtnActive]} onPress={onPress}>
       <AppText variant="caption" color={active ? colors.text : colors.textMuted}>
         {label}
       </AppText>
-      {active && (
-        <Icon name={desc ? icons.collapse : icons.expand} size={16} color={colors.text} />
-      )}
+      {active && <Icon name={desc ? icons.collapse : icons.expand} size={16} color={colors.text} />}
     </Touchable>
   )
 }
