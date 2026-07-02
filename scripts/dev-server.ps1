@@ -5,11 +5,11 @@
 .DESCRIPTION
   For JS/TS-only work: edit React Native code and see it update on the device via
   Fast Refresh, no rebuild. This does NOT build or install - it assumes the debug
-  dev-client APK is already on the device (run ./scripts/run-emulator.ps1 once to
+  dev-client APK is already on the device (run ./scripts/deploy.ps1 once to
   get it there). If the app isn't installed yet, this will tell you.
 
   Steps:
-    1. pick the device (auto or menu) - same picker as run-emulator.ps1
+    1. pick the device (auto or menu) - same picker as deploy.ps1
     2. adb reverse tcp:8081 - so the device reaches Metro on your machine
     3. (optional) launch the app
     4. start Metro (npx expo start --dev-client) and stay in the foreground
@@ -19,7 +19,7 @@
   Ctrl+C stops Metro.
 
   Native changes (Kotlin under plugins/hearthshelf-auto, config plugin, adding a
-  native module) are NOT picked up here - those need ./scripts/run-emulator.ps1
+  native module) are NOT picked up here - those need ./scripts/deploy.ps1
   -Prebuild to rebuild the APK.
 
 .PARAMETER Serial
@@ -51,7 +51,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# --- config (matches run-emulator.ps1) ---
+# --- config (matches deploy.ps1) ---
 $Package = 'com.hearthshelf.mobile'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 
@@ -62,7 +62,7 @@ if (-not (Test-Path $adb)) { $adb = 'adb' }
 
 function Write-Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 
-# --- device selection (same logic as run-emulator.ps1) ---
+# --- device selection (same logic as deploy.ps1) ---
 Write-Step 'Finding devices'
 $attached = @(
   (& $adb devices) |
@@ -72,7 +72,7 @@ $attached = @(
 )
 
 if ($attached.Count -eq 0) {
-  throw 'No devices attached. Start the emulator (AVD "hs_auto") or plug in a phone with USB debugging on.'
+  throw 'No devices attached. Run ./scripts/boot-emulator.ps1 (AVD "hs_auto") or plug in a phone with USB debugging on.'
 }
 
 if ($Serial) {
@@ -102,7 +102,7 @@ Write-Host "Target: $Serial" -ForegroundColor Green
 $installed = (& $adb -s $Serial shell pm list packages $Package 2>$null)
 if (-not $installed) {
   Write-Host "WARNING: $Package isn't installed on $Serial." -ForegroundColor Yellow
-  Write-Host "  Run ./scripts/run-emulator.ps1 once to build + install the dev-client APK first." -ForegroundColor Yellow
+  Write-Host "  Run ./scripts/deploy.ps1 once to build + install the dev-client APK first." -ForegroundColor Yellow
 }
 
 # --- reverse the Metro port so the device can reach localhost:8081 ---

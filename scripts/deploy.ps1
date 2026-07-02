@@ -35,15 +35,15 @@
   plugged-in physical phone is never touched.
 
 .EXAMPLE
-  ./scripts/run-emulator.ps1
+  ./scripts/deploy.ps1
   JS-only change: build, install, launch on emulator-5554.
 
 .EXAMPLE
-  ./scripts/run-emulator.ps1 -Prebuild
+  ./scripts/deploy.ps1 -Prebuild
   Native (Kotlin/config-plugin) change: prebuild first, then build + install + launch.
 
 .EXAMPLE
-  ./scripts/run-emulator.ps1 -Prebuild -Clean
+  ./scripts/deploy.ps1 -Prebuild -Clean
   Native change plus a wiped CMake cache (the libworklets.so ninja fix).
 #>
 [CmdletBinding()]
@@ -90,7 +90,7 @@ $attached = @(
 )
 
 if ($attached.Count -eq 0) {
-  throw 'No devices attached. Start the emulator (AVD "hs_auto") or plug in a phone with USB debugging on.'
+  throw 'No devices attached. Run ./scripts/boot-emulator.ps1 (AVD "hs_auto") or plug in a phone with USB debugging on.'
 }
 
 if ($Serial) {
