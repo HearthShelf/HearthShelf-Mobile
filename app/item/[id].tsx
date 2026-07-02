@@ -39,7 +39,7 @@ import type {
   ABSMediaProgress,
   ABSSeries,
 } from '@hearthshelf/core'
-import type { HSFinishedByUser } from '@hearthshelf/core'
+import type { HSFinishedByUser, HSListeningNowUser } from '@hearthshelf/core'
 import { coverHue, formatDuration, formatTimestamp, stripHtml } from '@hearthshelf/core'
 import {
   avatarUrl,
@@ -49,7 +49,10 @@ import {
   getLibrarySeries,
   getRecentSessions,
 } from '@/api/abs'
-import { getFinishedBy } from '@/api/social'
+import { getFinishedBy, getListeningNow } from '@/api/social'
+import { getNotes } from '@/api/notes'
+import { NotesSheet } from '@/social/NotesSheet'
+import { ClubCard } from '@/social/ClubCard'
 import {
   getProgressState,
   subscribeProgress,
@@ -101,7 +104,16 @@ function formatBytes(bytes: number): string {
   return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`
 }
 
-type SectionKey = 'status' | 'cta' | 'about' | 'finishedBy' | 'series' | 'chapters'
+type SectionKey =
+  | 'status'
+  | 'cta'
+  | 'about'
+  | 'finishedBy'
+  | 'listeningNow'
+  | 'notes'
+  | 'club'
+  | 'series'
+  | 'chapters'
 
 export default function ItemDetailScreen() {
   const router = useRouter()
@@ -120,6 +132,7 @@ export default function ItemDetailScreen() {
   const [bookmarks, setBookmarks] = useState<ABSBookmark[]>([])
   const [series, setSeries] = useState<ABSSeries | null>(null)
   const [finishedBy, setFinishedBy] = useState<HSFinishedByUser[]>([])
+  const [listeningNow, setListeningNow] = useState<HSListeningNowUser[]>([])
   const [error, setError] = useState<string | null>(null)
   const [zoomed, setZoomed] = useState(false)
   // Increments each time the book is marked finished, firing the ember burst.
@@ -130,6 +143,7 @@ export default function ItemDetailScreen() {
   const bookmarksSheetRef = useRef<SheetRef>(null)
   const sessionsSheetRef = useRef<SheetRef>(null)
   const addToListRef = useRef<SheetHandle>(null)
+  const notesSheetRef = useRef<SheetHandle>(null)
 
   useEffect(() => {
     if (!id) return
@@ -165,6 +179,14 @@ export default function ItemDetailScreen() {
             setFinishedBy(res.available ? res.users : [])
           })
           .catch(() => setFinishedBy([]))
+
+        // Who's listening recently; hidden when unavailable or nobody's sharing.
+        getListeningNow(id)
+          .then((res) => {
+            if (cancelled) return
+            setListeningNow(res.available ? res.users : [])
+          })
+          .catch(() => setListeningNow([]))
       } catch (e) {
         if (!cancelled) setError((e as Error).message)
       }
@@ -309,10 +331,10 @@ export default function ItemDetailScreen() {
 
   // The job of the screen changes with listening state; so does the order.
   const sectionOrder: SectionKey[] = isInProgress
-    ? ['status', 'cta', 'chapters', 'series', 'about', 'finishedBy']
+    ? ['status', 'cta', 'listeningNow', 'chapters', 'club', 'notes', 'series', 'about', 'finishedBy']
     : isFinished
-      ? ['status', 'series', 'cta', 'about', 'finishedBy', 'chapters']
-      : ['cta', 'about', 'finishedBy', 'series', 'chapters']
+      ? ['status', 'series', 'cta', 'club', 'notes', 'about', 'finishedBy', 'listeningNow', 'chapters']
+      : ['cta', 'about', 'listeningNow', 'club', 'notes', 'finishedBy', 'series', 'chapters']
 
   const sections: Record<SectionKey, React.ReactNode> = {
     status: (
@@ -361,6 +383,15 @@ export default function ItemDetailScreen() {
       />
     ),
     finishedBy: finishedBy.length > 0 ? <FinishedBySection key="finishedBy" users={finishedBy} /> : null,
+    listeningNow:
+      listeningNow.length > 0 ? <ListeningNowSection key="listeningNow" users={listeningNow} /> : null,
+    notes: (
+      <NotesSection
+        key="notes"
+        onOpen={() => notesSheetRef.current?.present()}
+      />
+    ),
+    club: <ClubCard key="club" libraryItemId={detail.id} onToast={show} />,
     series: series ? (
       <SeriesCard
         key="series"
@@ -496,6 +527,14 @@ export default function ItemDetailScreen() {
         libraryId={detail.libraryId}
         libraryItemId={detail.id}
         onAdded={show}
+      />
+
+      <NotesSheet
+        ref={notesSheetRef}
+        libraryItemId={detail.id}
+        position={currentTime}
+        finished={isFinished}
+        onToast={show}
       />
 
       <CoverZoom
@@ -730,6 +769,81 @@ function FinishedBySection({ users }: { users: HSFinishedByUser[] }) {
         ))}
       </View>
     </View>
+  )
+}
+
+// ---- Listening recently ----
+// Small avatar chips for who's listening to this book right now-ish, filtered
+// server-side by the shareCurrentlyListening presence setting. UI says
+// "recently", not "online" (presence has first-sync lag by design).
+
+function ListeningNowSection({ users }: { users: HSListeningNowUser[] }) {
+  const colors = useColors()
+  const styles = useStyles()
+  return (
+    <View style={styles.section}>
+      <AppText variant="eyebrow" color={colors.textMuted}>
+        {users.length} listening recently
+      </AppText>
+      <View style={styles.finishedByRow}>
+        {users.map((u) => (
+          <View key={u.userId} style={styles.finishedByChip}>
+            <View>
+              <Avatar uri={avatarUrl(u.userId)} size={28} name={u.username} hue={coverHue(u.userId)} />
+              <View style={styles.listeningPulse} />
+            </View>
+            <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
+              {u.username}
+            </AppText>
+          </View>
+        ))}
+      </View>
+    </View>
+  )
+}
+
+// ---- Notes opener ----
+// A compact opener that fetches a lightweight count and pushes into the full
+// NotesSheet. Hidden when notes are turned off on the server.
+
+function NotesSection({ onOpen }: { onOpen: () => void }) {
+  const colors = useColors()
+  const styles = useStyles()
+  const { id } = useLocalSearchParams<{ id: string }>()
+  const [enabled, setEnabled] = useState(true)
+  const [count, setCount] = useState(0)
+
+  useEffect(() => {
+    if (!id) return
+    let cancelled = false
+    // A position of 0 fetches only ungated/own notes for the count teaser; the
+    // real (position-gated) list loads when the sheet opens.
+    getNotes({ libraryItemId: id, position: 0 })
+      .then((res) => {
+        if (cancelled) return
+        setEnabled(res.enabled)
+        setCount(res.notes.length + res.hiddenAhead)
+      })
+      .catch(() => setEnabled(false))
+    return () => {
+      cancelled = true
+    }
+  }, [id])
+
+  if (!enabled) return null
+
+  return (
+    <Pressable style={styles.section} onPress={onOpen}>
+      <View style={styles.chaptersHeader}>
+        <AppText variant="title">Notes</AppText>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+          <AppText variant="caption" color={colors.textMuted}>
+            {count > 0 ? `${count} · View all` : 'Add the first'}
+          </AppText>
+          <Icon name={icons.chevronRight} size={18} color={colors.textMuted} />
+        </View>
+      </View>
+    </Pressable>
   )
 }
 
@@ -1152,6 +1266,18 @@ const makeStyles = (colors: Palette) =>
       marginTop: spacing.sm,
     },
     finishedByChip: { alignItems: 'center', width: 64, gap: spacing.xs },
+    // A small accent dot on the avatar's corner marking active listening.
+    listeningPulse: {
+      position: 'absolute',
+      right: -1,
+      bottom: -1,
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      backgroundColor: colors.accent,
+      borderWidth: 1.5,
+      borderColor: colors.scaffold,
+    },
     seriesCard: {
       flexDirection: 'row',
       alignItems: 'center',
