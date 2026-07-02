@@ -1,6 +1,8 @@
 <#
 .SYNOPSIS
-  Build the debug APK for the attached device (emulator or phone) and launch it.
+  Build an APK for the attached device (emulator or phone) and launch it. Debug
+  by default (loads JS from Metro); -Release builds a standalone APK that runs
+  unplugged with no bundler.
 
 .DESCRIPTION
   Wraps the local build/install/launch loop documented in TESTING.md so you don't
@@ -15,7 +17,7 @@
     1. pick the device (auto or menu) and its build ABI
     2. (optional) expo prebuild        - only for NATIVE changes (Kotlin / config plugin)
     3. (optional) clear native caches  - fixes the stale-CMake "libworklets.so" ninja error
-    4. gradlew :app:assembleDebug -PreactNativeArchitectures=<abi>
+    4. gradlew :app:assemble{Debug|Release} -PreactNativeArchitectures=<abi>
     5. adb install -r  (auto-uninstalls first if a version-downgrade blocks it)
     6. force-stop + launch the app
 
@@ -26,6 +28,11 @@
 .PARAMETER Clean
   Remove the worklets / expo-modules-core / app .cxx build caches before building.
   Use when the build fails with: ninja: error '...libworklets.so' ... missing and no known rule.
+
+.PARAMETER Release
+  Build :app:assembleRelease instead of debug. The release APK embeds
+  index.android.bundle, so it runs standalone (unplugged, no Metro). Signed with
+  the Expo default debug keystore - fine for sideload testing, not for the Play Store.
 
 .PARAMETER NoLaunch
   Build and install but don't launch the app.
@@ -45,12 +52,21 @@
 .EXAMPLE
   ./scripts/deploy.ps1 -Prebuild -Clean
   Native change plus a wiped CMake cache (the libworklets.so ninja fix).
+
+.EXAMPLE
+  ./scripts/deploy.ps1 -Release -Serial 58100DLCQ0039Z
+  Standalone release APK on a physical phone: embeds the JS bundle, runs unplugged
+  with no Metro. Use this for DHU / real-drive testing away from the PC.
 #>
 [CmdletBinding()]
 param(
   [switch]$Prebuild,
   [switch]$Clean,
   [switch]$NoLaunch,
+  # Build a standalone release APK (embeds index.android.bundle) instead of debug.
+  # Release runs unplugged with no Metro server. Debug (default) loads JS from Metro
+  # at localhost:8081 and needs `adb reverse` + a running bundler.
+  [switch]$Release,
   # Target device serial. Omit to auto-pick: one device -> use it; several ->
   # prompt to choose (emulator or a plugged-in phone). The build ABI follows the
   # picked device (x86_64 for emulators, arm64-v8a for real phones).
@@ -65,7 +81,10 @@ $ErrorActionPreference = 'Stop'
 $JdkPath = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot'
 $Package = 'com.hearthshelf.mobile'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$Apk = Join-Path $RepoRoot 'android\app\build\outputs\apk\debug\app-debug.apk'
+# Debug loads JS from Metro; release embeds the bundle and runs standalone.
+$Variant = if ($Release) { 'release' } else { 'debug' }
+$GradleTask = if ($Release) { ':app:assembleRelease' } else { ':app:assembleDebug' }
+$Apk = Join-Path $RepoRoot "android\app\build\outputs\apk\$Variant\app-$Variant.apk"
 
 # adb: prefer ANDROID_HOME/LOCALAPPDATA, fall back to PATH.
 $adb = if ($env:ANDROID_HOME) { Join-Path $env:ANDROID_HOME 'platform-tools\adb.exe' }
@@ -159,10 +178,10 @@ if ($Clean) {
 }
 
 # --- 3. build ---
-Write-Step "Building debug APK ($Abi only)"
+Write-Step "Building $Variant APK ($Abi only)"
 Push-Location (Join-Path $RepoRoot 'android')
 try {
-  & .\gradlew.bat :app:assembleDebug "-PreactNativeArchitectures=$Abi"
+  & .\gradlew.bat $GradleTask "-PreactNativeArchitectures=$Abi"
   if ($LASTEXITCODE -ne 0) { throw "Gradle build failed (exit $LASTEXITCODE)." }
 } finally { Pop-Location }
 

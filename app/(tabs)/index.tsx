@@ -33,6 +33,7 @@ import {
   getHSStats,
   getItemsInProgress,
   getLibraries,
+  getPersonalized,
   itemAuthor,
   itemTitle,
 } from '@/api/abs'
@@ -124,34 +125,73 @@ export default function HomeScreen() {
       .then(setStats)
       .catch(() => setStats(null))
 
-    // Discovery shelves come from HearthShelf's OWN taste engine, not ABS's
-    // cross-library personalized feed (which surfaces other household members'
-    // books). The engine is deterministic and offline - it always produces rows
-    // from the library + listening history, so there's content on first run with
-    // no QuestGiver setup needed.
+    // Home shelves = ABS's own-progress/own-library rows (Continue Listening,
+    // Recently Added) KEPT, but its recommendation rows (discover, listen-again)
+    // dropped and replaced with HearthShelf's OWN taste engine. ABS's discover
+    // feed mixes in other household members' books; ours is built from this
+    // user's library + listening history. The engine is deterministic and offline
+    // so it always produces rows - content on first run, no QuestGiver needed.
     const libs = await getLibraries()
     const firstBookLib = libs.find((l) => l.mediaType === 'book') ?? libs[0]
     if (firstBookLib) {
-      const items = await getAllLibraryItems(firstBookLib.id)
-      const progressMap = new Map(getProgressState().byId)
-      const { shelves: baseShelves } = buildDiscoverShelves(items, progressMap)
-      const byId = new Map(items.map((it) => [it.id, it] as const))
-      const ranked = rankDiscoverShelves(baseShelves, byId)
-      // Adapt the taste-engine shelves to the ABSShelf shape the Shelf renderer
-      // reads (id/label/type/entities).
-      const bookShelves: ABSShelf[] = ranked.map((s) => ({
-        id: s.id,
-        label: s.label,
-        type: 'book',
-        entities: s.items,
-      }))
+      // Taste-engine recommendation shelves from the full library (limit=0 so
+      // genres/narrator survive). Best-effort: a fetch failure just skips them.
+      let recShelves: ABSShelf[] = []
+      let carShelves: { id: string; label: string; items: ABSLibraryItem[] }[] = []
+      try {
+        const items = await getAllLibraryItems(firstBookLib.id)
+        const progressMap = new Map(getProgressState().byId)
+        const { shelves: baseShelves } = buildDiscoverShelves(items, progressMap)
+        const byId = new Map(items.map((it) => [it.id, it] as const))
+        const ranked = rankDiscoverShelves(baseShelves, byId)
+        recShelves = ranked.map((s) => ({
+          id: s.id,
+          label: s.label,
+          type: 'book',
+          entities: s.items,
+        }))
+        carShelves = ranked.map((s) => ({ id: s.id, label: s.label, items: s.items }))
+      } catch {
+        recShelves = []
+      }
+
+      // ABS's own-progress rows to keep: what the listener is mid-way through
+      // ("continue-listening") and the next book in a series they've started
+      // ("continue-series") lead; "recently-added" trails. ABS's recommendation /
+      // finished rows ("discover", "listen-again") are dropped - the taste engine
+      // replaces them. All three kept shelves are type 'book' in ABS.
+      const CONTINUE_IDS = ['continue-listening', 'continue-series']
+      const continueShelves: ABSShelf[] = []
+      let addedShelf: ABSShelf | null = null
+      try {
+        const personalized = await getPersonalized(firstBookLib.id)
+        // Preserve ABS's own ordering of the continue rows (listening before
+        // series, as ABS emits them).
+        for (const s of personalized) {
+          if (s.type !== 'book' || s.entities.length === 0) continue
+          if (CONTINUE_IDS.includes(s.id)) continueShelves.push(s)
+          else if (s.id === 'recently-added') addedShelf = s
+        }
+      } catch {
+        // Personalized is best-effort; the taste engine still carries Home.
+      }
+
+      // Order: Continue rows -> taste-engine recommendations -> Recently Added.
+      // Continue leads because it's what the listener is most likely to resume;
+      // the hero already spotlights the single top in-progress book.
+      const bookShelves: ABSShelf[] = [
+        ...continueShelves,
+        ...recShelves,
+        ...(addedShelf ? [addedShelf] : []),
+      ]
       setShelves(bookShelves)
-      // Publish the SAME taste-engine shelves as the car's Discover feed (the car
-      // can't run the engine itself, so it browses this phone-computed snapshot).
+
+      // Publish the taste-engine recommendation shelves as the car's Discover
+      // feed (the car can't run the engine itself, so it browses this snapshot).
       // Because the engine works offline/first-run, the car is populated even
       // before the user ever opens Discover or QuestGiver.
       setAutoDiscover(
-        ranked.map((s) => ({
+        carShelves.map((s) => ({
           id: s.id,
           label: s.label,
           items: s.items.map((it) => ({
