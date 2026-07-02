@@ -37,6 +37,7 @@ import type {
   ABSPlaylistsResponse,
 } from '@hearthshelf/core'
 import { computeListeningStats } from '@hearthshelf/core'
+import { setMeId } from './me'
 
 /** A page of library items plus the total count, for infinite scroll. */
 export interface LibraryItemsPage {
@@ -226,7 +227,11 @@ export async function getItemsInProgress(): Promise<ABSLibraryItem[]> {
 
 /** The caller's full progress list, for the Library screen's In progress/Finished filters. */
 export async function getMe(): Promise<ABSMeResponse> {
-  return absRequest<ABSMeResponse>('/api/me')
+  const me = await absRequest<ABSMeResponse>('/api/me')
+  // Cache the caller's own ABS id so social surfaces can identify their own
+  // notes and gate spoilers against their own position (see src/api/me.ts).
+  if (me?.id) setMeId(me.id)
+  return me
 }
 
 /** Mark an item finished or not finished (ABS PATCH /api/me/progress/:id). */
