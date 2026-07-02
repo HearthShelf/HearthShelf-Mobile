@@ -9,7 +9,7 @@
  * same way.
  */
 import { useMemo } from 'react'
-import { StyleSheet, View } from 'react-native'
+import { StyleSheet, View, type LayoutChangeEvent } from 'react-native'
 import type { HSNote } from '@hearthshelf/core'
 import { coverHue, formatTimestamp } from '@hearthshelf/core'
 import { avatarUrl } from '@/api/abs'
@@ -39,8 +39,10 @@ function NoteBubble({
   meId,
   isReply,
   canModerate,
+  highlighted,
   onReply,
   onDelete,
+  onLayout,
 }: {
   note: HSNote
   chapters: ChapterMark[]
@@ -48,8 +50,12 @@ function NoteBubble({
   isReply?: boolean
   /** Club owner / admin may delete any note; otherwise only own notes. */
   canModerate?: boolean
+  /** Deep-linked note to visually flag (from a note-pop notification tap). */
+  highlighted?: boolean
   onReply?: (note: HSNote) => void
   onDelete?: (note: HSNote) => void
+  /** Fires with this note's row layout so the parent can scroll it into view. */
+  onLayout?: (e: LayoutChangeEvent) => void
 }) {
   const colors = useColors()
   const styles = useStyles()
@@ -57,7 +63,7 @@ function NoteBubble({
   const stamp = stampLabel(note.timeSec, chapters)
   const canDelete = (mine || canModerate) && !!onDelete
   return (
-    <View style={[styles.bubble, isReply && styles.replyBubble]}>
+    <View style={[styles.bubble, isReply && styles.replyBubble, highlighted && styles.highlighted]} onLayout={onLayout}>
       <Avatar uri={avatarUrl(note.userId)} size={30} name={note.username} hue={coverHue(note.userId)} />
       <View style={{ flex: 1, minWidth: 0 }}>
         <View style={styles.metaRow}>
@@ -95,15 +101,21 @@ export function NoteThread({
   chapters = [],
   meId,
   canModerate,
+  highlightId,
   onReply,
   onDelete,
+  onNoteLayout,
 }: {
   notes: HSNote[]
   chapters?: ChapterMark[]
   meId: string
   canModerate?: boolean
+  /** Note id to highlight + report layout for (deep-link from a note-pop). */
+  highlightId?: string
   onReply?: (note: HSNote) => void
   onDelete?: (note: HSNote) => void
+  /** Fires the highlighted note's y within the thread so the caller can scroll. */
+  onNoteLayout?: (id: string, y: number) => void
 }) {
   // Group replies under their parents; keep top-level notes in createdAt order.
   const { tops, repliesByParent } = useMemo(() => {
@@ -125,29 +137,45 @@ export function NoteThread({
 
   return (
     <View>
-      {tops.map((n) => (
-        <View key={n.id}>
-          <NoteBubble
-            note={n}
-            chapters={chapters}
-            meId={meId}
-            canModerate={canModerate}
-            onReply={onReply}
-            onDelete={onDelete}
-          />
-          {(repliesByParent.get(n.id) ?? []).map((r) => (
+      {tops.map((n) => {
+        const replies = repliesByParent.get(n.id) ?? []
+        // Report this group's y when the deep-linked note is this note or one of
+        // its replies, so the caller scrolls the thread to it.
+        const groupHoldsTarget =
+          !!highlightId && (n.id === highlightId || replies.some((r) => r.id === highlightId))
+        return (
+          <View
+            key={n.id}
+            onLayout={
+              groupHoldsTarget && onNoteLayout
+                ? (e) => onNoteLayout(highlightId!, e.nativeEvent.layout.y)
+                : undefined
+            }
+          >
             <NoteBubble
-              key={r.id}
-              note={r}
+              note={n}
               chapters={chapters}
               meId={meId}
-              isReply
               canModerate={canModerate}
+              highlighted={n.id === highlightId}
+              onReply={onReply}
               onDelete={onDelete}
             />
-          ))}
-        </View>
-      ))}
+            {replies.map((r) => (
+              <NoteBubble
+                key={r.id}
+                note={r}
+                chapters={chapters}
+                meId={meId}
+                isReply
+                canModerate={canModerate}
+                highlighted={r.id === highlightId}
+                onDelete={onDelete}
+              />
+            ))}
+          </View>
+        )
+      })}
     </View>
   )
 }
@@ -166,6 +194,11 @@ const makeStyles = (colors: Palette) =>
       marginLeft: spacing.xl,
       borderBottomWidth: 0,
       paddingVertical: spacing.sm,
+    },
+    highlighted: {
+      backgroundColor: colors.accentWash,
+      borderRadius: 8,
+      paddingHorizontal: spacing.sm,
     },
     metaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
     actionsRow: {

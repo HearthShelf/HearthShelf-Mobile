@@ -63,11 +63,9 @@ export default function ClubRoomScreen() {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   // `note` is an optional deep-link param (hearthshelf://club/:id?note=:noteId),
-  // used by Phase 7 note-pop notifications - see docs/social.md. Scrolling to
-  // the note on open is a later phase; this just declares the param so the
-  // route/type accepts it.
+  // set by Phase 7 note-pop notifications - see docs/social.md. On open, the
+  // thread scrolls to and highlights that note (see scrollToDeepLink below).
   const { id, note: deepLinkNoteId } = useLocalSearchParams<{ id: string; note?: string }>()
-  void deepLinkNoteId
   const { message, show } = useToast()
   const meId = getMeId()
 
@@ -84,6 +82,31 @@ export default function ClubRoomScreen() {
   const membersSheetRef = useRef<SheetRef>(null)
   const historySheetRef = useRef<SheetRef>(null)
   const ownerSheetRef = useRef<SheetRef>(null)
+
+  // Deep-link scroll: when opened from a note-pop notification, scroll the thread
+  // to the note and briefly highlight it. `highlightId` clears after the flash so
+  // re-scrolling on later renders doesn't yank the view. A ref tracks whether we
+  // already scrolled for this note id, so the 15s poll re-render doesn't re-scroll.
+  const scrollRef = useRef<ScrollView>(null)
+  const [highlightId, setHighlightId] = useState<string | null>(deepLinkNoteId ?? null)
+  const scrolledForRef = useRef<string | null>(null)
+
+  // The chat section's y within the scroll content, plus the target note's y
+  // within the thread, combine into the absolute scroll offset. Captured lazily:
+  // whichever of the two fires last triggers the scroll.
+  const chatSectionYRef = useRef(0)
+  const noteYRef = useRef<number | null>(null)
+
+  const tryScrollToDeepLink = useCallback(() => {
+    if (!deepLinkNoteId || scrolledForRef.current === deepLinkNoteId) return
+    if (noteYRef.current == null) return
+    scrolledForRef.current = deepLinkNoteId
+    const y = chatSectionYRef.current + noteYRef.current
+    // Nudge up a little so the highlighted note isn't flush against the top.
+    scrollRef.current?.scrollTo({ y: Math.max(0, y - 80), animated: true })
+    // Clear the highlight after a moment so it reads as a flash, not a stuck state.
+    setTimeout(() => setHighlightId(null), 2400)
+  }, [deepLinkNoteId])
 
   // The book being viewed and whether the player is currently on it - drives
   // whether the composer stamps a timestamp.
@@ -253,6 +276,7 @@ export default function ClubRoomScreen() {
       />
 
       <ScrollView
+        ref={scrollRef}
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: spacing.xxl }}
         showsVerticalScrollIndicator={false}
@@ -307,7 +331,13 @@ export default function ClubRoomScreen() {
         ) : null}
 
         {/* Chat thread. */}
-        <View style={styles.chatSection}>
+        <View
+          style={styles.chatSection}
+          onLayout={(e) => {
+            chatSectionYRef.current = e.nativeEvent.layout.y
+            tryScrollToDeepLink()
+          }}
+        >
           <AppText variant="title" style={{ marginBottom: spacing.sm }}>
             Discussion
           </AppText>
@@ -321,8 +351,13 @@ export default function ClubRoomScreen() {
               chapters={chapters}
               meId={meId}
               canModerate={isOwner}
+              highlightId={highlightId ?? undefined}
               onReply={isMember ? (n) => setReplyTo(n) : undefined}
               onDelete={isMember ? removeNote : undefined}
+              onNoteLayout={(_, y) => {
+                noteYRef.current = y
+                tryScrollToDeepLink()
+              }}
             />
           )}
           {detail.notes.hiddenAhead > 0 ? (

@@ -22,6 +22,7 @@ import { clearAutoSession } from '@/player/autoBridge'
 import { stopQueueSync } from '@/player/queueSync'
 import { stopClubSync } from '@/player/clubSync'
 import { ensureNotificationChannels } from '@/lib/notifications'
+import { mountNoteForegroundHandler } from '@/social/noteEvents'
 import { fonts } from '@/ui/theme'
 import { ThemeProvider, useColors, useTheme } from '@/ui/ThemeProvider'
 
@@ -179,6 +180,10 @@ export default function RootLayout() {
     [fonts.mono]: require('../assets/fonts/GeistMono-VariableFont_wght.ttf'),
     [fonts.brand]: require('../assets/fonts/LibreBaskerville-VariableFont_wght.ttf'),
   })
+
+  // Handle a warm tap / reply on a club-note notification while the app is
+  // foreground (the cold-start + background paths are wired in index.js).
+  useEffect(() => mountNoteForegroundHandler(), [])
 
   // Keep the native OS splash up until fonts are ready AND the hearth splash has
   // painted its first frame (it calls SplashScreen.hideAsync itself). Hiding on
