@@ -40,6 +40,10 @@ export interface ActionContext {
   sleepDepletion: number | null
   /** Whether the current item is downloaded (drives the Download label/icon). */
   downloaded?: boolean
+  /** True while the current item is downloading (shows progress affordance). */
+  downloading?: boolean
+  /** Toggle download for the current item (start / cancel / remove). */
+  onDownload?: () => void
 }
 
 /**
@@ -111,9 +115,9 @@ export function buildActions(ctx: ActionContext): Record<PlayerActionKey, Player
     download: {
       key: 'download',
       icon: ctx.downloaded ? icons.downloadDone : icons.download,
-      label: ctx.downloaded ? 'Downloaded' : 'Download',
-      comingSoon: true,
-      onPress: () => ctx.comingSoon('Downloads'),
+      label: ctx.downloaded ? 'Downloaded' : ctx.downloading ? 'Downloading' : 'Download',
+      active: ctx.downloaded,
+      onPress: () => ctx.onDownload?.(),
     },
     notes: {
       key: 'notes',

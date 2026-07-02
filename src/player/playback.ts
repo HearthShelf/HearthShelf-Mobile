@@ -7,6 +7,8 @@
  */
 import { startPlay, mediaUrl, coverUrl, closeSession, syncSession } from '@/api/abs'
 import { loadTrack, getState, type NowPlaying } from './store'
+import { localSourceFor, applyAutoDownloads } from './downloads'
+import { getQueueState } from './queue'
 
 interface ActiveSession {
   sessionId: string
@@ -17,8 +19,18 @@ interface ActiveSession {
 let active: ActiveSession | null = null
 
 /** Start playback for an ABS library item id. Title/author fall back to the
- *  play-session's display fields, so the car can play an item with only its id. */
+ *  play-session's display fields, so the car can play an item with only its id.
+ *  Downloaded books play from local files, so they still work fully offline. */
 export async function playItemById(itemId: string): Promise<void> {
+  const local = localSourceFor(itemId)
+  if (local) {
+    try {
+      await playFromDownload(itemId)
+      return
+    } catch {
+      // Local files unexpectedly unusable - fall through to streaming.
+    }
+  }
   const session = await startPlay(itemId)
   const track = session.audioTracks[0]
   if (!track) throw new Error('no_audio_track')
@@ -49,6 +61,42 @@ export async function playItemById(itemId: string): Promise<void> {
     duration: session.duration,
     lastSyncedTime: session.currentTime,
   }
+
+  // Auto-download the book you just started (and prefetch the queue), per prefs.
+  applyAutoDownloads({
+    nowPlaying: { itemId, title: np.title, author: np.author },
+    queue: getQueueState().items,
+  })
+}
+
+/**
+ * Play a downloaded book from local files, no server session. Uses the first
+ * track's local file (the player host plays a single URL, matching how
+ * streaming already feeds audioTracks[0]). Progress isn't synced to the server
+ * while offline; `active` stays null so syncProgress() no-ops until the book is
+ * next opened online.
+ */
+async function playFromDownload(itemId: string): Promise<void> {
+  const local = localSourceFor(itemId)
+  if (!local) throw new Error('not_downloaded')
+  const first = local.tracks[0]
+  if (!first) throw new Error('no_local_track')
+
+  if (active) await safeClose()
+
+  const np: NowPlaying = {
+    itemId,
+    sessionId: '',
+    title: local.title,
+    author: local.author,
+    artworkUrl: local.coverUri ?? coverUrl(itemId),
+    url: first.uri,
+    duration: local.duration,
+    startPosition: 0,
+    chapters: local.chapters.map((c) => ({ title: c.title, start: c.start, end: c.end })),
+  }
+  loadTrack(np)
+  active = null
 }
 
 /**

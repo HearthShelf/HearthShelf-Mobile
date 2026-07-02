@@ -34,6 +34,7 @@ const GROUPS: { label: string; items: MenuItem[] }[] = [
     items: [
       { icon: 'speed', title: 'Playback', desc: 'Speed, skip, queue, player buttons.', href: '/settings/playback' },
       { icon: 'bedtime', title: 'Sleep timer', desc: 'Rewind, chapter, and fade behaviour.', href: '/settings/sleep' },
+      { icon: 'download', title: 'Downloads & storage', desc: 'Offline books, auto-download, space used.', href: '/settings/storage' },
       { icon: 'vibration', title: 'Haptics', desc: 'Feedback and intensity on this device.', href: '/settings/haptics' },
     ],
   },

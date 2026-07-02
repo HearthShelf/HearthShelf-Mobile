@@ -46,6 +46,13 @@ import { useBookmarks } from '@/player/useBookmarks'
 import { coverUrl, getItemDetail, getRecentSessions } from '@/api/abs'
 import { playItemById } from '@/player/playback'
 import {
+  getDownloadsState,
+  subscribeDownloads,
+  downloadItem,
+  cancelDownload,
+  deleteDownload,
+} from '@/player/downloads'
+import {
   AppText,
   Centered,
   Cover,
@@ -98,6 +105,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   )
   const queue = useSyncExternalStore(subscribeQueue, getQueueState)
   const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
+  const downloads = useSyncExternalStore(subscribeDownloads, getDownloadsState)
   const { width, height } = useWindowDimensions()
   const toast = useToast()
 
@@ -205,6 +213,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const hasChapters = chapters.length > 0
   const chapter = currentChapter()
   const hue = coverHue(nowPlaying.itemId)
+  const download = downloads.byId.get(nowPlaying.itemId)
 
   // Honor the user's Progress bar setting: the main scrubber tracks the current
   // chapter or the whole book. Chapter scope needs chapters to exist; without
@@ -299,6 +308,20 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
     sleepLabel,
     sleepActive: sleepTimer !== null,
     sleepDepletion,
+    downloaded: download?.status === 'done',
+    downloading: download?.status === 'downloading' || download?.status === 'queued',
+    onDownload: () => {
+      if (download?.status === 'done') {
+        void deleteDownload(nowPlaying.itemId)
+        toast.show('Download removed')
+      } else if (download?.status === 'downloading' || download?.status === 'queued') {
+        void cancelDownload(nowPlaying.itemId)
+        toast.show('Download cancelled')
+      } else {
+        void downloadItem(nowPlaying.itemId, nowPlaying.title, nowPlaying.author)
+        toast.show('Downloading for offline')
+      }
+    },
   }
   const actionMap = buildActions(actionCtx)
   const onScreenKeys = settings.playerActions

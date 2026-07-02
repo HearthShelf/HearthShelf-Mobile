@@ -10,12 +10,19 @@
  * `onMarkedFinished` so the opener can update its own lists (e.g. drop a
  * newly-finished book out of Continue) without a full reload.
  */
-import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react'
-import { Linking, StyleSheet, View } from 'react-native'
+import { forwardRef, useImperativeHandle, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { StyleSheet, View } from 'react-native'
 import type { ABSLibraryItem } from '@hearthshelf/core'
 import { coverHue } from '@hearthshelf/core'
-import { coverUrl, itemAuthor, itemTitle, libraryDownloadUrl } from '@/api/abs'
+import { coverUrl, itemAuthor, itemTitle } from '@/api/abs'
 import { markFinished as markFinishedShared } from '@/store/progress'
+import {
+  getDownloadsState,
+  subscribeDownloads,
+  downloadItem,
+  cancelDownload,
+  deleteDownload,
+} from '@/player/downloads'
 import { AddToListSheet } from '@/player/AddToListSheet'
 import type { SheetHandle } from '@/player/sheets'
 import { AppText, Cover, Sheet, type SheetRef, Touchable } from '@/ui/primitives'
@@ -55,6 +62,8 @@ export const BookActionsSheet = forwardRef<
 
   const item = target?.item
   const finished = target?.finished ?? false
+  const { byId } = useSyncExternalStore(subscribeDownloads, getDownloadsState)
+  const dl = item ? byId.get(item.id) : undefined
 
   const markFinished = async () => {
     if (!item || busy) return
@@ -77,13 +86,26 @@ export const BookActionsSheet = forwardRef<
 
   const download = () => {
     if (!item) return
-    const url = libraryDownloadUrl(item.libraryId, [item.id])
-    if (url) {
-      void Linking.openURL(url)
-      onToast?.('Download started in browser')
+    if (dl?.status === 'done') {
+      void deleteDownload(item.id)
+      onToast?.('Download removed')
+    } else if (dl?.status === 'downloading' || dl?.status === 'queued') {
+      void cancelDownload(item.id)
+      onToast?.('Download cancelled')
+    } else {
+      void downloadItem(item.id, itemTitle(item), itemAuthor(item))
+      onToast?.('Downloading for offline')
     }
     sheetRef.current?.dismiss()
   }
+
+  const downloadLabel =
+    dl?.status === 'done'
+      ? 'Remove download'
+      : dl?.status === 'downloading' || dl?.status === 'queued'
+        ? `Cancel download (${Math.round((dl.progress ?? 0) * 100)}%)`
+        : 'Download for offline'
+  const downloadIcon = dl?.status === 'done' ? icons.downloadDone : icons.download
 
   const addToList = () => {
     // Layer the add-to-list sheet on top of this one, then close this.
@@ -123,7 +145,7 @@ export const BookActionsSheet = forwardRef<
           onPress={() => void markFinished()}
         />
         <ActionRow icon={icons.addList} label="Add to list" onPress={addToList} />
-        <ActionRow icon={icons.download} label="Download" onPress={download} />
+        <ActionRow icon={downloadIcon} label={downloadLabel} onPress={download} />
       </Sheet>
 
       {item ? (

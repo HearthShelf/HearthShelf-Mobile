@@ -21,6 +21,7 @@ import { setAutoSession } from '@/player/autoBridge'
 import { startQueueSync } from '@/player/queueSync'
 import { startClubSync } from '@/player/clubSync'
 import { ensureDeviceId } from '@/store/settings'
+import { hydrateDownloads } from '@/player/downloads'
 import type { SplashServer } from '@/ui/SplashScreen'
 
 export type ConnectionStatus =
@@ -74,6 +75,8 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         // Ensure the per-install deviceId is loaded before sync starts, so
         // device-scoped settings round-trip on the first pull.
         await ensureDeviceId()
+        // Load any previously downloaded books so they're playable offline.
+        await hydrateDownloads()
         setAutoSession(serverUrl, token)
         startQueueSync()
         startClubSync()

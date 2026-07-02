@@ -26,6 +26,7 @@ export default function SettingsLayout() {
       <Stack.Screen name="appearance" options={{ title: 'Appearance' }} />
       <Stack.Screen name="playback" options={{ title: 'Playback' }} />
       <Stack.Screen name="sleep" options={{ title: 'Sleep timer' }} />
+      <Stack.Screen name="storage" options={{ title: 'Downloads & storage' }} />
       <Stack.Screen name="haptics" options={{ title: 'Haptics' }} />
       <Stack.Screen name="social" options={{ title: 'Social' }} />
       <Stack.Screen name="reading" options={{ title: 'Reading' }} />

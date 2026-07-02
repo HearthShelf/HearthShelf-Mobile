@@ -23,7 +23,7 @@ export function SettingsPanel({ children }: { children: React.ReactNode }) {
 }
 
 const panelStyles = StyleSheet.create({
-  content: { padding: spacing.lg, paddingBottom: 140, gap: spacing.md },
+  content: { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md },
 })
 
 // ---- SectionAccordion: a top-level My Settings section (Appearance, Listening, ...) ----
