@@ -215,7 +215,7 @@ const makeStyles = (colors: Palette) =>
     borderColor: colors.hairline,
   },
   dragHint: { paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
-  listContent: { paddingHorizontal: spacing.lg, paddingBottom: 140 },
+  listContent: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
   sectionHeader: {
     paddingTop: spacing.lg,
     paddingBottom: spacing.sm,

@@ -107,7 +107,7 @@ export default function SettingsMenu() {
 
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
-    content: { padding: spacing.lg, paddingBottom: 140, gap: spacing.md },
+    content: { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md },
     userCard: {
       flexDirection: 'row',
       alignItems: 'center',

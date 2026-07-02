@@ -10,6 +10,7 @@ import { AppText, IconButton, Row, Screen, SectionHeader, icons } from '@/ui/pri
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { type IconName } from '@/ui/icons'
+import { useContentInset } from '@/ui/useContentInset'
 
 export default function MoreScreen() {
   const { signOut } = useAuth()
@@ -17,6 +18,7 @@ export default function MoreScreen() {
   const router = useRouter()
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
+  const contentInset = useContentInset()
 
   async function handleSignOut() {
     clearTrack()
@@ -44,7 +46,7 @@ export default function MoreScreen() {
     <Screen>
       <SectionHeader title="More" />
       <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: 140, gap: spacing.sm }}
+        contentContainerStyle={{ padding: spacing.lg, paddingBottom: contentInset, gap: spacing.sm }}
       >
         <Pressable
           onPress={() => router.push('/settings')}

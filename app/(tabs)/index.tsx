@@ -54,6 +54,7 @@ import { BookActionsSheet, type BookActionsHandle } from '@/ui/BookActionsSheet'
 import { Toast, useToast } from '@/ui/Toast'
 import { haptics } from '@/ui/haptics'
 import { radius, spacing, type Palette } from '@/ui/theme'
+import { useContentInset } from '@/ui/useContentInset'
 import { useColors, useTheme } from '@/ui/ThemeProvider'
 
 export default function HomeScreen() {
@@ -69,6 +70,7 @@ export default function HomeScreen() {
   // not_connected. `loading` then covers just the first content fetch.
   const { status, serverName } = useConnection()
   const connected = status.phase === 'ready'
+  const contentInset = useContentInset()
   const [loading, setLoading] = useState(true)
   const [inProgress, setInProgress] = useState<ABSLibraryItem[]>([])
   const [shelves, setShelves] = useState<ABSShelf[]>([])
@@ -192,7 +194,7 @@ export default function HomeScreen() {
           of hard-cutting from the spinner. */}
       <Animated.ScrollView
         entering={FadeIn.duration(DUR.base)}
-        contentContainerStyle={{ paddingBottom: 140 }}
+        contentContainerStyle={{ paddingBottom: contentInset }}
         showsVerticalScrollIndicator={false}
       >
         {nowPlaying ? (

@@ -80,6 +80,7 @@ import { DUR, POP_SPRING } from '@/ui/motion'
 import { Toast, useToast } from '@/ui/Toast'
 import { haptics } from '@/ui/haptics'
 import { radius, spacing, type Palette } from '@/ui/theme'
+import { useMiniPlayerInset } from '@/ui/useContentInset'
 import { useColors } from '@/ui/ThemeProvider'
 
 const CHAPTER_PREVIEW_COUNT = 4
@@ -99,6 +100,7 @@ export default function ItemDetailScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors])
   const { id } = useLocalSearchParams<{ id: string }>()
   const { message, show } = useToast()
+  const miniInset = useMiniPlayerInset()
 
   const [detail, setDetail] = useState<ABSLibraryItemDetail | null>(null)
   // Progress comes from the shared store, so mark-finished anywhere (here, a
@@ -366,7 +368,7 @@ export default function ItemDetailScreen() {
       <Animated.ScrollView
         entering={FadeIn.duration(DUR.base)}
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: spacing.xl }}
+        contentContainerStyle={{ paddingBottom: miniInset }}
         showsVerticalScrollIndicator={false}
       >
         <Hero

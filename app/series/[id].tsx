@@ -39,6 +39,7 @@ import { CoverGlow } from '@/ui/CoverGlow'
 import { BookSelectionToolbar } from '@/ui/BookSelectionToolbar'
 import { useBookSelection } from '@/ui/useBookSelection'
 import { radius, spacing, type Palette } from '@/ui/theme'
+import { useMiniPlayerInset } from '@/ui/useContentInset'
 import { useColors } from '@/ui/ThemeProvider'
 
 /** ABS stores a book's sequence in the denormalized seriesName ("Foundation #2").
@@ -60,6 +61,7 @@ export default function SeriesDetailScreen() {
   const [error, setError] = useState<string | null>(null)
   const [marking, setMarking] = useState(false)
   const selection = useBookSelection()
+  const miniInset = useMiniPlayerInset()
   // Shared per-item progress; mutations anywhere in the app update this page live.
   const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
 
@@ -174,7 +176,7 @@ export default function SeriesDetailScreen() {
       <Header onBack={() => router.back()} />
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: spacing.xl }}
+        contentContainerStyle={{ paddingBottom: miniInset }}
         showsVerticalScrollIndicator={false}
       >
         {/* Hero */}

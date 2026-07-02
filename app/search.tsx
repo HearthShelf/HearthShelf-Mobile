@@ -8,6 +8,7 @@ import { AppText, Centered, IconButton, Loading, Screen, icons } from '@/ui/prim
 import { BookTile } from '@/ui/BookTile'
 import { DUR } from '@/ui/motion'
 import { radius, spacing, type Palette } from '@/ui/theme'
+import { useContentInset } from '@/ui/useContentInset'
 import { useColors } from '@/ui/ThemeProvider'
 
 const COLS = 3
@@ -18,6 +19,7 @@ export default function SearchScreen() {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const { width } = useWindowDimensions()
+  const contentInset = useContentInset()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<ABSLibraryItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -97,7 +99,7 @@ export default function SearchScreen() {
             keyExtractor={(it) => it.id}
             numColumns={COLS}
             columnWrapperStyle={{ gap: GUTTER }}
-            contentContainerStyle={{ padding: GUTTER, paddingBottom: 140, gap: spacing.xs }}
+            contentContainerStyle={{ padding: GUTTER, paddingBottom: contentInset, gap: spacing.xs }}
             keyboardShouldPersistTaps="handled"
             renderItem={({ item }) => <BookTile item={item} width={tileWidth} />}
           />

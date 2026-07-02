@@ -11,6 +11,7 @@ import * as SplashScreen from 'expo-splash-screen'
 import { tokenCache } from '@/lib/tokenCache'
 import { CLERK_PUBLISHABLE_KEY } from '@/lib/config'
 import { PlayerHost } from '@/player/PlayerHost'
+import { MiniPlayerDock } from '@/player/MiniPlayerDock'
 import { SplashScreen as HearthSplash, type SplashPhase } from '@/ui/SplashScreen'
 import { ConnectionProvider, useConnection } from '@/api/ConnectionProvider'
 import { clearSession } from '@/api/session'
@@ -185,6 +186,10 @@ export default function RootLayout() {
               <ThemedStatusBar />
               <AuthGate>
                 <ThemedStack />
+                {/* Route-aware mini player over every screen (hides itself on
+                    player surfaces and settings). Inside the gate so the boot
+                    splash still covers it. */}
+                <MiniPlayerDock />
               </AuthGate>
               {/* Persistent audio engine - mounted once, never unmounted. */}
               <PlayerHost />

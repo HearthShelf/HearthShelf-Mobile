@@ -70,6 +70,7 @@ import { DUR } from '@/ui/motion'
 import { BookTile } from '@/ui/BookTile'
 import { BookSelectionToolbar } from '@/ui/BookSelectionToolbar'
 import { getProgressState, subscribeProgress, refreshProgress } from '@/store/progress'
+import { useContentInset } from '@/ui/useContentInset'
 import { useBookSelection } from '@/ui/useBookSelection'
 import { AzRail, AZ_RAIL_WIDTH } from '@/ui/AzRail'
 import { radius, spacing, type Palette } from '@/ui/theme'
@@ -302,6 +303,7 @@ function SearchResults({
   tileWidth: number
 }) {
   const colors = useColors()
+  const contentInset = useContentInset()
   if (searching) return <Loading />
   if (searched && results.length === 0) {
     return (
@@ -319,7 +321,7 @@ function SearchResults({
         keyExtractor={(it) => it.id}
         numColumns={COLS}
         columnWrapperStyle={{ gap: GUTTER }}
-        contentContainerStyle={{ padding: GUTTER, paddingBottom: 140, gap: spacing.xs }}
+        contentContainerStyle={{ padding: GUTTER, paddingBottom: contentInset, gap: spacing.xs }}
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => <BookTile item={item} width={tileWidth} />}
       />
@@ -420,6 +422,7 @@ function BooksView({
 }) {
   const colors = useColors()
   const styles = useStyles()
+  const contentInset = useContentInset()
   const [items, setItems] = useState<ABSLibraryItem[] | null>(null)
   // Shared per-item progress; mark-finished anywhere updates this view live.
   const progress = useSyncExternalStore(subscribeProgress, getProgressState).byId
@@ -620,7 +623,7 @@ function BooksView({
               paddingTop: GUTTER,
               paddingLeft: GUTTER,
               paddingRight: gridPadRight,
-              paddingBottom: 140,
+              paddingBottom: contentInset,
               gap: spacing.xs,
             }}
             onScrollToIndexFailed={({ index }) => {
@@ -646,7 +649,7 @@ function BooksView({
           ref={listRef}
           data={sorted}
           keyExtractor={(it) => it.id}
-          contentContainerStyle={{ padding: GUTTER, paddingBottom: 140, gap: spacing.sm }}
+          contentContainerStyle={{ padding: GUTTER, paddingBottom: contentInset, gap: spacing.sm }}
           renderItem={({ item }) => (
             <BookListRow
               item={item}
@@ -961,6 +964,7 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
   const router = useRouter()
   const colors = useColors()
   const styles = useStyles()
+  const contentInset = useContentInset()
   const [groups, setGroups] = useState<GroupRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   // Sort name-ascending by default; tapping the active sort flips its direction.
@@ -1059,7 +1063,7 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
       <FlatList
         data={sorted}
         keyExtractor={(g) => g.key}
-        contentContainerStyle={{ padding: spacing.md, paddingBottom: 140 }}
+        contentContainerStyle={{ padding: spacing.md, paddingBottom: contentInset }}
         renderItem={({ item }) => (
           <Touchable
             style={styles.groupRow}

@@ -23,6 +23,7 @@ import {
 } from '@/api/abs'
 import { AppText, Centered, Cover, IconButton, Loading, Screen, icons } from '@/ui/primitives'
 import { radius, spacing } from '@/ui/theme'
+import { useContentInset } from '@/ui/useContentInset'
 import { useColors } from '@/ui/ThemeProvider'
 
 type GroupType = 'series' | 'authors' | 'narrators'
@@ -114,6 +115,7 @@ export default function GroupDrilldown() {
 function GroupGrid({ books }: { books: ABSLibraryItem[] }) {
   const { width } = useWindowDimensions()
   const cardWidth = (width - spacing.lg * 2 - spacing.md) / 2
+  const contentInset = useContentInset()
 
   return (
     <FlatList
@@ -121,7 +123,7 @@ function GroupGrid({ books }: { books: ABSLibraryItem[] }) {
       keyExtractor={(b) => b.id}
       numColumns={2}
       columnWrapperStyle={{ gap: spacing.md }}
-      contentContainerStyle={{ padding: spacing.lg, paddingBottom: 140, gap: spacing.lg }}
+      contentContainerStyle={{ padding: spacing.lg, paddingBottom: contentInset, gap: spacing.lg }}
       renderItem={({ item }) => <GroupBookCard item={item} width={cardWidth} />}
     />
   )

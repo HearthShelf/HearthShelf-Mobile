@@ -1,36 +1,25 @@
 /**
  * Bottom-tab shell, mirroring the web app's mobile `.mtab`. A custom tab bar
- * (AppTabBar) is used so it picks up the app theme and so the floating MiniPlayer
- * can dock just above it (rendered here, not per-screen, so it persists across
- * tabs). The same AppTabBar renders on the full player so the nav stays visible
- * there unless the player goes immersive.
+ * (AppTabBar) is used so it picks up the app theme. The floating MiniPlayer is
+ * mounted once at the root (MiniPlayerDock), not here, so it also shows on
+ * pushed detail routes. The same AppTabBar renders on the full player so the
+ * nav stays visible there unless the player goes immersive.
  */
 import { Tabs, type BottomTabBarProps } from 'expo-router/js-tabs'
 import { View } from 'react-native'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useSyncExternalStore } from 'react'
-import { AppTabBar, TAB_BAR_HEIGHT } from '@/ui/AppTabBar'
-import { MiniPlayer } from '@/player/MiniPlayer'
-import { getState, subscribe } from '@/player/store'
+import { AppTabBar } from '@/ui/AppTabBar'
 import { getImmersive, subscribeImmersive } from '@/player/immersive'
 
 function TabBar({ state, navigation }: BottomTabBarProps) {
-  const insets = useSafeAreaInsets()
-  const { nowPlaying } = useSyncExternalStore(subscribe, getState)
   const immersive = useSyncExternalStore(subscribeImmersive, getImmersive)
-  const barHeight = TAB_BAR_HEIGHT + insets.bottom
-  // Hide the docked mini-player when the Now Playing tab is active - the tab is
-  // itself a player surface, so the mini-bar would be redundant. Also hide it on
-  // Home while something plays: the hero there IS the live player.
   const activeName = state.routes[state.index]?.name
-  const hideMini = activeName === 'now' || (activeName === 'index' && nowPlaying !== null)
 
   // The player's immersive (Car Mode) hides all app chrome, including this nav.
   if (immersive) return null
 
   return (
     <View pointerEvents="box-none">
-      {!hideMini && <MiniPlayer bottomOffset={barHeight} />}
       <AppTabBar
         activeName={activeName ?? null}
         onPressTab={(name) => {

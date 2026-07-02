@@ -16,6 +16,10 @@ import { useColors } from '@/ui/ThemeProvider'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { getState, subscribe, togglePlay, jumpBy, currentChapter } from './store'
 
+/** Rendered height of the docked bar (progress strip + 42px row + padding),
+ *  for content-inset math in useContentInset. */
+export const MINI_PLAYER_HEIGHT = 60
+
 export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
   const router = useRouter()
   const colors = useColors()
