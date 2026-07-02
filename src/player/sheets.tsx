@@ -13,7 +13,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react'
-import { StyleSheet, TextInput, View } from 'react-native'
+import { StyleSheet, View } from 'react-native'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import { formatTimestamp } from '@hearthshelf/core'
 import {
@@ -239,7 +239,12 @@ export const SleepSheet = forwardRef<SheetHandle, { onEditBehavior: () => void }
     const [tab, setTab] = useState<SleepTab>(
       sleepTimer?.kind === 'endOfChapter' ? 'chapter' : 'duration',
     )
-    const [clockInput, setClockInput] = useState('')
+    // Clock picker state, seeded to ~30 min from now on the 5-minute grid.
+    const [clock, setClock] = useState(() => {
+      const d = new Date(Date.now() + 30 * 60000)
+      d.setMinutes(Math.round(d.getMinutes() / 5) * 5, 0, 0)
+      return { h: d.getHours(), m: d.getMinutes() }
+    })
 
     const chapters = nowPlaying?.chapters ?? []
     // Current chapter; when scrubbed past the last boundary, clamp to the last
@@ -287,13 +292,24 @@ export const SleepSheet = forwardRef<SheetHandle, { onEditBehavior: () => void }
     const pickDuration = (mins: number) => {
       setSleepTimer({ kind: 'duration', remainingSec: mins * 60, totalSec: mins * 60 })
     }
-    const pickChapter = (idx: number, at: 'start' | 'end') => {
-      setSleepTimer({ kind: 'endOfChapter', chapterIndex: idx, at })
+    // A stop point at or behind the current position would fire the instant the
+    // timer is set (store checks position >= boundary), killing playback. Only
+    // boundaries ahead of us are valid targets.
+    const boundaryFor = (idx: number, at: 'start' | 'end') => {
+      const c = chapters[idx]
+      return c ? (at === 'start' ? c.start : c.end) : null
     }
-    const pickClock = (hhmm: string) => {
-      if (!hhmm) return
-      const [h, m] = hhmm.split(':').map(Number)
-      if (Number.isNaN(h) || Number.isNaN(m)) return
+    const isFuture = (idx: number, at: 'start' | 'end') => {
+      const b = boundaryFor(idx, at)
+      return b !== null && b > position
+    }
+    const pickChapter = (idx: number, at: 'start' | 'end') => {
+      let i = idx
+      while (i < chapters.length && !isFuture(i, at)) i++
+      if (i >= chapters.length) return
+      setSleepTimer({ kind: 'endOfChapter', chapterIndex: i, at })
+    }
+    const pickClock = (h: number, m: number) => {
       const now = new Date()
       const target = new Date()
       target.setHours(h, m, 0, 0)
@@ -379,7 +395,7 @@ export const SleepSheet = forwardRef<SheetHandle, { onEditBehavior: () => void }
               </AppText>
               <BottomSheetScrollView style={styles.chapterList}>
                 {chapters.map((c, i) =>
-                  i >= curIdx ? (
+                  isFuture(i, targetAt) ? (
                     <Touchable
                       key={i}
                       style={styles.chapterRow}
@@ -410,14 +426,63 @@ export const SleepSheet = forwardRef<SheetHandle, { onEditBehavior: () => void }
 
           {tab === 'time' && (
             <View>
-              <TextInput
-                style={styles.input}
-                placeholder="HH:MM (24h)"
-                placeholderTextColor={colors.textFaint}
-                value={clockInput}
-                onChangeText={setClockInput}
-                onSubmitEditing={() => pickClock(clockInput)}
-              />
+              <View style={styles.clockRow}>
+                <View style={styles.clockCol}>
+                  <Touchable
+                    style={styles.clockBtn}
+                    hitSlop={6}
+                    onPress={() => setClock((c) => ({ ...c, h: (c.h + 1) % 24 }))}
+                  >
+                    <Icon name={icons.expandLess} size={26} color={colors.textMuted} />
+                  </Touchable>
+                  <AppText variant="hero" style={styles.clockDigits}>
+                    {String(((clock.h + 11) % 12) + 1)}
+                  </AppText>
+                  <Touchable
+                    style={styles.clockBtn}
+                    hitSlop={6}
+                    onPress={() => setClock((c) => ({ ...c, h: (c.h + 23) % 24 }))}
+                  >
+                    <Icon name={icons.chevronDown} size={26} color={colors.textMuted} />
+                  </Touchable>
+                </View>
+                <AppText variant="hero" style={styles.clockColon}>
+                  :
+                </AppText>
+                <View style={styles.clockCol}>
+                  <Touchable
+                    style={styles.clockBtn}
+                    hitSlop={6}
+                    onPress={() => setClock((c) => ({ ...c, m: (c.m + 5) % 60 }))}
+                  >
+                    <Icon name={icons.expandLess} size={26} color={colors.textMuted} />
+                  </Touchable>
+                  <AppText variant="hero" style={styles.clockDigits}>
+                    {String(clock.m).padStart(2, '0')}
+                  </AppText>
+                  <Touchable
+                    style={styles.clockBtn}
+                    hitSlop={6}
+                    onPress={() => setClock((c) => ({ ...c, m: (c.m + 55) % 60 }))}
+                  >
+                    <Icon name={icons.chevronDown} size={26} color={colors.textMuted} />
+                  </Touchable>
+                </View>
+                <Touchable
+                  style={styles.ampm}
+                  onPress={() => setClock((c) => ({ ...c, h: (c.h + 12) % 24 }))}
+                >
+                  <AppText variant="label" color={colors.text}>
+                    {clock.h < 12 ? 'AM' : 'PM'}
+                  </AppText>
+                </Touchable>
+              </View>
+              <Touchable style={styles.clockSet} onPress={() => pickClock(clock.h, clock.m)}>
+                <Icon name={icons.sleep} size={18} color={colors.onAccent} />
+                <AppText variant="label" color={colors.onAccent}>
+                  Start timer
+                </AppText>
+              </Touchable>
               <AppText variant="caption" color={colors.textMuted} style={{ marginTop: spacing.sm }}>
                 Playback stops at the clock time you pick.
               </AppText>
@@ -539,14 +604,41 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof buildShadow>) =>
     borderRadius: radius.row,
     backgroundColor: colors.fill,
   },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-    borderRadius: radius.row,
-    paddingHorizontal: spacing.md,
+  clockRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  clockCol: {
+    alignItems: 'center',
+    borderRadius: radius.card,
+    backgroundColor: colors.fill,
+    paddingVertical: spacing.xs,
+    minWidth: 76,
+  },
+  clockBtn: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
+  clockDigits: { fontVariant: ['tabular-nums'] },
+  clockColon: { marginHorizontal: spacing.xs },
+  ampm: {
+    marginLeft: spacing.md,
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    color: colors.text,
-    fontSize: 16,
+    borderRadius: radius.pill,
+    backgroundColor: colors.fill,
+  },
+  clockSet: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: radius.card,
+    backgroundColor: colors.accent,
   },
   divider: {
     height: StyleSheet.hairlineWidth,

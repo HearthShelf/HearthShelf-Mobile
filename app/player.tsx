@@ -504,7 +504,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         ref={sleepRef}
         onEditBehavior={() => {
           sleepRef.current?.dismiss()
-          router.push('/settings')
+          router.push('/settings/sleep')
         }}
       />
       <QueueSheet
