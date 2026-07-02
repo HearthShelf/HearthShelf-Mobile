@@ -10,6 +10,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { getSettingsState, subscribeSettings, setSetting } from '@/store/settings'
 import { getCommunityConfig } from '@/api/social'
+import { setCarNotePopsEnabled } from '@/social/carNotePrefs'
 import { SettingsPanel, SettingsGroup, SettingsLabel, SettingsRow, Seg, SettingsToggle } from '@/ui/settingsControls'
 
 /** The tri-state presence choice as a segment value. 'default' = null (unset). */
@@ -78,8 +79,18 @@ export default function SocialPanel() {
       <SettingsGroup>
         <SettingsRow
           title="Note pops"
-          desc="Show a toast when your playback reaches a club note. This device only."
-          control={<SettingsToggle on={s.notePops} onChange={(v) => setSetting('notePops', v)} />}
+          desc="Alert you when your playback reaches a club note - a toast in the app, a notification when it's in the background or in the car. This device only."
+          control={
+            <SettingsToggle
+              on={s.notePops}
+              onChange={(v) => {
+                setSetting('notePops', v)
+                // Mirror the master on/off to the native car service so car-side
+                // note pops honor it too (see src/social/carNotePrefs.ts).
+                setCarNotePopsEnabled(v)
+              }}
+            />
+          }
           last
         />
       </SettingsGroup>

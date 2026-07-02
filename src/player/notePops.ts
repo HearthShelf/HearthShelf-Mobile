@@ -12,6 +12,7 @@
  * AsyncStorage (device-local dedupe, capped 500 per club) so a note pops once.
  * Gated by the notePops device setting.
  */
+import { AppState } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { HSNoteStub } from '@hearthshelf/core'
 import { detectNotePops } from '@hearthshelf/core'
@@ -19,6 +20,8 @@ import { getState, subscribe } from './store'
 import { getSettingsState } from '@/store/settings'
 import { getNotes } from '@/api/notes'
 import { showPopToast } from '@/social/popToastStore'
+import { displayNoteNotification } from '@/social/noteNotification'
+import { setCarNotePopsEnabled } from '@/social/carNotePrefs'
 import { haptics } from '@/ui/haptics'
 
 const SEEN_CAP = 500
@@ -92,10 +95,18 @@ async function onPop(stub: HSNoteStub): Promise<void> {
     position: getState().position,
   })
   const note = res.notes.find((n) => n.id === stub.id)
-  if (note) {
-    haptics.mode()
+  if (!note) return
+  haptics.mode()
+  // Foreground: in-app toast. Backgrounded/locked (JS kept alive by the Media3
+  // foreground service): a real notification so the alert lands off-screen. Same
+  // seen-set already marked this note, so it fires once across both channels. If
+  // the notification can't be shown (notifee missing), fall back to the toast.
+  if (AppState.currentState === 'active') {
     showPopToast(note.username || 'Someone', note.body, clubId)
+    return
   }
+  const shown = await displayNoteNotification(note, clubId, itemId)
+  if (!shown) showPopToast(note.username || 'Someone', note.body, clubId)
 }
 
 function onTick(): void {
@@ -135,6 +146,9 @@ export function startNotePops(): void {
   if (started) return
   started = true
   prevPos = getState().position
+  // Seed the native car service with the current master on/off so car-side pops
+  // match the phone from the first connect (the toggle mirrors later changes).
+  setCarNotePopsEnabled(getSettingsState().notePops)
   unsub = subscribe(onTick)
 }
 
