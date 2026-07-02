@@ -13,7 +13,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
 import androidx.core.app.RemoteInput
-import androidx.media3.common.ForwardingPlayer
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -95,7 +96,9 @@ class HearthShelfAutoService : MediaLibraryService() {
   private val CMD_SPEED = "com.hearthshelf.CYCLE_SPEED"
   private val CMD_BOOKMARK = "com.hearthshelf.BOOKMARK"
 
-  private val SPEED_PRESETS = listOf(1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 0.75f)
+  // Ascending, so the cycle (first preset above the current rate, wrapping to
+  // the slowest) visits every preset: 0.75 -> 1 -> 1.25 -> 1.5 -> 1.75 -> 2 -> 0.75.
+  private val SPEED_PRESETS = listOf(0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
 
   // Chapters (absolute seconds) for the loaded book + the current item id, used
   // by the chapter-skip buttons, bookmark, and chapter-relative progress.
@@ -146,94 +149,76 @@ class HearthShelfAutoService : MediaLibraryService() {
     get() = prefs.getBoolean("notePopsEnabled", true)
 
   /**
-   * A custom-command button. media3 1.5+ renders the semantic `icon` constant in
-   * car slots (setIconResId alone leaves `icon` = ICON_UNDEFINED, which Android
-   * Auto draws as a blank/placeholder). So we pass an ICON_* via Builder(icon) for
-   * a guaranteed-visible glyph AND our branded drawable via setCustomIconResId for
-   * surfaces that honor it (the phone notification).
+   * A custom-command button assigned to SLOT_OVERFLOW. In media3 1.10 the legacy
+   * MediaSessionCompat custom actions (what the DHU / real head units render) are
+   * built from the media-button-preferences in order: BACK-slotted first,
+   * FORWARD-slotted second, then the SLOT_OVERFLOW buttons in list order. The
+   * custom action carries our drawable resId directly.
    */
-  private fun customButton(
-    cmd: String,
-    name: String,
-    icon: String,
-    iconConstant: Int,
-    vararg slots: Int
-  ): CommandButton =
-    CommandButton.Builder(iconConstant)
+  private fun customButton(cmd: String, name: String, icon: String): CommandButton =
+    CommandButton.Builder()
       .setDisplayName(name)
-      .setCustomIconResId(resources.getIdentifier(icon, "drawable", packageName))
+      .setIconResId(resources.getIdentifier(icon, "drawable", packageName))
       .setSessionCommand(SessionCommand(cmd, Bundle.EMPTY))
-      .setSlots(*slots)
+      .setSlots(CommandButton.SLOT_OVERFLOW)
       .build()
 
-  /**
-   * Full custom transport row, pinned to explicit slots (media3 1.5+). Android
-   * Auto renders BACK | (play) | FORWARD inline with the two SECONDARY slots
-   * flanking, and OVERFLOW behind the "more" menu:
-   *   BACK           = Back Xs
-   *   FORWARD        = Forward Xs
-   *   BACK_SECONDARY = Previous chapter
-   *   FORWARD_SECONDARY = Next chapter
-   *   OVERFLOW       = Speed, Bookmark
-   * Pinning the chapter buttons to the SECONDARY slots (plus hiding the player's
-   * seek-to-next/prev commands, see NoSeekItemsPlayer) stops AA injecting its own
-   * prev/next-track glyphs there.
-   */
+  /** Full custom transport row (order = display order on the car): Back Xs, Forward
+   *  Xs, Prev chapter, Next chapter, Speed, Bookmark. The car distributes them
+   *  across the transport area because onConnect withholds the standard
+   *  skip-to-previous/next player commands - with those advertised, Android Auto
+   *  renders its own prev/next buttons and shoves every custom action into the
+   *  overflow menu instead. */
   private fun customLayout(): ImmutableList<CommandButton> = ImmutableList.of(
     rewindButton(),
     forwardButton(),
-    customButton(CMD_PREV_CH, "Previous chapter", "ic_hs_prev_chapter",
-      CommandButton.ICON_PREVIOUS, CommandButton.SLOT_BACK_SECONDARY),
-    customButton(CMD_NEXT_CH, "Next chapter", "ic_hs_next_chapter",
-      CommandButton.ICON_NEXT, CommandButton.SLOT_FORWARD_SECONDARY),
-    customButton(CMD_SPEED, "Speed", "ic_hs_speed",
-      CommandButton.ICON_PLAYBACK_SPEED, CommandButton.SLOT_OVERFLOW),
-    customButton(CMD_BOOKMARK, "Bookmark", "ic_hs_bookmark",
-      CommandButton.ICON_BOOKMARK_UNFILLED, CommandButton.SLOT_OVERFLOW)
+    customButton(CMD_PREV_CH, "Previous chapter", "ic_hs_prev_chapter"),
+    customButton(CMD_NEXT_CH, "Next chapter", "ic_hs_next_chapter"),
+    speedButton(),
+    customButton(CMD_BOOKMARK, "Bookmark", "ic_hs_bookmark")
   )
 
-  /** Drawable for a skip button whose numeral matches the user's chosen seconds.
-   *  We ship glyphs for the common presets; anything else falls back to the plain
-   *  arrow (no baked-in number) so the label still tells the story. */
-  private fun skipIcon(prefix: String, sec: Long): Int {
-    val named = resources.getIdentifier("${prefix}_$sec", "drawable", packageName)
-    if (named != 0) return named
-    return resources.getIdentifier(prefix, "drawable", packageName)
+  /** Drawable NAME for a skip button whose numeral matches the user's chosen
+   *  seconds. We ship glyphs for the common presets; anything else falls back to
+   *  the plain arrow (no baked-in number) so the label still tells the story. */
+  private fun skipIconName(prefix: String, sec: Long): String {
+    val named = "${prefix}_$sec"
+    return if (resources.getIdentifier(named, "drawable", packageName) != 0) named else prefix
   }
 
-  /** Nearest built-in skip-icon constant for the chosen seconds, so the car always
-   *  has a visible glyph even when we lack a matching custom drawable. */
-  private fun rewindIconConstant(sec: Long): Int = when (sec) {
-    5L -> CommandButton.ICON_SKIP_BACK_5
-    10L -> CommandButton.ICON_SKIP_BACK_10
-    15L -> CommandButton.ICON_SKIP_BACK_15
-    30L -> CommandButton.ICON_SKIP_BACK_30
-    else -> CommandButton.ICON_SKIP_BACK
-  }
-
-  private fun forwardIconConstant(sec: Long): Int = when (sec) {
-    5L -> CommandButton.ICON_SKIP_FORWARD_5
-    10L -> CommandButton.ICON_SKIP_FORWARD_10
-    15L -> CommandButton.ICON_SKIP_FORWARD_15
-    30L -> CommandButton.ICON_SKIP_FORWARD_30
-    else -> CommandButton.ICON_SKIP_FORWARD
-  }
-
-  private fun rewindButton(): CommandButton =
-    CommandButton.Builder(rewindIconConstant(rewindSec))
+  private fun rewindButton(): CommandButton {
+    val icon = skipIconName("ic_hs_rewind", rewindSec)
+    return CommandButton.Builder()
       .setDisplayName("Back ${rewindSec}s")
-      .setCustomIconResId(skipIcon("ic_hs_rewind", rewindSec))
+      .setIconResId(resources.getIdentifier(icon, "drawable", packageName))
       .setSessionCommand(SessionCommand(CMD_REWIND, Bundle.EMPTY))
-      .setSlots(CommandButton.SLOT_BACK)
+      .setSlots(CommandButton.SLOT_BACK, CommandButton.SLOT_OVERFLOW)
       .build()
+  }
 
-  private fun forwardButton(): CommandButton =
-    CommandButton.Builder(forwardIconConstant(forwardSec))
+  private fun forwardButton(): CommandButton {
+    val icon = skipIconName("ic_hs_forward", forwardSec)
+    return CommandButton.Builder()
       .setDisplayName("Forward ${forwardSec}s")
-      .setCustomIconResId(skipIcon("ic_hs_forward", forwardSec))
+      .setIconResId(resources.getIdentifier(icon, "drawable", packageName))
       .setSessionCommand(SessionCommand(CMD_FORWARD, Bundle.EMPTY))
-      .setSlots(CommandButton.SLOT_FORWARD)
+      .setSlots(CommandButton.SLOT_FORWARD, CommandButton.SLOT_OVERFLOW)
       .build()
+  }
+
+  /** The Speed button shows the CURRENT rate as its icon ("1.25x"), like every
+   *  audiobook player's speed control. Icons are generated per preset by
+   *  gen-skip-icons.js; an unknown rate falls back to the speedometer glyph.
+   *  onCustomCommand republishes the layout after each cycle so the badge
+   *  updates live on the car. */
+  private fun speedButton(): CommandButton {
+    val rate = rawPlayer?.playbackParameters?.speed ?: 1.0f
+    val s = if (rate == rate.toInt().toFloat()) rate.toInt().toString()
+      else rate.toString().trimEnd('0').trimEnd('.')
+    val named = "ic_hs_speed_${s.replace('.', '_')}x"
+    val icon = if (resources.getIdentifier(named, "drawable", packageName) != 0) named else "ic_hs_speed"
+    return customButton(CMD_SPEED, "Speed ${s}x", icon)
+  }
 
   override fun onCreate() {
     super.onCreate()
@@ -245,7 +230,19 @@ class HearthShelfAutoService : MediaLibraryService() {
     }
     setMediaNotificationProvider(notificationProvider)
 
-    val player = ExoPlayer.Builder(this).build()
+    // Audiobook audio attributes + focus handling, and pause when the output
+    // route drops to the phone speaker (car disconnect, BT drop, headset yank) -
+    // playback must not continue out loud on the phone when the car goes away.
+    val player = ExoPlayer.Builder(this)
+      .setAudioAttributes(
+        AudioAttributes.Builder()
+          .setUsage(C.USAGE_MEDIA)
+          .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
+          .build(),
+        true
+      )
+      .setHandleAudioBecomingNoisy(true)
+      .build()
     rawPlayer = player
 
     // Apply the resume position once the freshly-loaded item is ready, and report
@@ -268,14 +265,15 @@ class HearthShelfAutoService : MediaLibraryService() {
     })
 
     // Each chapter is its own clipped window (chapter-relative position/duration).
-    // Wrap the player so the car doesn't see the seek-to-next/prev-item commands -
-    // otherwise Android Auto auto-injects its own prev/next-track glyphs into the
-    // secondary slots, colliding with our own chapter buttons. Our custom-command
-    // handlers seek rawPlayer directly, so hiding these here doesn't disable them.
-    // A distinct session id is required; the phone service also runs one in-process.
-    session = MediaLibrarySession.Builder(this, NoSeekItemsPlayer(player), LibraryCallback())
+    // Chapter nav happens through OUR custom prev/next-chapter buttons, not the
+    // standard transport (onConnect withholds the seek-to-previous/next commands
+    // so the car frees those slots for the custom row). A distinct session id is
+    // required; the phone service also runs one.
+    // Media-button-preferences (not setCustomLayout) is what media3 1.10 converts
+    // into the LEGACY MediaSessionCompat custom actions Android Auto renders.
+    session = MediaLibrarySession.Builder(this, player, LibraryCallback())
       .setId("hearthshelf_auto")
-      .setCustomLayout(customLayout())
+      .setMediaButtonPreferences(customLayout())
       .build()
 
     // Periodic progress sync while playing (throttled inside syncProgress).
@@ -390,7 +388,12 @@ class HearthShelfAutoService : MediaLibraryService() {
   private inner class LibraryCallback : MediaLibrarySession.Callback {
 
     /** Grant our custom commands so the buttons are actionable, and publish the
-     *  full custom layout (skip / chapter / speed / bookmark) to this controller. */
+     *  full custom layout (skip / chapter / speed / bookmark) to this controller.
+     *  The standard seek-to-previous/next player commands are withheld: with them
+     *  advertised, Android Auto renders its own prev/next buttons and pushes all
+     *  custom actions into the overflow menu. Chapter nav still works - the custom
+     *  prev/next-chapter buttons call the player directly, and the Queue's
+     *  jump-to-chapter uses COMMAND_SEEK_TO_MEDIA_ITEM, which stays available. */
     override fun onConnect(
       session: MediaSession,
       controller: MediaSession.ControllerInfo
@@ -404,9 +407,17 @@ class HearthShelfAutoService : MediaLibraryService() {
         .add(SessionCommand(CMD_SPEED, Bundle.EMPTY))
         .add(SessionCommand(CMD_BOOKMARK, Bundle.EMPTY))
         .build()
+      val playerCommands = MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS
+        .buildUpon()
+        .remove(Player.COMMAND_SEEK_TO_PREVIOUS)
+        .remove(Player.COMMAND_SEEK_TO_NEXT)
+        .remove(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+        .remove(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+        .build()
       return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
         .setAvailableSessionCommands(available)
-        .setCustomLayout(customLayout())
+        .setAvailablePlayerCommands(playerCommands)
+        .setMediaButtonPreferences(customLayout())
         .build()
     }
 
@@ -432,6 +443,8 @@ class HearthShelfAutoService : MediaLibraryService() {
           val next = SPEED_PRESETS.firstOrNull { it > player.playbackParameters.speed + 0.001f }
             ?: SPEED_PRESETS.first()
           player.setPlaybackSpeed(next)
+          // Refresh the Speed badge icon to the new rate.
+          session.setMediaButtonPreferences(customLayout())
         }
         CMD_BOOKMARK -> bookmarkNow(absolutePositionMs(player) / 1000.0)
         else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
@@ -663,31 +676,6 @@ class HearthShelfAutoService : MediaLibraryService() {
             .build()
         )
         .build()
-    }
-  }
-
-  /**
-   * Hides the seek-to-next/prev(-media-item) commands from the session's view of
-   * the player. The chapter timeline is multi-window, so without this the car
-   * would render its own prev/next-track buttons in the secondary slots we want
-   * for our chapter buttons. rawPlayer (the wrapped ExoPlayer) still has the
-   * commands, so our custom-command handlers can still jump chapters.
-   */
-  private inner class NoSeekItemsPlayer(inner: Player) : ForwardingPlayer(inner) {
-    override fun getAvailableCommands(): Player.Commands =
-      super.getAvailableCommands().buildUpon()
-        .remove(Player.COMMAND_SEEK_TO_NEXT)
-        .remove(Player.COMMAND_SEEK_TO_PREVIOUS)
-        .remove(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
-        .remove(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
-        .build()
-
-    override fun isCommandAvailable(command: Int): Boolean = when (command) {
-      Player.COMMAND_SEEK_TO_NEXT,
-      Player.COMMAND_SEEK_TO_PREVIOUS,
-      Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
-      Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> false
-      else -> super.isCommandAvailable(command)
     }
   }
 

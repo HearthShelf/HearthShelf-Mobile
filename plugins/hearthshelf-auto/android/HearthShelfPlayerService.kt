@@ -4,6 +4,8 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -85,7 +87,19 @@ class HearthShelfPlayerService : MediaSessionService() {
     }
     setMediaNotificationProvider(notificationProvider)
 
-    val player = ExoPlayer.Builder(this).build()
+    // Audiobook audio attributes + focus handling, and pause when the output
+    // route drops to the phone speaker (headset yank, BT/car drop) - playback
+    // must not continue out loud on the phone speaker.
+    val player = ExoPlayer.Builder(this)
+      .setAudioAttributes(
+        AudioAttributes.Builder()
+          .setUsage(C.USAGE_MEDIA)
+          .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
+          .build(),
+        true
+      )
+      .setHandleAudioBecomingNoisy(true)
+      .build()
     exo = player
 
     player.addListener(object : Player.Listener {

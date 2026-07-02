@@ -1,0 +1,14 @@
+<!-- Playback speed 1x. Bold rate text so the current speed reads at a
+     glance on the car display. Generated - edit gen-skip-icons.js, not this file. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+  <group android:translateX="5.93" android:translateY="12.00" android:scaleX="1.500" android:scaleY="1.500">
+      <path android:fillColor="@android:color/white" android:pathData="M4.6,0 L8,0 L8,16 L5.4,16 L5.4,3 L3,3.6 L3,1.3 Z"/>
+    </group>
+  <group android:translateX="24.97" android:translateY="12.00" android:scaleX="1.500" android:scaleY="1.500">
+      <path android:fillColor="@android:color/white" android:pathData="M0.6,6 L3.6,6 L5.8,9.1 L8,6 L11,6 L7.4,10.9 L11.2,16 L8.2,16 L5.8,12.7 L3.4,16 L0.4,16 L4.2,10.9 Z"/>
+    </group>
+</vector>
