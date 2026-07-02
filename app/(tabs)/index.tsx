@@ -4,7 +4,7 @@ import { FlatList, ImageBackground, Pressable, ScrollView, StyleSheet, View } fr
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
-import type { ABSLibraryItem, ABSShelf, HSListeningStats } from '@hearthshelf/core'
+import type { ABSLibraryItem, ABSShelf, ABSBookShelf, HSListeningStats } from '@hearthshelf/core'
 import { coverHue, formatDuration, formatTimestamp } from '@hearthshelf/core'
 import { setSessionExpiredHandler } from '@/api/controlPlane'
 import { clearSession } from '@/api/session'
@@ -19,7 +19,7 @@ import {
   currentChapter,
 } from '@/player/store'
 import { getSettingsState, subscribeSettings, COVER_ASPECT_RATIO } from '@/store/settings'
-import { clearAutoSession } from '@/player/autoBridge'
+import { clearAutoSession, setAutoDiscover } from '@/player/autoBridge'
 import { stopQueueSync } from '@/player/queueSync'
 import {
   coverUrl,
@@ -122,18 +122,33 @@ export default function HomeScreen() {
     const libs = await getLibraries()
     const firstBookLib = libs.find((l) => l.mediaType === 'book') ?? libs[0]
     if (firstBookLib) {
+      let bookShelves: ABSBookShelf[] = []
       try {
         const personalized = await getPersonalized(firstBookLib.id)
-        setShelves(personalized.filter((s) => s.type === 'book' && s.entities.length > 0))
+        bookShelves = personalized.filter(
+          (s): s is ABSBookShelf => s.type === 'book' && s.entities.length > 0,
+        )
       } catch {
         // Personalized is best-effort; fall back to first-page items as one shelf.
         const items = await getLibraryItems(firstBookLib.id, 0, 20)
-        setShelves(
-          items.length
-            ? [{ id: 'all', label: firstBookLib.name, type: 'book', entities: items }]
-            : [],
-        )
+        bookShelves = items.length
+          ? [{ id: 'all', label: firstBookLib.name, type: 'book', entities: items }]
+          : []
       }
+      setShelves(bookShelves)
+      // Publish these shelves as the car's Discover feed (the car can't run the
+      // taste engine itself, so it browses this phone-computed snapshot).
+      setAutoDiscover(
+        bookShelves.map((s) => ({
+          id: s.id,
+          label: s.label,
+          items: s.entities.map((it) => ({
+            id: it.id,
+            title: it.media.metadata.title ?? 'Untitled',
+            author: it.media.metadata.authorName ?? '',
+          })),
+        })),
+      )
     }
     setLoading(false)
   }, [])

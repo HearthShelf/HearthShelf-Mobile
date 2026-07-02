@@ -62,7 +62,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # --- config (matches TESTING.md) ---
-$JdkPath = 'C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot'
+$JdkPath = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot'
 $Package = 'com.hearthshelf.mobile'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $Apk = Join-Path $RepoRoot 'android\app\build\outputs\apk\debug\app-debug.apk'
@@ -75,7 +75,7 @@ if (-not (Test-Path $adb)) { $adb = 'adb' }
 function Write-Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 
 if (-not (Test-Path $JdkPath)) {
-  throw "JDK 17 not found at '$JdkPath'. Update `$JdkPath in this script or install Temurin JDK 17 (see TESTING.md)."
+  throw "JDK 21 not found at '$JdkPath'. Update `$JdkPath in this script or install Temurin JDK 21 (see TESTING.md)."
 }
 $env:JAVA_HOME = $JdkPath
 
@@ -133,11 +133,11 @@ if ($Prebuild) {
   $gp = Join-Path $RepoRoot 'android\gradle.properties'
   $pin = @(
     'org.gradle.java.installations.auto-download=false'
-    'org.gradle.java.installations.paths=C:/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot'
+    'org.gradle.java.installations.paths=C:/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot'
   )
   $content = if (Test-Path $gp) { Get-Content $gp -Raw } else { '' }
   if ($content -notmatch 'installations\.auto-download=false') {
-    Write-Step 'Re-adding JDK 17 pin to android/gradle.properties'
+    Write-Step 'Re-adding JDK 21 pin to android/gradle.properties'
     Add-Content -Path $gp -Value ("`n" + ($pin -join "`n"))
   }
 }

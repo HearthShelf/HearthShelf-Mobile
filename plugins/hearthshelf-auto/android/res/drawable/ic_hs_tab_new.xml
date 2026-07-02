@@ -1,0 +1,13 @@
+<!-- New tab: a sparkle / star burst for recently added. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+  <path android:fillColor="@android:color/white"
+      android:pathData="M12,2 C12.6,6.2 13.8,7.4 18,8 C13.8,8.6 12.6,9.8 12,14 C11.4,9.8 10.2,8.6 6,8 C10.2,7.4 11.4,6.2 12,2 Z"/>
+  <path android:fillColor="@android:color/white"
+      android:pathData="M18,14 C18.35,16.1 18.9,16.65 21,17 C18.9,17.35 18.35,17.9 18,20 C17.65,17.9 17.1,17.35 15,17 C17.1,16.65 17.65,16.1 18,14 Z"/>
+  <path android:fillColor="@android:color/white"
+      android:pathData="M6,15 C6.3,16.7 6.8,17.2 8.5,17.5 C6.8,17.8 6.3,18.3 6,20 C5.7,18.3 5.2,17.8 3.5,17.5 C5.2,17.2 5.7,16.7 6,15 Z"/>
+</vector>

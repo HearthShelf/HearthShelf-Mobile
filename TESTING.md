@@ -5,23 +5,23 @@ The build toolchain is installed on this machine (no EAS needed):
 - **Android Studio** (winget `Google.AndroidStudio`) - bundles JDK 21 (JBR).
 - **Android SDK** at `%LOCALAPPDATA%\Android\Sdk` - platform-tools (adb),
   platform 35, build-tools. `ANDROID_HOME` / `JAVA_HOME` persisted to the user env.
-- **JDK 17** (winget `EclipseAdoptium.Temurin.17.JDK`) at
-  `C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot` - the build uses
-  this (RN/Expo request a Java 17 toolchain).
+- **JDK 21** (winget `EclipseAdoptium.Temurin.21.JDK`) at
+  `C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot` - the build uses
+  this. RN 0.85 / AGP 9 require a Java 21 toolchain; JDK 17 fails with
+  `Cannot find a Java installation ... matching {languageVersion=21}`.
 - **Android Auto Desktop Head Unit (DHU)** at
   `%LOCALAPPDATA%\Android\Sdk\extras\google\auto\desktop-head-unit.exe`.
 
 ## Gradle gotcha (already fixed in `android/gradle.properties`)
 
-RN 0.85 / Expo 56 pin Gradle 9.3.1 but request a `jvmToolchain(17)`. With only
-JDK 21 present, Gradle tries to auto-download JDK 17 via its bundled
-foojay-resolver, which is incompatible with Gradle 9.x and crashes with
-`JvmVendorSpec ... IBM_SEMERU`. Fix: install JDK 17 and tell Gradle to use it and
-never auto-download -
+RN 0.85 / AGP 9 need a JDK 21 toolchain, and toolchain auto-download is off, so
+Gradle must be pointed at an installed JDK 21 explicitly. Without the pin the
+build fails with `Cannot find a Java installation ... matching {languageVersion=21}`.
+`scripts/deploy.ps1` re-asserts this after every prebuild.
 
 ```properties
 org.gradle.java.installations.auto-download=false
-org.gradle.java.installations.paths=C:/Program Files/Eclipse Adoptium/jdk-17.0.19.10-hotspot
+org.gradle.java.installations.paths=C:/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot
 ```
 
 ## Peer deps that must be installed (Clerk + expo-router)
@@ -64,7 +64,7 @@ npm run deploy:native       # native (Kotlin / config-plugin) change - runs preb
 
 ```powershell
 $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
-$env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot"
+$env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot"
 cd C:\code\HearthShelf\mobile\android
 .\gradlew.bat assembleDebug
 # APK -> android/app/build/outputs/apk/debug/app-debug.apk

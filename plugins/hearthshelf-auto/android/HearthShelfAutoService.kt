@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
 import androidx.core.app.RemoteInput
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -144,23 +145,51 @@ class HearthShelfAutoService : MediaLibraryService() {
   private val notePopsEnabled: Boolean
     get() = prefs.getBoolean("notePopsEnabled", true)
 
-  private fun customButton(cmd: String, name: String, icon: String): CommandButton =
-    CommandButton.Builder()
+  /**
+   * A custom-command button. media3 1.5+ renders the semantic `icon` constant in
+   * car slots (setIconResId alone leaves `icon` = ICON_UNDEFINED, which Android
+   * Auto draws as a blank/placeholder). So we pass an ICON_* via Builder(icon) for
+   * a guaranteed-visible glyph AND our branded drawable via setCustomIconResId for
+   * surfaces that honor it (the phone notification).
+   */
+  private fun customButton(
+    cmd: String,
+    name: String,
+    icon: String,
+    iconConstant: Int,
+    vararg slots: Int
+  ): CommandButton =
+    CommandButton.Builder(iconConstant)
       .setDisplayName(name)
-      .setIconResId(resources.getIdentifier(icon, "drawable", packageName))
+      .setCustomIconResId(resources.getIdentifier(icon, "drawable", packageName))
       .setSessionCommand(SessionCommand(cmd, Bundle.EMPTY))
+      .setSlots(*slots)
       .build()
 
-  /** Transport row order (Play sits in the system's own primary slot):
-   *  Back Xs | Forward Xs | Speed | Prev chapter | Next chapter | Bookmark.
-   *  The previous layout listed prev-chapter twice; there's now one each. */
+  /**
+   * Full custom transport row, pinned to explicit slots (media3 1.5+). Android
+   * Auto renders BACK | (play) | FORWARD inline with the two SECONDARY slots
+   * flanking, and OVERFLOW behind the "more" menu:
+   *   BACK           = Back Xs
+   *   FORWARD        = Forward Xs
+   *   BACK_SECONDARY = Previous chapter
+   *   FORWARD_SECONDARY = Next chapter
+   *   OVERFLOW       = Speed, Bookmark
+   * Pinning the chapter buttons to the SECONDARY slots (plus hiding the player's
+   * seek-to-next/prev commands, see NoSeekItemsPlayer) stops AA injecting its own
+   * prev/next-track glyphs there.
+   */
   private fun customLayout(): ImmutableList<CommandButton> = ImmutableList.of(
     rewindButton(),
     forwardButton(),
-    customButton(CMD_SPEED, "Speed", "ic_hs_speed"),
-    customButton(CMD_PREV_CH, "Previous chapter", "ic_hs_prev_chapter"),
-    customButton(CMD_NEXT_CH, "Next chapter", "ic_hs_next_chapter"),
-    customButton(CMD_BOOKMARK, "Bookmark", "ic_hs_bookmark")
+    customButton(CMD_PREV_CH, "Previous chapter", "ic_hs_prev_chapter",
+      CommandButton.ICON_PREVIOUS, CommandButton.SLOT_BACK_SECONDARY),
+    customButton(CMD_NEXT_CH, "Next chapter", "ic_hs_next_chapter",
+      CommandButton.ICON_NEXT, CommandButton.SLOT_FORWARD_SECONDARY),
+    customButton(CMD_SPEED, "Speed", "ic_hs_speed",
+      CommandButton.ICON_PLAYBACK_SPEED, CommandButton.SLOT_OVERFLOW),
+    customButton(CMD_BOOKMARK, "Bookmark", "ic_hs_bookmark",
+      CommandButton.ICON_BOOKMARK_UNFILLED, CommandButton.SLOT_OVERFLOW)
   )
 
   /** Drawable for a skip button whose numeral matches the user's chosen seconds.
@@ -172,18 +201,38 @@ class HearthShelfAutoService : MediaLibraryService() {
     return resources.getIdentifier(prefix, "drawable", packageName)
   }
 
+  /** Nearest built-in skip-icon constant for the chosen seconds, so the car always
+   *  has a visible glyph even when we lack a matching custom drawable. */
+  private fun rewindIconConstant(sec: Long): Int = when (sec) {
+    5L -> CommandButton.ICON_SKIP_BACK_5
+    10L -> CommandButton.ICON_SKIP_BACK_10
+    15L -> CommandButton.ICON_SKIP_BACK_15
+    30L -> CommandButton.ICON_SKIP_BACK_30
+    else -> CommandButton.ICON_SKIP_BACK
+  }
+
+  private fun forwardIconConstant(sec: Long): Int = when (sec) {
+    5L -> CommandButton.ICON_SKIP_FORWARD_5
+    10L -> CommandButton.ICON_SKIP_FORWARD_10
+    15L -> CommandButton.ICON_SKIP_FORWARD_15
+    30L -> CommandButton.ICON_SKIP_FORWARD_30
+    else -> CommandButton.ICON_SKIP_FORWARD
+  }
+
   private fun rewindButton(): CommandButton =
-    CommandButton.Builder()
+    CommandButton.Builder(rewindIconConstant(rewindSec))
       .setDisplayName("Back ${rewindSec}s")
-      .setIconResId(skipIcon("ic_hs_rewind", rewindSec))
+      .setCustomIconResId(skipIcon("ic_hs_rewind", rewindSec))
       .setSessionCommand(SessionCommand(CMD_REWIND, Bundle.EMPTY))
+      .setSlots(CommandButton.SLOT_BACK)
       .build()
 
   private fun forwardButton(): CommandButton =
-    CommandButton.Builder()
+    CommandButton.Builder(forwardIconConstant(forwardSec))
       .setDisplayName("Forward ${forwardSec}s")
-      .setIconResId(skipIcon("ic_hs_forward", forwardSec))
+      .setCustomIconResId(skipIcon("ic_hs_forward", forwardSec))
       .setSessionCommand(SessionCommand(CMD_FORWARD, Bundle.EMPTY))
+      .setSlots(CommandButton.SLOT_FORWARD)
       .build()
 
   override fun onCreate() {
@@ -218,10 +267,13 @@ class HearthShelfAutoService : MediaLibraryService() {
       }
     })
 
-    // Each chapter is its own clipped window, so the player's position/duration is
-    // already chapter-relative - no forwarding wrapper needed. A distinct session
-    // id is required; the phone service also runs a session in-process.
-    session = MediaLibrarySession.Builder(this, player, LibraryCallback())
+    // Each chapter is its own clipped window (chapter-relative position/duration).
+    // Wrap the player so the car doesn't see the seek-to-next/prev-item commands -
+    // otherwise Android Auto auto-injects its own prev/next-track glyphs into the
+    // secondary slots, colliding with our own chapter buttons. Our custom-command
+    // handlers seek rawPlayer directly, so hiding these here doesn't disable them.
+    // A distinct session id is required; the phone service also runs one in-process.
+    session = MediaLibrarySession.Builder(this, NoSeekItemsPlayer(player), LibraryCallback())
       .setId("hearthshelf_auto")
       .setCustomLayout(customLayout())
       .build()
@@ -611,6 +663,31 @@ class HearthShelfAutoService : MediaLibraryService() {
             .build()
         )
         .build()
+    }
+  }
+
+  /**
+   * Hides the seek-to-next/prev(-media-item) commands from the session's view of
+   * the player. The chapter timeline is multi-window, so without this the car
+   * would render its own prev/next-track buttons in the secondary slots we want
+   * for our chapter buttons. rawPlayer (the wrapped ExoPlayer) still has the
+   * commands, so our custom-command handlers can still jump chapters.
+   */
+  private inner class NoSeekItemsPlayer(inner: Player) : ForwardingPlayer(inner) {
+    override fun getAvailableCommands(): Player.Commands =
+      super.getAvailableCommands().buildUpon()
+        .remove(Player.COMMAND_SEEK_TO_NEXT)
+        .remove(Player.COMMAND_SEEK_TO_PREVIOUS)
+        .remove(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+        .remove(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+        .build()
+
+    override fun isCommandAvailable(command: Int): Boolean = when (command) {
+      Player.COMMAND_SEEK_TO_NEXT,
+      Player.COMMAND_SEEK_TO_PREVIOUS,
+      Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+      Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> false
+      else -> super.isCommandAvailable(command)
     }
   }
 

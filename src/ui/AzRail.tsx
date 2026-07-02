@@ -27,6 +27,8 @@ import { colors, fonts, radius, spacing } from './theme'
 import { haptics } from './haptics'
 
 const LETTERS = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')]
+// Reversed rail (Z on top, # at bottom) for descending name sorts.
+const LETTERS_DESC = [...LETTERS].reverse()
 const BUBBLE = 64
 const BUBBLE_RADIUS = BUBBLE / 2
 // Width of the rotated-square tail that pokes out the circle's right edge,
@@ -36,12 +38,16 @@ const TAIL = 14
 export function AzRail({
   available,
   onJump,
+  reversed = false,
 }: {
   /** Set of letters that have at least one item. */
   available: Set<string>
   /** Called with the chosen letter when the finger lands on / drags over it. */
   onJump: (letter: string) => void
+  /** Flip the rail so Z is on top - matches a descending (Z-first) list. */
+  reversed?: boolean
 }) {
+  const letters = reversed ? LETTERS_DESC : LETTERS
   const railHeight = useRef(0)
   const lastLetter = useRef<string | null>(null)
   // The letter currently under the finger (drives the preview bubble + highlight).
@@ -89,10 +95,10 @@ export function AzRail({
       const height = railHeight.current
       if (height <= 0) return
       const clamped = Math.max(0, Math.min(height, y))
-      const idx = Math.min(LETTERS.length - 1, Math.floor((clamped / height) * LETTERS.length))
-      pick(LETTERS[idx], clamped)
+      const idx = Math.min(letters.length - 1, Math.floor((clamped / height) * letters.length))
+      pick(letters[idx], clamped)
     },
-    [pick],
+    [pick, letters],
   )
 
   const pan = Gesture.Pan()
@@ -129,7 +135,7 @@ export function AzRail({
             railHeight.current = e.nativeEvent.layout.height
           }}
         >
-          {LETTERS.map((l) => (
+          {letters.map((l) => (
             <Text
               key={l}
               style={[

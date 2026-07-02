@@ -517,8 +517,10 @@ function BooksView({
         }),
     [captureCols, applyPinch],
   )
-  // The rail only makes sense on the Title-sorted grid (ascending buckets).
-  const showAzRail = sort === 'Title' && !desc && display === 'grid'
+  // The rail only makes sense on the Title-sorted grid; it works in either
+  // direction (letterIndex is built from the already-sorted list, so a desc
+  // sort just gives Z-first buckets).
+  const showAzRail = sort === 'Title' && display === 'grid'
 
   // Tiles fill the row exactly; when the rail reserves space on the right, shrink
   // them so the last column isn't pushed under the rail.
@@ -661,7 +663,7 @@ function BooksView({
           )}
         />
       )}
-      {showAzRail && <AzRail available={available} onJump={onJump} />}
+      {showAzRail && <AzRail available={available} onJump={onJump} reversed={desc} />}
 
       <Sheet ref={sheetRef} title="View options">
         <View style={styles.sheetTabs}>
@@ -970,6 +972,7 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
   // Sort name-ascending by default; tapping the active sort flips its direction.
   const [sort, setSort] = useState<GroupSort>('name')
   const [desc, setDesc] = useState(false)
+  const listRef = useRef<FlatList<GroupRow>>(null)
 
   const toggleSort = (next: GroupSort) => {
     if (next === sort) {
@@ -988,6 +991,27 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
     if (desc) rows.reverse()
     return rows
   }, [groups, sort, desc])
+
+  // The rail rides the name-sorted list (either direction); buckets by the
+  // group's first letter, matching the localeCompare order.
+  const showAzRail = sort === 'name'
+  const letterIndex = useMemo(() => {
+    const map = new Map<string, number>()
+    ;(sorted ?? []).forEach((g, i) => {
+      const l = letterOf(g.name)
+      if (!map.has(l)) map.set(l, i)
+    })
+    return map
+  }, [sorted])
+  const available = useMemo(() => new Set(letterIndex.keys()), [letterIndex])
+  const onJump = useCallback(
+    (letter: string) => {
+      const idx = letterIndex.get(letter)
+      if (idx == null) return
+      listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0 })
+    },
+    [letterIndex],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -1041,7 +1065,7 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
 
   return (
     <Animated.View entering={FadeIn.duration(DUR.base)} style={{ flex: 1 }}>
-      <View style={styles.controlsRow}>
+      <View style={[styles.controlsRow, showAzRail && { paddingRight: 30 }]}>
         <AppText variant="caption" color={colors.textMuted}>
           {sorted.length} {mode === 'series' ? 'series' : mode}
         </AppText>
@@ -1061,9 +1085,17 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
         </View>
       </View>
       <FlatList
+        ref={listRef}
         data={sorted}
         keyExtractor={(g) => g.key}
-        contentContainerStyle={{ padding: spacing.md, paddingBottom: contentInset }}
+        contentContainerStyle={{
+          padding: spacing.md,
+          paddingRight: showAzRail ? spacing.md + AZ_RAIL_WIDTH : spacing.md,
+          paddingBottom: contentInset,
+        }}
+        onScrollToIndexFailed={({ index, averageItemLength }) => {
+          listRef.current?.scrollToOffset({ offset: index * averageItemLength, animated: true })
+        }}
         renderItem={({ item }) => (
           <Touchable
             style={styles.groupRow}
@@ -1107,6 +1139,7 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
           </Touchable>
         )}
       />
+      {showAzRail && <AzRail available={available} onJump={onJump} reversed={desc} />}
     </Animated.View>
   )
 }

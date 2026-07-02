@@ -180,12 +180,23 @@ function addGradleDeps(config) {
     if (cfg.modResults.contents.includes('androidx.media3:media3-session')) return cfg
     const dep = `
 dependencies {
-    implementation "androidx.media3:media3-session:1.4.1"
-    implementation "androidx.media3:media3-exoplayer:1.4.1"
+    implementation "androidx.media3:media3-session:1.10.1"
+    implementation "androidx.media3:media3-exoplayer:1.10.1"
     implementation "com.google.guava:guava:33.3.1-android"
     // NotificationCompat.MessagingStyle + RemoteInput + Person for club note-pop
     // notifications (Phase 7); media3 pulls core transitively but pin it explicitly.
     implementation "androidx.core:core-ktx:1.13.1"
+}
+// Force a single media3 across the app + react-native-video, so the car custom
+// layout slot API (media3 1.5+) is available and there's no classpath split.
+configurations.all {
+    resolutionStrategy {
+        eachDependency { details ->
+            if (details.requested.group == 'androidx.media3') {
+                details.useVersion '1.10.1'
+            }
+        }
+    }
 }
 `
     cfg.modResults.contents += dep
