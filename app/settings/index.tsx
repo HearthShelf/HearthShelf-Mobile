@@ -280,8 +280,8 @@ export default function SettingsScreen() {
               desc="When rewinding, don't cross back into the previous chapter."
               control={
                 <SettingsToggle
-                  on={s.sleepChapterBarrier}
-                  onChange={(v) => setSetting('sleepChapterBarrier', v)}
+                  on={s.chapterBarrier}
+                  onChange={(v) => setSetting('chapterBarrier', v)}
                 />
               }
             />

@@ -12,14 +12,18 @@
  * latest queue/settings the next time the app comes to the foreground.
  */
 import { AppState, type AppStateStatus } from 'react-native'
+import { validateSetting, SETTINGS_CATALOG } from '@hearthshelf/core'
 import { getQueueState, setQueueItems, setQueuePlaylistId, subscribeQueue } from './queue'
 import { getState as getPlayerState } from './store'
 import { getServerQueue, putServerQueue } from '@/api/queue'
-import { getServerSettings, putServerSettings } from '@/api/settings'
+import { getServerSettings, putServerSettings, type SettingChange } from '@/api/settings'
 import {
-  applyServerSettings,
+  applyServerKeys,
+  ensureDeviceId,
+  getDeviceId,
+  getSettingsMeta,
   getSettingsState,
-  settingsValues,
+  storedSettings,
   subscribeSettings,
 } from '@/store/settings'
 
@@ -33,6 +37,8 @@ let hydratingSettings = false
 let hydratedSettings = false
 let queueTimer: ReturnType<typeof setTimeout> | null = null
 let settingsTimer: ReturnType<typeof setTimeout> | null = null
+// Snapshot of per-key meta at last push, to diff which keys changed since.
+let lastSettingsMeta: Record<string, number> = {}
 let unsubQueue: (() => void) | null = null
 let unsubSettings: (() => void) | null = null
 let appStateSub: { remove: () => void } | null = null
@@ -60,15 +66,18 @@ async function pullQueue(): Promise<void> {
 
 async function pullSettings(): Promise<void> {
   try {
-    const server = await getServerSettings()
-    if (server.values && typeof server.values === 'object') {
-      hydratingSettings = true
-      applyServerSettings(server.values)
-      hydratingSettings = false
-    }
+    const deviceId = await ensureDeviceId()
+    const server = await getServerSettings(deviceId)
+    hydratingSettings = true
+    // Account settings apply only when this device opts into shared settings;
+    // device settings always round-trip (they're this device's own backup).
+    if (getSettingsState().useSharedSettings && server.account) applyServerKeys(server.account)
+    if (server.device) applyServerKeys(server.device)
+    hydratingSettings = false
   } catch {
     // Backend unreachable - keep local defaults/current values.
   } finally {
+    lastSettingsMeta = { ...getSettingsMeta() }
     hydratedSettings = true
   }
 }
@@ -97,9 +106,35 @@ function pushSettings(): void {
   if (!hydratedSettings || hydratingSettings) return
   if (settingsTimer) clearTimeout(settingsTimer)
   settingsTimer = setTimeout(() => {
-    putServerSettings(settingsValues(getSettingsState())).catch(() => {
-      // Best-effort; the local store already holds the change.
-    })
+    const stored = storedSettings()
+    const changes: SettingChange[] = []
+    for (const key of Object.keys(stored)) {
+      const row = stored[key]
+      if (row.updatedAt === 0) continue // never set locally - leave as default
+      if (lastSettingsMeta[key] === row.updatedAt) continue // unchanged since last push
+      const def = SETTINGS_CATALOG[key]
+      if (!def) continue
+      // Validate client-side so we never push a value the server would reject.
+      const v = validateSetting(key, row.value)
+      if (!v.ok) continue
+      changes.push({ scope: def.scope, key, value: v.value, updatedAt: row.updatedAt })
+    }
+    if (!changes.length) return
+    putServerSettings(getDeviceId(), changes)
+      .then((res) => {
+        // Adopt any value the server rejected as stale (another device newer).
+        if (res.rejected?.length) {
+          const rows: Record<string, { value: unknown; updatedAt: number }> = {}
+          for (const r of res.rejected) rows[r.key] = { value: r.value, updatedAt: r.updatedAt }
+          hydratingSettings = true
+          applyServerKeys(rows as Record<string, { value: never; updatedAt: number }>)
+          hydratingSettings = false
+        }
+        lastSettingsMeta = { ...getSettingsMeta() }
+      })
+      .catch(() => {
+        // Best-effort; the local store already holds the change.
+      })
   }, SETTINGS_PUSH_DEBOUNCE_MS)
 }
 

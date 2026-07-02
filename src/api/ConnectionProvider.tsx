@@ -18,6 +18,7 @@ import { setSession, setLastServerId, getLastServerId } from './session'
 import { CLERK_JWT_TEMPLATE } from '@/lib/config'
 import { setAutoSession } from '@/player/autoBridge'
 import { startQueueSync } from '@/player/queueSync'
+import { ensureDeviceId } from '@/store/settings'
 import type { SplashServer } from '@/ui/SplashScreen'
 
 export type ConnectionStatus =
@@ -68,6 +69,9 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         const { serverUrl, token } = await connectServer(tokenFn, server.id, server.url)
         await setSession({ serverUrl, token })
         await setLastServerId(server.id)
+        // Ensure the per-install deviceId is loaded before sync starts, so
+        // device-scoped settings round-trip on the first pull.
+        await ensureDeviceId()
         setAutoSession(serverUrl, token)
         startQueueSync()
         setStatus({ phase: 'ready', serverName: server.name })

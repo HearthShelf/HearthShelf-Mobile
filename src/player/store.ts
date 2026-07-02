@@ -121,7 +121,7 @@ export function loadTrack(track: NowPlaying): void {
     rate: s.defaultSpeed,
     sleepBehavior: {
       rewindSec: s.sleepRewindSec,
-      chapterBarrier: s.sleepChapterBarrier,
+      chapterBarrier: s.chapterBarrier,
       fade: s.sleepFade,
       fadeLen: s.sleepFadeLen,
     },

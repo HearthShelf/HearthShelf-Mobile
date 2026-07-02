@@ -1,20 +1,26 @@
 /**
- * Cross-device user preferences (queue mode + auto-rules, plus the My Settings
- * screen's Appearance/Playback/Sleep prefs). Plain subscribe/snapshot store,
- * matching player/store.ts's convention - no Zustand in this app.
+ * Cross-device user preferences (queue mode + auto-rules, plus the settings
+ * screens' Appearance/Playback/Sleep/Haptics prefs). Plain subscribe/snapshot
+ * store, matching player/store.ts's convention - no Zustand in this app.
  *
- * Values persist server-side via /hs/settings (see queueSync.ts), same blob
- * the WebApp reads/writes, keyed by ABS user id - so switching between web and
- * mobile keeps the same queue mode, auto-rule, and playback choices. Local
- * state here is just the fast in-memory cache; sync is best-effort (offline
- * keeps defaults). player/store.ts reads the playback defaults (rate, skip
- * amounts, sleep behavior) from here when a fresh session starts, so My
- * Settings and the in-player sheets share one source of truth.
+ * Values sync server-side per-key via /hs/settings (see queueSync.ts), keyed by
+ * ABS user id, so switching between web and mobile keeps the same choices. Each
+ * setting carries its own updatedAt in `meta`, so sync merges at the setting
+ * level (per-key last-writer-wins) - a change on one device never clobbers an
+ * unrelated change on another. The @hearthshelf/core catalog is the shared
+ * definition of every setting's scope + default. Local state here is the fast
+ * in-memory cache; sync is best-effort (offline keeps defaults). player/store.ts
+ * reads the playback defaults (rate, skip amounts, sleep behavior) from here when
+ * a fresh session starts, so the settings screens and the in-player sheets share
+ * one source of truth.
  */
-import type { QueueMode, AutoRulePref } from '@hearthshelf/core'
-import { DEFAULT_AUTO_RULES } from '@hearthshelf/core'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import * as Crypto from 'expo-crypto'
+import type { QueueMode, AutoRulePref, SettingValue } from '@hearthshelf/core'
+import { DEFAULT_AUTO_RULES, SETTINGS_CATALOG } from '@hearthshelf/core'
 
-export type ThemePref = 'dark' | 'oled'
+export type ThemePref = 'dark' | 'light' | 'flat' | 'oled'
+export type AccentMode = 'dynamic' | 'manual'
 export type GlowMode = 'gradient' | 'image'
 export type ScrubberScope = 'chapter' | 'book'
 export type CoverAspect = 'square' | 'portrait'
@@ -23,6 +29,9 @@ export type HapticLevel = 'off' | 'minimal' | 'all'
 export type HapticIntensity = 'light' | 'medium'
 /** Aspect ratio (width/height) for cover tiles, per the CoverAspect setting. */
 export const COVER_ASPECT_RATIO: Record<CoverAspect, number> = { square: 1, portrait: 2 / 3 }
+
+/** The default hearth ember accent (matches the web palette / tokens). */
+export const EMBER = '#e0654a'
 
 /**
  * The player's customizable action buttons. The user arranges these across three
@@ -75,6 +84,8 @@ export interface SettingsState {
 
   // Appearance
   theme: ThemePref
+  accentMode: AccentMode
+  accentHex: string
   glowMode: GlowMode
   coverAspect: CoverAspect
 
@@ -89,7 +100,7 @@ export interface SettingsState {
 
   // Sleep timer defaults (seed player/store.ts's sleepBehavior on a fresh session)
   sleepRewindSec: number
-  sleepChapterBarrier: boolean
+  chapterBarrier: boolean
   sleepFade: boolean
   sleepFadeLen: number
 
@@ -97,6 +108,10 @@ export interface SettingsState {
   // on-screen buttons drop their labels to fit more per row.
   playerActions: PlayerActionPref[]
   playerActionsIconOnly: boolean
+
+  // Device-scoped: when false, this device ignores account settings pulled from
+  // the server and runs on its local values only (see queueSync.ts).
+  useSharedSettings: boolean
 }
 
 let state: SettingsState = {
@@ -104,6 +119,8 @@ let state: SettingsState = {
   queueAutoRules: DEFAULT_AUTO_RULES,
 
   theme: 'dark',
+  accentMode: 'manual',
+  accentHex: EMBER,
   glowMode: 'gradient',
   coverAspect: 'square',
 
@@ -116,13 +133,19 @@ let state: SettingsState = {
   hapticIntensity: 'light',
 
   sleepRewindSec: 30,
-  sleepChapterBarrier: true,
+  chapterBarrier: true,
   sleepFade: true,
   sleepFadeLen: 20,
 
   playerActions: DEFAULT_PLAYER_ACTIONS,
   playerActionsIconOnly: false,
+
+  useSharedSettings: true,
 }
+
+// Per-key updatedAt (ms) for sync conflict resolution. Not user settings; parallel
+// to `state` so components never see it. set() stamps it for catalogued keys.
+let meta: Record<string, number> = {}
 
 const listeners = new Set<() => void>()
 
@@ -130,13 +153,29 @@ export function getSettingsState(): SettingsState {
   return state
 }
 
+/** The per-key sync metadata (updatedAt per catalogued key). */
+export function getSettingsMeta(): Record<string, number> {
+  return meta
+}
+
 export function subscribeSettings(fn: () => void): () => void {
   listeners.add(fn)
   return () => listeners.delete(fn)
 }
 
-function set(patch: Partial<SettingsState>): void {
+// Apply a state patch and, for any catalogued key in the patch, stamp its
+// updatedAt so the sync layer knows it changed locally. `stampMeta` is false when
+// adopting server values (they carry their own updatedAt, applied via meta arg).
+function set(patch: Partial<SettingsState>, stampMeta = true): void {
   state = { ...state, ...patch }
+  if (stampMeta) {
+    const now = Date.now()
+    const next = { ...meta }
+    for (const key of Object.keys(patch)) {
+      if (key in SETTINGS_CATALOG) next[key] = now
+    }
+    meta = next
+  }
   listeners.forEach((l) => l())
 }
 
@@ -162,13 +201,32 @@ export function normalizePlayerActions(saved: PlayerActionPref[] | undefined): P
   return kept
 }
 
-/** Bulk-replace with values pulled from the server (device sync). */
-export function applyServerSettings(values: Partial<SettingsState>): void {
-  const patch = { ...values }
-  if ('playerActions' in patch) {
-    patch.playerActions = normalizePlayerActions(patch.playerActions)
+/**
+ * Adopt per-key values pulled from the server, resolving each against the local
+ * value via last-writer-wins (server's updatedAt >= local wins). Only catalogued
+ * keys apply; unknown keys are ignored. Does NOT re-stamp meta as a local change -
+ * it records the server's updatedAt so a later local edit can still win.
+ */
+export function applyServerKeys(rows: Record<string, { value: SettingValue; updatedAt: number }>): void {
+  const patch: Record<string, unknown> = {}
+  const nextMeta = { ...meta }
+  let changed = false
+  for (const key of Object.keys(rows)) {
+    if (!(key in SETTINGS_CATALOG)) continue
+    const remote = rows[key]
+    const localAt = meta[key] ?? -1
+    if (remote.updatedAt >= localAt) {
+      let value: unknown = remote.value
+      if (key === 'playerActions') value = normalizePlayerActions(value as PlayerActionPref[])
+      patch[key] = value
+      nextMeta[key] = remote.updatedAt
+      changed = true
+    }
   }
-  set(patch)
+  if (changed) {
+    meta = nextMeta
+    set(patch as Partial<SettingsState>, false)
+  }
 }
 
 /** Replace the player action arrangement (from the reorder editor). */
@@ -186,31 +244,54 @@ export function toggleAutoRule(id: AutoRulePref['id']): void {
   })
 }
 
-/** Generic setter for the My Settings screen's rows. */
+/** Generic setter for the settings screens' rows. */
 export function setSetting<K extends keyof SettingsState>(key: K, value: SettingsState[K]): void {
   set({ [key]: value } as Partial<SettingsState>)
 }
 
-/** Snapshot the syncable values for a /hs/settings PUT. */
-export function settingsValues(s: SettingsState = state): Record<string, unknown> {
-  return {
-    queueMode: s.queueMode,
-    queueAutoRules: s.queueAutoRules,
-    theme: s.theme,
-    glowMode: s.glowMode,
-    coverAspect: s.coverAspect,
-    scrubber: s.scrubber,
-    defaultSpeed: s.defaultSpeed,
-    skipForward: s.skipForward,
-    skipBack: s.skipBack,
-    hearthBgPlayer: s.hearthBgPlayer,
-    haptics: s.haptics,
-    hapticIntensity: s.hapticIntensity,
-    sleepRewindSec: s.sleepRewindSec,
-    sleepChapterBarrier: s.sleepChapterBarrier,
-    sleepFade: s.sleepFade,
-    sleepFadeLen: s.sleepFadeLen,
-    playerActions: s.playerActions,
-    playerActionsIconOnly: s.playerActionsIconOnly,
+/** Current value + updatedAt for every catalogued setting the store holds, for
+ *  the per-key sync push to diff against its last-pushed snapshot. */
+export function storedSettings(): Record<string, { value: SettingValue; updatedAt: number }> {
+  const out: Record<string, { value: SettingValue; updatedAt: number }> = {}
+  const s = state as unknown as Record<string, unknown>
+  for (const key of Object.keys(SETTINGS_CATALOG)) {
+    if (!(key in s)) continue // catalog key this platform doesn't render
+    out[key] = { value: s[key] as SettingValue, updatedAt: meta[key] ?? 0 }
   }
+  return out
+}
+
+// --- deviceId (per-install id for device-scoped settings) ------------------
+// Not a secret, so AsyncStorage (not SecureStore). Generated once, persisted,
+// and awaited before the first settings pull so device-scoped keys round-trip.
+
+const DEVICE_ID_KEY = 'hs.deviceId'
+let deviceId = ''
+let deviceIdReady: Promise<string> | null = null
+
+export function getDeviceId(): string {
+  return deviceId
+}
+
+export function ensureDeviceId(): Promise<string> {
+  if (!deviceIdReady) {
+    deviceIdReady = (async () => {
+      try {
+        const existing = await AsyncStorage.getItem(DEVICE_ID_KEY)
+        if (existing) {
+          deviceId = existing
+          return existing
+        }
+        const id = Crypto.randomUUID()
+        await AsyncStorage.setItem(DEVICE_ID_KEY, id)
+        deviceId = id
+        return id
+      } catch {
+        // Storage unavailable - fall back to a session-only id so sync still works.
+        if (!deviceId) deviceId = `dev-${Date.now()}-${Math.floor(Math.random() * 1e9)}`
+        return deviceId
+      }
+    })()
+  }
+  return deviceIdReady
 }
