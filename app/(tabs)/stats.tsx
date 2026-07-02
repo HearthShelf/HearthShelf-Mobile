@@ -8,9 +8,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ScrollView, StyleSheet, View } from 'react-native'
 import Animated, { FadeIn } from 'react-native-reanimated'
-import { formatDuration, dayKey, coverHue, type HSListeningStats } from '@hearthshelf/core'
-import { getHSStats } from '@/api/abs'
-import { AppText, Centered, Cover, Loading, PrimaryButton, Screen } from '@/ui/primitives'
+import {
+  formatDuration,
+  dayKey,
+  coverHue,
+  type HSListeningStats,
+  type HSLeaderboardEntry,
+  type LeaderboardWindow,
+} from '@hearthshelf/core'
+import { getHSStats, avatarUrl } from '@/api/abs'
+import { getLeaderboard } from '@/api/social'
+import { AppText, Avatar, Centered, Cover, Loading, PrimaryButton, Screen } from '@/ui/primitives'
+import { Seg } from '@/ui/settingsControls'
 import { radius, spacing, fonts, type Palette } from '@/ui/theme'
 import { useTheme } from '@/ui/ThemeProvider'
 import { Icon, icons } from '@/ui/icons'
@@ -173,8 +182,117 @@ export default function StatsTab() {
             )}
           </>
         )}
+
+        {/* Server leaderboard - independent of personal stats above, so it
+            renders even for a listener with zero time of their own. Hides
+            itself entirely when the server has no ABS db mounted. */}
+        <Leaderboard />
       </Animated.ScrollView>
     </Screen>
+  )
+}
+
+const WINDOW_OPTIONS: { value: LeaderboardWindow; label: string }[] = [
+  { value: 'week', label: 'Week' },
+  { value: 'month', label: 'Month' },
+  { value: 'all', label: 'All time' },
+]
+
+type LeaderboardStatus =
+  | { phase: 'loading' }
+  | { phase: 'error' }
+  | {
+      phase: 'ready'
+      me: HSLeaderboardEntry | null
+      entries: HSLeaderboardEntry[]
+      windowsAvailable: boolean
+    }
+  | { phase: 'hidden' }
+
+function Leaderboard() {
+  const { colors, shadow } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
+  const [window, setWindow] = useState<LeaderboardWindow>('all')
+  const [status, setStatus] = useState<LeaderboardStatus>({ phase: 'loading' })
+
+  useEffect(() => {
+    let cancelled = false
+    setStatus((prev) => (prev.phase === 'ready' ? prev : { phase: 'loading' }))
+    void (async () => {
+      try {
+        const res = await getLeaderboard(window)
+        if (cancelled) return
+        if (!res.available) {
+          setStatus({ phase: 'hidden' })
+          return
+        }
+        setStatus({
+          phase: 'ready',
+          me: res.me,
+          entries: res.entries,
+          windowsAvailable: res.windowsAvailable ?? false,
+        })
+      } catch {
+        if (!cancelled) setStatus({ phase: 'error' })
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [window])
+
+  if (status.phase === 'hidden' || status.phase === 'error') return null
+
+  return (
+    <View>
+      <View style={styles.leaderboardHeader}>
+        <AppText variant="label">Leaderboard</AppText>
+        {status.phase === 'ready' && status.windowsAvailable ? (
+          <Seg value={window} onChange={setWindow} options={WINDOW_OPTIONS} />
+        ) : null}
+      </View>
+      {status.phase === 'loading' ? (
+        <View style={[styles.card, { alignItems: 'center', paddingVertical: spacing.xl }]}>
+          <Loading label="Loading leaderboard..." />
+        </View>
+      ) : status.entries.length === 0 ? (
+        <View style={styles.card}>
+          <AppText variant="meta" color={colors.textMuted} style={{ textAlign: 'center' }}>
+            No one on the leaderboard yet.
+          </AppText>
+        </View>
+      ) : (
+        <View style={{ gap: spacing.sm }}>
+          {status.entries.slice(0, 20).map((entry) => (
+            <View
+              key={entry.userId}
+              style={[styles.leaderboardRow, entry.isMe && styles.leaderboardRowMe]}
+            >
+              <AppText
+                variant="mono"
+                color={entry.isMe ? colors.accent : colors.textMuted}
+                style={styles.leaderboardRank}
+              >
+                {entry.rank}
+              </AppText>
+              <Avatar uri={avatarUrl(entry.userId)} size={36} name={entry.username} hue={coverHue(entry.userId)} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <AppText variant="label" numberOfLines={1}>
+                  {entry.username}
+                  {entry.isMe ? ' (you)' : ''}
+                </AppText>
+                <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
+                  {entry.booksFinished} finished
+                </AppText>
+              </View>
+              <AppText variant="mono" color={colors.textMuted}>
+                {formatDuration(entry.secondsListened)}
+              </AppText>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
   )
 }
 
@@ -247,4 +365,22 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
     weekBarFill: { width: '100%', borderRadius: 6, backgroundColor: colors.accent },
     weekBarLabel: { fontSize: 10 },
     listenedRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+    leaderboardHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: spacing.sm,
+    },
+    leaderboardRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      backgroundColor: colors.card,
+      borderRadius: radius.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      padding: spacing.md,
+    },
+    leaderboardRowMe: { borderColor: colors.accent },
+    leaderboardRank: { width: 22, textAlign: 'center' },
   })
