@@ -6,7 +6,7 @@
  * social.ts: an older server (or notes disabled) yields { enabled:false } and
  * the UI hides the surface instead of erroring.
  */
-import type { HSNote, HSNotesResponse } from '@hearthshelf/core'
+import type { HSNote, HSNotesResponse, NoteVisibility } from '@hearthshelf/core'
 import { getSession } from './session'
 
 const DISABLED_NOTES: HSNotesResponse = {
@@ -56,6 +56,12 @@ export interface PostNoteParams {
   parentId?: string
   /** Seconds into the book; null/omitted for a general (ungated) note. */
   timeSec?: number | null
+  /** Who can read it. Omit for a club post (the server forces 'club'); on a
+   *  general post it's 'public' (default) or 'personal'. Older servers ignore it. */
+  visibility?: NoteVisibility
+  /** Author-declared spoiler-free: bypasses the position gate, shown to everyone.
+   *  Top-level notes only; the server forces it false on replies. Default false. */
+  safe?: boolean
   body: string
 }
 
@@ -74,6 +80,10 @@ export async function postNote(params: PostNoteParams): Promise<HSNote | null> {
         clubId: params.clubId ?? '',
         parentId: params.parentId ?? '',
         timeSec: params.timeSec ?? null,
+        // Omit visibility for club posts (server forces 'club'); send it on
+        // general posts. safe rides on every top-level post (default false).
+        ...(params.visibility ? { visibility: params.visibility } : {}),
+        safe: params.safe ?? false,
         body: params.body,
       }),
     })

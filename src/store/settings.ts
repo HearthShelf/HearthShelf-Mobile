@@ -26,6 +26,8 @@ export type GlowMode = 'gradient' | 'image'
  *  sitting-by-the-hearth artwork. */
 export type PlayerBg = 'blurred' | 'gradient' | 'hearth'
 export type ScrubberScope = 'chapter' | 'book'
+/** Remembered default for the note composer's Public/Personal choice (device). */
+export type NoteDefaultVisibility = 'public' | 'personal'
 export type CoverAspect = 'square' | 'portrait'
 /** How much haptic feedback to fire. See src/ui/haptics.ts for what each covers. */
 export type HapticLevel = 'off' | 'minimal' | 'all'
@@ -122,6 +124,10 @@ export interface SettingsState {
   // silenced on one device without leaving the club.
   notePops: boolean
 
+  // Remembers the note composer's last Public/Personal choice (device). Written
+  // on each general (non-club) post so the composer defaults to it next time.
+  noteDefaultVisibility: NoteDefaultVisibility
+
   // Device-scoped: when false, this device ignores account settings pulled from
   // the server and runs on its local values only (see queueSync.ts).
   useSharedSettings: boolean
@@ -157,6 +163,7 @@ let state: SettingsState = {
 
   shareCurrentlyListening: null,
   notePops: true,
+  noteDefaultVisibility: 'public',
 
   useSharedSettings: true,
 }

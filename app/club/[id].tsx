@@ -34,6 +34,7 @@ import { getMeId } from '@/api/me'
 import { coverUrl, avatarUrl } from '@/api/abs'
 import { getState as getPlayerState, subscribe as subscribePlayer } from '@/player/store'
 import { NoteThread, type ChapterMark } from '@/social/NoteThread'
+import { SafeSwitch } from '@/social/NoteComposerControls'
 import {
   AppText,
   Avatar,
@@ -77,6 +78,7 @@ export default function ClubRoomScreen() {
   const [viewBookId, setViewBookId] = useState<string | undefined>(undefined)
   const [body, setBody] = useState('')
   const [replyTo, setReplyTo] = useState<HSNote | null>(null)
+  const [safe, setSafe] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const membersSheetRef = useRef<SheetRef>(null)
@@ -179,12 +181,16 @@ export default function ClubRoomScreen() {
       // Stamp the current position only when the player is on this book AND
       // we're not replying (a reply inherits its parent's gate).
       timeSec: playingThisBook && !replyTo ? Math.round(position) : null,
+      // Club posts are always club-scoped (no visibility toggle). Safe is a
+      // top-level opt-in; a reply can't be safe.
+      safe: replyTo ? false : safe,
       body: text,
     })
     setBusy(false)
     if (created) {
       setBody('')
       setReplyTo(null)
+      setSafe(false)
       await load({ markRead: true })
     } else {
       show('Could not post')
@@ -405,6 +411,7 @@ export default function ClubRoomScreen() {
               <Icon name={icons.send} size={18} color={colors.onAccent} />
             </Touchable>
           </View>
+          {!replyTo ? <SafeSwitch on={safe} onChange={setSafe} /> : null}
         </View>
       ) : !isMember ? (
         <View style={styles.joinBar}>

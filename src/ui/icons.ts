@@ -71,6 +71,8 @@ export const icons = {
   bookmarks: 'bookmarks',
   visible: 'visibility',
   hidden: 'visibility-off',
+  lock: 'lock',
+  shield: 'shield',
   onScreen: 'grid-view',
   inTray: 'more-horiz',
   expandLess: 'expand-less',

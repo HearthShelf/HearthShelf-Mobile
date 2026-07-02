@@ -9,6 +9,7 @@
  * gateNotes as position advances between fetches, but never invents note bodies.
  */
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { useSyncExternalStore } from 'react'
 import { ActivityIndicator, StyleSheet, TextInput, View } from 'react-native'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import type { HSNote } from '@hearthshelf/core'
@@ -20,9 +21,16 @@ import { Icon, icons } from '@/ui/icons'
 import { avatarUrl } from '@/api/abs'
 import { coverHue } from '@hearthshelf/core'
 import { NoteThread } from './NoteThread'
+import { VisibilityToggle, SafeSwitch } from './NoteComposerControls'
 import { haptics } from '@/ui/haptics'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
+import {
+  getSettingsState,
+  subscribeSettings,
+  setSetting,
+  type NoteDefaultVisibility,
+} from '@/store/settings'
 import type { SheetHandle } from '@/player/sheets'
 
 export interface NotesSheetProps {
@@ -58,6 +66,17 @@ export const NotesSheet = forwardRef<SheetHandle, NotesSheetProps>(function Note
   const [replyTo, setReplyTo] = useState<HSNote | null>(null)
   const [busy, setBusy] = useState(false)
 
+  // Composer visibility defaults to the remembered Public/Personal choice; Safe
+  // always starts OFF (a deliberate per-note opt-in).
+  const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
+  const [visibility, setVisibility] = useState<NoteDefaultVisibility>(settings.noteDefaultVisibility)
+  const [safe, setSafe] = useState(false)
+  // Adopt the remembered default whenever it changes and we're not mid-edit.
+  useEffect(() => {
+    if (!body) setVisibility(settings.noteDefaultVisibility)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.noteDefaultVisibility])
+
   const load = useCallback(async () => {
     if (!libraryItemId) return
     const res = await getNotes({ libraryItemId, position, finished })
@@ -84,18 +103,24 @@ export const NotesSheet = forwardRef<SheetHandle, NotesSheetProps>(function Note
     if (!text || !libraryItemId || busy) return
     setBusy(true)
     haptics.success()
-    // A reply inherits its parent's gate; a top-level composer posts a general
-    // (ungated) note - timestamped notes come from the player composer.
+    // A reply inherits its parent's gate + visibility; a top-level composer posts
+    // a general (ungated) note - timestamped notes come from the player composer.
+    const isReply = !!replyTo
     const created = await postNote({
       libraryItemId,
       parentId: replyTo?.id ?? '',
       timeSec: null,
+      visibility: isReply ? undefined : visibility,
+      safe: isReply ? false : safe,
       body: text,
     })
     setBusy(false)
     if (created) {
+      // Remember the Public/Personal choice for next time (top-level only).
+      if (!isReply) setSetting('noteDefaultVisibility', visibility)
       setBody('')
       setReplyTo(null)
+      setSafe(false)
       await load()
     } else {
       onToast?.('Could not post note')
@@ -163,6 +188,9 @@ export const NotesSheet = forwardRef<SheetHandle, NotesSheetProps>(function Note
               <IconButton name={icons.close} size={16} color={colors.textMuted} onPress={() => setReplyTo(null)} />
             </View>
           ) : null}
+          {!replyTo ? (
+            <VisibilityToggle value={visibility} onChange={setVisibility} />
+          ) : null}
           <View style={styles.composerRow}>
             <TextInput
               style={styles.input}
@@ -181,6 +209,7 @@ export const NotesSheet = forwardRef<SheetHandle, NotesSheetProps>(function Note
               <Icon name={icons.send} size={18} color={colors.onAccent} />
             </Touchable>
           </View>
+          {!replyTo ? <SafeSwitch on={safe} onChange={setSafe} /> : null}
         </View>
       ) : null}
     </Sheet>

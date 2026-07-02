@@ -20,11 +20,18 @@ import { getClubs } from '@/api/clubs'
 import { getMeId } from '@/api/me'
 import { getState as getPlayerState, subscribe as subscribePlayer } from '@/player/store'
 import { NoteThread, type ChapterMark } from './NoteThread'
+import { VisibilityToggle, SafeSwitch } from './NoteComposerControls'
 import { AppText, IconButton, Sheet, Touchable, type SheetRef } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
 import { haptics } from '@/ui/haptics'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
+import {
+  getSettingsState,
+  subscribeSettings,
+  setSetting,
+  type NoteDefaultVisibility,
+} from '@/store/settings'
 import { useSyncExternalStore } from 'react'
 import { useRouter } from 'expo-router'
 import type { SheetHandle } from '@/player/sheets'
@@ -59,6 +66,15 @@ export const PlayerNotesSheet = forwardRef<
   const [body, setBody] = useState('')
   const [replyTo, setReplyTo] = useState<HSNote | null>(null)
   const [busy, setBusy] = useState(false)
+
+  // Composer visibility (general tab only) + the spoiler-safe opt-in.
+  const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
+  const [visibility, setVisibility] = useState<NoteDefaultVisibility>(settings.noteDefaultVisibility)
+  const [safe, setSafe] = useState(false)
+  useEffect(() => {
+    if (!body) setVisibility(settings.noteDefaultVisibility)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.noteDefaultVisibility])
 
   // Resolve whether the playing book has a club the reader is in (its current
   // book being this item), so the Club tab shows only when relevant.
@@ -121,18 +137,26 @@ export const PlayerNotesSheet = forwardRef<
     if (!text || !itemId || busy) return
     setBusy(true)
     haptics.success()
+    const isReply = !!replyTo
+    const isClub = tab === 'club'
     const created = await postNote({
       libraryItemId: itemId,
-      clubId: tab === 'club' ? club?.id : '',
+      clubId: isClub ? club?.id : '',
       parentId: replyTo?.id ?? '',
       // Stamp the live position for a top-level note; a reply inherits its gate.
-      timeSec: replyTo ? null : Math.round(position),
+      timeSec: isReply ? null : Math.round(position),
+      // Club posts are forced 'club' server-side; only send visibility on the
+      // general tab's top-level notes. Safe rides on every top-level post.
+      visibility: isClub || isReply ? undefined : visibility,
+      safe: isReply ? false : safe,
       body: text,
     })
     setBusy(false)
     if (created) {
+      if (!isClub && !isReply) setSetting('noteDefaultVisibility', visibility)
       setBody('')
       setReplyTo(null)
+      setSafe(false)
       await load()
     } else {
       onToast?.('Could not post note')
@@ -215,6 +239,9 @@ export const PlayerNotesSheet = forwardRef<
               <IconButton name={icons.close} size={16} color={colors.textMuted} onPress={() => setReplyTo(null)} />
             </View>
           ) : null}
+          {!replyTo && tab === 'notes' ? (
+            <VisibilityToggle value={visibility} onChange={setVisibility} />
+          ) : null}
           <View style={styles.composerRow}>
             <TextInput
               style={styles.input}
@@ -233,6 +260,7 @@ export const PlayerNotesSheet = forwardRef<
               <Icon name={icons.send} size={18} color={colors.onAccent} />
             </Touchable>
           </View>
+          {!replyTo ? <SafeSwitch on={safe} onChange={setSafe} /> : null}
         </View>
       ) : null}
     </Sheet>

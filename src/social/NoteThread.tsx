@@ -14,7 +14,7 @@ import type { HSNote } from '@hearthshelf/core'
 import { coverHue, formatTimestamp } from '@hearthshelf/core'
 import { avatarUrl } from '@/api/abs'
 import { AppText, Avatar, IconButton, Touchable } from '@/ui/primitives'
-import { icons } from '@/ui/icons'
+import { Icon, icons } from '@/ui/icons'
 import { spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 
@@ -74,6 +74,24 @@ function NoteBubble({
             <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
               {stamp}
             </AppText>
+          ) : null}
+          {/* A personal note is only ever the author's own; flag it so they know
+              nobody else can see it. A safe note shows early to everyone. */}
+          {note.visibility === 'personal' ? (
+            <View style={styles.chip}>
+              <Icon name={icons.lock} size={11} color={colors.textMuted} />
+              <AppText variant="caption" color={colors.textMuted}>
+                Only you
+              </AppText>
+            </View>
+          ) : null}
+          {note.safe ? (
+            <View style={[styles.chip, styles.chipSafe]}>
+              <Icon name={icons.shield} size={11} color={colors.accent} />
+              <AppText variant="caption" color={colors.accent}>
+                Safe
+              </AppText>
+            </View>
           ) : null}
         </View>
         <AppText variant="meta" style={{ marginTop: 2 }}>
@@ -200,7 +218,17 @@ const makeStyles = (colors: Palette) =>
       borderRadius: 8,
       paddingHorizontal: spacing.sm,
     },
-    metaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    metaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
+    chip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+      paddingVertical: 1,
+      paddingHorizontal: spacing.sm,
+      borderRadius: 999,
+      backgroundColor: colors.fill,
+    },
+    chipSafe: { backgroundColor: colors.accentWash },
     actionsRow: {
       flexDirection: 'row',
       alignItems: 'center',
