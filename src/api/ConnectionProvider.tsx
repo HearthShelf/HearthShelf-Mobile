@@ -17,10 +17,10 @@ import { fetchLinkedServers, type LinkedServer } from './controlPlane'
 import { connectServer } from './connect'
 import { setSession, setLastServerId, getLastServerId } from './session'
 import { CLERK_JWT_TEMPLATE } from '@/lib/config'
-import { setAutoSession } from '@/player/autoBridge'
+import { setAutoSession, setAutoNotePops } from '@/player/autoBridge'
 import { startQueueSync } from '@/player/queueSync'
 import { startClubSync } from '@/player/clubSync'
-import { ensureDeviceId } from '@/store/settings'
+import { ensureDeviceId, getSettingsState, subscribeSettings } from '@/store/settings'
 import { hydrateDownloads } from '@/player/downloads'
 import type { SplashServer } from '@/ui/SplashScreen'
 
@@ -42,6 +42,24 @@ interface ConnectionValue {
 }
 
 const Ctx = createContext<ConnectionValue | null>(null)
+
+// Subscribe once to notePops changes so the car service's mirrored flag stays
+// current after the user toggles the setting (the initial value is pushed at
+// connect). Guarded so re-connects don't stack subscriptions.
+let notePopsMirrorArmed = false
+let lastMirroredNotePops: boolean | null = null
+function ensureNotePopsMirror(): void {
+  if (notePopsMirrorArmed) return
+  notePopsMirrorArmed = true
+  lastMirroredNotePops = getSettingsState().notePops
+  subscribeSettings(() => {
+    const next = getSettingsState().notePops
+    if (next !== lastMirroredNotePops) {
+      lastMirroredNotePops = next
+      setAutoNotePops(next)
+    }
+  })
+}
 
 class NoLinkedServersError extends Error {
   constructor() {
@@ -77,7 +95,12 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         await ensureDeviceId()
         // Load any previously downloaded books so they're playable offline.
         await hydrateDownloads()
-        setAutoSession(serverUrl, token)
+        const { skipBack, skipForward } = getSettingsState()
+        setAutoSession(serverUrl, token, skipBack, skipForward)
+        // Mirror notePops into the car service (it can't read the settings store)
+        // and keep it in sync as the user toggles it.
+        setAutoNotePops(getSettingsState().notePops)
+        ensureNotePopsMirror()
         startQueueSync()
         startClubSync()
         setStatus({ phase: 'ready', serverName: server.name })

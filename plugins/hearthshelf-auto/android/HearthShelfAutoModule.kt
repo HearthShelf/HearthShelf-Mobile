@@ -54,13 +54,39 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
   // ---- Android Auto session handoff (unchanged) ----
 
   @ReactMethod
-  fun setSession(serverUrl: String, token: String) {
-    prefs().edit().putString("serverUrl", serverUrl).putString("token", token).apply()
+  fun setSession(serverUrl: String, token: String, skipBackSec: Int, skipForwardSec: Int) {
+    prefs().edit()
+      .putString("serverUrl", serverUrl)
+      .putString("token", token)
+      .putInt("skipBackSec", skipBackSec)
+      .putInt("skipForwardSec", skipForwardSec)
+      .apply()
+  }
+
+  /** Publish the phone's computed Discover feed for the car to browse. The car
+   *  service can't run the TS taste engine, so JS hands it a ready snapshot:
+   *  { shelves: [{ id, label, items: [{ id, title, author }] }] }. */
+  @ReactMethod
+  fun setDiscover(json: String) {
+    prefs().edit().putString("discover", json).apply()
+  }
+
+  /** Mirror the notePops master on/off into the car service's prefs. The RN
+   *  settings store persists to AsyncStorage (SQLite), which the headless Auto
+   *  service can't read, so JS pushes the boolean here. See
+   *  HearthShelfAutoService.notePopsEnabled. */
+  @ReactMethod
+  fun setNotePopsEnabled(enabled: Boolean) {
+    prefs().edit().putBoolean("notePopsEnabled", enabled).apply()
   }
 
   @ReactMethod
   fun clearSession() {
-    prefs().edit().remove("serverUrl").remove("token").apply()
+    prefs().edit()
+      .remove("serverUrl").remove("token")
+      .remove("skipBackSec").remove("skipForwardSec")
+      .remove("discover")
+      .apply()
     Handler(Looper.getMainLooper()).post {
       controller?.release()
       controller = null

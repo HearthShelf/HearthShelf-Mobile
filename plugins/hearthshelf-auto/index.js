@@ -41,6 +41,8 @@ function copyKotlin(config) {
         'HearthShelfAutoService.kt',
         'HearthShelfAutoModule.kt',
         'HearthShelfPlayerService.kt',
+        // Handles club note-pop voice/text replies (Phase 7).
+        'NoteReplyReceiver.kt',
       ]) {
         fs.copyFileSync(path.join(src, f), path.join(dest, f))
       }
@@ -135,6 +137,25 @@ function addManifestService(config) {
       })
     }
 
+    // Club note-pop reply receiver (Phase 7): the RemoteInput reply PendingIntent
+    // targets this. Not exported - only our own notification action fires it.
+    const RECEIVER = `${PKG}.NoteReplyReceiver`
+    app.receiver = app.receiver || []
+    const hasReceiver = app.receiver.find((r) => r.$ && r.$['android:name'] === RECEIVER)
+    if (!hasReceiver) {
+      app.receiver.push({
+        $: {
+          'android:name': RECEIVER,
+          'android:exported': 'false',
+        },
+        'intent-filter': [
+          {
+            action: [{ $: { 'android:name': 'com.hearthshelf.NOTE_REPLY' } }],
+          },
+        ],
+      })
+    }
+
     // The car.application meta-data + automotive_app_desc is what makes Android
     // Auto actually LIST the app (a discoverable MediaBrowserService alone is not
     // enough). Without it the app never appears in the AA launcher.
@@ -162,6 +183,9 @@ dependencies {
     implementation "androidx.media3:media3-session:1.4.1"
     implementation "androidx.media3:media3-exoplayer:1.4.1"
     implementation "com.google.guava:guava:33.3.1-android"
+    // NotificationCompat.MessagingStyle + RemoteInput + Person for club note-pop
+    // notifications (Phase 7); media3 pulls core transitively but pin it explicitly.
+    implementation "androidx.core:core-ktx:1.13.1"
 }
 `
     cfg.modResults.contents += dep
