@@ -15,7 +15,6 @@ import {
 } from 'react'
 import { StyleSheet, TextInput, View } from 'react-native'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
-import Slider from '@react-native-community/slider'
 import { formatTimestamp } from '@hearthshelf/core'
 import {
   getState,
@@ -30,6 +29,7 @@ import {
 } from './store'
 import { useBookmarks } from './useBookmarks'
 import { AppText, Sheet, type SheetRef, Touchable } from '@/ui/primitives'
+import { AppSlider } from '@/ui/AppSlider'
 import { Icon, icons } from '@/ui/icons'
 import { radius, spacing, type Palette, type buildShadow } from '@/ui/theme'
 import { useTheme } from '@/ui/ThemeProvider'
@@ -183,32 +183,15 @@ export const SpeedSheet = forwardRef<SheetHandle>(function SpeedSheet(_props, re
           {speedLabel(rate)}
         </AppText>
       </View>
-      <Slider
-        style={styles.slider}
-        tapToSeek
-        minimumValue={0.5}
-        maximumValue={3}
+      <AppSlider
+        min={0.5}
+        max={3}
         step={0.05}
         value={rate}
-        onValueChange={(v) => setRate(Number(v.toFixed(2)))}
-        minimumTrackTintColor={colors.accent}
-        maximumTrackTintColor={colors.fillStrong}
-        thumbTintColor={colors.accent}
+        onChange={setRate}
+        ticks={[0.5, 1, 1.5, 2, 3]}
+        formatTick={speedLabel}
       />
-      <View style={styles.sliderTicks}>
-        <AppText variant="caption" color={colors.textMuted}>
-          0.5x
-        </AppText>
-        <AppText variant="caption" color={colors.textMuted}>
-          1x
-        </AppText>
-        <AppText variant="caption" color={colors.textMuted}>
-          2x
-        </AppText>
-        <AppText variant="caption" color={colors.textMuted}>
-          3x
-        </AppText>
-      </View>
       <View style={[styles.grid, { marginTop: spacing.lg }]}>
         {SPEED_PRESETS.map((s) => {
           // Widened so a preset still highlights when the slider lands on it
@@ -519,15 +502,6 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof buildShadow>) =>
     alignItems: 'center',
   },
   speedOn: { backgroundColor: colors.accent },
-  sliderTicks: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: spacing.xs,
-  },
-  // Taller than the default so the whole strip is a comfortable drag target, not
-  // just the thin track. The community slider's touch area = its rendered height.
-  slider: { height: 44, marginVertical: spacing.xs },
   segFull: {
     flexDirection: 'row',
     gap: 4,

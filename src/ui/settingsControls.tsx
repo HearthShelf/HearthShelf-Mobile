@@ -7,7 +7,7 @@
 import { useMemo, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native'
 import Animated, { LinearTransition, FadeIn, FadeOut } from 'react-native-reanimated'
-import Slider from '@react-native-community/slider'
+import { AppSlider } from '@/ui/AppSlider'
 import { AppText } from './primitives'
 import { Icon, type IconName } from './icons'
 import { radius, spacing, type Palette } from './theme'
@@ -257,16 +257,7 @@ export function SettingsSlider({
           {formatLabel(max)}
         </AppText>
       </View>
-      <Slider
-        minimumValue={min}
-        maximumValue={max}
-        step={step}
-        value={value}
-        onValueChange={onChange}
-        minimumTrackTintColor={colors.accent}
-        maximumTrackTintColor={colors.fillStrong}
-        thumbTintColor={colors.accent}
-      />
+      <AppSlider min={min} max={max} step={step} value={value} onChange={onChange} />
     </View>
   )
 }

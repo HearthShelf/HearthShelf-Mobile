@@ -16,6 +16,7 @@ import {
   Seg,
   SettingsToggle,
   ChipRow,
+  SettingsSlider,
 } from '@/ui/settingsControls'
 import {
   getSettingsState,
@@ -26,8 +27,6 @@ import {
 } from '@/store/settings'
 import { QUEUE_MODES, QUEUE_MODE_SUB, AUTO_RULE_COPY } from '@/player/queue'
 
-const SKIP_FWD_OPTIONS = [15, 30, 60] as const
-const SKIP_BACK_OPTIONS = [10, 15, 30] as const
 const SPEED_OPTIONS = [0.75, 1, 1.5, 2] as const
 
 export default function PlaybackPanel() {
@@ -47,19 +46,23 @@ export default function PlaybackPanel() {
           />
         </SettingsRow>
         <SettingsRow title="Skip forward" desc="How far the forward button jumps." stacked>
-          <ChipRow
-            value={s.skipForward as (typeof SKIP_FWD_OPTIONS)[number]}
-            options={[...SKIP_FWD_OPTIONS]}
+          <SettingsSlider
+            value={s.skipForward}
+            min={5}
+            max={90}
+            step={5}
             onChange={(v) => setSetting('skipForward', v)}
-            unit="s"
+            formatLabel={(v) => `${v}s`}
           />
         </SettingsRow>
         <SettingsRow title="Skip back" desc="How far the back button jumps." stacked>
-          <ChipRow
-            value={s.skipBack as (typeof SKIP_BACK_OPTIONS)[number]}
-            options={[...SKIP_BACK_OPTIONS]}
+          <SettingsSlider
+            value={s.skipBack}
+            min={5}
+            max={60}
+            step={5}
             onChange={(v) => setSetting('skipBack', v)}
-            unit="s"
+            formatLabel={(v) => `${v}s`}
           />
         </SettingsRow>
         <SettingsRow
