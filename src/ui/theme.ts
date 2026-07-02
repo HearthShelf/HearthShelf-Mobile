@@ -18,10 +18,20 @@ function hexToRgb(hex: string): [number, number, number] {
   return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]
 }
 
-/** rgba() string for an accent hex at a given alpha (for washes/tiles/shadows). */
-function accentAlpha(hex: string, alpha: number): string {
+/** rgba() string for a #rrggbb hex at a given alpha (washes, scrims, glows). */
+export function withAlpha(hex: string, alpha: number): string {
   const [r, g, b] = hexToRgb(hex)
   return `rgba(${r},${g},${b},${alpha})`
+}
+
+const accentAlpha = withAlpha
+
+/** Blend two #rrggbb hexes: t=0 -> a, t=1 -> b (approximates CSS color-mix). */
+export function mixHex(a: string, b: string, t: number): string {
+  const [ar, ag, ab] = hexToRgb(a)
+  const [br, bg, bb] = hexToRgb(b)
+  const c = (x: number, y: number) => Math.round(x + (y - x) * t)
+  return `rgb(${c(ar, br)},${c(ag, bg)},${c(ab, bb)})`
 }
 
 // --- palettes ---------------------------------------------------------------

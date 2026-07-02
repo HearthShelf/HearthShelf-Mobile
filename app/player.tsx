@@ -63,7 +63,7 @@ import { AppTabBar } from '@/ui/AppTabBar'
 import { haptics } from '@/ui/haptics'
 import { DUR, SpringPressable } from '@/ui/motion'
 import { useToast, Toast } from '@/ui/Toast'
-import { radius, spacing, type Palette } from '@/ui/theme'
+import { radius, spacing, withAlpha, type Palette } from '@/ui/theme'
 import { useColors, useTheme, type ActiveTheme } from '@/ui/ThemeProvider'
 import { Scrubber } from '@/player/Scrubber'
 import {
@@ -299,10 +299,10 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <Screen edges={immersive ? ['top', 'bottom'] : ['top']}>
-      {/* Player background, per the playerBg setting: blurred cover art, a
-          breathing hue glow, or the hearth artwork. Whichever it is, a gradient
-          fades it into the scaffold so the cover, title, and controls stay
-          readable. */}
+      {/* Player background, per the playerBg setting. Blurred cover and hearth
+          art are the background, with only a light scrim fading them into the
+          scaffold near the controls; gradient mode is the breathing cover-hue
+          glow on the bare scaffold. */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         {settings.playerBg === 'blurred' && nowPlaying.artworkUrl ? (
           <Image
@@ -314,14 +314,19 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         {settings.playerBg === 'hearth' ? (
           <Image source={HEARTH_BG} style={styles.hearthBg} resizeMode="cover" />
         ) : null}
-        <LinearGradient
-          colors={['rgba(27,26,24,0.55)', 'rgba(27,26,24,0.82)', colors.scaffold]}
-          locations={[0, 0.55, 1]}
-          style={StyleSheet.absoluteFill}
-        />
-        {/* The glow breathes only on the gradient background, where it IS the
-            background - a live hearth rather than a static tint. */}
-        <CoverGlow hue={hue} height={430} breathe={settings.playerBg === 'gradient'} />
+        {settings.playerBg === 'gradient' ? (
+          <CoverGlow hue={hue} height={430} breathe />
+        ) : (
+          <LinearGradient
+            colors={[
+              withAlpha(colors.scaffold, 0.18),
+              withAlpha(colors.scaffold, 0.5),
+              colors.scaffold,
+            ]}
+            locations={[0, 0.62, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        )}
       </View>
 
       {!immersive && (
