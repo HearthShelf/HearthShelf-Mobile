@@ -106,6 +106,8 @@ export interface SettingsState {
   chapterBarrier: boolean
   sleepFade: boolean
   sleepFadeLen: number
+  sleepShakeExtend: boolean
+  sleepShakeMinutes: number
 
   // Player action buttons: arrangement across on-screen/tray/hidden, and whether
   // on-screen buttons drop their labels to fit more per row.
@@ -139,6 +141,8 @@ let state: SettingsState = {
   chapterBarrier: true,
   sleepFade: true,
   sleepFadeLen: 20,
+  sleepShakeExtend: false,
+  sleepShakeMinutes: 5,
 
   playerActions: DEFAULT_PLAYER_ACTIONS,
   playerActionsIconOnly: false,

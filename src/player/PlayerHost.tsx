@@ -23,6 +23,8 @@ import {
   togglePlay,
 } from './store'
 import { syncProgress } from './playback'
+import { useShakeToExtend } from './shakeToExtend'
+import { Toast, useToast } from '@/ui/Toast'
 
 // Native module (added in HearthShelfAutoModule / HearthShelfPlayerService).
 // Typed loosely - it's a thin old-arch bridge.
@@ -53,6 +55,11 @@ export function PlayerHost() {
   // Timestamp (ms) until which onState events are treated as seek transients and
   // ignored, so a skip doesn't bounce the play/pause intent.
   const seekingUntil = useRef(0)
+
+  // Shake-to-extend the sleep timer. Mounted here (the one persistent host) so
+  // it can fire a confirmation toast in component context.
+  const toast = useToast()
+  useShakeToExtend((mins) => toast.show(`+${mins} min added`))
 
   // Android 13+ needs runtime POST_NOTIFICATIONS or the media notification never
   // shows. Ask once on mount (no-op below API 33 / on iOS).
@@ -153,8 +160,9 @@ export function PlayerHost() {
     return subscribe(sync)
   }, [])
 
-  // Renders nothing; the audio lives entirely in the native service.
-  return null
+  // The audio lives entirely in the native service; the only thing rendered is
+  // the shake-to-extend confirmation toast (over every screen).
+  return <Toast message={toast.message} />
 }
 
 // Re-exported so the notification/remote control handlers (registered by the

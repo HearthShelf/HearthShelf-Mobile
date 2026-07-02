@@ -43,16 +43,20 @@ export default function SleepPanel() {
         <SettingsRow
           title="Stay within the chapter"
           desc="When rewinding, don't cross back into the previous chapter."
-          control={<SettingsToggle on={s.chapterBarrier} onChange={(v) => setSetting('chapterBarrier', v)} />}
+          control={
+            <SettingsToggle
+              on={s.chapterBarrier}
+              onChange={(v) => setSetting('chapterBarrier', v)}
+            />
+          }
         />
         <SettingsRow
           title="Fade out"
           desc="Gradually lower the volume before the timer pauses."
           control={<SettingsToggle on={s.sleepFade} onChange={(v) => setSetting('sleepFade', v)} />}
-          last={!s.sleepFade}
         />
         {s.sleepFade && (
-          <SettingsRow title="Fade length" desc="How long the fade-out takes." stacked last>
+          <SettingsRow title="Fade length" desc="How long the fade-out takes." stacked>
             <SettingsSlider
               value={s.sleepFadeLen}
               min={5}
@@ -60,6 +64,29 @@ export default function SleepPanel() {
               step={5}
               onChange={(v) => setSetting('sleepFadeLen', v)}
               formatLabel={(v) => `${v}s`}
+            />
+          </SettingsRow>
+        )}
+        <SettingsRow
+          title="Shake to extend"
+          desc="Shake your phone while the timer runs to add more time."
+          control={
+            <SettingsToggle
+              on={s.sleepShakeExtend}
+              onChange={(v) => setSetting('sleepShakeExtend', v)}
+            />
+          }
+          last={!s.sleepShakeExtend}
+        />
+        {s.sleepShakeExtend && (
+          <SettingsRow title="Time added per shake" desc="How much each shake adds." stacked last>
+            <SettingsSlider
+              value={s.sleepShakeMinutes}
+              min={1}
+              max={30}
+              step={1}
+              onChange={(v) => setSetting('sleepShakeMinutes', v)}
+              formatLabel={(v) => `${v} min`}
             />
           </SettingsRow>
         )}
