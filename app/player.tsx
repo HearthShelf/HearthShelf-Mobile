@@ -585,6 +585,11 @@ function ActionBtn({
 }) {
   const { colors, shadow } = useTheme()
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
+  // A running duration/clock sleep timer turns the whole button into a
+  // countdown bar: an accent-tinted fill drains left-to-right behind the
+  // content, and in icon-only mode the label (a time like "12:34") stands in
+  // for the icon so the compact button still shows the countdown.
+  const showCountdown = active && depletion != null
   return (
     <SpringPressable
       style={[
@@ -597,7 +602,19 @@ function ActionBtn({
       onPress={disabled ? undefined : onPress}
       disabled={disabled}
     >
-      <Icon name={icon} size={21} color={active ? colors.accent : colors.text} />
+      {showCountdown && (
+        <View
+          pointerEvents="none"
+          style={[styles.actionBtnFill, { width: `${(depletion ?? 0) * 100}%` }]}
+        />
+      )}
+      {showCountdown && iconOnly ? (
+        <AppText color={colors.accent} numberOfLines={1} style={styles.actionBtnCountdown}>
+          {label}
+        </AppText>
+      ) : (
+        <Icon name={icon} size={21} color={active ? colors.accent : colors.text} />
+      )}
       {!iconOnly && (
         <AppText
           variant="caption"
@@ -606,11 +623,6 @@ function ActionBtn({
         >
           {label}
         </AppText>
-      )}
-      {active && depletion != null && !iconOnly && (
-        <View style={styles.depletionTrack}>
-          <View style={[styles.depletionFill, { width: `${depletion * 100}%` }]} />
-        </View>
       )}
     </SpringPressable>
   )
@@ -1047,17 +1059,20 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
       backgroundColor: colors.fill,
+      // Clip the sleep-timer countdown fill to the rounded button shape.
+      overflow: 'hidden',
     },
     actionBtnIconOnly: { paddingVertical: spacing.md },
     actionBtnActive: { backgroundColor: colors.accentWash, borderColor: colors.accent },
-    depletionTrack: {
-      width: '70%',
-      height: 3,
-      borderRadius: 3,
-      backgroundColor: colors.fillStrong,
-      overflow: 'hidden',
+    // The whole-button sleep countdown fill: an accent wash draining left-to-right.
+    actionBtnFill: {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      bottom: 0,
+      backgroundColor: withAlpha(colors.accent, 0.15),
     },
-    depletionFill: { height: 3, borderRadius: 3, backgroundColor: colors.accent },
+    actionBtnCountdown: { fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
     lightbox: {
       position: 'absolute',
       inset: 0,
