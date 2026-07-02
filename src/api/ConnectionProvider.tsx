@@ -1,7 +1,8 @@
 /**
  * Owns "are we connected to an AudiobookShelf server yet?" for the whole app.
  *
- * Runs right after Clerk reports a signed-in user (see app/_layout.tsx). It mints
+ * Mounted for the app's whole lifetime; the connect flow starts once Clerk
+ * reports a signed-in user and idles at `connecting` while signed out. It mints
  * a grant, exchanges it for an ABS token, and stashes the result in the session
  * singleton (src/api/session.ts) that every /api/* helper reads. Until it reaches
  * `ready`, the root gate keeps the hearth splash on screen; on failure the splash
@@ -48,7 +49,7 @@ class NoLinkedServersError extends Error {
 }
 
 export function ConnectionProvider({ children }: { children: React.ReactNode }) {
-  const { getToken } = useAuth()
+  const { getToken, isSignedIn } = useAuth()
   const [status, setStatus] = useState<ConnectionStatus>({ phase: 'connecting' })
 
   // getToken identity changes across renders; keep a stable wrapper.
@@ -104,9 +105,18 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     }
   }, [connectTo, tokenFn])
 
+  // The provider is mounted for the whole app lifetime, signed in or not (screens
+  // render once before the auth redirect lands, and stay mounted briefly during
+  // sign-out). While signed out, hold at `connecting` instead of running a connect
+  // that would fail on a null token; consumers treat anything short of `ready` as
+  // loading, and the redirect to /sign-in takes over.
   useEffect(() => {
+    if (!isSignedIn) {
+      setStatus({ phase: 'connecting' })
+      return
+    }
     void connect()
-  }, [connect])
+  }, [connect, isSignedIn])
 
   const serverName = status.phase === 'ready' ? status.serverName : null
 

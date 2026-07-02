@@ -59,13 +59,14 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
   if (!isLoaded) return <HearthSplash phase={{ kind: 'connecting' }} onReady={hideOsSplash} />
 
-  // Signed out: let the routes render (the /sign-in screen), no connect gate.
-  if (!isSignedIn) return <>{children}</>
-
-  // Signed in: run the connect flow and keep the splash up until it's ready.
+  // The provider mounts in both auth states: routed screens render before the
+  // sign-in redirect lands (and linger through sign-out), and they call
+  // useConnection. The provider itself waits for a signed-in user to connect.
+  // The splash gate only wraps the signed-in state, so the /sign-in screen
+  // isn't covered by a connect overlay.
   return (
     <ConnectionProvider>
-      <ConnectionGate>{children}</ConnectionGate>
+      {isSignedIn ? <ConnectionGate>{children}</ConnectionGate> : children}
     </ConnectionProvider>
   )
 }
