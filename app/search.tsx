@@ -1,17 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FlatList, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native'
 import { useRouter } from 'expo-router'
 import type { ABSLibraryItem } from '@hearthshelf/core'
 import { getLibraries, searchLibrary } from '@/api/abs'
 import { AppText, Centered, IconButton, Loading, Screen, icons } from '@/ui/primitives'
 import { BookTile } from '@/ui/BookTile'
-import { colors, radius, spacing } from '@/ui/theme'
+import { radius, spacing, type Palette } from '@/ui/theme'
+import { useColors } from '@/ui/ThemeProvider'
 
 const COLS = 3
 const GUTTER = spacing.lg
 
 export default function SearchScreen() {
   const router = useRouter()
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   const { width } = useWindowDimensions()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<ABSLibraryItem[]>([])
@@ -100,24 +103,25 @@ export default function SearchScreen() {
   )
 }
 
-const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  searchBox: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
-    backgroundColor: colors.fill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-  },
-  input: { flex: 1, paddingVertical: spacing.md, color: colors.text, fontSize: 16 },
-})
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm,
+    },
+    searchBox: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    input: { flex: 1, paddingVertical: spacing.md, color: colors.text, fontSize: 16 },
+  })

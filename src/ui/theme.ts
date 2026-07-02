@@ -1,14 +1,86 @@
 /**
- * Design tokens ported from the web app's dark palette
- * (HearthShelf-WebApp/src/styles/tokens.css, `.dark` block).
+ * Design tokens. The colour palette is now REACTIVE: it derives from the user's
+ * theme (`dark` | `light` | `flat`/OLED) and their chosen accent colour, resolved
+ * through useTheme() (see ThemeProvider). The dark+ember palette is also exported
+ * as the static `colors` default so code paths outside the React tree (the
+ * headless car service) and any not-yet-migrated screen keep working.
  *
- * The web theme system supports light/oled/flat variants; the native app ships
- * the dark palette only for v1. `color-mix(in oklab, ...)` expressions from the
- * CSS are resolved here to concrete rgba so React Native can consume them.
+ * `color-mix(in oklab, ...)` expressions from the web CSS are resolved here to
+ * concrete rgba so React Native can consume them.
  */
 
-export const colors = {
-  // Surface ramp (scaffold -> highest), darkest to lightest.
+// --- accent helpers ---------------------------------------------------------
+
+/** Parse a #rrggbb hex to [r,g,b] (0-255). Falls back to ember on bad input. */
+function hexToRgb(hex: string): [number, number, number] {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex.trim())
+  const h = m ? m[1] : 'e0654a'
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]
+}
+
+/** rgba() string for an accent hex at a given alpha (for washes/tiles/shadows). */
+function accentAlpha(hex: string, alpha: number): string {
+  const [r, g, b] = hexToRgb(hex)
+  return `rgba(${r},${g},${b},${alpha})`
+}
+
+// --- palettes ---------------------------------------------------------------
+
+export interface Palette {
+  scaffold: string
+  lowest: string
+  low: string
+  base: string
+  high: string
+  highest: string
+  sheet: string
+  card: string
+  popover: string
+  elevated: string
+  text: string
+  textMuted: string
+  textFaint: string
+  onAccent: string
+  mutedForeground: string
+  accent: string
+  brandHearth: string
+  brandShelf: string
+  brandCream: string
+  border: string
+  hairline: string
+  fill: string
+  fillStrong: string
+  rowNow: string
+  accentWash: string
+  accentTile: string
+  scrim: string
+  destructive: string
+  success: string
+}
+
+export type ThemeName = 'dark' | 'light' | 'flat' | 'oled'
+
+// Base surface/text ramps per theme. The accent-derived tokens (accent, rowNow,
+// accentWash, accentTile, onAccent) are layered on top by buildPalette so the
+// user's accent colour flows everywhere.
+interface BasePalette {
+  scaffold: string
+  lowest: string
+  low: string
+  base: string
+  high: string
+  highest: string
+  sheet: string
+  text: string
+  textMuted: string
+  textFaint: string
+  border: string
+  hairline: string
+  fill: string
+  fillStrong: string
+}
+
+const DARK_BASE: BasePalette = {
   scaffold: '#1b1a18',
   lowest: '#131211',
   low: '#201e1c',
@@ -16,52 +88,130 @@ export const colors = {
   high: '#2a2825',
   highest: '#322f2b',
   sheet: '#222120',
-
-  // Design-system role aliases (colors_and_type.css .dark). The prototype +
-  // shared DS name surfaces by shadcn role; these map onto the ramp above so
-  // components can match the mock without renaming the existing tokens.
-  //   --background #1b1a18 = scaffold   --card #2a2825 = high
-  //   --popover #242220    = base       --elevated #322f2b = highest
-  card: '#2a2825',
-  popover: '#242220',
-  elevated: '#322f2b',
-  // --muted-foreground #aba498 = textMuted (aliased in the text ramp below).
-
-  // Text ramp.
   text: '#f4f1ea',
   textMuted: '#aba498',
   textFaint: '#756f64',
-  onAccent: '#ffffff',
-  // DS role alias: --muted-foreground = textMuted.
-  mutedForeground: '#aba498',
-
-  // Accent / brand. The web "accent" used for active states + CTAs is the warm
-  // coral ring/destructive color; brand-hearth is the amber used in the wordmark.
-  accent: '#e0654a',
-  brandHearth: '#bd863f',
-  brandShelf: '#f0e6d6',
-  // Warm cream used for the scrubber leading line / fill highlights (DS 2f).
-  brandCream: '#ffe6cf',
-
-  // Lines + fills (semi-transparent over the surface).
   border: '#383530',
   hairline: 'rgba(255,255,255,0.08)',
   fill: 'rgba(255,255,255,0.06)',
   fillStrong: 'rgba(255,255,255,0.10)',
+}
 
-  // Derived: --row-now = color-mix(in oklab, accent 22%, transparent).
-  rowNow: 'rgba(224,101,74,0.22)',
-  // Accent washes used for chips / icon tiles (accent @ 12% / 22%).
-  accentWash: 'rgba(224,101,74,0.12)',
-  accentTile: 'rgba(224,101,74,0.22)',
+// OLED / flat: pure-black scaffold, slightly brighter text, same warm ramp above.
+const OLED_BASE: BasePalette = {
+  ...DARK_BASE,
+  scaffold: '#000000',
+  lowest: '#000000',
+  low: '#0d0c0b',
+  base: '#141312',
+  high: '#1a1917',
+  highest: '#242220',
+  sheet: '#141312',
+  text: '#f7f4ee',
+}
 
-  // Scrim behind sheets / modals.
-  scrim: 'rgba(0,0,0,0.55)',
+const LIGHT_BASE: BasePalette = {
+  scaffold: '#f7f6f3',
+  lowest: '#efece6',
+  low: '#f0ede7',
+  base: '#ffffff',
+  high: '#e7e5df',
+  highest: '#dcd9d1',
+  sheet: '#f2efe9',
+  text: '#1b1916',
+  textMuted: '#6c665d',
+  textFaint: '#948d81',
+  border: '#d8d4cc',
+  hairline: 'rgba(0,0,0,0.10)',
+  fill: 'rgba(0,0,0,0.05)',
+  fillStrong: 'rgba(0,0,0,0.09)',
+}
 
-  destructive: '#e0654a',
-  // Warm sage green (WebApp --chart-3) for finished/completed affordances.
-  success: '#7fa86b',
-} as const
+const BASES: Record<ThemeName, BasePalette> = {
+  dark: DARK_BASE,
+  oled: OLED_BASE,
+  flat: OLED_BASE, // flat aliases OLED for now (pure black, no bloom)
+  light: LIGHT_BASE,
+}
+
+/** The hearth ember accent - the default when accentMode is dynamic/unset. */
+export const EMBER = '#e0654a'
+
+/** Readable ink/cream over an accent hex, chosen by relative luminance. */
+export function onColor(hex: string): string {
+  const [r8, g8, b8] = hexToRgb(hex)
+  const lin = (c: number) => {
+    const s = c / 255
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4)
+  }
+  const L = 0.2126 * lin(r8) + 0.7152 * lin(g8) + 0.0722 * lin(b8)
+  return L > 0.42 ? '#1a1509' : '#fff'
+}
+
+/** Build the full palette for a theme + accent. */
+export function buildPalette(themeName: ThemeName, accentHex: string): Palette {
+  const b = BASES[themeName] ?? DARK_BASE
+  const accent = /^#?[0-9a-fA-F]{6}$/.test(accentHex.trim()) ? accentHex : EMBER
+  return {
+    ...b,
+    card: b.high,
+    popover: b.base,
+    elevated: b.highest,
+    mutedForeground: b.textMuted,
+    onAccent: onColor(accent),
+    accent,
+    brandHearth: '#bd863f',
+    brandShelf: '#f0e6d6',
+    brandCream: '#ffe6cf',
+    rowNow: accentAlpha(accent, 0.22),
+    accentWash: accentAlpha(accent, 0.12),
+    accentTile: accentAlpha(accent, 0.22),
+    scrim: themeName === 'light' ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.55)',
+    destructive: '#e0654a',
+    success: '#7fa86b',
+  }
+}
+
+/** Elevation + accent-tinted shadows for a palette. */
+export function buildShadow(p: Palette) {
+  return {
+    lift: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 12 },
+      shadowOpacity: 0.5,
+      shadowRadius: 24,
+      elevation: 12,
+    },
+    card: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.25,
+      shadowRadius: 6,
+      elevation: 3,
+    },
+    accentLift: {
+      shadowColor: p.accent,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.5,
+      shadowRadius: 16,
+      elevation: 12,
+    },
+    accentGlow: {
+      shadowColor: p.accent,
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.34,
+      shadowRadius: 12,
+      elevation: 8,
+    },
+  } as const
+}
+
+// --- static defaults (dark + ember) ----------------------------------------
+// Kept for code outside the React tree (headless car service) and any screen not
+// yet reading useTheme(). These are the dark palette; migrated screens use the
+// reactive palette from useTheme() instead.
+
+export const colors = buildPalette('dark', EMBER)
 
 export const radius = {
   card: 16,
@@ -83,8 +233,7 @@ export const spacing = {
 /**
  * Font families, loaded via expo-font in app/_layout.tsx (keys must match).
  * Design-system roles: sans = Inter (UI), mono = Geist Mono (numerals/time),
- * brand = Libre Baskerville (wordmark, eyebrows, editorial). Libre Baskerville
- * is NOT the UI body face - it stays in the brand role only.
+ * brand = Libre Baskerville (wordmark, eyebrows, editorial).
  */
 export const fonts = {
   sans: 'Inter',
@@ -93,10 +242,7 @@ export const fonts = {
 } as const
 
 /**
- * Type scale (size + weight pairs) matching the web mobile hierarchy. `hero` and
- * `title` are the page/section titles (Inter, bold); `mono` carries numerals and
- * time; `eyebrow` is the tracked-uppercase kicker (brand face); `quote` is the
- * editorial italic used for book blurbs (brand face).
+ * Type scale (size + weight pairs) matching the web mobile hierarchy.
  */
 export const type = {
   hero: { fontSize: 22, fontWeight: '700' as const, fontFamily: fonts.sans },
@@ -121,43 +267,7 @@ export const type = {
   },
 } as const
 
-/** Elevation - --shadow-lift: 0 18px 48px rgba(0,0,0,0.55). */
-export const shadow = {
-  lift: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.5,
-    shadowRadius: 24,
-    elevation: 12,
-  },
-  card: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  // Accent-tinted lift for the play button - a colored drop shadow, not a ring.
-  // Nearly symmetric (tiny downward bias) so it reads as a halo around the button
-  // rather than a low, offset shadow. iOS blurs the accent; Android tints the
-  // elevation shadow on API28+.
-  accentLift: {
-    shadowColor: colors.accent,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 16,
-    elevation: 12,
-  },
-  // Primary-CTA glow, matched to the web app's .btn-primary:
-  // box-shadow: 0 8px 24px color-mix(accent 34%, transparent).
-  accentGlow: {
-    shadowColor: colors.accent,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.34,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-} as const
+export const shadow = buildShadow(colors)
 
 export const theme = { colors, radius, spacing, type, shadow } as const
 export type Theme = typeof theme

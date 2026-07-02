@@ -4,13 +4,27 @@
  * control) rather than the WebApp's dense two-column layout - mobile rows
  * stack label+description on the left, control on the right, full-width.
  */
-import { useState } from 'react'
-import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native'
+import { useMemo, useState } from 'react'
+import { Pressable, ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native'
 import Animated, { LinearTransition, FadeIn, FadeOut } from 'react-native-reanimated'
 import Slider from '@react-native-community/slider'
 import { AppText } from './primitives'
 import { Icon, type IconName } from './icons'
-import { colors, radius, spacing } from './theme'
+import { radius, spacing, type Palette } from './theme'
+import { useColors } from './ThemeProvider'
+import { haptics } from './haptics'
+
+// ---- SettingsPanel: scroll container for a drill-down settings screen ----
+
+/** Standard scroll wrapper for a settings detail screen (under the native header
+ *  from app/settings/_layout.tsx). Consistent padding + gap between groups. */
+export function SettingsPanel({ children }: { children: React.ReactNode }) {
+  return <ScrollView contentContainerStyle={panelStyles.content}>{children}</ScrollView>
+}
+
+const panelStyles = StyleSheet.create({
+  content: { padding: spacing.lg, paddingBottom: 140, gap: spacing.md },
+})
 
 // ---- SectionAccordion: a top-level My Settings section (Appearance, Listening, ...) ----
 
@@ -27,6 +41,8 @@ export function SectionAccordion({
   defaultOpen?: boolean
   children: React.ReactNode
 }) {
+  const colors = useColors()
+  const styles = useStyles()
   const [open, setOpen] = useState(defaultOpen)
 
   return (
@@ -72,10 +88,13 @@ export function SettingsGroup({
   children: React.ReactNode
   style?: StyleProp<ViewStyle>
 }) {
+  const styles = useStyles()
   return <View style={[styles.group, style]}>{children}</View>
 }
 
 export function SettingsLabel({ children }: { children: string }) {
+  const colors = useColors()
+  const styles = useStyles()
   return (
     <AppText variant="eyebrow" color={colors.textMuted} style={styles.groupLabel}>
       {children}
@@ -108,6 +127,8 @@ export function SettingsRow({
   danger?: boolean
   children?: React.ReactNode
 }) {
+  const colors = useColors()
+  const styles = useStyles()
   const tint = danger ? colors.destructive : colors.text
   const content = (
     <>
@@ -155,6 +176,8 @@ export function Seg<T extends string>({
   onChange: (v: T) => void
   options: { value: T; label: string }[]
 }) {
+  const colors = useColors()
+  const styles = useStyles()
   return (
     <View style={styles.seg}>
       {options.map((o) => {
@@ -187,6 +210,7 @@ export function Seg<T extends string>({
 // ---- Toggle ----
 
 export function SettingsToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  const styles = useStyles()
   return (
     <Pressable
       onPress={() => onChange(!on)}
@@ -219,6 +243,7 @@ export function SettingsSlider({
   onChange: (v: number) => void
   formatLabel: (v: number) => string
 }) {
+  const colors = useColors()
   return (
     <View style={{ gap: spacing.xs }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
@@ -259,6 +284,8 @@ export function ChipRow<T extends number>({
   onChange: (v: T) => void
   unit?: string
 }) {
+  const colors = useColors()
+  const styles = useStyles()
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
       {options.map((o) => {
@@ -281,7 +308,59 @@ export function ChipRow<T extends number>({
   )
 }
 
-const styles = StyleSheet.create({
+// ---- Accent colour swatch picker ----
+
+/** The accent presets, matching the web/WebApp palette. */
+export const ACCENT_PRESETS: { name: string; hex: string }[] = [
+  { name: 'Ember', hex: '#ea9648' },
+  { name: 'Hearth', hex: '#e0654a' },
+  { name: 'Cinder', hex: '#c4463a' },
+  { name: 'Amber', hex: '#e8b54a' },
+  { name: 'Sage', hex: '#7fa86b' },
+  { name: 'Tide', hex: '#4f9db0' },
+  { name: 'Dusk', hex: '#5e76c4' },
+  { name: 'Plum', hex: '#9b6fb8' },
+  { name: 'Rose', hex: '#d2689a' },
+  { name: 'Slate', hex: '#6b7280' },
+]
+
+/** A wrapping grid of accent swatches; the selected one gets a ring. Fires a
+ *  selection tick on pick. */
+export function AccentSwatchPicker({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (hex: string) => void
+}) {
+  const colors = useColors()
+  const styles = useStyles()
+  return (
+    <View style={styles.swatchRow}>
+      {ACCENT_PRESETS.map((p) => {
+        const on = p.hex.toLowerCase() === value.toLowerCase()
+        return (
+          <Pressable
+            key={p.hex}
+            onPress={() => {
+              haptics.select()
+              onChange(p.hex)
+            }}
+            hitSlop={4}
+            style={({ pressed }) => [
+              styles.swatch,
+              { backgroundColor: p.hex, borderColor: on ? colors.text : 'transparent' },
+              pressed && styles.pressed,
+            ]}
+          />
+        )
+      })}
+    </View>
+  )
+}
+
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
   accordion: {
     backgroundColor: colors.high,
     borderRadius: radius.card,
@@ -355,4 +434,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.fill,
   },
   chipOn: { backgroundColor: colors.accent },
-})
+  swatchRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
+  swatch: { width: 34, height: 34, borderRadius: 17, borderWidth: 2.5 },
+  })
+
+// Hook: the memoized stylesheet for the active palette.
+function useStyles() {
+  const colors = useColors()
+  return useMemo(() => makeStyles(colors), [colors])
+}

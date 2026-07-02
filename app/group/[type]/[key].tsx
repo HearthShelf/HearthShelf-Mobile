@@ -22,7 +22,8 @@ import {
   itemTitle,
 } from '@/api/abs'
 import { AppText, Centered, Cover, IconButton, Loading, Screen, icons } from '@/ui/primitives'
-import { colors, radius, spacing } from '@/ui/theme'
+import { radius, spacing } from '@/ui/theme'
+import { useColors } from '@/ui/ThemeProvider'
 
 type GroupType = 'series' | 'authors' | 'narrators'
 
@@ -34,6 +35,7 @@ const KIND_LABEL: Record<GroupType, string> = {
 
 export default function GroupDrilldown() {
   const router = useRouter()
+  const colors = useColors()
   const { type, key, libraryId, name } = useLocalSearchParams<{
     type: GroupType
     key: string

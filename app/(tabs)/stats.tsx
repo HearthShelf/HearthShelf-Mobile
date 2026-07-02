@@ -5,12 +5,13 @@
  * math outside the getHSStats() fallback path, so this screen and the Home
  * stats strip always agree.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ScrollView, StyleSheet, View } from 'react-native'
 import { formatDuration, dayKey, coverHue, type HSListeningStats } from '@hearthshelf/core'
 import { getHSStats } from '@/api/abs'
 import { AppText, Centered, Cover, Loading, PrimaryButton, Screen } from '@/ui/primitives'
-import { colors, radius, shadow, spacing, fonts } from '@/ui/theme'
+import { radius, spacing, fonts, type Palette } from '@/ui/theme'
+import { useTheme } from '@/ui/ThemeProvider'
 import { Icon, icons } from '@/ui/icons'
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
@@ -21,6 +22,8 @@ type Status =
   | { phase: 'ready'; stats: HSListeningStats }
 
 export default function StatsTab() {
+  const { colors, shadow } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   const [status, setStatus] = useState<Status>({ phase: 'loading' })
 
   const load = useCallback(async () => {
@@ -174,16 +177,19 @@ function StatCard({
   icon,
   value,
   label,
-  tint = colors.text,
+  tint,
 }: {
   icon: (typeof icons)[keyof typeof icons]
   value: string
   label: string
   tint?: string
 }) {
+  const { colors, shadow } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
+  const iconTint = tint ?? colors.text
   return (
     <View style={[styles.card, styles.statCard]}>
-      <Icon name={icon} size={22} color={tint} />
+      <Icon name={icon} size={22} color={iconTint} />
       <AppText variant="hero" style={{ marginTop: spacing.sm, fontFamily: fonts.mono }}>
         {value}
       </AppText>
@@ -206,7 +212,8 @@ function lastSevenDays(byDay: Record<string, number>) {
   return out
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow']) =>
+  StyleSheet.create({
   tileRow: { flexDirection: 'row', gap: spacing.md },
   card: {
     backgroundColor: colors.card,
@@ -235,4 +242,4 @@ const styles = StyleSheet.create({
   weekBarFill: { width: '100%', borderRadius: 6, backgroundColor: colors.accent },
   weekBarLabel: { fontSize: 10 },
   listenedRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-})
+  })

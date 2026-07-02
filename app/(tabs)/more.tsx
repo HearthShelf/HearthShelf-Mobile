@@ -1,4 +1,5 @@
 import { useAuth, useUser } from '@clerk/expo'
+import { useMemo } from 'react'
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import Constants from 'expo-constants'
@@ -6,13 +7,16 @@ import { clearSession, clearLastServerId } from '@/api/session'
 import { clearTrack } from '@/player/store'
 import { clearAutoSession } from '@/player/autoBridge'
 import { AppText, IconButton, Row, Screen, SectionHeader, icons } from '@/ui/primitives'
-import { colors, radius, spacing } from '@/ui/theme'
+import { radius, spacing, type Palette } from '@/ui/theme'
+import { useColors } from '@/ui/ThemeProvider'
 import { type IconName } from '@/ui/icons'
 
 export default function MoreScreen() {
   const { signOut } = useAuth()
   const { user } = useUser()
   const router = useRouter()
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
 
   async function handleSignOut() {
     clearTrack()
@@ -93,6 +97,7 @@ export default function MoreScreen() {
 }
 
 function Group({ label, children }: { label: string; children: React.ReactNode }) {
+  const colors = useColors()
   return (
     <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
       <AppText variant="caption" color={colors.textMuted} style={{ marginLeft: spacing.xs }}>
@@ -114,6 +119,7 @@ function SettingRow({
   onPress: () => void
   danger?: boolean
 }) {
+  const colors = useColors()
   const tint = danger ? colors.destructive : colors.text
   return (
     <Row onPress={onPress}>
@@ -126,7 +132,8 @@ function SettingRow({
   )
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -153,4 +160,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-})
+  })

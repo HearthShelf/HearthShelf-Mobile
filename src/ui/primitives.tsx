@@ -3,7 +3,7 @@
  * these so colors/radii/spacing come from src/ui/theme.ts rather than per-screen
  * hardcoded hex. Bottom sheets use @gorhom/bottom-sheet (see Sheet below).
  */
-import { forwardRef, useState } from 'react'
+import { forwardRef, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Image,
@@ -25,7 +25,8 @@ import {
 } from '@gorhom/bottom-sheet'
 import { Icon, icons, type IconName } from './icons'
 import { TypesetCover } from './TypesetCover'
-import { colors, radius, shadow, spacing, type as typeScale } from './theme'
+import { radius, spacing, type as typeScale, type Palette } from './theme'
+import { useColors, useTheme } from './ThemeProvider'
 
 // ---- Screen ----
 
@@ -38,6 +39,7 @@ export function Screen({
   style?: StyleProp<ViewStyle>
   edges?: ('top' | 'bottom' | 'left' | 'right')[]
 }) {
+  const styles = useStyles()
   return (
     <SafeAreaView style={[styles.screen, style]} edges={edges}>
       {children}
@@ -46,6 +48,7 @@ export function Screen({
 }
 
 export function Centered({ children }: { children: React.ReactNode }) {
+  const styles = useStyles()
   return <View style={styles.centered}>{children}</View>
 }
 
@@ -55,7 +58,7 @@ type TextVariant = keyof typeof typeScale
 export function AppText({
   children,
   variant = 'body',
-  color = colors.text,
+  color,
   numberOfLines,
   style,
 }: {
@@ -65,8 +68,9 @@ export function AppText({
   numberOfLines?: number
   style?: StyleProp<TextStyle>
 }) {
+  const colors = useColors()
   return (
-    <Text numberOfLines={numberOfLines} style={[typeScale[variant], { color }, style]}>
+    <Text numberOfLines={numberOfLines} style={[typeScale[variant], { color: color ?? colors.text }, style]}>
       {children}
     </Text>
   )
@@ -83,6 +87,7 @@ export function Card({
   style?: StyleProp<ViewStyle>
   onPress?: () => void
 }) {
+  const styles = useStyles()
   const content = <View style={[styles.card, style]}>{children}</View>
   if (!onPress) return content
   return (
@@ -101,6 +106,7 @@ export function Row({
   onPress?: () => void
   style?: StyleProp<ViewStyle>
 }) {
+  const styles = useStyles()
   return (
     <Pressable
       onPress={onPress}
@@ -127,7 +133,7 @@ export function Touchable({
   disabled,
   style,
   hitSlop,
-  rippleColor = colors.fillStrong,
+  rippleColor,
 }: {
   children: React.ReactNode
   onPress?: () => void
@@ -137,13 +143,16 @@ export function Touchable({
   hitSlop?: number
   rippleColor?: string
 }) {
+  const colors = useColors()
+  const styles = useStyles()
+  const ripple = rippleColor ?? colors.fillStrong
   return (
     <Pressable
       onPress={onPress}
       onLongPress={onLongPress}
       disabled={disabled}
       hitSlop={hitSlop}
-      android_ripple={{ color: rippleColor }}
+      android_ripple={{ color: ripple }}
       style={({ pressed }) => [
         style,
         pressed && styles.touchablePressed,
@@ -166,6 +175,7 @@ export function Chip({
   active?: boolean
   onPress?: () => void
 }) {
+  const styles = useStyles()
   return (
     <Pressable
       onPress={onPress}
@@ -182,7 +192,7 @@ export function IconButton({
   name,
   onPress,
   size = 24,
-  color = colors.text,
+  color,
   hitSlop = 10,
   style,
 }: {
@@ -193,13 +203,15 @@ export function IconButton({
   hitSlop?: number
   style?: StyleProp<ViewStyle>
 }) {
+  const colors = useColors()
+  const styles = useStyles()
   return (
     <Pressable
       onPress={onPress}
       hitSlop={hitSlop}
       style={({ pressed }) => [pressed && styles.pressed, style]}
     >
-      <Icon name={name} size={size} color={color} />
+      <Icon name={name} size={size} color={color ?? colors.text} />
     </Pressable>
   )
 }
@@ -217,6 +229,8 @@ export function PrimaryButton({
   icon?: IconName
   style?: StyleProp<ViewStyle>
 }) {
+  const colors = useColors()
+  const styles = useStyles()
   return (
     <Pressable
       onPress={onPress}
@@ -242,6 +256,8 @@ export function SectionHeader({
   /** When set, the whole title area (icon + text) is tappable. */
   onPress?: () => void
 }) {
+  const colors = useColors()
+  const styles = useStyles()
   const titleRow = (
     <View style={styles.sectionTitleRow}>
       {icon ? <Icon name={icon} size={20} color={colors.accent} /> : null}
@@ -289,6 +305,7 @@ export function Cover({
   fallback?: CoverFallback
   style?: StyleProp<ImageStyle>
 }) {
+  const styles = useStyles()
   const [failed, setFailed] = useState(false)
   const w = size ?? width
   const dims: ImageStyle = size ? { width: size, height: size } : { width: w, aspectRatio }
@@ -349,6 +366,8 @@ export function Avatar({
   name: string
   hue: string
 }) {
+  const colors = useColors()
+  const styles = useStyles()
   const [failed, setFailed] = useState(false)
   if (!uri || failed) {
     return (
@@ -378,8 +397,8 @@ export function Avatar({
 export function ProgressBar({
   progress,
   height = 4,
-  color = colors.accent,
-  track = colors.fillStrong,
+  color,
+  track,
   style,
 }: {
   progress: number // 0..1
@@ -388,15 +407,16 @@ export function ProgressBar({
   track?: string
   style?: StyleProp<ViewStyle>
 }) {
+  const colors = useColors()
   const pct = Math.max(0, Math.min(1, progress)) * 100
   return (
-    <View style={[{ height, borderRadius: height, backgroundColor: track }, style]}>
+    <View style={[{ height, borderRadius: height, backgroundColor: track ?? colors.fillStrong }, style]}>
       <View
         style={{
           height,
           width: `${pct}%`,
           borderRadius: height,
-          backgroundColor: color,
+          backgroundColor: color ?? colors.accent,
         }}
       />
     </View>
@@ -406,6 +426,7 @@ export function ProgressBar({
 // ---- Loading / inline ----
 
 export function Loading({ label }: { label?: string }) {
+  const colors = useColors()
   return (
     <Centered>
       <ActivityIndicator color={colors.accent} />
@@ -439,6 +460,8 @@ export const Sheet = forwardRef<
     onDismiss?: () => void
   }
 >(function Sheet({ children, title, kicker, snapPoints, stackBehavior, onDismiss }, ref) {
+  const colors = useColors()
+  const styles = useStyles()
   const header = (kicker || title) && (
     <View style={styles.sheetHeader}>
       {kicker ? (
@@ -484,7 +507,8 @@ export const Sheet = forwardRef<
 
 export { icons }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow']) =>
+  StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.scaffold },
   centered: {
     flex: 1,
@@ -550,4 +574,10 @@ const styles = StyleSheet.create({
   avatarInitials: { color: colors.onAccent, fontWeight: '700', letterSpacing: 0.3 },
   sheetBody: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl },
   sheetHeader: { gap: 2, marginBottom: spacing.md },
-})
+  })
+
+// Hooks: the memoized stylesheet + palette for the active theme.
+function useStyles() {
+  const { colors, shadow } = useTheme()
+  return useMemo(() => makeStyles(colors, shadow), [colors, shadow])
+}

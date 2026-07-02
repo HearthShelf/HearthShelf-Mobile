@@ -17,7 +17,8 @@ import { clearSession } from '@/api/session'
 import { clearTrack } from '@/player/store'
 import { clearAutoSession } from '@/player/autoBridge'
 import { stopQueueSync } from '@/player/queueSync'
-import { colors, fonts } from '@/ui/theme'
+import { fonts } from '@/ui/theme'
+import { ThemeProvider, useColors, useTheme } from '@/ui/ThemeProvider'
 
 // Hold the OS splash until the hearth splash has painted (see hideOsSplash).
 void SplashScreen.preventAutoHideAsync()
@@ -132,6 +133,25 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
   )
 }
 
+// The routed stack, under the ThemeProvider so its background tracks the theme.
+function ThemedStack() {
+  const colors = useColors()
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: colors.scaffold },
+      }}
+    />
+  )
+}
+
+// Status-bar icons flip to dark glyphs on the light theme, light glyphs otherwise.
+function ThemedStatusBar() {
+  const { name } = useTheme()
+  return <StatusBar style={name === 'light' ? 'dark' : 'light'} />
+}
+
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     [fonts.sans]: require('../assets/fonts/Inter-VariableFont_opsz_wght.ttf'),
@@ -151,19 +171,16 @@ export default function RootLayout() {
     <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
-          <BottomSheetModalProvider>
-            <StatusBar style="light" />
-            <AuthGate>
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  contentStyle: { backgroundColor: colors.scaffold },
-                }}
-              />
-            </AuthGate>
-            {/* Persistent audio engine - mounted once, never unmounted. */}
-            <PlayerHost />
-          </BottomSheetModalProvider>
+          <ThemeProvider>
+            <BottomSheetModalProvider>
+              <ThemedStatusBar />
+              <AuthGate>
+                <ThemedStack />
+              </AuthGate>
+              {/* Persistent audio engine - mounted once, never unmounted. */}
+              <PlayerHost />
+            </BottomSheetModalProvider>
+          </ThemeProvider>
         </SafeAreaProvider>
       </GestureHandlerRootView>
     </ClerkProvider>

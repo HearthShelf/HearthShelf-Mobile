@@ -17,21 +17,19 @@
  * with an ember glow (faked with stacked translucent layers, since Android
  * ignores shadow* on Views) that thickens while dragging.
  */
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import { runOnJS } from 'react-native-reanimated'
 import { LinearGradient } from 'expo-linear-gradient'
-import { colors, radius } from '@/ui/theme'
+import { radius, type Palette } from '@/ui/theme'
+import { useColors } from '@/ui/ThemeProvider'
 
 const PILL_HEIGHT = 30
-const EMBER = colors.accent // #e0654a
-const CREAM = colors.brandCream // #ffe6cf
 // Two-tone fill toward the leading edge. Matches web `.scrub > i`'s
 // `color-mix(in oklab, accent 65%, #d27a3e) -> accent` exactly (computed in
 // OKLab, not a linear-RGB guess - the two are visibly different colors).
 const FILL_START = '#db6d46'
-const FILL_END = EMBER
 
 export function Scrubber({
   ratio,
@@ -54,6 +52,8 @@ export function Scrubber({
   remain?: string
   chapter?: string
 }) {
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   const widthRef = useRef(0)
   const [dragRatio, setDragRatio] = useState<number | null>(null)
   const dragging = dragRatio !== null
@@ -119,7 +119,7 @@ export function Scrubber({
         {/* two-tone fill, exactly pill height */}
         <View style={[styles.fillClip, { width: `${pct}%` }]}>
           <LinearGradient
-            colors={[FILL_START, FILL_END]}
+            colors={[FILL_START, colors.accent]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={StyleSheet.absoluteFill}
@@ -162,7 +162,8 @@ export function Scrubber({
   )
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
   pill: {
     height: PILL_HEIGHT,
     borderRadius: radius.pill,
@@ -216,7 +217,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     bottom: 0,
-    backgroundColor: CREAM,
+    backgroundColor: colors.brandCream,
   },
   // Android ignores shadow*/shadowRadius on plain Views (iOS-only), so the
   // web's `box-shadow: 0 0 8px 1px accent, 0 0 2px 0 cream` glow is faked
@@ -228,7 +229,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: 16,
     marginLeft: -8,
-    backgroundColor: EMBER,
+    backgroundColor: colors.accent,
     opacity: 0.35,
     borderRadius: 8,
   },
@@ -238,7 +239,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: 8,
     marginLeft: -4,
-    backgroundColor: EMBER,
+    backgroundColor: colors.accent,
     opacity: 0.55,
     borderRadius: 4,
   },

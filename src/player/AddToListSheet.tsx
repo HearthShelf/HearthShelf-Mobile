@@ -4,7 +4,7 @@
  * type-a-name-to-create) - the real feature, replacing the design mock's
  * single hardcoded "Want to listen" watchlist assumption.
  */
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native'
 import type { ABSCollection, ABSPlaylist } from '@hearthshelf/core'
 import {
@@ -19,7 +19,8 @@ import {
 } from '@/api/abs'
 import { AppText, IconButton, Sheet, type SheetRef } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
-import { colors, radius, spacing } from '@/ui/theme'
+import { radius, spacing, type Palette } from '@/ui/theme'
+import { useColors } from '@/ui/ThemeProvider'
 import type { SheetHandle } from './sheets'
 
 type Tab = 'collection' | 'playlist'
@@ -42,6 +43,8 @@ export const AddToListSheet = forwardRef<
     dismiss: () => sheetRef.current?.dismiss(),
   }))
 
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   const [tab, setTab] = useState<Tab>('collection')
   const [collections, setCollections] = useState<ABSCollection[] | null>(null)
   const [playlists, setPlaylists] = useState<ABSPlaylist[] | null>(null)
@@ -191,7 +194,8 @@ export const AddToListSheet = forwardRef<
   )
 })
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
   segFull: {
     flexDirection: 'row',
     gap: 4,

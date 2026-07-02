@@ -1,5 +1,5 @@
 import { useAuth, useUser } from '@clerk/expo'
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { FlatList, ImageBackground, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
@@ -48,9 +48,11 @@ import {
 import { BottomSheetFlatList } from '@gorhom/bottom-sheet'
 import { Icon, type IconName } from '@/ui/icons'
 import { Scrubber } from '@/player/Scrubber'
-import { colors, radius, shadow, spacing } from '@/ui/theme'
+import { radius, spacing, type Palette } from '@/ui/theme'
+import { useColors, useTheme } from '@/ui/ThemeProvider'
 
 export default function HomeScreen() {
+  const styles = useStyles()
   const { signOut } = useAuth()
   const { user } = useUser()
   const firstName = user?.firstName ?? null
@@ -202,6 +204,7 @@ function Greeting({
   firstName: string | null
   nowPlayingTitle?: string
 }) {
+  const colors = useColors()
   const h = new Date().getHours()
   const partOfDay =
     h < 5 ? 'night' : h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 21 ? 'evening' : 'night'
@@ -241,6 +244,8 @@ function ContinueHero({
   greeting: React.ReactNode
   onResume: () => void
 }) {
+  const colors = useColors()
+  const styles = useStyles()
   const pct = Math.round(Math.max(0, Math.min(1, progress)) * 100)
   const started = progress > 0
   const heroArt = coverUrl(item.id)
@@ -327,6 +332,8 @@ function PlayerHero({
   greeting: React.ReactNode
   onOpen: () => void
 }) {
+  const colors = useColors()
+  const styles = useStyles()
   const { scrubber, skipForward, skipBack } = useSyncExternalStore(
     subscribeSettings,
     getSettingsState,
@@ -463,6 +470,8 @@ function PlayerHero({
  * Reads the same getHSStats() data as the Stats tab, so the two never disagree.
  */
 function HomeStatsStrip({ stats }: { stats: HSListeningStats }) {
+  const colors = useColors()
+  const styles = useStyles()
   const router = useRouter()
   return (
     <Touchable onPress={() => router.push('/(tabs)/stats')} style={styles.statsStrip}>
@@ -503,6 +512,8 @@ function sectionIcon(label: string): IconName {
 }
 
 function Shelf({ shelf }: { shelf: ABSShelf }) {
+  const colors = useColors()
+  const styles = useStyles()
   const router = useRouter()
   const { coverAspect } = useSyncExternalStore(subscribeSettings, getSettingsState)
   const sheetRef = useRef<SheetRef>(null)
@@ -583,7 +594,8 @@ function Shelf({ shelf }: { shelf: ABSShelf }) {
   )
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow']) =>
+  StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -675,4 +687,10 @@ const styles = StyleSheet.create({
     borderColor: colors.hairline,
     ...shadow.card,
   },
-})
+  })
+
+// Hook: the memoized stylesheet for the active palette.
+function useStyles() {
+  const { colors, shadow } = useTheme()
+  return useMemo(() => makeStyles(colors, shadow), [colors, shadow])
+}

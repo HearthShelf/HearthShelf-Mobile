@@ -10,6 +10,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -57,7 +58,8 @@ import { Icon } from '@/ui/icons'
 import { CoverGlow } from '@/ui/CoverGlow'
 import { AppTabBar } from '@/ui/AppTabBar'
 import { useToast, Toast } from '@/ui/Toast'
-import { colors, radius, shadow, spacing } from '@/ui/theme'
+import { radius, spacing, type Palette } from '@/ui/theme'
+import { useColors, useTheme, type ActiveTheme } from '@/ui/ThemeProvider'
 import { Scrubber } from '@/player/Scrubber'
 import {
   ChaptersSheet,
@@ -78,6 +80,8 @@ import type { PlayerActionKey } from '@/store/settings'
  */
 export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter()
+  const { colors, shadow } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   const { nowPlaying, isPlaying, position, sleepTimer, rate } = useSyncExternalStore(
     subscribe,
     getState,
@@ -505,6 +509,8 @@ function TransportBtn({
   icon: (typeof icons)[keyof typeof icons]
   onPress: () => void
 }) {
+  const { colors, shadow } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   return (
     <Pressable
       onPress={onPress}
@@ -535,6 +541,8 @@ function ActionBtn({
   /** Drop the label to fit more buttons per row (the "Icon only" setting). */
   iconOnly?: boolean
 }) {
+  const { colors, shadow } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   return (
     <Pressable
       style={({ pressed }) => [
@@ -581,6 +589,8 @@ function Lightbox({
   hue: string
   onClose: () => void
 }) {
+  const { colors, shadow } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   const { width, height } = useWindowDimensions()
   const insets = useSafeAreaInsets()
   const scale = useSharedValue(1)
@@ -687,6 +697,8 @@ const MoreSheet = forwardRef<
     onEdit: () => void
   }
 >(function MoreSheet({ actions, onImmersive, onEdit }, ref) {
+  const colors = useColors()
+  const moreStyles = useMemo(() => makeMoreStyles(colors), [colors])
   const sheetRef = useRef<SheetRef>(null)
   useImperativeHandle(ref, () => ({
     present: () => sheetRef.current?.present(),
@@ -748,19 +760,20 @@ const MoreSheet = forwardRef<
   )
 })
 
-const moreStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.hairline,
-    marginVertical: spacing.sm,
-  },
-})
+const makeMoreStyles = (colors: Palette) =>
+  StyleSheet.create({
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.md,
+    },
+    divider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: colors.hairline,
+      marginVertical: spacing.sm,
+    },
+  })
 
 // ---- Recent sessions sheet ----
 
@@ -780,6 +793,8 @@ const RecentSheet = forwardRef<
     onSeek: (sec: number) => void
   }
 >(function RecentSheet({ itemId, chapters, onSeek }, ref) {
+  const colors = useColors()
+  const recentStyles = useMemo(() => makeRecentStyles(colors), [colors])
   const sheetRef = useRef<SheetRef>(null)
   const [sessions, setSessions] = useState<RecentSession[] | null>(null)
 
@@ -869,154 +884,156 @@ const RecentSheet = forwardRef<
   )
 })
 
-const recentStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.hairline,
-  },
-  durationRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-})
+const makeRecentStyles = (colors: Palette) =>
+  StyleSheet.create({
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
+    },
+    durationRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  })
 
-const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  bookBarTrack: {
-    height: 2,
-    marginHorizontal: spacing.xl,
-    borderRadius: 1,
-    backgroundColor: colors.fillStrong,
-    overflow: 'hidden',
-  },
-  bookBarFill: { height: 2, borderRadius: 1, backgroundColor: colors.accent },
-  wholeBookStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.xl,
-    marginTop: 6,
-  },
-  coverArea: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.xl,
-  },
-  coverTap: { position: 'relative' },
-  cover: { backgroundColor: colors.high },
-  bookmarkBtn: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(20,17,15,0.5)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  controls: {
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.md,
-  },
-  title: { textAlign: 'center' },
-  author: { textAlign: 'center', marginTop: 2 },
-  scrub: { width: '100%', marginTop: spacing.md },
-  transport: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    alignSelf: 'stretch',
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.md,
-  },
-  transportImmersive: {
-    justifyContent: 'center',
-    gap: spacing.xl,
-  },
-  chapterSkipRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.xl * 2,
-    marginTop: spacing.md,
-  },
-  transportBtn: {
-    width: 56,
-    height: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  play: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    // Accent-tinted drop shadow for real height. iOS honors the color + blur;
-    // Android renders a soft shadow from elevation (its color is tinted on API28+
-    // by shadowColor, plain dark below - either way it reads as a lift).
-    ...shadow.accentLift,
-  },
-  pressed: { opacity: 0.6 },
-  actionRow: {
-    flexDirection: 'row',
-    alignSelf: 'stretch',
-    gap: spacing.sm,
-    marginTop: spacing.lg,
-    // Sit above the play button's accent glow so the shadow doesn't bleed onto
-    // these buttons (Android draws by elevation; iOS by zIndex).
-    elevation: 16,
-    zIndex: 2,
-  },
-  actionBtn: {
-    flex: 1,
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.sm + 2,
-    borderRadius: radius.row,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    backgroundColor: colors.fill,
-  },
-  actionBtnIconOnly: { paddingVertical: spacing.md },
-  actionBtnActive: { backgroundColor: colors.accentWash, borderColor: colors.accent },
-  depletionTrack: {
-    width: '70%',
-    height: 3,
-    borderRadius: 3,
-    backgroundColor: colors.fillStrong,
-    overflow: 'hidden',
-  },
-  depletionFill: { height: 3, borderRadius: 3, backgroundColor: colors.accent },
-  lightbox: {
-    position: 'absolute',
-    inset: 0,
-    zIndex: 30,
-    backgroundColor: 'rgba(8,7,6,0.96)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  lightboxImgWrap: { alignItems: 'center', justifyContent: 'center' },
-  lightboxClose: {
-    position: 'absolute',
-    right: 20,
-    zIndex: 2,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  lightboxMeta: { position: 'absolute', bottom: 60, alignItems: 'center' },
-  lightboxTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
-  lightboxAuthor: { color: colors.textMuted, fontSize: 12.5, marginTop: 4 },
-})
+const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
+  StyleSheet.create({
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm,
+    },
+    bookBarTrack: {
+      height: 2,
+      marginHorizontal: spacing.xl,
+      borderRadius: 1,
+      backgroundColor: colors.fillStrong,
+      overflow: 'hidden',
+    },
+    bookBarFill: { height: 2, borderRadius: 1, backgroundColor: colors.accent },
+    wholeBookStrip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.xl,
+      marginTop: 6,
+    },
+    coverArea: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: spacing.xl,
+    },
+    coverTap: { position: 'relative' },
+    cover: { backgroundColor: colors.high },
+    bookmarkBtn: {
+      position: 'absolute',
+      top: 10,
+      right: 10,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: 'rgba(20,17,15,0.5)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    controls: {
+      paddingHorizontal: spacing.xl,
+      paddingBottom: spacing.md,
+    },
+    title: { textAlign: 'center' },
+    author: { textAlign: 'center', marginTop: 2 },
+    scrub: { width: '100%', marginTop: spacing.md },
+    transport: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      alignSelf: 'stretch',
+      paddingHorizontal: spacing.lg,
+      marginTop: spacing.md,
+    },
+    transportImmersive: {
+      justifyContent: 'center',
+      gap: spacing.xl,
+    },
+    chapterSkipRow: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: spacing.xl * 2,
+      marginTop: spacing.md,
+    },
+    transportBtn: {
+      width: 56,
+      height: 56,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    play: {
+      width: 76,
+      height: 76,
+      borderRadius: 38,
+      backgroundColor: colors.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+      // Accent-tinted drop shadow for real height. iOS honors the color + blur;
+      // Android renders a soft shadow from elevation (its color is tinted on API28+
+      // by shadowColor, plain dark below - either way it reads as a lift).
+      ...shadow.accentLift,
+    },
+    pressed: { opacity: 0.6 },
+    actionRow: {
+      flexDirection: 'row',
+      alignSelf: 'stretch',
+      gap: spacing.sm,
+      marginTop: spacing.lg,
+      // Sit above the play button's accent glow so the shadow doesn't bleed onto
+      // these buttons (Android draws by elevation; iOS by zIndex).
+      elevation: 16,
+      zIndex: 2,
+    },
+    actionBtn: {
+      flex: 1,
+      alignItems: 'center',
+      gap: spacing.xs,
+      paddingVertical: spacing.sm + 2,
+      borderRadius: radius.row,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.fill,
+    },
+    actionBtnIconOnly: { paddingVertical: spacing.md },
+    actionBtnActive: { backgroundColor: colors.accentWash, borderColor: colors.accent },
+    depletionTrack: {
+      width: '70%',
+      height: 3,
+      borderRadius: 3,
+      backgroundColor: colors.fillStrong,
+      overflow: 'hidden',
+    },
+    depletionFill: { height: 3, borderRadius: 3, backgroundColor: colors.accent },
+    lightbox: {
+      position: 'absolute',
+      inset: 0,
+      zIndex: 30,
+      backgroundColor: 'rgba(8,7,6,0.96)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    lightboxImgWrap: { alignItems: 'center', justifyContent: 'center' },
+    lightboxClose: {
+      position: 'absolute',
+      right: 20,
+      zIndex: 2,
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      backgroundColor: 'rgba(255,255,255,0.12)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    lightboxMeta: { position: 'absolute', bottom: 60, alignItems: 'center' },
+    lightboxTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
+    lightboxAuthor: { color: colors.textMuted, fontSize: 12.5, marginTop: 4 },
+  })

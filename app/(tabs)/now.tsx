@@ -13,7 +13,8 @@ import { coverHue } from '@hearthshelf/core'
 import { coverUrl, getItemsInProgress, itemAuthor, itemTitle } from '@/api/abs'
 import { playItemById } from '@/player/playback'
 import { AppText, Cover, PrimaryButton, Screen, icons } from '@/ui/primitives'
-import { colors, radius, spacing } from '@/ui/theme'
+import { radius, spacing } from '@/ui/theme'
+import { useColors } from '@/ui/ThemeProvider'
 import { getState, subscribe } from '@/player/store'
 import { PlayerSurface } from '../player'
 
@@ -34,6 +35,7 @@ export default function NowPlayingTab() {
  */
 function EmptyState() {
   const router = useRouter()
+  const colors = useColors()
   const [last, setLast] = useState<ABSLibraryItem | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -116,6 +118,7 @@ function EmptyState() {
 
 /** Full-bleed hearth image with a bottom-weighted scrim for text legibility. */
 function HearthBackground({ children }: { children: React.ReactNode }) {
+  const colors = useColors()
   return (
     <ImageBackground source={HEARTH} resizeMode="cover" style={styles.bg}>
       <LinearGradient

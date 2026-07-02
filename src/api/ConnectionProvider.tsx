@@ -91,9 +91,12 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         await connectTo(servers[0])
         return
       }
+      // Precedence: this device's last-used server, then the account default
+      // (set on another device), then show the picker.
       const lastId = await getLastServerId()
       const remembered = lastId ? servers.find((s) => s.id === lastId) : undefined
-      if (remembered) await connectTo(remembered)
+      const preferred = remembered ?? servers.find((s) => s.isDefault)
+      if (preferred) await connectTo(preferred)
       else setStatus({ phase: 'select-server', servers })
     } catch (e) {
       if (e instanceof NoLinkedServersError) setStatus({ phase: 'no-servers' })

@@ -5,7 +5,14 @@
  * PlayerPopovers.tsx (the real, fleshed-out mobile behavior) rather than the
  * design-system mock, which never got past a bare tap-to-cycle speed control.
  */
-import { forwardRef, useImperativeHandle, useRef, useState, useSyncExternalStore } from 'react'
+import {
+  forwardRef,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { StyleSheet, TextInput, View } from 'react-native'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import Slider from '@react-native-community/slider'
@@ -24,7 +31,8 @@ import {
 import { useBookmarks } from './useBookmarks'
 import { AppText, Sheet, type SheetRef, Touchable } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
-import { colors, radius, shadow, spacing } from '@/ui/theme'
+import { radius, spacing, type Palette, type buildShadow } from '@/ui/theme'
+import { useTheme } from '@/ui/ThemeProvider'
 
 export interface SheetHandle {
   present: () => void
@@ -44,6 +52,8 @@ function useSheetHandle(ref: React.Ref<SheetHandle>) {
 
 export const ChaptersSheet = forwardRef<SheetHandle>(function ChaptersSheet(_props, ref) {
   const sheetRef = useSheetHandle(ref)
+  const { colors, shadow } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   const { nowPlaying, position } = useSyncExternalStore(subscribe, getState)
   const active = currentChapter()
   const chapters = nowPlaying?.chapters ?? []
@@ -104,6 +114,8 @@ export const BookmarksSheet = forwardRef<
   { itemId: string | null; onSeek: (sec: number) => void }
 >(function BookmarksSheet({ itemId, onSeek }, ref) {
   const sheetRef = useSheetHandle(ref)
+  const { colors, shadow } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   const { bookmarks, removeBookmark } = useBookmarks(itemId)
 
   return (
@@ -160,6 +172,8 @@ function speedLabel(s: number): string {
 
 export const SpeedSheet = forwardRef<SheetHandle>(function SpeedSheet(_props, ref) {
   const sheetRef = useSheetHandle(ref)
+  const { colors, shadow } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   const { rate } = useSyncExternalStore(subscribe, getState)
 
   return (
@@ -233,6 +247,8 @@ function fmtRewind(sec: number): string {
 export const SleepSheet = forwardRef<SheetHandle, { onEditBehavior: () => void }>(
   function SleepSheet({ onEditBehavior }, ref) {
     const sheetRef = useSheetHandle(ref)
+    const { colors, shadow } = useTheme()
+    const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
     const { sleepTimer, sleepBehavior, nowPlaying, position } = useSyncExternalStore(
       subscribe,
       getState,
@@ -482,7 +498,8 @@ export const SleepSheet = forwardRef<SheetHandle, { onEditBehavior: () => void }
   },
 )
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette, shadow: ReturnType<typeof buildShadow>) =>
+  StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',

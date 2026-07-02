@@ -3,17 +3,20 @@
  * the web `.playbar` mobile treatment: rounded card, cover + title + progress,
  * tap to open the full player. Reads the same store the car drives.
  */
-import { useSyncExternalStore } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import { Image, Pressable, StyleSheet, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import { formatTimestamp } from '@hearthshelf/core'
 import { AppText, IconButton, ProgressBar, icons } from '@/ui/primitives'
-import { colors, spacing } from '@/ui/theme'
+import { spacing, type Palette } from '@/ui/theme'
+import { useColors } from '@/ui/ThemeProvider'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { getState, subscribe, togglePlay, jumpBy, currentChapter } from './store'
 
 export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
   const router = useRouter()
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   const { nowPlaying, isPlaying, position } = useSyncExternalStore(subscribe, getState)
   const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
   if (!nowPlaying) return null
@@ -78,7 +81,8 @@ export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
   )
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
   wrap: {
     position: 'absolute',
     left: 0,

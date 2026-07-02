@@ -8,7 +8,7 @@
  * left out - it's an admin surface with no mobile equivalent yet; selection here
  * drives mark-finished, the primary action people reach for on a series.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type { ABSLibraryItem, ABSMediaProgress, ABSSeries } from '@hearthshelf/core'
@@ -39,7 +39,8 @@ import {
 import { CoverGlow } from '@/ui/CoverGlow'
 import { BookSelectionToolbar } from '@/ui/BookSelectionToolbar'
 import { useBookSelection } from '@/ui/useBookSelection'
-import { colors, radius, spacing } from '@/ui/theme'
+import { radius, spacing, type Palette } from '@/ui/theme'
+import { useColors } from '@/ui/ThemeProvider'
 
 /** ABS stores a book's sequence in the denormalized seriesName ("Foundation #2").
  *  Parse the trailing "#<n>" and sort ascending; unsequenced books sort first. */
@@ -53,6 +54,8 @@ function orderBooks(books: ABSLibraryItem[]): ABSLibraryItem[] {
 
 export default function SeriesDetailScreen() {
   const router = useRouter()
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   const { id, libraryId } = useLocalSearchParams<{ id: string; libraryId: string }>()
   const [series, setSeries] = useState<ABSSeries | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -279,6 +282,8 @@ export default function SeriesDetailScreen() {
 /** Count-aware cover cluster: 1 solo, 2 overlapped, 3+ a fanned trio with a "+N"
  *  overflow chip. A compact take on the web hero's solo/duo/tri/square layouts. */
 function HeroCovers({ books }: { books: ABSLibraryItem[] }) {
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   const shown = books.slice(0, 3)
   if (shown.length === 0) return null
   if (shown.length === 1) {
@@ -328,6 +333,8 @@ function SegmentTrack({
   books: ABSLibraryItem[]
   progressById: Map<string, ABSMediaProgress>
 }) {
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   return (
     <View style={styles.segTrack}>
       {books.map((b) => {
@@ -367,6 +374,8 @@ function BookRow({
   onToggle: () => void
   onPlay: () => void
 }) {
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   const title = itemTitle(book)
   const fin = progress?.isFinished ?? false
   const part = !fin && (progress?.progress ?? 0) > 0
@@ -433,6 +442,7 @@ function BookRow({
 }
 
 function StatCell({ value, label }: { value: string; label: string }) {
+  const colors = useColors()
   return (
     <View style={{ flex: 1, alignItems: 'center' }}>
       <AppText variant="label" style={{ fontWeight: '700' }}>
@@ -446,6 +456,8 @@ function StatCell({ value, label }: { value: string; label: string }) {
 }
 
 function Header({ onBack }: { onBack: () => void }) {
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   return (
     <View style={styles.header}>
       <IconButton name={icons.back} onPress={onBack} style={styles.headerBtn} />
@@ -453,119 +465,120 @@ function Header({ onBack }: { onBack: () => void }) {
   )
 }
 
-const styles = StyleSheet.create({
-  header: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
-  headerBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: colors.fill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  hero: { alignItems: 'center', paddingHorizontal: spacing.xl },
-  title: { textAlign: 'center', marginTop: spacing.sm, marginBottom: spacing.xs },
-  overflowChip: {
-    position: 'absolute',
-    top: 9,
-    width: 32,
-    height: 132,
-    borderRadius: radius.card,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'stretch',
-    marginTop: spacing.lg,
-    padding: spacing.lg,
-    borderRadius: radius.card,
-    backgroundColor: colors.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-  },
-  statDivider: {
-    width: StyleSheet.hairlineWidth,
-    height: '100%',
-    backgroundColor: colors.hairline,
-  },
-  progCard: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.lg,
-    padding: spacing.lg,
-    borderRadius: radius.card,
-    backgroundColor: colors.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-    gap: spacing.md,
-  },
-  progTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  segTrack: { flexDirection: 'row', gap: 3 },
-  seg: {
-    flex: 1,
-    height: 8,
-    borderRadius: 3,
-    backgroundColor: colors.elevated,
-    overflow: 'hidden',
-  },
-  segFill: { height: '100%', backgroundColor: colors.accent, borderRadius: 3 },
-  actions: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.lg,
-  },
-  markSeriesBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
-    paddingVertical: spacing.md,
-    borderRadius: radius.card,
-    backgroundColor: colors.fill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-  },
-  listHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.xl,
-    marginBottom: spacing.sm,
-  },
-  listHeadTitle: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  list: { paddingHorizontal: spacing.lg, gap: spacing.xs },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radius.row,
-  },
-  rowSelected: { backgroundColor: colors.accentWash },
-  num: { width: 24, textAlign: 'center', fontWeight: '700' },
-  check: {
-    width: 24,
-    height: 24,
-    borderRadius: 7,
-    borderWidth: 2,
-    borderColor: colors.textFaint,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkOn: { backgroundColor: colors.accent, borderColor: colors.accent },
-  rowPlay: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: colors.fill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-})
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
+    header: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
+    headerBtn: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      backgroundColor: colors.fill,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    hero: { alignItems: 'center', paddingHorizontal: spacing.xl },
+    title: { textAlign: 'center', marginTop: spacing.sm, marginBottom: spacing.xs },
+    overflowChip: {
+      position: 'absolute',
+      top: 9,
+      width: 32,
+      height: 132,
+      borderRadius: radius.card,
+      backgroundColor: colors.elevated,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    statStrip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'stretch',
+      marginTop: spacing.lg,
+      padding: spacing.lg,
+      borderRadius: radius.card,
+      backgroundColor: colors.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    statDivider: {
+      width: StyleSheet.hairlineWidth,
+      height: '100%',
+      backgroundColor: colors.hairline,
+    },
+    progCard: {
+      marginHorizontal: spacing.lg,
+      marginTop: spacing.lg,
+      padding: spacing.lg,
+      borderRadius: radius.card,
+      backgroundColor: colors.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      gap: spacing.md,
+    },
+    progTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+    segTrack: { flexDirection: 'row', gap: 3 },
+    seg: {
+      flex: 1,
+      height: 8,
+      borderRadius: 3,
+      backgroundColor: colors.elevated,
+      overflow: 'hidden',
+    },
+    segFill: { height: '100%', backgroundColor: colors.accent, borderRadius: 3 },
+    actions: {
+      flexDirection: 'row',
+      gap: spacing.md,
+      marginHorizontal: spacing.lg,
+      marginTop: spacing.lg,
+    },
+    markSeriesBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      marginHorizontal: spacing.lg,
+      marginTop: spacing.md,
+      paddingVertical: spacing.md,
+      borderRadius: radius.card,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    listHead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.lg,
+      marginTop: spacing.xl,
+      marginBottom: spacing.sm,
+    },
+    listHeadTitle: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    list: { paddingHorizontal: spacing.lg, gap: spacing.xs },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.sm,
+      borderRadius: radius.row,
+    },
+    rowSelected: { backgroundColor: colors.accentWash },
+    num: { width: 24, textAlign: 'center', fontWeight: '700' },
+    check: {
+      width: 24,
+      height: 24,
+      borderRadius: 7,
+      borderWidth: 2,
+      borderColor: colors.textFaint,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    checkOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+    rowPlay: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor: colors.fill,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  })

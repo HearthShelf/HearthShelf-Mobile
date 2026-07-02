@@ -35,12 +35,15 @@ import {
   icons,
 } from '@/ui/primitives'
 import { CoverGlow } from '@/ui/CoverGlow'
-import { colors, radius, spacing } from '@/ui/theme'
+import { radius, spacing, type Palette } from '@/ui/theme'
+import { useColors } from '@/ui/ThemeProvider'
 
 const CHAPTER_PREVIEW_COUNT = 4
 
 export default function ItemDetailScreen() {
   const router = useRouter()
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   const { id } = useLocalSearchParams<{ id: string }>()
   const [detail, setDetail] = useState<ABSLibraryItemDetail | null>(null)
   const [progress, setProgress] = useState<ABSMediaProgress | null>(null)
@@ -292,6 +295,8 @@ function StatusCard({
   duration: number
   chapterCount: number
 }) {
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   if (isFinished) {
     return (
       <View style={[styles.statusCard, styles.statusCardRow]}>
@@ -334,6 +339,7 @@ function StatusCard({
 }
 
 function StatCell({ value, label }: { value: string; label: string }) {
+  const colors = useColors()
   return (
     <View style={{ flex: 1, alignItems: 'center' }}>
       <AppText variant="mono" style={{ fontWeight: '600' }}>
@@ -353,6 +359,8 @@ function ChaptersList({
   chapters: ABSChapter[]
   onSelect: (c: ABSChapter) => void
 }) {
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   const rows = useMemo(() => chapters, [chapters])
   return (
     <View>
@@ -372,6 +380,8 @@ function ChaptersList({
 }
 
 function Header({ onBack }: { onBack: () => void }) {
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   return (
     <View style={styles.header}>
       <IconButton name={icons.back} onPress={onBack} style={styles.headerBtn} />
@@ -379,90 +389,91 @@ function Header({ onBack }: { onBack: () => void }) {
   )
 }
 
-const styles = StyleSheet.create({
-  header: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
-  headerBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: colors.fill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  hero: { alignItems: 'center', paddingHorizontal: spacing.xl, gap: spacing.xs },
-  title: { textAlign: 'center', marginTop: spacing.md },
-  seriesCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.lg,
-    padding: spacing.md,
-    borderRadius: radius.card,
-    backgroundColor: colors.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-  },
-  seriesCovers: { width: 56, height: 46 },
-  statusCard: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
-    padding: spacing.md,
-    borderRadius: radius.card,
-    backgroundColor: colors.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-    gap: spacing.sm,
-  },
-  statusCardRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-  },
-  progressTrack: {
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: colors.elevated,
-    overflow: 'hidden',
-  },
-  progressFill: { height: '100%', backgroundColor: colors.accent, borderRadius: 3 },
-  playBtn: { marginHorizontal: spacing.lg, marginTop: spacing.md },
-  section: { paddingHorizontal: spacing.lg, marginTop: spacing.xl },
-  chaptersHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-  },
-  chapterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.hairline,
-  },
-  sheetChapterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-  },
-  statStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.xl,
-    padding: spacing.lg,
-    borderRadius: radius.card,
-    backgroundColor: colors.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-  },
-  statDivider: {
-    width: StyleSheet.hairlineWidth,
-    height: '100%',
-    backgroundColor: colors.hairline,
-  },
-})
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
+    header: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
+    headerBtn: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      backgroundColor: colors.fill,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    hero: { alignItems: 'center', paddingHorizontal: spacing.xl, gap: spacing.xs },
+    title: { textAlign: 'center', marginTop: spacing.md },
+    seriesCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      marginHorizontal: spacing.lg,
+      marginTop: spacing.lg,
+      padding: spacing.md,
+      borderRadius: radius.card,
+      backgroundColor: colors.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    seriesCovers: { width: 56, height: 46 },
+    statusCard: {
+      marginHorizontal: spacing.lg,
+      marginTop: spacing.md,
+      padding: spacing.md,
+      borderRadius: radius.card,
+      backgroundColor: colors.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      gap: spacing.sm,
+    },
+    statusCardRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.sm,
+    },
+    progressTrack: {
+      height: 5,
+      borderRadius: 3,
+      backgroundColor: colors.elevated,
+      overflow: 'hidden',
+    },
+    progressFill: { height: '100%', backgroundColor: colors.accent, borderRadius: 3 },
+    playBtn: { marginHorizontal: spacing.lg, marginTop: spacing.md },
+    section: { paddingHorizontal: spacing.lg, marginTop: spacing.xl },
+    chaptersHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: spacing.sm,
+    },
+    chapterRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingVertical: spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
+    },
+    sheetChapterRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.md,
+    },
+    statStrip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginHorizontal: spacing.lg,
+      marginTop: spacing.xl,
+      padding: spacing.lg,
+      borderRadius: radius.card,
+      backgroundColor: colors.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    statDivider: {
+      width: StyleSheet.hairlineWidth,
+      height: '100%',
+      backgroundColor: colors.hairline,
+    },
+  })

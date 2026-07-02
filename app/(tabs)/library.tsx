@@ -72,7 +72,8 @@ import { BookTile } from '@/ui/BookTile'
 import { BookSelectionToolbar } from '@/ui/BookSelectionToolbar'
 import { useBookSelection } from '@/ui/useBookSelection'
 import { AzRail, AZ_RAIL_WIDTH } from '@/ui/AzRail'
-import { colors, radius, spacing } from '@/ui/theme'
+import { radius, spacing, type Palette } from '@/ui/theme'
+import { useColors } from '@/ui/ThemeProvider'
 
 const COLS = 3
 const GUTTER = spacing.lg
@@ -88,6 +89,8 @@ const VIEW_MODES: { key: ViewMode; label: string }[] = [
 export default function LibraryScreen() {
   const router = useRouter()
   const { width } = useWindowDimensions()
+  const colors = useColors()
+  const styles = useStyles()
 
   // Home's shelf headers deep-link here with a sort/filter preset. Seed the Books
   // view from those params (a new param object each time so navigating again
@@ -266,6 +269,8 @@ function LibrarySwitcher({
   activeId: string | null
   onSelect: (id: string) => void
 }) {
+  const colors = useColors()
+  const styles = useStyles()
   // Simple cycle-through control for the uncommon multi-library case; a full
   // picker sheet can replace this if servers with >2 book libraries show up.
   const idx = libraries.findIndex((l) => l.id === activeId)
@@ -296,6 +301,7 @@ function SearchResults({
   results: ABSLibraryItem[]
   tileWidth: number
 }) {
+  const colors = useColors()
   if (searching) return <Loading />
   if (searched && results.length === 0) {
     return (
@@ -410,6 +416,8 @@ function BooksView({
   width: number
   preset?: BooksPreset
 }) {
+  const colors = useColors()
+  const styles = useStyles()
   const [items, setItems] = useState<ABSLibraryItem[] | null>(null)
   const [progress, setProgress] = useState<Map<string, ABSMediaProgress>>(new Map())
   const [error, setError] = useState<string | null>(null)
@@ -796,6 +804,8 @@ function SegRow<T extends string>({
   value: T
   onChange: (v: T) => void
 }) {
+  const colors = useColors()
+  const styles = useStyles()
   return (
     <View>
       <AppText variant="eyebrow" style={{ marginBottom: spacing.sm }}>
@@ -834,6 +844,8 @@ function SortRow({
   desc: boolean
   onPress: () => void
 }) {
+  const colors = useColors()
+  const styles = useStyles()
   return (
     <Touchable onPress={onPress} style={styles.sheetRow}>
       <AppText variant="body" color={active ? colors.accent : colors.text}>
@@ -860,6 +872,8 @@ function FilterValues({
   onBack: () => void
   onPick: (filter: string) => void
 }) {
+  const colors = useColors()
+  const styles = useStyles()
   const def = FILTER_GROUPS.find((g) => g.id === group)
   const values = def ? def.values(items) : []
   return (
@@ -910,6 +924,8 @@ function BookListRow({
   onToggle?: () => void
 }) {
   const router = useRouter()
+  const colors = useColors()
+  const styles = useStyles()
   return (
     <Touchable
       style={[styles.listRow, selected && styles.listRowSelected]}
@@ -955,6 +971,8 @@ type GroupSort = 'name' | 'count'
 
 function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) {
   const router = useRouter()
+  const colors = useColors()
+  const styles = useStyles()
   const [groups, setGroups] = useState<GroupRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   // Sort name-ascending by default; tapping the active sort flips its direction.
@@ -1112,6 +1130,8 @@ function GroupSortBtn({
   desc: boolean
   onPress: () => void
 }) {
+  const colors = useColors()
+  const styles = useStyles()
   return (
     <Touchable style={[styles.groupSortBtn, active && styles.groupSortBtnActive]} onPress={onPress}>
       <AppText variant="caption" color={active ? colors.text : colors.textMuted}>
@@ -1156,7 +1176,8 @@ function narratorToRow(n: ABSNarrator): GroupRow {
   }
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1329,4 +1350,10 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     marginBottom: spacing.xs,
   },
-})
+  })
+
+// Hook: the memoized stylesheet for the active palette.
+function useStyles() {
+  const colors = useColors()
+  return useMemo(() => makeStyles(colors), [colors])
+}

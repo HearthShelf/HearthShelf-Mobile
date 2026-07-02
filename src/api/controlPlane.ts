@@ -58,16 +58,34 @@ export interface LinkedServer {
   name: string
   url: string
   role: 'admin' | 'user'
+  /** The user's chosen default server - a fresh device auto-connects here. */
+  isDefault?: boolean
 }
 
 interface ServersResponse {
-  servers: LinkedServer[]
+  servers: Array<{ id: string; name: string; url: string; role: 'admin' | 'user'; is_default?: boolean }>
 }
 
 /** List the servers the signed-in user has linked. */
 export async function fetchLinkedServers(getToken: GetToken): Promise<LinkedServer[]> {
   const data = await request<ServersResponse>(getToken, '/servers')
-  return data.servers
+  return data.servers.map((s) => ({
+    id: s.id,
+    name: s.name,
+    url: s.url,
+    role: s.role,
+    ...(s.is_default ? { isDefault: true } : {}),
+  }))
+}
+
+/** Set this server as the account default (a fresh device auto-connects here). */
+export async function setDefaultServer(getToken: GetToken, serverId: string): Promise<void> {
+  await request(getToken, `/servers/${encodeURIComponent(serverId)}/default`, { method: 'POST' })
+}
+
+/** Clear the account default server (fresh devices return to the picker). */
+export async function clearDefaultServer(getToken: GetToken, serverId: string): Promise<void> {
+  await request(getToken, `/servers/${encodeURIComponent(serverId)}/default`, { method: 'DELETE' })
 }
 
 interface GrantResponse {

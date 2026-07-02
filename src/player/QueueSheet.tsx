@@ -4,7 +4,14 @@
  * flatlist. Ported from the WebApp's MobilePlayer queue sheet + queueStore.ts.
  * Auto mode opens a second sub-sheet of toggleable rules.
  */
-import { forwardRef, useImperativeHandle, useRef, useState, useSyncExternalStore } from 'react'
+import {
+  forwardRef,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
@@ -24,7 +31,8 @@ import { getState, subscribe } from './store'
 import { coverUrl } from '@/api/abs'
 import { AppText, Cover, IconButton, Sheet, type SheetRef, Touchable } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
-import { colors, radius, spacing } from '@/ui/theme'
+import { radius, spacing, type Palette } from '@/ui/theme'
+import { useColors } from '@/ui/ThemeProvider'
 import type { SheetHandle } from './sheets'
 
 const MODES = QUEUE_MODES
@@ -33,6 +41,8 @@ const RULE_COPY = AUTO_RULE_COPY
 
 export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => void }>(
   function QueueSheet({ onJump }, ref) {
+    const colors = useColors()
+    const styles = useMemo(() => makeStyles(colors), [colors])
     const sheetRef = useRef<SheetRef>(null)
     const rulesRef = useRef<SheetRef>(null)
     useImperativeHandle(ref, () => ({
@@ -188,6 +198,8 @@ function QueueRow({
   onJump: () => void
   onRemove: () => void
 }) {
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   return (
     <View style={[styles.row, isActive && styles.rowDragging]}>
       {draggable ? (
@@ -221,7 +233,8 @@ function QueueRow({
   )
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
   segFull: {
     flexDirection: 'row',
     gap: 4,

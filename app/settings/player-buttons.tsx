@@ -17,9 +17,8 @@
  * sheet ("Edit buttons"). The arrangement lives in the settings store, so it
  * syncs across devices like every other preference.
  */
-import { useSyncExternalStore } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
-import { useRouter } from 'expo-router'
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import {
@@ -33,10 +32,11 @@ import {
   type PlayerActionPref,
 } from '@/store/settings'
 import { ACTION_META } from '@/player/actions'
-import { AppText, IconButton, Screen } from '@/ui/primitives'
+import { AppText } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
 import { SettingsToggle } from '@/ui/settingsControls'
-import { colors, radius, spacing } from '@/ui/theme'
+import { radius, spacing, type Palette } from '@/ui/theme'
+import { useColors } from '@/ui/ThemeProvider'
 
 const SECTIONS: { placement: ActionPlacement; title: string; hint: string }[] = [
   { placement: 'onscreen', title: 'On screen', hint: 'Shown in the row under the controls' },
@@ -89,19 +89,15 @@ function fromListItems(items: ListItem[]): PlayerActionPref[] {
 }
 
 export default function PlayerButtonsScreen() {
-  const router = useRouter()
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   const s = useSyncExternalStore(subscribeSettings, getSettingsState)
 
   const listItems = toListItems(s.playerActions)
   const onScreenCount = s.playerActions.filter((a) => a.placement === 'onscreen').length
 
   return (
-    <Screen>
-      <View style={styles.header}>
-        <IconButton name={icons.back} onPress={() => router.back()} style={styles.headerBtn} />
-        <AppText variant="title">Player buttons</AppText>
-      </View>
-
+    <GestureHandlerRootView style={styles.screen}>
       <View style={styles.iconOnlyRow}>
         <View style={{ flex: 1 }}>
           <AppText variant="body">Icon only</AppText>
@@ -116,22 +112,20 @@ export default function PlayerButtonsScreen() {
         Hold a button and drag it under a heading to move it, or tap the eye to quick hide.
       </AppText>
 
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <DraggableFlatList
-          data={listItems}
-          keyExtractor={ITEM_KEY}
-          contentContainerStyle={styles.listContent}
-          onDragEnd={({ data }) => setPlayerActions(fromListItems(data))}
-          renderItem={(params: RenderItemParams<ListItem>) =>
-            params.item.type === 'header' ? (
-              <SectionHeader placement={params.item.placement} onScreenCount={onScreenCount} />
-            ) : (
-              <ActionRow {...params} />
-            )
-          }
-        />
-      </GestureHandlerRootView>
-    </Screen>
+      <DraggableFlatList
+        data={listItems}
+        keyExtractor={ITEM_KEY}
+        contentContainerStyle={styles.listContent}
+        onDragEnd={({ data }) => setPlayerActions(fromListItems(data))}
+        renderItem={(params: RenderItemParams<ListItem>) =>
+          params.item.type === 'header' ? (
+            <SectionHeader placement={params.item.placement} onScreenCount={onScreenCount} />
+          ) : (
+            <ActionRow {...params} />
+          )
+        }
+      />
+    </GestureHandlerRootView>
   )
 }
 
@@ -142,6 +136,8 @@ function SectionHeader({
   placement: ActionPlacement
   onScreenCount: number
 }) {
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   const sec = SECTIONS.find((x) => x.placement === placement)!
   const atCap = placement === 'onscreen' && onScreenCount >= MAX_ONSCREEN_ACTIONS
   return (
@@ -164,6 +160,8 @@ function SectionHeader({
 }
 
 function ActionRow({ item, drag, isActive }: RenderItemParams<ListItem>) {
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   if (item.type !== 'action') return null
   const meta = ACTION_META[item.action.key]
   const hidden = item.action.placement === 'hidden'
@@ -201,22 +199,9 @@ function toggleHidden(key: PlayerActionKey): void {
   setPlayerActions(next)
 }
 
-const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  headerBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: colors.fill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
+  screen: { flex: 1 },
   iconOnlyRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -254,4 +239,4 @@ const styles = StyleSheet.create({
   },
   rowDragging: { backgroundColor: colors.high, borderColor: colors.accent },
   hideBtn: { padding: spacing.xs },
-})
+  })

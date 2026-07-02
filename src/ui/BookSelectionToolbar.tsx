@@ -8,7 +8,7 @@
  * component runs the actions against the selected ids and reports progress
  * changes back so segment tracks / status update.
  */
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { Linking, StyleSheet, View } from 'react-native'
 import type { ABSLibraryItem, ABSMediaProgress } from '@hearthshelf/core'
 import { addToQueue } from '@/player/queue'
@@ -16,7 +16,8 @@ import { AddToListSheet } from '@/player/AddToListSheet'
 import type { SheetHandle } from '@/player/sheets'
 import { libraryDownloadUrl, itemAuthor, itemTitle, setItemFinished } from '@/api/abs'
 import { AppText, IconButton, icons } from '@/ui/primitives'
-import { colors, spacing } from '@/ui/theme'
+import { spacing, type Palette } from '@/ui/theme'
+import { useColors } from '@/ui/ThemeProvider'
 import { haptics } from './haptics'
 import type { BookSelection } from './useBookSelection'
 
@@ -37,6 +38,8 @@ export function BookSelectionToolbar({
   onProgressChanged?: () => void
   onToast?: (message: string) => void
 }) {
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   const addSheetRef = useRef<SheetHandle>(null)
   const busy = useRef(false)
 
@@ -140,7 +143,8 @@ export function BookSelectionToolbar({
   )
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
   bar: {
     flexDirection: 'row',
     alignItems: 'center',
