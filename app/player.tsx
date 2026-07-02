@@ -21,6 +21,9 @@ import { useRouter } from 'expo-router'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Animated, {
+  Easing,
+  FadeIn,
+  FadeOut,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -57,6 +60,8 @@ import {
 import { Icon } from '@/ui/icons'
 import { CoverGlow } from '@/ui/CoverGlow'
 import { AppTabBar } from '@/ui/AppTabBar'
+import { haptics } from '@/ui/haptics'
+import { DUR, SpringPressable } from '@/ui/motion'
 import { useToast, Toast } from '@/ui/Toast'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors, useTheme, type ActiveTheme } from '@/ui/ThemeProvider'
@@ -72,6 +77,8 @@ import { AddToListSheet } from '@/player/AddToListSheet'
 import { QueueSheet } from '@/player/QueueSheet'
 import { buildActions, type ActionContext } from '@/player/actions'
 import type { PlayerActionKey } from '@/store/settings'
+
+const HEARTH_BG = require('../assets/images/sitting-in-the-hearth.webp')
 
 /**
  * The full player UI. Rendered as the pushed `/player` route (with a collapse
@@ -141,14 +148,33 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // owns the tab bar when the player is embedded in the Now Playing tab - can hide
   // it too. Reset on unmount so leaving the player never strands the nav hidden.
   const immersive = useSyncExternalStore(subscribeImmersive, getImmersive)
-  const enter = useCallback(() => setImmersive(true), [])
-  const exit = useCallback(() => setImmersive(false), [])
+  const enter = useCallback(() => {
+    haptics.mode()
+    setImmersive(true)
+  }, [])
+  const exit = useCallback(() => {
+    haptics.select()
+    setImmersive(false)
+  }, [])
   useEffect(() => () => setImmersive(false), [])
 
   const swipe = Gesture.Pan().onEnd((e) => {
     if (e.velocityY < -400) runOnJS(enter)()
     else if (e.velocityY > 400) runOnJS(exit)()
   })
+
+  // The thin whole-book bar eases toward each new position instead of ticking,
+  // so progress reads as flowing time. Computed before the no-track early return
+  // (hooks must run unconditionally).
+  const bookProgress = duration > 0 ? Math.min(1, Math.max(0, position / duration)) : 0
+  const bookBar = useSharedValue(bookProgress)
+  useEffect(() => {
+    bookBar.value = withTiming(bookProgress, {
+      duration: 400,
+      easing: Easing.out(Easing.cubic),
+    })
+  }, [bookProgress, bookBar])
+  const bookBarStyle = useAnimatedStyle(() => ({ width: `${bookBar.value * 100}%` }))
 
   if (!nowPlaying) {
     // In the tab, the Now Playing screen owns the empty state (hearth + resume).
@@ -166,7 +192,6 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const chapters = nowPlaying.chapters
   const hasChapters = chapters.length > 0
   const chapter = currentChapter()
-  const bookProgress = duration > 0 ? Math.min(1, Math.max(0, position / duration)) : 0
   const hue = coverHue(nowPlaying.itemId)
 
   // Honor the user's Progress bar setting: the main scrubber tracks the current
@@ -274,27 +299,33 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <Screen edges={immersive ? ['top', 'bottom'] : ['top']}>
-      {/* Blurred artwork fills the whole player as a dim backdrop, then a gradient
+      {/* Player background, per the playerBg setting: blurred cover art, a
+          breathing hue glow, or the hearth artwork. Whichever it is, a gradient
           fades it into the scaffold so the cover, title, and controls stay
-          readable. Falls back to the hue glow when there's no artwork. */}
+          readable. */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        {nowPlaying.artworkUrl ? (
+        {settings.playerBg === 'blurred' && nowPlaying.artworkUrl ? (
           <Image
             source={{ uri: nowPlaying.artworkUrl }}
             style={StyleSheet.absoluteFill}
             blurRadius={40}
           />
         ) : null}
+        {settings.playerBg === 'hearth' ? (
+          <Image source={HEARTH_BG} style={styles.hearthBg} resizeMode="cover" />
+        ) : null}
         <LinearGradient
           colors={['rgba(27,26,24,0.55)', 'rgba(27,26,24,0.82)', colors.scaffold]}
           locations={[0, 0.55, 1]}
           style={StyleSheet.absoluteFill}
         />
-        <CoverGlow hue={hue} height={430} />
+        {/* The glow breathes only on the gradient background, where it IS the
+            background - a live hearth rather than a static tint. */}
+        <CoverGlow hue={hue} height={430} breathe={settings.playerBg === 'gradient'} />
       </View>
 
       {!immersive && (
-        <>
+        <Animated.View entering={FadeIn.duration(DUR.base)} exiting={FadeOut.duration(DUR.fast)}>
           <View style={styles.header}>
             {embedded ? (
               <View style={{ width: 28 }} />
@@ -305,9 +336,10 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
             <IconButton name={icons.queue} size={23} onPress={() => queueRef.current?.present()} />
           </View>
 
-          {/* Thin whole-book progress bar sitting above the numeric strip. */}
+          {/* Thin whole-book progress bar sitting above the numeric strip; the
+              fill eases toward each position tick (bookBarStyle). */}
           <View style={styles.bookBarTrack}>
-            <View style={[styles.bookBarFill, { width: `${bookProgress * 100}%` }]} />
+            <Animated.View style={[styles.bookBarFill, bookBarStyle]} />
           </View>
 
           <View style={styles.wholeBookStrip}>
@@ -321,7 +353,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
               -{formatTimestamp(Math.max(0, duration - position))}
             </AppText>
           </View>
-        </>
+        </Animated.View>
       )}
 
       {/* Cover fills the space between header and the pinned controls. */}
@@ -365,6 +397,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         <View style={styles.scrub}>
           <Scrubber
             ratio={chRatio}
+            playing={isPlaying}
             elapsed={elapsedLabel}
             remain={remainLabel}
             chapter={chapterLabel}
@@ -383,12 +416,12 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
               <TransportBtn icon={icons.rewind} onPress={() => jumpBy(-15)} />
             </>
           ) : null}
-          <Pressable
-            onPress={togglePlay}
-            style={({ pressed }) => [styles.play, pressed && styles.pressed]}
-          >
-            <Icon name={isPlaying ? icons.pause : icons.play} size={44} color={colors.onAccent} />
-          </Pressable>
+          <SpringPressable onPress={togglePlay} style={styles.play} scaleTo={0.9}>
+            {/* Keyed remount so the pause/play glyph fades in rather than snapping. */}
+            <Animated.View key={isPlaying ? 'pause' : 'play'} entering={FadeIn.duration(DUR.fast)}>
+              <Icon name={isPlaying ? icons.pause : icons.play} size={44} color={colors.onAccent} />
+            </Animated.View>
+          </SpringPressable>
           {hasChapters && !immersive ? (
             <>
               <TransportBtn icon={icons.forward} onPress={() => jumpBy(30)} />
@@ -398,16 +431,20 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         </View>
 
         {immersive && hasChapters && (
-          <View style={styles.chapterSkipRow}>
+          <Animated.View entering={FadeIn.duration(DUR.base)} style={styles.chapterSkipRow}>
             <TransportBtn icon={icons.skipPrev} onPress={() => skipChapter(-1)} />
             <TransportBtn icon={icons.rewind} onPress={() => jumpBy(-15)} />
             <TransportBtn icon={icons.forward} onPress={() => jumpBy(30)} />
             <TransportBtn icon={icons.skipNext} onPress={() => skipChapter(1)} />
-          </View>
+          </Animated.View>
         )}
 
         {!immersive && (
-          <View style={styles.actionRow}>
+          <Animated.View
+            entering={FadeIn.duration(DUR.base)}
+            exiting={FadeOut.duration(DUR.fast)}
+            style={styles.actionRow}
+          >
             {onScreenKeys.map((key) => {
               const a = actionMap[key]
               return (
@@ -431,14 +468,18 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                 onPress={() => moreRef.current?.present()}
               />
             )}
-          </View>
+          </Animated.View>
         )}
       </View>
 
       {/* Nav stays visible unless immersive. */}
       {/* The pushed route shows its own tab bar; embedded, the real tab bar is
           already there (the Now Playing tab), so don't double it. */}
-      {!immersive && !embedded && <AppTabBar activeName="now" onPressTab={goToTab} />}
+      {!immersive && !embedded && (
+        <Animated.View entering={FadeIn.duration(DUR.base)} exiting={FadeOut.duration(DUR.fast)}>
+          <AppTabBar activeName="now" onPressTab={goToTab} />
+        </Animated.View>
+      )}
 
       {lightbox && (
         <Lightbox
@@ -512,13 +553,9 @@ function TransportBtn({
   const { colors, shadow } = useTheme()
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   return (
-    <Pressable
-      onPress={onPress}
-      hitSlop={10}
-      style={({ pressed }) => [styles.transportBtn, pressed && styles.pressed]}
-    >
+    <SpringPressable onPress={onPress} hitSlop={10} style={styles.transportBtn} scaleTo={0.85}>
       <Icon name={icon} size={34} color={colors.text} />
-    </Pressable>
+    </SpringPressable>
   )
 }
 
@@ -544,14 +581,14 @@ function ActionBtn({
   const { colors, shadow } = useTheme()
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   return (
-    <Pressable
-      style={({ pressed }) => [
+    <SpringPressable
+      style={[
         styles.actionBtn,
         iconOnly && styles.actionBtnIconOnly,
         active && styles.actionBtnActive,
         disabled && { opacity: 0.35 },
-        pressed && styles.pressed,
       ]}
+      scaleTo={0.94}
       onPress={disabled ? undefined : onPress}
       disabled={disabled}
     >
@@ -570,7 +607,7 @@ function ActionBtn({
           <View style={[styles.depletionFill, { width: `${depletion * 100}%` }]} />
         </View>
       )}
-    </Pressable>
+    </SpringPressable>
   )
 }
 
@@ -926,6 +963,9 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       justifyContent: 'center',
       paddingHorizontal: spacing.xl,
     },
+    // Full-strength art; the gradient overlay above it does the dimming (same
+    // treatment as the Now Playing tab's empty state, which uses this artwork).
+    hearthBg: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
     coverTap: { position: 'relative' },
     cover: { backgroundColor: colors.high },
     bookmarkBtn: {

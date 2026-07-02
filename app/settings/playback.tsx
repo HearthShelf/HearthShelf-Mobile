@@ -17,7 +17,13 @@ import {
   SettingsToggle,
   ChipRow,
 } from '@/ui/settingsControls'
-import { getSettingsState, subscribeSettings, setSetting, setQueueMode, toggleAutoRule } from '@/store/settings'
+import {
+  getSettingsState,
+  subscribeSettings,
+  setSetting,
+  setQueueMode,
+  toggleAutoRule,
+} from '@/store/settings'
 import { QUEUE_MODES, QUEUE_MODE_SUB, AUTO_RULE_COPY } from '@/player/queue'
 
 const SKIP_FWD_OPTIONS = [15, 30, 60] as const
@@ -71,10 +77,20 @@ export default function PlaybackPanel() {
           }
         />
         <SettingsRow
-          title="Hearth background"
-          desc="Show the cozy hearth artwork behind the full-screen player."
-          control={<SettingsToggle on={s.hearthBgPlayer} onChange={(v) => setSetting('hearthBgPlayer', v)} />}
-        />
+          title="Player background"
+          desc="Behind the full-screen player: blurred cover art, a breathing glow in the book's colors, or the hearth artwork."
+          stacked
+        >
+          <Seg
+            value={s.playerBg}
+            onChange={(v) => setSetting('playerBg', v)}
+            options={[
+              { value: 'blurred', label: 'Blurred' },
+              { value: 'gradient', label: 'Glow' },
+              { value: 'hearth', label: 'Hearth' },
+            ]}
+          />
+        </SettingsRow>
         <SettingsRow
           title="Player buttons"
           desc="Choose which action buttons show on the player, tuck into More, or hide."
@@ -99,7 +115,11 @@ export default function PlaybackPanel() {
         </SettingsRow>
         {s.queueMode === 'auto' && (
           <View style={{ paddingTop: spacing.sm }}>
-            <AppText variant="caption" color={colors.textMuted} style={{ marginBottom: spacing.sm, paddingHorizontal: spacing.lg }}>
+            <AppText
+              variant="caption"
+              color={colors.textMuted}
+              style={{ marginBottom: spacing.sm, paddingHorizontal: spacing.lg }}
+            >
               Auto-queue rules
             </AppText>
             {s.queueAutoRules.map((r, i) => {

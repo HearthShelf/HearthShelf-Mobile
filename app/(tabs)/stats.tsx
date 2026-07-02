@@ -7,12 +7,14 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ScrollView, StyleSheet, View } from 'react-native'
+import Animated, { FadeIn } from 'react-native-reanimated'
 import { formatDuration, dayKey, coverHue, type HSListeningStats } from '@hearthshelf/core'
 import { getHSStats } from '@/api/abs'
 import { AppText, Centered, Cover, Loading, PrimaryButton, Screen } from '@/ui/primitives'
 import { radius, spacing, fonts, type Palette } from '@/ui/theme'
 import { useTheme } from '@/ui/ThemeProvider'
 import { Icon, icons } from '@/ui/icons'
+import { DUR } from '@/ui/motion'
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
@@ -68,7 +70,8 @@ export default function StatsTab() {
 
   return (
     <Screen>
-      <ScrollView
+      <Animated.ScrollView
+        entering={FadeIn.duration(DUR.base)}
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: 140, gap: spacing.lg }}
         showsVerticalScrollIndicator={false}
       >
@@ -168,7 +171,7 @@ export default function StatsTab() {
             )}
           </>
         )}
-      </ScrollView>
+      </Animated.ScrollView>
     </Screen>
   )
 }
@@ -214,32 +217,32 @@ function lastSevenDays(byDay: Record<string, number>) {
 
 const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow']) =>
   StyleSheet.create({
-  tileRow: { flexDirection: 'row', gap: spacing.md },
-  card: {
-    backgroundColor: colors.card,
-    borderRadius: radius.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-    padding: spacing.lg,
-    ...shadow.card,
-  },
-  statCard: { flex: 1, alignItems: 'flex-start' },
-  weekHeader: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    marginBottom: spacing.md,
-  },
-  weekBars: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, height: 90 },
-  weekBarCol: {
-    flex: 1,
-    alignItems: 'center',
-    gap: spacing.xs,
-    height: '100%',
-    justifyContent: 'flex-end',
-  },
-  weekBarTrack: { width: '100%', flex: 1, justifyContent: 'flex-end' },
-  weekBarFill: { width: '100%', borderRadius: 6, backgroundColor: colors.accent },
-  weekBarLabel: { fontSize: 10 },
-  listenedRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+    tileRow: { flexDirection: 'row', gap: spacing.md },
+    card: {
+      backgroundColor: colors.card,
+      borderRadius: radius.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      padding: spacing.lg,
+      ...shadow.card,
+    },
+    statCard: { flex: 1, alignItems: 'flex-start' },
+    weekHeader: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      justifyContent: 'space-between',
+      marginBottom: spacing.md,
+    },
+    weekBars: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, height: 90 },
+    weekBarCol: {
+      flex: 1,
+      alignItems: 'center',
+      gap: spacing.xs,
+      height: '100%',
+      justifyContent: 'flex-end',
+    },
+    weekBarTrack: { width: '100%', flex: 1, justifyContent: 'flex-end' },
+    weekBarFill: { width: '100%', borderRadius: 6, backgroundColor: colors.accent },
+    weekBarLabel: { fontSize: 10 },
+    listenedRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   })

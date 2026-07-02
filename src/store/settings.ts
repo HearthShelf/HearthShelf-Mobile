@@ -22,6 +22,9 @@ import { DEFAULT_AUTO_RULES, SETTINGS_CATALOG } from '@hearthshelf/core'
 export type ThemePref = 'dark' | 'light' | 'flat' | 'oled'
 export type AccentMode = 'dynamic' | 'manual'
 export type GlowMode = 'gradient' | 'image'
+/** Full-player background: blurred cover art, a breathing hue gradient, or the
+ *  sitting-by-the-hearth artwork. */
+export type PlayerBg = 'blurred' | 'gradient' | 'hearth'
 export type ScrubberScope = 'chapter' | 'book'
 export type CoverAspect = 'square' | 'portrait'
 /** How much haptic feedback to fire. See src/ui/haptics.ts for what each covers. */
@@ -94,7 +97,7 @@ export interface SettingsState {
   defaultSpeed: number
   skipForward: number
   skipBack: number
-  hearthBgPlayer: boolean
+  playerBg: PlayerBg
   haptics: HapticLevel
   hapticIntensity: HapticIntensity
 
@@ -128,7 +131,7 @@ let state: SettingsState = {
   defaultSpeed: 1,
   skipForward: 30,
   skipBack: 15,
-  hearthBgPlayer: true,
+  playerBg: 'blurred',
   haptics: 'minimal',
   hapticIntensity: 'light',
 
@@ -207,7 +210,9 @@ export function normalizePlayerActions(saved: PlayerActionPref[] | undefined): P
  * keys apply; unknown keys are ignored. Does NOT re-stamp meta as a local change -
  * it records the server's updatedAt so a later local edit can still win.
  */
-export function applyServerKeys(rows: Record<string, { value: SettingValue; updatedAt: number }>): void {
+export function applyServerKeys(
+  rows: Record<string, { value: SettingValue; updatedAt: number }>,
+): void {
   const patch: Record<string, unknown> = {}
   const nextMeta = { ...meta }
   let changed = false

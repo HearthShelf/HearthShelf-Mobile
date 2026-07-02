@@ -4,9 +4,13 @@
  * the player is in immersive mode). Purely visual - the caller decides what
  * "active" is and what a tap does.
  */
+import { useEffect } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated'
 import { Icon, iconFor, icons } from './icons'
+import { haptics } from './haptics'
+import { POP_SPRING } from './motion'
 import { colors, fonts, radius } from './theme'
 
 export const TAB_BAR_HEIGHT = 60
@@ -45,11 +49,14 @@ export function AppTabBar({
           <Pressable
             key={meta.name}
             style={({ pressed }) => [styles.tab, pressed && styles.tabPressed]}
-            onPress={() => onPressTab(meta.name)}
+            onPress={() => {
+              if (!focused) haptics.select()
+              onPressTab(meta.name)
+            }}
           >
-            <View style={[styles.pill, focused && styles.pillActive]}>
+            <TabPill focused={focused}>
               <Icon name={iconFor(meta.icon, focused)} size={22} color={tint} />
-            </View>
+            </TabPill>
             <Text
               style={[styles.tabLabel, { color: tint }, focused && styles.tabLabelActive]}
               numberOfLines={1}
@@ -60,6 +67,23 @@ export function AppTabBar({
         )
       })}
     </View>
+  )
+}
+
+/** The active-tab pill pops in with the app's standard spring when focused. */
+function TabPill({ focused, children }: { focused: boolean; children: React.ReactNode }) {
+  const scale = useSharedValue(1)
+  useEffect(() => {
+    if (focused) {
+      scale.value = 0.7
+      scale.value = withSpring(1, POP_SPRING)
+    }
+  }, [focused, scale])
+  const animated = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }))
+  return (
+    <Animated.View style={[styles.pill, focused && styles.pillActive, animated]}>
+      {children}
+    </Animated.View>
   )
 }
 

@@ -3,7 +3,7 @@
  * these so colors/radii/spacing come from src/ui/theme.ts rather than per-screen
  * hardcoded hex. Bottom sheets use @gorhom/bottom-sheet (see Sheet below).
  */
-import { forwardRef, useMemo, useState } from 'react'
+import { forwardRef, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Image,
@@ -16,6 +16,12 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native'
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import {
   BottomSheetModal,
@@ -70,7 +76,10 @@ export function AppText({
 }) {
   const colors = useColors()
   return (
-    <Text numberOfLines={numberOfLines} style={[typeScale[variant], { color: color ?? colors.text }, style]}>
+    <Text
+      numberOfLines={numberOfLines}
+      style={[typeScale[variant], { color: color ?? colors.text }, style]}
+    >
       {children}
     </Text>
   )
@@ -408,16 +417,23 @@ export function ProgressBar({
   style?: StyleProp<ViewStyle>
 }) {
   const colors = useColors()
-  const pct = Math.max(0, Math.min(1, progress)) * 100
+  const clamped = Math.max(0, Math.min(1, progress))
+  // The fill eases toward each new value (and fills from zero on mount), so
+  // progress reads as flowing time instead of snapping into place.
+  const fill = useSharedValue(0)
+  useEffect(() => {
+    fill.value = withTiming(clamped, { duration: 400, easing: Easing.out(Easing.cubic) })
+  }, [clamped, fill])
+  const fillStyle = useAnimatedStyle(() => ({ width: `${fill.value * 100}%` }))
   return (
-    <View style={[{ height, borderRadius: height, backgroundColor: track ?? colors.fillStrong }, style]}>
-      <View
-        style={{
-          height,
-          width: `${pct}%`,
-          borderRadius: height,
-          backgroundColor: color ?? colors.accent,
-        }}
+    <View
+      style={[{ height, borderRadius: height, backgroundColor: track ?? colors.fillStrong }, style]}
+    >
+      <Animated.View
+        style={[
+          { height, borderRadius: height, backgroundColor: color ?? colors.accent },
+          fillStyle,
+        ]}
       />
     </View>
   )
@@ -509,71 +525,71 @@ export { icons }
 
 const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow']) =>
   StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.scaffold },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.md,
-    padding: spacing.xl,
-    backgroundColor: colors.scaffold,
-  },
-  card: {
-    backgroundColor: colors.high,
-    borderRadius: radius.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-    padding: spacing.lg,
-    ...shadow.card,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    backgroundColor: colors.high,
-    borderRadius: radius.row,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-  },
-  pressed: { opacity: 0.6 },
-  touchablePressed: { opacity: 0.55 },
-  touchableDisabled: { opacity: 0.4 },
-  chip: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.pill,
-    backgroundColor: colors.fill,
-  },
-  chipActive: { backgroundColor: colors.accentTile },
-  chipText: { ...typeScale.label, color: colors.textMuted },
-  chipTextActive: { color: colors.text },
-  primaryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.accent,
-    borderRadius: radius.card,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-  },
-  primaryBtnText: { ...typeScale.label, color: colors.onAccent },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-  },
-  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  sectionTitleTap: { flexDirection: 'row', alignItems: 'center' },
-  cover: { backgroundColor: colors.highest },
-  avatarFallback: { alignItems: 'center', justifyContent: 'center' },
-  avatarInitials: { color: colors.onAccent, fontWeight: '700', letterSpacing: 0.3 },
-  sheetBody: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl },
-  sheetHeader: { gap: 2, marginBottom: spacing.md },
+    screen: { flex: 1, backgroundColor: colors.scaffold },
+    centered: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.md,
+      padding: spacing.xl,
+      backgroundColor: colors.scaffold,
+    },
+    card: {
+      backgroundColor: colors.high,
+      borderRadius: radius.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      padding: spacing.lg,
+      ...shadow.card,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.lg,
+      backgroundColor: colors.high,
+      borderRadius: radius.row,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    pressed: { opacity: 0.6 },
+    touchablePressed: { opacity: 0.55 },
+    touchableDisabled: { opacity: 0.4 },
+    chip: {
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+    },
+    chipActive: { backgroundColor: colors.accentTile },
+    chipText: { ...typeScale.label, color: colors.textMuted },
+    chipTextActive: { color: colors.text },
+    primaryBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      backgroundColor: colors.accent,
+      borderRadius: radius.card,
+      paddingHorizontal: spacing.xl,
+      paddingVertical: spacing.md,
+    },
+    primaryBtnText: { ...typeScale.label, color: colors.onAccent },
+    sectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.lg,
+      marginBottom: spacing.md,
+    },
+    sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    sectionTitleTap: { flexDirection: 'row', alignItems: 'center' },
+    cover: { backgroundColor: colors.highest },
+    avatarFallback: { alignItems: 'center', justifyContent: 'center' },
+    avatarInitials: { color: colors.onAccent, fontWeight: '700', letterSpacing: 0.3 },
+    sheetBody: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl },
+    sheetHeader: { gap: 2, marginBottom: spacing.md },
   })
 
 // Hooks: the memoized stylesheet + palette for the active theme.

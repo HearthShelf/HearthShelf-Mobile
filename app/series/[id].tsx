@@ -36,6 +36,7 @@ import {
   Touchable,
   icons,
 } from '@/ui/primitives'
+import { AppTabBar } from '@/ui/AppTabBar'
 import { CoverGlow } from '@/ui/CoverGlow'
 import { BookSelectionToolbar } from '@/ui/BookSelectionToolbar'
 import { useBookSelection } from '@/ui/useBookSelection'
@@ -144,18 +145,49 @@ export default function SeriesDetailScreen() {
   const allSeriesFinished =
     books.length > 0 && books.every((b) => progressById.get(b.id)?.isFinished)
 
-  // Mark the whole series finished/unfinished, then refetch so the track updates.
+  // Mark the whole series finished/unfinished. Update local state optimistically -
+  // refetching via getMe() right after the PATCH can race ABS's own propagation,
+  // so a refetch-only approach leaves the UI stuck on the old state (item/[id].tsx
+  // hits the same issue and fixes it the same way).
   const markSeries = async () => {
     if (!books.length || marking) return
+    const next = !allSeriesFinished
     setMarking(true)
+    const prev = progressById
+    setProgressById((cur) => {
+      const updated = new Map(cur)
+      for (const b of books) {
+        const p = updated.get(b.id)
+        updated.set(
+          b.id,
+          p
+            ? { ...p, isFinished: next }
+            : {
+                libraryItemId: b.id,
+                duration: b.media.duration ?? 0,
+                progress: next ? 1 : 0,
+                currentTime: 0,
+                isFinished: next,
+              },
+        )
+      }
+      return updated
+    })
     try {
-      await Promise.all(books.map((b) => setItemFinished(b.id, !allSeriesFinished)))
+      await Promise.all(books.map((b) => setItemFinished(b.id, next)))
       refreshProgress()
     } catch {
-      // A best-effort action; leave the UI as-is on failure.
+      setProgressById(prev)
     } finally {
       setMarking(false)
     }
+  }
+
+  // Pushed above the tabs navigator, so it renders its own copy of the bar
+  // (see player.tsx / item/[id].tsx) rather than inheriting the tabs layout's.
+  const goToTab = (name: string) => {
+    router.dismissAll?.()
+    router.replace(name === 'index' ? '/(tabs)' : `/(tabs)/${name}`)
   }
 
   const play = async (bookId: string) => {
@@ -174,7 +206,8 @@ export default function SeriesDetailScreen() {
 
       <Header onBack={() => router.back()} />
       <ScrollView
-        contentContainerStyle={{ paddingBottom: 160 }}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: spacing.xl }}
         showsVerticalScrollIndicator={false}
       >
         {/* Hero */}
@@ -244,6 +277,7 @@ export default function SeriesDetailScreen() {
             books={books}
             libraryId={libraryId}
             progressById={progressById}
+            setProgressById={setProgressById}
             onProgressChanged={refreshProgress}
           />
         ) : (
@@ -275,6 +309,8 @@ export default function SeriesDetailScreen() {
           ))}
         </View>
       </ScrollView>
+
+      <AppTabBar activeName={null} onPressTab={goToTab} />
     </Screen>
   )
 }

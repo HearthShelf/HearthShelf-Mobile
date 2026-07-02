@@ -24,6 +24,12 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native'
+import Animated, {
+  FadeIn,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type {
@@ -63,7 +69,10 @@ import {
   icons,
 } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
+import { AppTabBar } from '@/ui/AppTabBar'
 import { CoverGlow } from '@/ui/CoverGlow'
+import { EmberBurst } from '@/ui/EmberBurst'
+import { DUR, POP_SPRING } from '@/ui/motion'
 import { Toast, useToast } from '@/ui/Toast'
 import { haptics } from '@/ui/haptics'
 import { radius, spacing, type Palette } from '@/ui/theme'
@@ -93,6 +102,8 @@ export default function ItemDetailScreen() {
   const [series, setSeries] = useState<ABSSeries | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [zoomed, setZoomed] = useState(false)
+  // Increments each time the book is marked finished, firing the ember burst.
+  const [finishBurst, setFinishBurst] = useState(0)
 
   const chaptersSheetRef = useRef<SheetRef>(null)
   const overflowSheetRef = useRef<SheetRef>(null)
@@ -187,6 +198,13 @@ export default function ItemDetailScreen() {
   // below already names where you are.
   const ctaLabel = isFinished ? 'Listen again' : isInProgress ? 'Resume' : 'Start listening'
 
+  // This screen is pushed above the tab navigator, so it renders its own copy
+  // of the tab bar (see player.tsx) rather than inheriting the tabs layout's.
+  const goToTab = (name: string) => {
+    router.dismissAll?.()
+    router.replace(name === 'index' ? '/(tabs)' : `/(tabs)/${name}`)
+  }
+
   const play = async () => {
     haptics.transport()
     await playItemById(detail.id)
@@ -208,6 +226,7 @@ export default function ItemDetailScreen() {
     const prev = progress
     const next = !isFinished
     haptics.success()
+    if (next) setFinishBurst((b) => b + 1)
     setProgress(
       prev
         ? { ...prev, isFinished: next }
@@ -240,7 +259,6 @@ export default function ItemDetailScreen() {
   }
 
   const downloadBook = () => {
-    overflowSheetRef.current?.dismiss()
     const url = libraryDownloadUrl(detail.libraryId, [detail.id])
     if (url) {
       void Linking.openURL(url)
@@ -283,17 +301,18 @@ export default function ItemDetailScreen() {
     cta: (
       <View key="cta" style={styles.ctaRow}>
         <PrimaryButton label={ctaLabel} icon={icons.play} onPress={play} style={{ flex: 1 }} />
-        <ActionSquare
-          icon={isFinished ? icons.taskAlt : icons.check}
-          label={isFinished ? 'Done' : 'Finish'}
-          active={isFinished}
-          onPress={toggleFinished}
-        />
-        <ActionSquare
-          icon={icons.addList}
-          label="Add to"
-          onPress={() => addToListRef.current?.present()}
-        />
+        <View style={styles.burstWrap}>
+          <ActionSquare
+            icon={isFinished ? icons.taskAlt : icons.check}
+            label={isFinished ? 'Done' : 'Finish'}
+            active={isFinished}
+            onPress={toggleFinished}
+            grow
+          />
+          {/* Embers rise off the button when the book is marked finished. */}
+          <EmberBurst burst={finishBurst} colors={[colors.accent, colors.brandHearth]} />
+        </View>
+        <ActionSquare icon={icons.download} label="Download" onPress={downloadBook} />
       </View>
     ),
     about: (
@@ -323,6 +342,8 @@ export default function ItemDetailScreen() {
           chapters={chapters}
           currentChapterIndex={currentChapterIndex}
           currentTime={currentTime}
+          isFinished={isFinished}
+          isInProgress={isInProgress}
           onOpenAll={() => chaptersSheetRef.current?.present()}
           onPlayFrom={playFrom}
         />
@@ -342,8 +363,10 @@ export default function ItemDetailScreen() {
         onOverflow={() => overflowSheetRef.current?.present()}
       />
 
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: 160 }}
+      <Animated.ScrollView
+        entering={FadeIn.duration(DUR.base)}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: spacing.xl }}
         showsVerticalScrollIndicator={false}
       >
         <Hero
@@ -357,7 +380,11 @@ export default function ItemDetailScreen() {
           onAuthor={meta.authors?.[0] ? openAuthor : undefined}
         />
         {sectionOrder.map((k) => sections[k])}
-      </ScrollView>
+      </Animated.ScrollView>
+
+      {/* Pushed above the tabs navigator, so it renders its own copy of the bar
+          (see player.tsx) rather than inheriting the tabs layout's. */}
+      <AppTabBar activeName={null} onPressTab={goToTab} />
 
       <Sheet ref={chaptersSheetRef} title="Chapters" snapPoints={['70%']}>
         <BottomSheetScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }}>
@@ -367,6 +394,7 @@ export default function ItemDetailScreen() {
               chapter={c}
               index={i}
               current={i === currentChapterIndex}
+              finished={isFinished || (isInProgress && c.end <= currentTime)}
               currentTime={currentTime}
               onPress={() => void playFrom(i === currentChapterIndex ? currentTime : c.start)}
             />
@@ -376,7 +404,14 @@ export default function ItemDetailScreen() {
 
       <Sheet ref={overflowSheetRef} title={title}>
         <SheetRow icon={icons.share} label="Share" onPress={() => void shareBook()} />
-        <SheetRow icon={icons.download} label="Download" onPress={downloadBook} />
+        <SheetRow
+          icon={icons.addList}
+          label="Add to collection or playlist"
+          onPress={() => {
+            overflowSheetRef.current?.dismiss()
+            addToListRef.current?.present()
+          }}
+        />
         <SheetRow
           icon={icons.recent}
           label="Previous sessions"
@@ -530,14 +565,6 @@ function StatusCard({
 }) {
   const colors = useColors()
   const styles = useStyles()
-  if (isFinished) {
-    return (
-      <View style={[styles.statusCard, styles.statusCardRow]}>
-        <Icon name={icons.checkCircle} size={22} color={colors.brandHearth} />
-        <AppText variant="label">Finished</AppText>
-      </View>
-    )
-  }
   if (!progress || progress.progress <= 0) return null
   const pct = Math.round(progress.progress * 100)
   const chaptersLeft = Math.max(0, Math.round((1 - progress.progress) * chapterCount))
@@ -566,16 +593,22 @@ function ActionSquare({
   label,
   active,
   onPress,
+  grow,
 }: {
   icon: (typeof icons)[keyof typeof icons]
   label: string
   active?: boolean
   onPress: () => void
+  /** Fill the parent's height (when wrapped for an overlay like EmberBurst). */
+  grow?: boolean
 }) {
   const colors = useColors()
   const styles = useStyles()
   return (
-    <Touchable style={[styles.square, active && styles.squareActive]} onPress={onPress}>
+    <Touchable
+      style={[styles.square, active && styles.squareActive, grow && { flex: 1 }]}
+      onPress={onPress}
+    >
       <Icon name={icon} size={22} color={active ? colors.brandHearth : colors.text} />
       <AppText variant="caption" color={active ? colors.brandHearth : colors.textMuted}>
         {label}
@@ -685,12 +718,14 @@ function ChapterRow({
   chapter,
   index,
   current,
+  finished,
   currentTime,
   onPress,
 }: {
   chapter: ABSChapter
   index: number
   current: boolean
+  finished: boolean
   currentTime: number
   onPress: () => void
 }) {
@@ -699,9 +734,9 @@ function ChapterRow({
   return (
     <Touchable style={[styles.chapterRow, current && styles.chapterRowNow]} onPress={onPress}>
       <Icon
-        name={current ? icons.nowPlaying : icons.play}
+        name={current ? icons.nowPlaying : finished ? icons.checkCircle : icons.play}
         size={20}
-        color={current ? colors.accent : colors.textMuted}
+        color={current ? colors.accent : finished ? colors.success : colors.textMuted}
       />
       <AppText
         variant="meta"
@@ -723,12 +758,16 @@ function ChaptersPreview({
   chapters,
   currentChapterIndex,
   currentTime,
+  isFinished,
+  isInProgress,
   onOpenAll,
   onPlayFrom,
 }: {
   chapters: ABSChapter[]
   currentChapterIndex: number
   currentTime: number
+  isFinished: boolean
+  isInProgress: boolean
   onOpenAll: () => void
   onPlayFrom: (startSec: number) => Promise<void>
 }) {
@@ -757,6 +796,7 @@ function ChaptersPreview({
             chapter={c}
             index={idx}
             current={current}
+            finished={isFinished || (isInProgress && c.end <= currentTime)}
             currentTime={currentTime}
             onPress={() => void onPlayFrom(current ? currentTime : c.start)}
           />
@@ -888,15 +928,26 @@ function CoverZoom({
 }) {
   const styles = useStyles()
   const { width } = useWindowDimensions()
+
+  // Scale up from the hero cover's neighborhood with the app's standard spring,
+  // instead of the modal's flat fade.
+  const scale = useSharedValue(0.7)
+  useEffect(() => {
+    scale.value = visible ? withSpring(1, POP_SPRING) : 0.7
+  }, [visible, scale])
+  const zoomStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }))
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.zoomScrim} onPress={onClose}>
-        <Cover
-          uri={coverUrl(itemId)}
-          size={width - spacing.xl * 2}
-          radius={radius.sheet}
-          fallback={{ hue, initial: title.charAt(0).toUpperCase(), title }}
-        />
+        <Animated.View style={zoomStyle}>
+          <Cover
+            uri={coverUrl(itemId)}
+            size={width - spacing.xl * 2}
+            radius={radius.sheet}
+            fallback={{ hue, initial: title.charAt(0).toUpperCase(), title }}
+          />
+        </Animated.View>
       </Pressable>
     </Modal>
   )
@@ -1022,6 +1073,8 @@ const makeStyles = (colors: Palette) =>
       justifyContent: 'center',
       gap: 2,
     },
+    // Holds the Finish square + its ember-burst overlay; embers may rise above.
+    burstWrap: { alignSelf: 'stretch', overflow: 'visible' },
     squareActive: {
       backgroundColor: colors.accentWash,
       borderColor: colors.accent,

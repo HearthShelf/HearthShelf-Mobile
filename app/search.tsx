@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FlatList, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native'
+import Animated, { FadeIn } from 'react-native-reanimated'
 import { useRouter } from 'expo-router'
 import type { ABSLibraryItem } from '@hearthshelf/core'
 import { getLibraries, searchLibrary } from '@/api/abs'
 import { AppText, Centered, IconButton, Loading, Screen, icons } from '@/ui/primitives'
 import { BookTile } from '@/ui/BookTile'
+import { DUR } from '@/ui/motion'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 
@@ -89,15 +91,17 @@ export default function SearchScreen() {
           </AppText>
         </Centered>
       ) : (
-        <FlatList
-          data={results}
-          keyExtractor={(it) => it.id}
-          numColumns={COLS}
-          columnWrapperStyle={{ gap: GUTTER }}
-          contentContainerStyle={{ padding: GUTTER, paddingBottom: 140, gap: spacing.xs }}
-          keyboardShouldPersistTaps="handled"
-          renderItem={({ item }) => <BookTile item={item} width={tileWidth} />}
-        />
+        <Animated.View entering={FadeIn.duration(DUR.base)} style={{ flex: 1 }}>
+          <FlatList
+            data={results}
+            keyExtractor={(it) => it.id}
+            numColumns={COLS}
+            columnWrapperStyle={{ gap: GUTTER }}
+            contentContainerStyle={{ padding: GUTTER, paddingBottom: 140, gap: spacing.xs }}
+            keyboardShouldPersistTaps="handled"
+            renderItem={({ item }) => <BookTile item={item} width={tileWidth} />}
+          />
+        </Animated.View>
       )}
     </Screen>
   )

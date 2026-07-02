@@ -6,6 +6,7 @@
  */
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { ImageBackground, StyleSheet, View } from 'react-native'
+import Animated, { FadeIn } from 'react-native-reanimated'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
 import type { ABSLibraryItem } from '@hearthshelf/core'
@@ -13,6 +14,7 @@ import { coverHue } from '@hearthshelf/core'
 import { coverUrl, getItemsInProgress, itemAuthor, itemTitle } from '@/api/abs'
 import { playItemById } from '@/player/playback'
 import { AppText, Cover, PrimaryButton, Screen, icons } from '@/ui/primitives'
+import { DUR } from '@/ui/motion'
 import { radius, spacing } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { getState, subscribe } from '@/player/store'
@@ -74,7 +76,10 @@ function EmptyState() {
       <HearthBackground>
         <View style={styles.centerBlock}>
           {last ? (
-            <>
+            <Animated.View
+              entering={FadeIn.duration(DUR.base)}
+              style={{ alignItems: 'center', gap: spacing.md }}
+            >
               <Cover
                 uri={coverUrl(last.id)}
                 width={132}
@@ -97,7 +102,7 @@ function EmptyState() {
                 </AppText>
               </View>
               <PrimaryButton label="Resume last book" icon={icons.play} onPress={resume} />
-            </>
+            </Animated.View>
           ) : (
             <>
               <AppText variant="title" style={styles.centerText}>

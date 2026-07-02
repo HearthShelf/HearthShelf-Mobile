@@ -11,8 +11,17 @@
  * quality/appearance option per plan section 0.4 #3); until that asset ships it
  * falls back to the gradient renderer.
  */
+import { useEffect } from 'react'
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated'
+import { PULSE_MS } from './motion'
 
 export type GlowMode = 'gradient' | 'image'
 
@@ -30,6 +39,7 @@ export function CoverGlow({
   strength = 60,
   height = 360,
   mode = 'gradient',
+  breathe = false,
   style,
 }: {
   hue: string
@@ -38,20 +48,40 @@ export function CoverGlow({
   /** How far down the bloom reaches, px. */
   height?: number
   mode?: GlowMode
+  /** Slow opacity pulse on the splash glow's period - a live hearth, for the
+   *  player. Leave off for browse surfaces. */
+  breathe?: boolean
   style?: StyleProp<ViewStyle>
 }) {
   // Peak opacity from strength: 60 -> ~0.34, clamped so it stays a tint.
   const peak = Math.max(0, Math.min(0.6, (strength / 100) * 0.56))
+
+  const pulse = useSharedValue(1)
+  useEffect(() => {
+    if (!breathe) {
+      pulse.value = 1
+      return
+    }
+    pulse.value = withRepeat(
+      withTiming(0.72, { duration: PULSE_MS, easing: Easing.inOut(Easing.sin) }),
+      -1,
+      true,
+    )
+  }, [breathe, pulse])
+  const breathing = useAnimatedStyle(() => ({ opacity: pulse.value }))
+
   // `mode='image'` falls back to gradient until the blurred-PNG asset exists.
   return (
     <View pointerEvents="none" style={[styles.wrap, { height }, style]}>
-      <LinearGradient
-        colors={[withAlpha(hue, peak), withAlpha(hue, peak * 0.4), 'transparent']}
-        locations={[0, 0.4, 1]}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
+      <Animated.View style={[StyleSheet.absoluteFill, breathing]}>
+        <LinearGradient
+          colors={[withAlpha(hue, peak), withAlpha(hue, peak * 0.4), 'transparent']}
+          locations={[0, 0.4, 1]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
     </View>
   )
 }

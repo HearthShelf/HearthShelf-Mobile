@@ -7,13 +7,14 @@
  * checkbox and tapping toggles selection instead of opening the book.
  */
 import { useSyncExternalStore } from 'react'
-import { Pressable, StyleSheet, View } from 'react-native'
+import { StyleSheet, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import type { ABSLibraryItem } from '@hearthshelf/core'
 import { coverHue, coverInitial } from '@hearthshelf/core'
 import { coverUrl, itemAuthor, itemTitle } from '@/api/abs'
 import { getSettingsState, subscribeSettings, COVER_ASPECT_RATIO } from '@/store/settings'
 import { AppText, Cover } from './primitives'
+import { SpringPressable } from './motion'
 import { Icon, icons } from './icons'
 import { colors, radius, spacing } from './theme'
 
@@ -36,7 +37,7 @@ export function BookTile({
   const { coverAspect } = useSyncExternalStore(subscribeSettings, getSettingsState)
   const title = itemTitle(item)
   return (
-    <Pressable
+    <SpringPressable
       style={[styles.tile, { width }]}
       onPress={() => (selecting ? onToggle?.() : router.push(`/item/${item.id}`))}
       onLongPress={onLongPress}
@@ -64,7 +65,7 @@ export function BookTile({
           {itemAuthor(item)}
         </AppText>
       </View>
-    </Pressable>
+    </SpringPressable>
   )
 }
 

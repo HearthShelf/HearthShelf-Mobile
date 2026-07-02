@@ -26,6 +26,7 @@ export function BookSelectionToolbar({
   books,
   libraryId,
   progressById,
+  setProgressById,
   onProgressChanged,
   onToast,
 }: {
@@ -34,7 +35,12 @@ export function BookSelectionToolbar({
   books: ABSLibraryItem[]
   libraryId: string
   progressById: Map<string, ABSMediaProgress>
-  /** Called after mark-finished so the parent can refetch progress. */
+  /** Applies the mark-finished result immediately, since a getMe() refetch
+   *  right after the PATCH can race ABS's own propagation and read stale. */
+  setProgressById: (
+    update: (cur: Map<string, ABSMediaProgress>) => Map<string, ABSMediaProgress>,
+  ) => void
+  /** Called after mark-finished so the parent can reconcile with the server. */
   onProgressChanged?: () => void
   onToast?: (message: string) => void
 }) {
@@ -50,11 +56,33 @@ export function BookSelectionToolbar({
   const markFinished = async () => {
     if (!ids.length || busy.current) return
     busy.current = true
+    const next = !selectionAllFinished
+    const idSet = new Set(ids)
+    setProgressById((cur) => {
+      const updated = new Map(cur)
+      for (const b of books) {
+        if (!idSet.has(b.id)) continue
+        const p = updated.get(b.id)
+        updated.set(
+          b.id,
+          p
+            ? { ...p, isFinished: next }
+            : {
+                libraryItemId: b.id,
+                duration: b.media.duration ?? 0,
+                progress: next ? 1 : 0,
+                currentTime: 0,
+                isFinished: next,
+              },
+        )
+      }
+      return updated
+    })
     try {
-      await Promise.all(ids.map((id) => setItemFinished(id, !selectionAllFinished)))
+      await Promise.all(ids.map((id) => setItemFinished(id, next)))
       onProgressChanged?.()
       haptics.success()
-      onToast?.(selectionAllFinished ? 'Marked not finished' : 'Marked finished')
+      onToast?.(next ? 'Marked finished' : 'Marked not finished')
       selection.clear()
     } catch {
       // best-effort
@@ -145,27 +173,27 @@ export function BookSelectionToolbar({
 
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
-  bar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  // The action cluster spreads to the right of the close/count so the icons sit
-  // evenly across the row without horizontal scrolling.
-  actions: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-  },
-  action: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.fill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-})
+    bar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm,
+    },
+    // The action cluster spreads to the right of the close/count so the icons sit
+    // evenly across the row without horizontal scrolling.
+    actions: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-around',
+    },
+    action: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: colors.fill,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  })

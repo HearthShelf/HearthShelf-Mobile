@@ -21,7 +21,7 @@ import {
 } from 'react-native'
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
-import { runOnJS } from 'react-native-reanimated'
+import Animated, { FadeIn, runOnJS } from 'react-native-reanimated'
 import type {
   ABSLibrary,
   ABSLibraryItem,
@@ -68,6 +68,7 @@ import {
   icons,
 } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
+import { DUR } from '@/ui/motion'
 import { BookTile } from '@/ui/BookTile'
 import { BookSelectionToolbar } from '@/ui/BookSelectionToolbar'
 import { useBookSelection } from '@/ui/useBookSelection'
@@ -313,15 +314,17 @@ function SearchResults({
     )
   }
   return (
-    <FlatList
-      data={results}
-      keyExtractor={(it) => it.id}
-      numColumns={COLS}
-      columnWrapperStyle={{ gap: GUTTER }}
-      contentContainerStyle={{ padding: GUTTER, paddingBottom: 140, gap: spacing.xs }}
-      keyboardShouldPersistTaps="handled"
-      renderItem={({ item }) => <BookTile item={item} width={tileWidth} />}
-    />
+    <Animated.View entering={FadeIn.duration(DUR.base)} style={{ flex: 1 }}>
+      <FlatList
+        data={results}
+        keyExtractor={(it) => it.id}
+        numColumns={COLS}
+        columnWrapperStyle={{ gap: GUTTER }}
+        contentContainerStyle={{ padding: GUTTER, paddingBottom: 140, gap: spacing.xs }}
+        keyboardShouldPersistTaps="handled"
+        renderItem={({ item }) => <BookTile item={item} width={tileWidth} />}
+      />
+    </Animated.View>
   )
 }
 
@@ -580,13 +583,14 @@ function BooksView({
   const gridPadRight = showAzRail ? GUTTER + AZ_RAIL_WIDTH : GUTTER
 
   return (
-    <View style={{ flex: 1 }}>
+    <Animated.View entering={FadeIn.duration(DUR.base)} style={{ flex: 1 }}>
       {selection.selecting ? (
         <BookSelectionToolbar
           selection={selection}
           books={sorted}
           libraryId={libraryId}
           progressById={progress}
+          setProgressById={setProgress}
           onProgressChanged={refreshProgress}
         />
       ) : (
@@ -788,7 +792,7 @@ function BooksView({
           </ScrollView>
         )}
       </Sheet>
-    </View>
+    </Animated.View>
   )
 }
 
@@ -1048,7 +1052,7 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
   const countLabel = mode === 'series' ? 'Books' : 'Titles'
 
   return (
-    <>
+    <Animated.View entering={FadeIn.duration(DUR.base)} style={{ flex: 1 }}>
       <View style={styles.controlsRow}>
         <AppText variant="caption" color={colors.textMuted}>
           {sorted.length} {mode === 'series' ? 'series' : mode}
@@ -1115,7 +1119,7 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
           </Touchable>
         )}
       />
-    </>
+    </Animated.View>
   )
 }
 
@@ -1178,178 +1182,178 @@ function narratorToRow(n: ABSNarrator): GroupRow {
 
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  libSwitcher: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    maxWidth: 160,
-  },
-  searchBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginHorizontal: spacing.lg,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
-    backgroundColor: colors.fill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-  },
-  input: { flex: 1, paddingVertical: spacing.md, color: colors.text, fontSize: 16 },
-  viewSelector: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  viewChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.pill,
-    backgroundColor: colors.fill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-  },
-  viewChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-  // DS "compact rows" (.m-rows): flex row, 13 gap, 9/11 pad, 13 radius.
-  groupRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 13,
-    paddingVertical: 9,
-    paddingHorizontal: 11,
-    borderRadius: 13,
-  },
-  // Holds up to 3 overlapping 46px covers (46 + 2*16 = 78 wide).
-  groupCovers: { width: 78, height: 46 },
-  controlsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  controlBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingLeft: spacing.sm,
-    paddingRight: spacing.sm,
-    paddingVertical: 5,
-    borderRadius: radius.pill,
-    backgroundColor: colors.fill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-  },
-  groupSorts: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  groupSortBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    paddingLeft: spacing.sm,
-    paddingRight: 5,
-    paddingVertical: 5,
-    borderRadius: radius.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'transparent',
-  },
-  groupSortBtnActive: {
-    backgroundColor: colors.fill,
-    borderColor: colors.hairline,
-  },
-  filterChips: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
-  },
-  filterChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingLeft: spacing.md,
-    paddingRight: spacing.sm,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accent,
-  },
-  clearFilters: { paddingVertical: 6, paddingHorizontal: spacing.sm },
-  listRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.sm,
-    borderRadius: radius.row,
-  },
-  listRowSelected: { backgroundColor: colors.accentWash },
-  rowCheck: {
-    width: 24,
-    height: 24,
-    borderRadius: 7,
-    borderWidth: 2,
-    borderColor: colors.textFaint,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rowCheckOn: { backgroundColor: colors.accent, borderColor: colors.accent },
-  sheetTabs: {
-    flexDirection: 'row',
-    gap: 4,
-    backgroundColor: colors.fill,
-    borderRadius: radius.card,
-    padding: 4,
-    marginBottom: spacing.lg,
-  },
-  sheetTab: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: spacing.sm + 2,
-    borderRadius: radius.row,
-  },
-  sheetTabActive: { backgroundColor: colors.card },
-  segChoice: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    borderRadius: radius.row,
-    backgroundColor: colors.fill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-  },
-  segChoiceActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-  sheetRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.hairline,
-  },
-  // Cap the scrolling option lists so long genre/author lists don't push the
-  // sheet past the screen.
-  sheetScroll: { maxHeight: 380 },
-  sheetGroupLabel: { marginTop: spacing.md, marginBottom: spacing.xs },
-  filterRowTrail: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, maxWidth: 180 },
-  filterBack: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.sm,
-    marginBottom: spacing.xs,
-  },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm,
+    },
+    libSwitcher: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 2,
+      maxWidth: 160,
+    },
+    searchBox: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      marginHorizontal: spacing.lg,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    input: { flex: 1, paddingVertical: spacing.md, color: colors.text, fontSize: 16 },
+    viewSelector: {
+      flexDirection: 'row',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+    },
+    viewChip: {
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    viewChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+    // DS "compact rows" (.m-rows): flex row, 13 gap, 9/11 pad, 13 radius.
+    groupRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 13,
+      paddingVertical: 9,
+      paddingHorizontal: 11,
+      borderRadius: 13,
+    },
+    // Holds up to 3 overlapping 46px covers (46 + 2*16 = 78 wide).
+    groupCovers: { width: 78, height: 46 },
+    controlsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+    },
+    controlBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingLeft: spacing.sm,
+      paddingRight: spacing.sm,
+      paddingVertical: 5,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    groupSorts: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    groupSortBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 2,
+      paddingLeft: spacing.sm,
+      paddingRight: 5,
+      paddingVertical: 5,
+      borderRadius: radius.pill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'transparent',
+    },
+    groupSortBtnActive: {
+      backgroundColor: colors.fill,
+      borderColor: colors.hairline,
+    },
+    filterChips: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+      paddingBottom: spacing.sm,
+    },
+    filterChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingLeft: spacing.md,
+      paddingRight: spacing.sm,
+      paddingVertical: 6,
+      borderRadius: radius.pill,
+      backgroundColor: colors.accent,
+    },
+    clearFilters: { paddingVertical: 6, paddingHorizontal: spacing.sm },
+    listRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      padding: spacing.sm,
+      borderRadius: radius.row,
+    },
+    listRowSelected: { backgroundColor: colors.accentWash },
+    rowCheck: {
+      width: 24,
+      height: 24,
+      borderRadius: 7,
+      borderWidth: 2,
+      borderColor: colors.textFaint,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    rowCheckOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+    sheetTabs: {
+      flexDirection: 'row',
+      gap: 4,
+      backgroundColor: colors.fill,
+      borderRadius: radius.card,
+      padding: 4,
+      marginBottom: spacing.lg,
+    },
+    sheetTab: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: spacing.sm + 2,
+      borderRadius: radius.row,
+    },
+    sheetTabActive: { backgroundColor: colors.card },
+    segChoice: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: spacing.md,
+      borderRadius: radius.row,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    segChoiceActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+    sheetRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
+    },
+    // Cap the scrolling option lists so long genre/author lists don't push the
+    // sheet past the screen.
+    sheetScroll: { maxHeight: 380 },
+    sheetGroupLabel: { marginTop: spacing.md, marginBottom: spacing.xs },
+    filterRowTrail: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, maxWidth: 180 },
+    filterBack: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      paddingVertical: spacing.sm,
+      marginBottom: spacing.xs,
+    },
   })
 
 // Hook: the memoized stylesheet for the active palette.

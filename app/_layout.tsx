@@ -143,7 +143,15 @@ function ThemedStack() {
         headerShown: false,
         contentStyle: { backgroundColor: colors.scaffold },
       }}
-    />
+    >
+      {/* The player rises from the mini-player dock rather than pushing
+          sideways. Deliberately NO dismiss gesture: it's the primary surface,
+          and an accidental swipe shouldn't throw the listener out of it. */}
+      <Stack.Screen
+        name="player"
+        options={{ animation: 'slide_from_bottom', gestureEnabled: false }}
+      />
+    </Stack>
   )
 }
 

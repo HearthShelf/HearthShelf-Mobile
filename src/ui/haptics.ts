@@ -31,36 +31,42 @@ function impactStyle(): Haptics.ImpactFeedbackStyle {
     : Haptics.ImpactFeedbackStyle.Light
 }
 
+// Haptics are decoration - a device/build without the native module (or a
+// vibration-less emulator) must never surface an error toast over the app.
+function fire(p: Promise<unknown>): void {
+  p.catch(() => {})
+}
+
 /** A transport-button press (play/pause, skip, chapter). Fires at minimal + all. */
 function transport(): void {
   if (level() === 'off') return
-  void Haptics.impactAsync(impactStyle())
+  fire(Haptics.impactAsync(impactStyle()))
 }
 
 /** A ratchet tick crossing a discrete value (A-Z rail, speed notch). Fires at
  *  minimal + all. Always the light selection tick - intensity doesn't apply. */
 function select(): void {
   if (level() === 'off') return
-  void Haptics.selectionAsync()
+  fire(Haptics.selectionAsync())
 }
 
 /** A "saved / completed" stinger (bookmark added, book finished). All only. */
 function success(): void {
   if (level() !== 'all') return
-  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+  fire(Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success))
 }
 
 /** Entering a mode or committing a setting (long-press multi-select, sleep timer
  *  set). A firmer bump than a transport tap. All only. */
 function mode(): void {
   if (level() !== 'all') return
-  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
+  fire(Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium))
 }
 
 /** A destructive or cautionary confirm (delete, remove from queue). All only. */
 function warn(): void {
   if (level() !== 'all') return
-  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)
+  fire(Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning))
 }
 
 export const haptics = { transport, select, success, mode, warn }

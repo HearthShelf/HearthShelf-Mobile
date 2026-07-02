@@ -1,6 +1,7 @@
 import { useAuth, useUser } from '@clerk/expo'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { FlatList, ImageBackground, Pressable, ScrollView, StyleSheet, View } from 'react-native'
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
 import type { ABSLibraryItem, ABSShelf, HSListeningStats } from '@hearthshelf/core'
@@ -47,7 +48,11 @@ import {
 } from '@/ui/primitives'
 import { BottomSheetFlatList } from '@gorhom/bottom-sheet'
 import { Icon, type IconName } from '@/ui/icons'
+import { DUR } from '@/ui/motion'
 import { Scrubber } from '@/player/Scrubber'
+import { BookActionsSheet, type BookActionsHandle } from '@/ui/BookActionsSheet'
+import { Toast, useToast } from '@/ui/Toast'
+import { haptics } from '@/ui/haptics'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors, useTheme } from '@/ui/ThemeProvider'
 
@@ -69,6 +74,16 @@ export default function HomeScreen() {
   const [heroProgress, setHeroProgress] = useState(0)
   const [shelves, setShelves] = useState<ABSShelf[]>([])
   const [stats, setStats] = useState<HSListeningStats | null>(null)
+  // Ids of books the caller's /api/me marks finished. Long-press -> mark-finished
+  // updates this optimistically so tiles reflect it before the silent reload.
+  const [finishedIds, setFinishedIds] = useState<Set<string>>(() => new Set())
+  const { message: toast, show: showToast } = useToast()
+  const actionsRef = useRef<BookActionsHandle>(null)
+  // Books just marked finished here. A silent reload's items-in-progress can lag
+  // ABS's own propagation and re-surface them in Continue, so filter them out
+  // until a later fetch legitimately drops them. Held in a ref so loadHome's
+  // identity stays stable.
+  const justFinishedRef = useRef<Set<string>>(new Set())
 
   const handleSignOut = useCallback(
     async (reason?: 'expired') => {
@@ -82,22 +97,33 @@ export default function HomeScreen() {
     [signOut, router],
   )
 
-  const loadHome = useCallback(async () => {
-    setLoading(true)
+  const loadHome = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true)
     const progress = await getItemsInProgress()
-    setInProgress(progress)
+    // Drop books we just finished locally if the server hasn't caught up yet; once
+    // items-in-progress stops returning them, they're gone from this set too.
+    const stillPresent = new Set(progress.map((it) => it.id))
+    for (const id of justFinishedRef.current)
+      if (!stillPresent.has(id)) justFinishedRef.current.delete(id)
+    setInProgress(progress.filter((it) => !justFinishedRef.current.has(it.id)))
 
     // The hero's progress bar needs per-item state, which items-in-progress
-    // doesn't carry - read it from the caller's progress map (best-effort).
+    // doesn't carry - read it from the caller's progress map (best-effort). The
+    // same call seeds the finished-id set so shelf tiles can show a finished mark.
     const hero = progress[0]
-    if (hero) {
-      getMe()
-        .then((me) => {
+    getMe()
+      .then((me) => {
+        setFinishedIds(
+          new Set(me.mediaProgress.filter((mp) => mp.isFinished).map((mp) => mp.libraryItemId)),
+        )
+        if (hero) {
           const p = me.mediaProgress.find((mp) => mp.libraryItemId === hero.id)
           setHeroProgress(p?.progress ?? 0)
-        })
-        .catch(() => setHeroProgress(0))
-    }
+        }
+      })
+      .catch(() => {
+        if (hero) setHeroProgress(0)
+      })
 
     // Stats strip is best-effort - a stats failure shouldn't block the rest of
     // Home from loading. Same getHSStats() the Stats tab reads, so the two never
@@ -133,6 +159,36 @@ export default function HomeScreen() {
     loadHome().catch(() => setLoading(false))
   }, [connected, loadHome])
 
+  // Long-press mark-finished from a home tile. Update the visible sections right
+  // away (a finished book leaves Continue), then reconcile with a silent reload
+  // so the shelves/hero re-derive from the server.
+  const handleMarkedFinished = useCallback(
+    (item: ABSLibraryItem, finished: boolean) => {
+      setFinishedIds((cur) => {
+        const next = new Set(cur)
+        if (finished) next.add(item.id)
+        else next.delete(item.id)
+        return next
+      })
+      if (finished) {
+        justFinishedRef.current.add(item.id)
+        setInProgress((cur) => cur.filter((it) => it.id !== item.id))
+      } else {
+        justFinishedRef.current.delete(item.id)
+      }
+      void loadHome({ silent: true }).catch(() => {})
+    },
+    [loadHome],
+  )
+
+  const openActions = useCallback(
+    (item: ABSLibraryItem) => {
+      haptics.mode()
+      actionsRef.current?.present(item, finishedIds.has(item.id))
+    },
+    [finishedIds],
+  )
+
   useEffect(() => {
     setSessionExpiredHandler(() => {
       void handleSignOut('expired')
@@ -154,7 +210,10 @@ export default function HomeScreen() {
 
   return (
     <Screen>
-      <ScrollView
+      {/* Mounts fresh when the first load finishes, so content fades in instead
+          of hard-cutting from the spinner. */}
+      <Animated.ScrollView
+        entering={FadeIn.duration(DUR.base)}
         contentContainerStyle={{ paddingBottom: 140 }}
         showsVerticalScrollIndicator={false}
       >
@@ -179,6 +238,7 @@ export default function HomeScreen() {
                 router.push(`/item/${hero.id}`)
               }
             }}
+            onLongPress={() => openActions(hero)}
           />
         ) : (
           <View style={styles.topBar}>
@@ -187,9 +247,16 @@ export default function HomeScreen() {
         )}
         {stats ? <HomeStatsStrip stats={stats} /> : null}
         {shelves.map((shelf) => (
-          <Shelf key={shelf.id} shelf={shelf} />
+          <Shelf key={shelf.id} shelf={shelf} onLongPressItem={openActions} />
         ))}
-      </ScrollView>
+      </Animated.ScrollView>
+
+      <BookActionsSheet
+        ref={actionsRef}
+        onMarkedFinished={handleMarkedFinished}
+        onToast={showToast}
+      />
+      <Toast message={toast} />
     </Screen>
   )
 }
@@ -238,11 +305,13 @@ function ContinueHero({
   progress,
   greeting,
   onResume,
+  onLongPress,
 }: {
   item: ABSLibraryItem
   progress: number
   greeting: React.ReactNode
   onResume: () => void
+  onLongPress: () => void
 }) {
   const colors = useColors()
   const styles = useStyles()
@@ -273,7 +342,7 @@ function ContinueHero({
       <View style={styles.heroContent}>
         <View style={styles.heroGreeting}>{greeting}</View>
         <View style={styles.heroGap} />
-        <View style={styles.heroMeta}>
+        <Pressable style={styles.heroMeta} onLongPress={onLongPress} delayLongPress={350}>
           <AppText variant="eyebrow" color={colors.accent}>
             {started ? 'Continue' : 'Up next'}
           </AppText>
@@ -297,7 +366,7 @@ function ContinueHero({
               </AppText>
             </View>
           )}
-        </View>
+        </Pressable>
 
         <Touchable onPress={onResume} style={styles.heroResume}>
           <Icon name={icons.play} size={20} color={colors.onAccent} />
@@ -417,6 +486,7 @@ function PlayerHero({
             <View style={styles.heroScrub}>
               <Scrubber
                 ratio={ratio}
+                playing={isPlaying}
                 elapsed={elapsed}
                 remain={remain}
                 onDrag={setPreviewRatio}
@@ -511,7 +581,13 @@ function sectionIcon(label: string): IconName {
   return icons.library
 }
 
-function Shelf({ shelf }: { shelf: ABSShelf }) {
+function Shelf({
+  shelf,
+  onLongPressItem,
+}: {
+  shelf: ABSShelf
+  onLongPressItem: (item: ABSLibraryItem) => void
+}) {
   const colors = useColors()
   const styles = useStyles()
   const router = useRouter()
@@ -540,20 +616,28 @@ function Shelf({ shelf }: { shelf: ABSShelf }) {
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.md }}
-        renderItem={({ item }) => (
-          <Touchable style={styles.tile} onPress={() => router.push(`/item/${item.id}`)}>
-            <Cover
-              uri={coverUrl(item.id)}
-              width={120}
-              aspectRatio={COVER_ASPECT_RATIO[coverAspect]}
-            />
-            <AppText variant="meta" numberOfLines={1} style={{ marginTop: spacing.xs }}>
-              {itemTitle(item)}
-            </AppText>
-            <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
-              {itemAuthor(item)}
-            </AppText>
-          </Touchable>
+        renderItem={({ item, index }) => (
+          // Staggered entrance, capped so deep-scroll mounts don't lag behind
+          // their own appearance.
+          <Animated.View entering={FadeInDown.delay(Math.min(index, 6) * 40).duration(DUR.slow)}>
+            <Touchable
+              style={styles.tile}
+              onPress={() => router.push(`/item/${item.id}`)}
+              onLongPress={() => onLongPressItem(item)}
+            >
+              <Cover
+                uri={coverUrl(item.id)}
+                width={120}
+                aspectRatio={COVER_ASPECT_RATIO[coverAspect]}
+              />
+              <AppText variant="meta" numberOfLines={1} style={{ marginTop: spacing.xs }}>
+                {itemTitle(item)}
+              </AppText>
+              <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
+                {itemAuthor(item)}
+              </AppText>
+            </Touchable>
+          </Animated.View>
         )}
       />
 
@@ -596,97 +680,97 @@ function Shelf({ shelf }: { shelf: ABSShelf }) {
 
 const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow']) =>
   StyleSheet.create({
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  // Borderless spotlight: the artwork background bleeds up past the top of the
-  // screen (negative top margin under the safe area) and fades to scaffold below.
-  hero: {
-    marginTop: -60,
-    paddingTop: 60,
-    position: 'relative',
-  },
-  heroBg: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 340,
-  },
-  heroBgImg: { resizeMode: 'cover' },
-  heroContent: {
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.sm,
-    // Gap below the Resume pill so the art's fade-out is visible before the
-    // stats, matching the DS (not overly busy).
-    paddingBottom: spacing.lg,
-  },
-  heroGreeting: {},
-  // DS: 44px of breathing room between the greeting and the title block so the
-  // spotlight art reads before the text starts.
-  heroGap: { height: 44 },
-  heroMeta: {},
-  heroProgress: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginTop: 14,
-  },
-  // Compact auto-width Resume pill (DS: padding 13/26, radius 16), NOT full-width.
-  heroResume: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-    marginTop: spacing.lg,
-    paddingVertical: 13,
-    paddingHorizontal: 26,
-    borderRadius: 16,
-    backgroundColor: colors.accent,
-    ...shadow.accentGlow,
-  },
-  heroScrub: { marginTop: 18 },
-  heroPlayerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.lg,
-  },
-  heroPlayBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...shadow.accentGlow,
-  },
-  seeAll: { flexDirection: 'row', alignItems: 'center', gap: 1 },
-  tile: { width: 120 },
-  sheetTile: { flex: 1, maxWidth: '31%' },
-  statsStrip: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
-  },
-  statsTile: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 5,
-    backgroundColor: colors.card,
-    borderRadius: radius.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-    ...shadow.card,
-  },
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm,
+    },
+    // Borderless spotlight: the artwork background bleeds up past the top of the
+    // screen (negative top margin under the safe area) and fades to scaffold below.
+    hero: {
+      marginTop: -60,
+      paddingTop: 60,
+      position: 'relative',
+    },
+    heroBg: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: 340,
+    },
+    heroBgImg: { resizeMode: 'cover' },
+    heroContent: {
+      paddingHorizontal: spacing.xl,
+      paddingTop: spacing.sm,
+      // Gap below the Resume pill so the art's fade-out is visible before the
+      // stats, matching the DS (not overly busy).
+      paddingBottom: spacing.lg,
+    },
+    heroGreeting: {},
+    // DS: 44px of breathing room between the greeting and the title block so the
+    // spotlight art reads before the text starts.
+    heroGap: { height: 44 },
+    heroMeta: {},
+    heroProgress: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      marginTop: 14,
+    },
+    // Compact auto-width Resume pill (DS: padding 13/26, radius 16), NOT full-width.
+    heroResume: {
+      alignSelf: 'flex-start',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 9,
+      marginTop: spacing.lg,
+      paddingVertical: 13,
+      paddingHorizontal: 26,
+      borderRadius: 16,
+      backgroundColor: colors.accent,
+      ...shadow.accentGlow,
+    },
+    heroScrub: { marginTop: 18 },
+    heroPlayerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      marginTop: spacing.lg,
+    },
+    heroPlayBtn: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: colors.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+      ...shadow.accentGlow,
+    },
+    seeAll: { flexDirection: 'row', alignItems: 'center', gap: 1 },
+    tile: { width: 120 },
+    sheetTile: { flex: 1, maxWidth: '31%' },
+    statsStrip: {
+      flexDirection: 'row',
+      gap: spacing.sm,
+      marginHorizontal: spacing.lg,
+      marginTop: spacing.md,
+    },
+    statsTile: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm + 5,
+      backgroundColor: colors.card,
+      borderRadius: radius.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      ...shadow.card,
+    },
   })
 
 // Hook: the memoized stylesheet for the active palette.

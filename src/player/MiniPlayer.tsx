@@ -5,9 +5,12 @@
  */
 import { useMemo, useSyncExternalStore } from 'react'
 import { Image, Pressable, StyleSheet, View } from 'react-native'
+import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated'
 import { useRouter } from 'expo-router'
 import { formatTimestamp } from '@hearthshelf/core'
 import { AppText, IconButton, ProgressBar, icons } from '@/ui/primitives'
+import { Icon } from '@/ui/icons'
+import { DUR, SpringPressable } from '@/ui/motion'
 import { spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
@@ -39,7 +42,13 @@ export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
   const total = useChapter ? chSpan : nowPlaying.duration
 
   return (
-    <View style={[styles.wrap, { bottom: bottomOffset }]} pointerEvents="box-none">
+    // Mounts when playback starts, so the dock rises into place rather than
+    // popping into existence.
+    <Animated.View
+      entering={FadeInUp.duration(DUR.slow)}
+      style={[styles.wrap, { bottom: bottomOffset }]}
+      pointerEvents="box-none"
+    >
       <ProgressBar progress={progress} height={2} style={styles.progress} />
       <View style={styles.bar}>
         <Pressable style={styles.tap} onPress={() => router.push('/player')}>
@@ -63,13 +72,11 @@ export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
           color={colors.textMuted}
           onPress={() => jumpBy(-15)}
         />
-        <IconButton
-          name={isPlaying ? icons.pause : icons.play}
-          size={30}
-          color={colors.onAccent}
-          onPress={togglePlay}
-          style={styles.play}
-        />
+        <SpringPressable onPress={togglePlay} style={styles.play} scaleTo={0.88}>
+          <Animated.View key={isPlaying ? 'pause' : 'play'} entering={FadeIn.duration(DUR.fast)}>
+            <Icon name={isPlaying ? icons.pause : icons.play} size={30} color={colors.onAccent} />
+          </Animated.View>
+        </SpringPressable>
         <IconButton
           name={icons.forward}
           size={24}
@@ -77,39 +84,39 @@ export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
           onPress={() => jumpBy(30)}
         />
       </View>
-    </View>
+    </Animated.View>
   )
 }
 
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
-  wrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-  },
-  bar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingLeft: spacing.md,
-    paddingRight: spacing.sm,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.popover,
-  },
-  tap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md, minWidth: 0 },
-  cover: { width: 42, height: 42, borderRadius: 8, backgroundColor: colors.high },
-  meta: { flex: 1, minWidth: 0 },
-  play: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accent,
-  },
-  progress: {
-    width: '100%',
-    borderRadius: 0,
-  },
-})
+    wrap: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+    },
+    bar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingLeft: spacing.md,
+      paddingRight: spacing.sm,
+      paddingVertical: spacing.sm,
+      backgroundColor: colors.popover,
+    },
+    tap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md, minWidth: 0 },
+    cover: { width: 42, height: 42, borderRadius: 8, backgroundColor: colors.high },
+    meta: { flex: 1, minWidth: 0 },
+    play: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.accent,
+    },
+    progress: {
+      width: '100%',
+      borderRadius: 0,
+    },
+  })
