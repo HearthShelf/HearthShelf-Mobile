@@ -189,10 +189,11 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
   }
 }
 
+@Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
 class HearthShelfAutoPackage : ReactPackage {
-  override fun createNativeModules(ctx: ReactApplicationContext): List<NativeModule> =
-    listOf(HearthShelfAutoModule(ctx))
+  override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> =
+    listOf(HearthShelfAutoModule(reactContext))
 
-  override fun createViewManagers(ctx: ReactApplicationContext): List<ViewManager<*, *>> =
+  override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> =
     emptyList()
 }

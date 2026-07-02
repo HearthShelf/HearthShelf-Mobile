@@ -156,9 +156,9 @@ class HearthShelfAutoService : MediaLibraryService() {
    * custom action carries our drawable resId directly.
    */
   private fun customButton(cmd: String, name: String, icon: String): CommandButton =
-    CommandButton.Builder()
+    CommandButton.Builder(CommandButton.ICON_UNDEFINED)
       .setDisplayName(name)
-      .setIconResId(resources.getIdentifier(icon, "drawable", packageName))
+      .setCustomIconResId(resources.getIdentifier(icon, "drawable", packageName))
       .setSessionCommand(SessionCommand(cmd, Bundle.EMPTY))
       .setSlots(CommandButton.SLOT_OVERFLOW)
       .build()
@@ -188,9 +188,9 @@ class HearthShelfAutoService : MediaLibraryService() {
 
   private fun rewindButton(): CommandButton {
     val icon = skipIconName("ic_hs_rewind", rewindSec)
-    return CommandButton.Builder()
+    return CommandButton.Builder(CommandButton.ICON_SKIP_BACK)
       .setDisplayName("Back ${rewindSec}s")
-      .setIconResId(resources.getIdentifier(icon, "drawable", packageName))
+      .setCustomIconResId(resources.getIdentifier(icon, "drawable", packageName))
       .setSessionCommand(SessionCommand(CMD_REWIND, Bundle.EMPTY))
       .setSlots(CommandButton.SLOT_BACK, CommandButton.SLOT_OVERFLOW)
       .build()
@@ -198,9 +198,9 @@ class HearthShelfAutoService : MediaLibraryService() {
 
   private fun forwardButton(): CommandButton {
     val icon = skipIconName("ic_hs_forward", forwardSec)
-    return CommandButton.Builder()
+    return CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD)
       .setDisplayName("Forward ${forwardSec}s")
-      .setIconResId(resources.getIdentifier(icon, "drawable", packageName))
+      .setCustomIconResId(resources.getIdentifier(icon, "drawable", packageName))
       .setSessionCommand(SessionCommand(CMD_FORWARD, Bundle.EMPTY))
       .setSlots(CommandButton.SLOT_FORWARD, CommandButton.SLOT_OVERFLOW)
       .build()

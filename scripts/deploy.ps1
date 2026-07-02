@@ -115,6 +115,9 @@ if (-not (Test-Path $JdkPath)) {
   throw "JDK 21 not found at '$JdkPath'. Update `$JdkPath in this script or install Temurin JDK 21 (see TESTING.md)."
 }
 $env:JAVA_HOME = $JdkPath
+if (-not $env:NODE_ENV) {
+  $env:NODE_ENV = if ($Release) { 'production' } else { 'development' }
+}
 
 # --- device selection ---
 Write-Step 'Finding devices'

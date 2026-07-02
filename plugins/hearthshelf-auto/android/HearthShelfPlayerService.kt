@@ -290,16 +290,16 @@ class HearthShelfPlayerService : MediaSessionService() {
   // ---- custom command buttons (circular skip icons) ----
 
   private fun rewindButton(): CommandButton =
-    CommandButton.Builder()
+    CommandButton.Builder(CommandButton.ICON_SKIP_BACK)
       .setDisplayName("Back ${REWIND_SEC}s")
-      .setIconResId(resources.getIdentifier("ic_hs_rewind", "drawable", packageName))
+      .setCustomIconResId(resources.getIdentifier("ic_hs_rewind", "drawable", packageName))
       .setSessionCommand(SessionCommand(CMD_REWIND, Bundle.EMPTY))
       .build()
 
   private fun forwardButton(): CommandButton =
-    CommandButton.Builder()
+    CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD)
       .setDisplayName("Forward ${FORWARD_SEC}s")
-      .setIconResId(resources.getIdentifier("ic_hs_forward", "drawable", packageName))
+      .setCustomIconResId(resources.getIdentifier("ic_hs_forward", "drawable", packageName))
       .setSessionCommand(SessionCommand(CMD_FORWARD, Bundle.EMPTY))
       .build()
 
