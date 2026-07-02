@@ -15,7 +15,6 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
-  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -40,27 +39,37 @@ import type {
   ABSMediaProgress,
   ABSSeries,
 } from '@hearthshelf/core'
+import type { HSFinishedByUser } from '@hearthshelf/core'
 import { coverHue, formatDuration, formatTimestamp, stripHtml } from '@hearthshelf/core'
 import {
+  avatarUrl,
   coverUrl,
   deleteBookmark,
   getItemDetail,
   getLibrarySeries,
   getRecentSessions,
-  libraryDownloadUrl,
 } from '@/api/abs'
+import { getFinishedBy } from '@/api/social'
 import {
   getProgressState,
   subscribeProgress,
   refreshProgress,
   markFinished,
 } from '@/store/progress'
+import {
+  getDownloadsState,
+  subscribeDownloads,
+  downloadItem,
+  cancelDownload,
+  deleteDownload,
+} from '@/player/downloads'
 import { requestSeek } from '@/player/store'
 import { playItemById } from '@/player/playback'
 import { AddToListSheet } from '@/player/AddToListSheet'
 import type { SheetHandle } from '@/player/sheets'
 import {
   AppText,
+  Avatar,
   Centered,
   Cover,
   IconButton,
@@ -92,7 +101,7 @@ function formatBytes(bytes: number): string {
   return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`
 }
 
-type SectionKey = 'status' | 'cta' | 'about' | 'series' | 'chapters'
+type SectionKey = 'status' | 'cta' | 'about' | 'finishedBy' | 'series' | 'chapters'
 
 export default function ItemDetailScreen() {
   const router = useRouter()
@@ -107,8 +116,10 @@ export default function ItemDetailScreen() {
   // long-press sheet, the series page) updates this screen immediately.
   const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
   const progress: ABSMediaProgress | null = (id && progressById.get(id)) || null
+  const download = useSyncExternalStore(subscribeDownloads, getDownloadsState).byId.get(id ?? '')
   const [bookmarks, setBookmarks] = useState<ABSBookmark[]>([])
   const [series, setSeries] = useState<ABSSeries | null>(null)
+  const [finishedBy, setFinishedBy] = useState<HSFinishedByUser[]>([])
   const [error, setError] = useState<string | null>(null)
   const [zoomed, setZoomed] = useState(false)
   // Increments each time the book is marked finished, firing the ember burst.
@@ -146,6 +157,14 @@ export default function ItemDetailScreen() {
             })
             .catch(() => setSeries(null))
         }
+
+        // Best-effort; hides itself when unavailable (older server, no ABS db).
+        getFinishedBy(id)
+          .then((res) => {
+            if (cancelled) return
+            setFinishedBy(res.available ? res.users : [])
+          })
+          .catch(() => setFinishedBy([]))
       } catch (e) {
         if (!cancelled) setError((e as Error).message)
       }
@@ -261,10 +280,15 @@ export default function ItemDetailScreen() {
   }
 
   const downloadBook = () => {
-    const url = libraryDownloadUrl(detail.libraryId, [detail.id])
-    if (url) {
-      void Linking.openURL(url)
-      show('Download started in browser')
+    if (download?.status === 'done') {
+      void deleteDownload(detail.id)
+      show('Download removed')
+    } else if (download?.status === 'downloading' || download?.status === 'queued') {
+      void cancelDownload(detail.id)
+      show('Download cancelled')
+    } else {
+      void downloadItem(detail.id, title, authorName)
+      show('Downloading for offline')
     }
   }
 
@@ -285,10 +309,10 @@ export default function ItemDetailScreen() {
 
   // The job of the screen changes with listening state; so does the order.
   const sectionOrder: SectionKey[] = isInProgress
-    ? ['status', 'cta', 'chapters', 'series', 'about']
+    ? ['status', 'cta', 'chapters', 'series', 'about', 'finishedBy']
     : isFinished
-      ? ['status', 'series', 'cta', 'about', 'chapters']
-      : ['cta', 'about', 'series', 'chapters']
+      ? ['status', 'series', 'cta', 'about', 'finishedBy', 'chapters']
+      : ['cta', 'about', 'finishedBy', 'series', 'chapters']
 
   const sections: Record<SectionKey, React.ReactNode> = {
     status: (
@@ -314,7 +338,18 @@ export default function ItemDetailScreen() {
           {/* Embers rise off the button when the book is marked finished. */}
           <EmberBurst burst={finishBurst} colors={[colors.accent, colors.brandHearth]} />
         </View>
-        <ActionSquare icon={icons.download} label="Download" onPress={downloadBook} />
+        <ActionSquare
+          icon={download?.status === 'done' ? icons.downloadDone : icons.download}
+          label={
+            download?.status === 'done'
+              ? 'Downloaded'
+              : download?.status === 'downloading' || download?.status === 'queued'
+                ? `${Math.round((download.progress ?? 0) * 100)}%`
+                : 'Download'
+          }
+          active={download?.status === 'done'}
+          onPress={downloadBook}
+        />
       </View>
     ),
     about: (
@@ -325,6 +360,7 @@ export default function ItemDetailScreen() {
         onNarrator={openNarrator}
       />
     ),
+    finishedBy: finishedBy.length > 0 ? <FinishedBySection key="finishedBy" users={finishedBy} /> : null,
     series: series ? (
       <SeriesCard
         key="series"
@@ -666,6 +702,33 @@ function AboutSection({
           </AppText>
         </Pressable>
       ) : null}
+    </View>
+  )
+}
+
+// ---- Finished by ----
+// Small avatar chips for who's finished this book, privacy-filtered server-side
+// (/hs/social/finished-by). Hidden entirely when empty/unavailable - the parent
+// only renders this section when finishedBy.length > 0.
+
+function FinishedBySection({ users }: { users: HSFinishedByUser[] }) {
+  const colors = useColors()
+  const styles = useStyles()
+  return (
+    <View style={styles.section}>
+      <AppText variant="eyebrow" color={colors.textMuted}>
+        Finished by {users.length} {users.length === 1 ? 'person' : 'people'}
+      </AppText>
+      <View style={styles.finishedByRow}>
+        {users.map((u) => (
+          <View key={u.userId} style={styles.finishedByChip}>
+            <Avatar uri={avatarUrl(u.userId)} size={28} name={u.username} hue={coverHue(u.userId)} />
+            <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
+              {u.username}
+            </AppText>
+          </View>
+        ))}
+      </View>
     </View>
   )
 }
@@ -1082,6 +1145,13 @@ const makeStyles = (colors: Palette) =>
       borderColor: colors.accent,
     },
     section: { paddingHorizontal: spacing.lg, marginTop: spacing.xl },
+    finishedByRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.md,
+      marginTop: spacing.sm,
+    },
+    finishedByChip: { alignItems: 'center', width: 64, gap: spacing.xs },
     seriesCard: {
       flexDirection: 'row',
       alignItems: 'center',
