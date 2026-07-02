@@ -116,11 +116,16 @@ export default function ClubRoomScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, viewBookId])
 
-  // Keep the room fresh on the house 15s cadence while it's open.
+  // Keep the room fresh on the house 15s cadence while it's open. `load` closes
+  // over the live position (changes every second), so hold it in a ref and run a
+  // single stable interval - otherwise the interval would reset every tick and
+  // never fire.
+  const loadRef = useRef(load)
+  loadRef.current = load
   useEffect(() => {
-    const t = setInterval(() => void load(), ROOM_POLL_MS)
+    const t = setInterval(() => void loadRef.current(), ROOM_POLL_MS)
     return () => clearInterval(t)
-  }, [load])
+  }, [])
 
   // While the room is open, force the club/notes background poll on so the pop
   // watcher's stubs stay fresh even if the playing book isn't this club's book.
