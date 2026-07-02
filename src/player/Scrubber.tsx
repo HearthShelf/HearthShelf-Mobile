@@ -14,8 +14,8 @@
  * Visual: a 30px rounded pill, ember fill (two-tone gradient toward a warmer
  * orange at the leading edge), interior elapsed / chapter / remain labels
  * (plain text, no background chips), and a full-height cream leading line
- * with an ember glow (faked with stacked translucent layers, since Android
- * ignores shadow* on Views) that thickens while dragging.
+ * with the web's dual box-shadow glow (8px accent halo + 2px cream shimmer)
+ * that thickens while dragging.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
@@ -29,14 +29,8 @@ import Animated, {
 import { LinearGradient } from 'expo-linear-gradient'
 import { haptics } from '@/ui/haptics'
 import { DUR } from '@/ui/motion'
-import { radius, type Palette } from '@/ui/theme'
+import { mixHex, radius, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
-
-/** #rrggbb + alpha -> rgba(), for the leading line's gradient bloom stops. */
-function withAlpha(hex: string, alpha: number): string {
-  const n = parseInt(hex.slice(1), 16)
-  return `rgba(${(n >> 16) & 0xff},${(n >> 8) & 0xff},${n & 0xff},${alpha})`
-}
 
 const PILL_HEIGHT = 30
 // Two-tone fill toward the leading edge. Matches web `.scrub > i`'s
@@ -162,26 +156,12 @@ export function Scrubber({
         </View>
 
         {/* full-height cream leading line, behind the labels like web (the
-            marker passes behind the text instead of overlapping it). The
-            glow is faked with stacked translucent layers rather than
-            shadow*/}
+            marker passes behind the text instead of overlapping it). Web's
+            `box-shadow: 0 0 8px 1px accent, 0 0 2px #ffe6cf` glow rides on a
+            twin of the line whose opacity banks down while paused. */}
         {knob && (
           <View style={[styles.lineWrap, { left: `${pct}%` }]} pointerEvents="none">
-            {/* Soft ember bloom around the line: a horizontal gradient falloff
-                (the old stacked solid bars read as a hard stripe on mobile). */}
-            <Animated.View style={[styles.glowWrap, glowStyle]}>
-              <LinearGradient
-                colors={[
-                  withAlpha(colors.accent, 0),
-                  withAlpha(colors.accent, 0.55),
-                  withAlpha(colors.accent, 0),
-                ]}
-                locations={[0, 0.5, 1]}
-                start={{ x: 0, y: 0.5 }}
-                end={{ x: 1, y: 0.5 }}
-                style={StyleSheet.absoluteFill}
-              />
-            </Animated.View>
+            <Animated.View style={[styles.line, styles.lineGlow, lineStyle, glowStyle]} />
             <Animated.View style={[styles.line, lineStyle]} />
           </View>
         )}
@@ -215,7 +195,7 @@ const makeStyles = (colors: Palette) =>
     pill: {
       height: PILL_HEIGHT,
       borderRadius: radius.pill,
-      backgroundColor: '#232120', // color-mix(in oklab, text 9%, c-lowest)
+      backgroundColor: mixHex(colors.lowest, colors.text, 0.09), // web: color-mix(text 9%, c-lowest)
       borderWidth: 1,
       borderColor: colors.hairline,
       overflow: 'hidden',
@@ -267,14 +247,7 @@ const makeStyles = (colors: Palette) =>
       bottom: 0,
       backgroundColor: colors.brandCream,
     },
-    // Android ignores shadow*/shadowRadius on plain Views (iOS-only), so the
-    // web's `box-shadow: 0 0 8px 1px accent` glow is a horizontal gradient
-    // falloff behind the cream line - renders identically on both platforms.
-    glowWrap: {
-      position: 'absolute',
-      top: 0,
-      bottom: 0,
-      width: 24,
-      marginLeft: -12,
+    lineGlow: {
+      boxShadow: `0 0 8px 1px ${colors.accent}, 0 0 2px 0 ${colors.brandCream}`,
     },
   })
