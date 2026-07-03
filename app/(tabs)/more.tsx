@@ -10,11 +10,13 @@
  * stack. Keeping the menu on the tab removes a whole navigation level.
  */
 import { useUser } from '@clerk/expo'
-import { useMemo } from 'react'
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
-import { useRouter, type Href } from 'expo-router'
+import { useFocusEffect, useRouter, type Href } from 'expo-router'
 import Constants from 'expo-constants'
 import { useConnection } from '@/api/ConnectionProvider'
+import { getClubs } from '@/api/clubs'
+import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { AppText, Screen, SectionHeader } from '@/ui/primitives'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
@@ -33,28 +35,75 @@ const GROUPS: { label: string; items: MenuItem[] }[] = [
   {
     label: 'You',
     items: [
-      { icon: 'palette', title: 'Appearance', desc: 'Theme, accent colour, covers.', href: '/settings/appearance' },
+      {
+        icon: 'palette',
+        title: 'Appearance',
+        desc: 'Theme, accent colour, covers.',
+        href: '/settings/appearance',
+      },
     ],
   },
   {
     label: 'Listening',
     items: [
-      { icon: 'speed', title: 'Playback', desc: 'Speed, skip, queue, player buttons.', href: '/settings/playback' },
-      { icon: 'bedtime', title: 'Sleep timer', desc: 'Rewind, chapter, and fade behaviour.', href: '/settings/sleep' },
-      { icon: 'download', title: 'Downloads & storage', desc: 'Offline books, auto-download, space used.', href: '/settings/storage' },
-      { icon: 'vibration', title: 'Haptics', desc: 'Feedback and intensity on this device.', href: '/settings/haptics' },
+      {
+        icon: 'speed',
+        title: 'Playback',
+        desc: 'Speed, skip, queue, player buttons.',
+        href: '/settings/playback',
+      },
+      {
+        icon: 'bedtime',
+        title: 'Sleep timer',
+        desc: 'Rewind, chapter, and fade behaviour.',
+        href: '/settings/sleep',
+      },
+      {
+        icon: 'download',
+        title: 'Downloads & storage',
+        desc: 'Offline books, auto-download, space used.',
+        href: '/settings/storage',
+      },
+      {
+        icon: 'vibration',
+        title: 'Haptics',
+        desc: 'Feedback and intensity on this device.',
+        href: '/settings/haptics',
+      },
     ],
   },
   {
     label: 'Reading',
-    items: [{ icon: 'menu-book', title: 'Reading', desc: 'Ebook reader preferences.', href: '/settings/reading' }],
+    items: [
+      {
+        icon: 'menu-book',
+        title: 'Reading',
+        desc: 'Ebook reader preferences.',
+        href: '/settings/reading',
+      },
+    ],
   },
   {
     label: 'HearthShelf',
     items: [
-      { icon: 'person', title: 'Social', desc: 'Listening-now sharing and club note pops.', href: '/settings/social' },
-      { icon: 'hub', title: 'Connections', desc: 'Hardcover and external links.', href: '/settings/connections' },
-      { icon: 'dns', title: 'My servers', desc: 'Switch and manage linked servers.', href: '/settings/servers' },
+      {
+        icon: 'person',
+        title: 'Social',
+        desc: 'Listening-now sharing and club note pops.',
+        href: '/settings/social',
+      },
+      {
+        icon: 'hub',
+        title: 'Connections',
+        desc: 'Hardcover and external links.',
+        href: '/settings/connections',
+      },
+      {
+        icon: 'dns',
+        title: 'My servers',
+        desc: 'Switch and manage linked servers.',
+        href: '/settings/servers',
+      },
     ],
   },
 ]
@@ -66,6 +115,26 @@ export default function MoreScreen() {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const contentInset = useContentInset()
+  const { clubsEnabled } = useSyncExternalStore(subscribeSettings, getSettingsState)
+
+  // Show the "Book Clubs" shortcut only when the reader is actually in a club
+  // (and hasn't turned the feature off). Refetched each time More regains focus.
+  const [clubCount, setClubCount] = useState(0)
+  useFocusEffect(
+    useCallback(() => {
+      if (!clubsEnabled) {
+        setClubCount(0)
+        return
+      }
+      let cancelled = false
+      void getClubs().then((res) => {
+        if (!cancelled) setClubCount(res.enabled ? res.mine.length : 0)
+      })
+      return () => {
+        cancelled = true
+      }
+    }, [clubsEnabled]),
+  )
 
   const displayName = user?.fullName || user?.username || 'You'
   const email = user?.primaryEmailAddress?.emailAddress ?? ''
@@ -75,7 +144,11 @@ export default function MoreScreen() {
     <Screen>
       <SectionHeader title="More" />
       <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: contentInset, gap: spacing.md }}
+        contentContainerStyle={{
+          padding: spacing.lg,
+          paddingBottom: contentInset,
+          gap: spacing.md,
+        }}
       >
         <Pressable
           onPress={() => router.push('/settings/account')}
@@ -91,7 +164,12 @@ export default function MoreScreen() {
               {displayName}
             </AppText>
             {email ? (
-              <AppText variant="caption" color={colors.textMuted} numberOfLines={1} style={{ marginTop: 2 }}>
+              <AppText
+                variant="caption"
+                color={colors.textMuted}
+                numberOfLines={1}
+                style={{ marginTop: 2 }}
+              >
                 {email}
               </AppText>
             ) : (
@@ -102,6 +180,18 @@ export default function MoreScreen() {
           </View>
           <Icon name="chevron-right" size={22} color={colors.textMuted} />
         </Pressable>
+
+        {clubsEnabled && clubCount > 0 ? (
+          <SettingsGroup>
+            <SettingsRow
+              icon="groups"
+              title="Book Clubs"
+              desc={`${clubCount} ${clubCount === 1 ? 'club' : 'clubs'} you're in.`}
+              onPress={() => router.push('/club')}
+              last
+            />
+          </SettingsGroup>
+        ) : null}
 
         {GROUPS.map((group) => (
           <View key={group.label}>

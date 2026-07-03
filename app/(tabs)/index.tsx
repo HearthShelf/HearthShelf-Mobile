@@ -58,6 +58,7 @@ import { Icon, type IconName } from '@/ui/icons'
 import { DUR } from '@/ui/motion'
 import { Scrubber } from '@/player/Scrubber'
 import { BookActionsSheet, type BookActionsHandle } from '@/ui/BookActionsSheet'
+import { HomeClubShelf } from '@/social/HomeClubShelf'
 import { Toast, useToast } from '@/ui/Toast'
 import { haptics } from '@/ui/haptics'
 import { radius, spacing, type Palette } from '@/ui/theme'
@@ -345,6 +346,7 @@ export default function HomeScreen() {
           </View>
         )}
         {stats ? <HomeStatsStrip stats={stats} /> : null}
+        <HomeClubShelf />
         {shelves.map((shelf) => (
           <Shelf key={shelf.id} shelf={shelf} onLongPressItem={openActions} />
         ))}
