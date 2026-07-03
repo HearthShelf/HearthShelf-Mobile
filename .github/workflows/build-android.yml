@@ -35,7 +35,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17 # RN 0.85 / Expo 56 request a Java 17 toolchain
+          java-version: 21 # RN 0.86 / Expo 57 request a Java 21 toolchain
 
       - uses: android-actions/setup-android@v3
 
