@@ -178,9 +178,28 @@ class HearthShelfAutoService : MediaLibraryService() {
     customButton(CMD_BOOKMARK, "Bookmark", "ic_hs_bookmark")
   )
 
+  /** Media3 semantic icon for the user's skip amount. Android Auto can render
+   *  these consistently with its own transport controls; unsupported amounts use
+   *  the generic skip icon and let the display name carry the exact seconds. */
+  private fun rewindIcon(sec: Long): Int = when (sec) {
+    5L -> CommandButton.ICON_SKIP_BACK_5
+    10L -> CommandButton.ICON_SKIP_BACK_10
+    15L -> CommandButton.ICON_SKIP_BACK_15
+    30L -> CommandButton.ICON_SKIP_BACK_30
+    else -> CommandButton.ICON_SKIP_BACK
+  }
+
+  private fun forwardIcon(sec: Long): Int = when (sec) {
+    5L -> CommandButton.ICON_SKIP_FORWARD_5
+    10L -> CommandButton.ICON_SKIP_FORWARD_10
+    15L -> CommandButton.ICON_SKIP_FORWARD_15
+    30L -> CommandButton.ICON_SKIP_FORWARD_30
+    else -> CommandButton.ICON_SKIP_FORWARD
+  }
+
   /** Drawable NAME for a skip button whose numeral matches the user's chosen
-   *  seconds. We ship glyphs for the common presets; anything else falls back to
-   *  the plain arrow (no baked-in number) so the label still tells the story. */
+   *  seconds. Used only as a fallback resource for controllers that can't render
+   *  Media3's semantic icons. */
   private fun skipIconName(prefix: String, sec: Long): String {
     val named = "${prefix}_$sec"
     return if (resources.getIdentifier(named, "drawable", packageName) != 0) named else prefix
@@ -188,7 +207,7 @@ class HearthShelfAutoService : MediaLibraryService() {
 
   private fun rewindButton(): CommandButton {
     val icon = skipIconName("ic_hs_rewind", rewindSec)
-    return CommandButton.Builder(CommandButton.ICON_SKIP_BACK)
+    return CommandButton.Builder(rewindIcon(rewindSec))
       .setDisplayName("Back ${rewindSec}s")
       .setCustomIconResId(resources.getIdentifier(icon, "drawable", packageName))
       .setSessionCommand(SessionCommand(CMD_REWIND, Bundle.EMPTY))
@@ -198,7 +217,7 @@ class HearthShelfAutoService : MediaLibraryService() {
 
   private fun forwardButton(): CommandButton {
     val icon = skipIconName("ic_hs_forward", forwardSec)
-    return CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD)
+    return CommandButton.Builder(forwardIcon(forwardSec))
       .setDisplayName("Forward ${forwardSec}s")
       .setCustomIconResId(resources.getIdentifier(icon, "drawable", packageName))
       .setSessionCommand(SessionCommand(CMD_FORWARD, Bundle.EMPTY))
