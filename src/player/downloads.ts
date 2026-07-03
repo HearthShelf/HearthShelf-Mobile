@@ -22,8 +22,20 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { Paths, File, Directory } from 'expo-file-system'
 import { createDownloadResumable, type DownloadResumable } from 'expo-file-system/legacy'
 import type { ABSChapter } from '@hearthshelf/core'
-import { startPlay, mediaUrl, coverUrl, closeSession, getItemDetail } from '@/api/abs'
-import { saveCatalogItem, removeCatalogItem } from './offlineCatalog'
+import {
+  startPlay,
+  mediaUrl,
+  coverUrl,
+  closeSession,
+  getItemDetail,
+  getLibrarySeries,
+} from '@/api/abs'
+import {
+  saveCatalogItem,
+  saveSeriesSkeleton,
+  removeCatalogItem,
+  backfillFromDownloads,
+} from './offlineCatalog'
 
 export interface DownloadedTrack {
   index: number
@@ -135,6 +147,20 @@ export async function hydrateDownloads(): Promise<void> {
       maxBytes: parsed.maxBytes ?? DEFAULT_MAX_BYTES,
       auto: { ...DEFAULT_AUTO, ...(parsed.auto ?? {}) },
     })
+    // Seed the offline catalog from what we know locally, so downloaded books are
+    // browseable offline even before (or without) a richer server-detail backfill.
+    // libraryId isn't stored per download; a shared 'offline' placeholder is fine -
+    // the Library screen only needs a stable id to mount its list offline.
+    void backfillFromDownloads(
+      [...byId.values()].map((e) => ({
+        id: e.itemId,
+        libraryId: 'offline',
+        title: e.title,
+        author: e.author,
+        duration: e.duration,
+        addedAt: 0,
+      })),
+    )
   } catch {
     // start empty on a bad payload
   }
@@ -270,6 +296,15 @@ export async function downloadItem(itemId: string, title: string, author: string
     try {
       const detail = await getItemDetail(itemId)
       await saveCatalogItem(detail, sessionDuration)
+      // If it's part of a series, also capture the WHOLE series' metadata (not
+      // audio) so the series page shows the full reading order offline - the
+      // undownloaded siblings appear as greyed "not downloaded" skeletons.
+      const seriesRef = detail.media.metadata.series?.[0]
+      if (seriesRef) {
+        const allSeries = await getLibrarySeries(detail.libraryId)
+        const match = allSeries.find((s) => s.id === seriesRef.id)
+        if (match) await saveSeriesSkeleton(match.id, match.name, match.books ?? [])
+      }
     } catch {
       // Rich offline browse for this item is degraded, but playback is intact.
     }

@@ -384,13 +384,17 @@ function BookRow({
   const part = !fin && (progress?.progress ?? 0) > 0
   const hours = book.media.duration ? Math.round(book.media.duration / 360) / 10 : 0
   const narrator = itemNarrator(book)
-  const sub = [narrator, hours > 0 && `${hours}h`].filter(Boolean).join(' · ')
+  // A skeleton sibling in an offline series: metadata only, not on this device.
+  const notDownloaded = book.isMissing === true
+  const sub = notDownloaded
+    ? [narrator, 'Not downloaded'].filter(Boolean).join(' · ')
+    : [narrator, hours > 0 && `${hours}h`].filter(Boolean).join(' · ')
 
   return (
     <Touchable
       onPress={onPress}
       onLongPress={onLongPress}
-      style={[styles.row, selected && styles.rowSelected]}
+      style={[styles.row, selected && styles.rowSelected, notDownloaded && styles.rowDimmed]}
     >
       {selecting ? (
         <Pressable
@@ -436,7 +440,7 @@ function BookRow({
           />
         ) : null}
       </View>
-      {!selecting ? (
+      {!selecting && !notDownloaded ? (
         <Pressable onPress={onPlay} hitSlop={8} style={styles.rowPlay}>
           <IconButton name={icons.play} size={20} color={colors.text} />
         </Pressable>
@@ -566,6 +570,7 @@ const makeStyles = (colors: Palette) =>
       borderRadius: radius.row,
     },
     rowSelected: { backgroundColor: colors.accentWash },
+    rowDimmed: { opacity: 0.45 },
     num: { width: 24, textAlign: 'center', fontWeight: '700' },
     check: {
       width: 24,

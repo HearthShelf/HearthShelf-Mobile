@@ -74,6 +74,7 @@ import { BookSelectionToolbar } from '@/ui/BookSelectionToolbar'
 import { getProgressState, subscribeProgress, refreshProgress } from '@/store/progress'
 import {
   catalogAsLibraryItems,
+  catalogLibraryId,
   catalogSeries,
   catalogAuthors,
   catalogNarrators,
@@ -142,7 +143,17 @@ export default function LibraryScreen() {
           const primary = libs.find((l) => l.mediaType === 'book') ?? libs[0]
           setLibraryId(primary?.id ?? null)
         } catch (e) {
-          if (!cancelled) setLibError((e as Error).message)
+          if (cancelled) return
+          // Offline: use the downloaded books' library so the list still mounts
+          // and BooksView falls back to the catalog. Only a genuine error (no
+          // downloads to show) surfaces the message.
+          const offlineLib = catalogLibraryId()
+          if (offlineLib) {
+            setLibError(null)
+            setLibraryId(offlineLib)
+          } else {
+            setLibError((e as Error).message)
+          }
         }
       })()
       return () => {
@@ -1012,6 +1023,9 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
   const contentInset = useContentInset()
   const [groups, setGroups] = useState<GroupRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Re-run the load when the offline catalog changes (hydrate finishing, a new
+  // download), so offline groups appear once the catalog is populated.
+  const catalogVersion = useSyncExternalStore(subscribeCatalog, getCatalogState)
   // Sort name-ascending by default; tapping the active sort flips its direction.
   const [sort, setSort] = useState<GroupSort>('name')
   const [desc, setDesc] = useState(false)
@@ -1086,7 +1100,7 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
     return () => {
       cancelled = true
     }
-  }, [libraryId, mode])
+  }, [libraryId, mode, catalogVersion])
 
   if (error) {
     return (

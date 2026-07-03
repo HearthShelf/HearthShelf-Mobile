@@ -25,7 +25,7 @@ import { startClubSync } from '@/player/clubSync'
 import { ensureDeviceId, getSettingsState, subscribeSettings } from '@/store/settings'
 import { hydrateDownloads, getDownloadsState } from '@/player/downloads'
 import { hydrateCatalog, backfillCatalog } from '@/player/offlineCatalog'
-import { getItemDetail } from './abs'
+import { getItemDetail, getLibrarySeries } from './abs'
 import {
   startConnectivityWatch,
   stopConnectivityWatch,
@@ -140,6 +140,11 @@ async function backfillDownloadedCatalog(): Promise<void> {
     done.map((e) => e.itemId),
     (id) => getItemDetail(id),
     (id) => durations.get(id) ?? 0,
+    async (libraryId, seriesId) => {
+      const all = await getLibrarySeries(libraryId)
+      const match = all.find((s) => s.id === seriesId)
+      return match ? { id: match.id, name: match.name, books: match.books ?? [] } : null
+    },
   )
 }
 
