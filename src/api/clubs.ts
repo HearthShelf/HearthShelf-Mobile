@@ -37,7 +37,10 @@ export interface GetClubParams {
 
 /** Full club detail: club, book history, members with progress in the viewed
  *  book, that book's gated notes, and the unread count. null when unavailable. */
-export async function getClub(id: string, params: GetClubParams = {}): Promise<HSClubDetail | null> {
+export async function getClub(
+  id: string,
+  params: GetClubParams = {},
+): Promise<HSClubDetail | null> {
   const session = getSession()
   if (!session) return null
   const { serverUrl, token } = session
@@ -46,9 +49,12 @@ export async function getClub(id: string, params: GetClubParams = {}): Promise<H
   if (params.position != null) q.set('position', String(Math.round(params.position)))
   const qs = q.toString()
   try {
-    const res = await fetch(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    const res = await fetch(
+      `${serverUrl}/hs/clubs/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    )
     if (!res.ok) return null
     const detail = (await res.json()) as HSClubDetail
     return detail.enabled ? detail : null
@@ -102,6 +108,40 @@ export async function setClubCurrentBook(id: string, libraryItemId: string): Pro
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ libraryItemId }),
     })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+/** Owner: add a book to the club's up-next queue. Returns true on success (incl.
+ *  a no-op when the book is already in the club). */
+export async function enqueueClubBook(id: string, libraryItemId: string): Promise<boolean> {
+  const session = getSession()
+  if (!session) return false
+  const { serverUrl, token } = session
+  try {
+    const res = await fetch(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}/queue`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ libraryItemId }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+/** Owner: remove a book from the club's up-next queue. Returns true on success. */
+export async function removeClubQueued(id: string, libraryItemId: string): Promise<boolean> {
+  const session = getSession()
+  if (!session) return false
+  const { serverUrl, token } = session
+  try {
+    const res = await fetch(
+      `${serverUrl}/hs/clubs/${encodeURIComponent(id)}/queue/${encodeURIComponent(libraryItemId)}`,
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+    )
     return res.ok
   } catch {
     return false
