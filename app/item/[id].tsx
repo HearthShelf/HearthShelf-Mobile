@@ -687,7 +687,11 @@ function ActionSquare({
       onPress={onPress}
     >
       <Icon name={icon} size={22} color={active ? colors.brandHearth : colors.text} />
-      <AppText variant="caption" color={active ? colors.brandHearth : colors.textMuted}>
+      <AppText
+        variant="caption"
+        numberOfLines={1}
+        color={active ? colors.brandHearth : colors.textMuted}
+      >
         {label}
       </AppText>
     </Touchable>
@@ -1243,7 +1247,8 @@ const makeStyles = (colors: Palette) =>
       marginTop: spacing.md,
     },
     square: {
-      width: 52,
+      minWidth: 52,
+      paddingHorizontal: spacing.xs,
       borderRadius: radius.card,
       backgroundColor: colors.fill,
       borderWidth: StyleSheet.hairlineWidth,
