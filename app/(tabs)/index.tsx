@@ -85,6 +85,9 @@ export default function HomeScreen() {
   const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
   const { message: toast, show: showToast } = useToast()
   const actionsRef = useRef<BookActionsHandle>(null)
+  const lastPlaybackItemRef = useRef<string | null>(null)
+  const lastPlaybackPlayingRef = useRef<boolean | null>(null)
+  const playbackRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Books just marked finished here. A silent reload's items-in-progress can lag
   // ABS's own propagation and re-surface them in Continue, so filter them out
   // until a later fetch legitimately drops them. Held in a ref so loadHome's
@@ -211,6 +214,37 @@ export default function HomeScreen() {
     if (!connected) return
     loadHome().catch(() => setLoading(false))
   }, [connected, loadHome])
+
+  useEffect(() => {
+    if (!connected || !nowPlaying) {
+      lastPlaybackItemRef.current = nowPlaying?.itemId ?? null
+      lastPlaybackPlayingRef.current = isPlaying
+      return
+    }
+
+    const lastItem = lastPlaybackItemRef.current
+    const lastPlaying = lastPlaybackPlayingRef.current
+    const itemChanged = lastItem !== nowPlaying.itemId
+    const paused = lastPlaying === true && !isPlaying
+
+    lastPlaybackItemRef.current = nowPlaying.itemId
+    lastPlaybackPlayingRef.current = isPlaying
+
+    if (!itemChanged && !paused) return
+
+    if (playbackRefreshRef.current) clearTimeout(playbackRefreshRef.current)
+    playbackRefreshRef.current = setTimeout(() => {
+      playbackRefreshRef.current = null
+      void loadHome({ silent: true }).catch(() => {})
+    }, paused ? 900 : 500)
+  }, [connected, nowPlaying, isPlaying, loadHome])
+
+  useEffect(
+    () => () => {
+      if (playbackRefreshRef.current) clearTimeout(playbackRefreshRef.current)
+    },
+    [],
+  )
 
   // Long-press mark-finished from a home tile. Update the visible sections right
   // away (a finished book leaves Continue), then reconcile with a silent reload

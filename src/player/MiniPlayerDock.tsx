@@ -26,14 +26,9 @@ export function miniPlayerHiddenOn(pathname: string): boolean {
 }
 
 /** Screens whose bottom edge is a tab bar (their own copy or the tabs shell);
- *  the dock floats above it. Search, group, settings, and auth have no bottom nav. */
+ *  the dock floats above it. Auth and admin have no bottom nav. */
 export function hasBottomTabBar(pathname: string): boolean {
-  return !(
-    pathname.startsWith('/search') ||
-    pathname.startsWith('/group') ||
-    pathname.startsWith('/settings') ||
-    pathname.startsWith('/sign-in')
-  )
+  return !(pathname.startsWith('/settings/admin') || pathname.startsWith('/sign-in'))
 }
 
 export function MiniPlayerDock() {

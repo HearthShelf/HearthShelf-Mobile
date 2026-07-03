@@ -180,9 +180,13 @@ export async function downloadItem(itemId: string, title: string, author: string
   })
 
   let sessionId: string | null = null
+  let sessionResumeTime = 0
+  let sessionDuration = 0
   try {
     const session = await startPlay(itemId)
     sessionId = session.id
+    sessionResumeTime = Math.max(0, session.currentTime ?? 0)
+    sessionDuration = session.duration
     const dir = itemDir(itemId)
     if (!dir.exists) dir.create({ intermediates: true })
 
@@ -262,7 +266,11 @@ export async function downloadItem(itemId: string, title: string, author: string
   } finally {
     if (sessionId) {
       try {
-        await closeSession(sessionId, { currentTime: 0, timeListened: 0, duration: 0 })
+        await closeSession(sessionId, {
+          currentTime: Math.round(sessionResumeTime),
+          timeListened: 0,
+          duration: sessionDuration,
+        })
       } catch {
         // ignore
       }

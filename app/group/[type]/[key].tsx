@@ -22,6 +22,7 @@ import {
   itemTitle,
 } from '@/api/abs'
 import { AppText, Centered, Cover, IconButton, Loading, Screen, icons } from '@/ui/primitives'
+import { AppTabBar } from '@/ui/AppTabBar'
 import { radius, spacing } from '@/ui/theme'
 import { useContentInset } from '@/ui/useContentInset'
 import { useColors } from '@/ui/ThemeProvider'
@@ -46,6 +47,10 @@ export default function GroupDrilldown() {
 
   const [books, setBooks] = useState<ABSLibraryItem[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const goToTab = (tabName: string) => {
+    router.dismissAll?.()
+    router.replace(tabName === 'index' ? '/(tabs)' : `/(tabs)/${tabName}`)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -108,6 +113,8 @@ export default function GroupDrilldown() {
           <GroupGrid books={books} />
         </>
       )}
+
+      <AppTabBar activeName={null} onPressTab={goToTab} />
     </Screen>
   )
 }

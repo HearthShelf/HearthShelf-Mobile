@@ -6,6 +6,7 @@ import type { ABSLibraryItem } from '@hearthshelf/core'
 import { getLibraries, searchLibrary } from '@/api/abs'
 import { AppText, Centered, IconButton, Loading, Screen, icons } from '@/ui/primitives'
 import { BookTile } from '@/ui/BookTile'
+import { AppTabBar } from '@/ui/AppTabBar'
 import { DUR } from '@/ui/motion'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useContentInset } from '@/ui/useContentInset'
@@ -26,6 +27,10 @@ export default function SearchScreen() {
   const [searched, setSearched] = useState(false)
 
   const tileWidth = (width - GUTTER * 2 - GUTTER * (COLS - 1)) / COLS
+  const goToTab = (name: string) => {
+    router.dismissAll?.()
+    router.replace(name === 'index' ? '/(tabs)' : `/(tabs)/${name}`)
+  }
 
   const libraryIdRef = useRef<string | null>(null)
   async function resolveLibraryId(): Promise<string | null> {
@@ -105,6 +110,8 @@ export default function SearchScreen() {
           />
         </Animated.View>
       )}
+
+      <AppTabBar activeName={null} onPressTab={goToTab} />
     </Screen>
   )
 }
