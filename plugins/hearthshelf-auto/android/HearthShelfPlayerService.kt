@@ -145,6 +145,27 @@ class HearthShelfPlayerService : MediaSessionService() {
 
   override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
+  /**
+   * The user swiped the app off the recents list. Audiobook playback should stop
+   * (not keep playing from a dead app), and the position we stopped at should be
+   * synced. We emit a final paused state so JS - if it's still alive - flushes the
+   * stop point, then stop the player and tear the service down so the OS reclaims
+   * it. Without this a MediaSessionService keeps ExoPlayer playing after the task
+   * is removed, and the app reopens at a stale (pre-swipe) position.
+   */
+  override fun onTaskRemoved(rootIntent: Intent?) {
+    exo?.let { p ->
+      if (p.isPlaying || p.playWhenReady) {
+        HearthShelfAutoModule.emitProgress(p.currentPosition / 1000.0)
+      }
+    }
+    HearthShelfAutoModule.emitState(false)
+    exo?.pause()
+    exo?.stop()
+    stopSelf()
+    super.onTaskRemoved(rootIntent)
+  }
+
   override fun onDestroy() {
     progressHandler.removeCallbacks(progressTick)
     session?.run { release() }
