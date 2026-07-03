@@ -56,31 +56,72 @@ every prebuild - see TESTING.md. Now it survives.)
 - iOS build number (later): `expo.ios.buildNumber`.
   GitHub Actions stamps it from `EXPO_IOS_BUILD_NUMBER`; local fallback is `1`.
 
-## Release signing (manual - needs YOUR keystore)
+## Release signing
 
-Not yet automated because it needs the upload keystore as encrypted secrets, and
-the keystore lives with you. To do a signed release build:
+Signed releases are built by **GitHub Actions**
+(`.github/workflows/build-android-release.yml`), **manual dispatch only** - never
+on push, so a merge can never ship to the store. The upload keystore lives with
+you (backed up on Unraid) and in GitHub as encrypted secrets; it is never in the
+repo.
 
-1. **Create an upload keystore** (once):
-   ```bash
-   keytool -genkeypair -v -keystore upload.jks -alias upload \
+How the wiring works: the `plugins/hearthshelf-signing` config plugin injects a
+release `signingConfig` into `android/app/build.gradle` at prebuild (because
+`android/` is gitignored and regenerated, a hand edit wouldn't survive - same
+durability pattern as `standalone-js`). It reads the keystore path + passwords as
+Gradle properties, so **no secret is ever written into build.gradle**. The plugin
+is inert unless `HEARTHSHELF_RELEASE_SIGNING=1`, so normal debug dev is
+unaffected.
+
+### One-time setup
+
+1. **Create an upload keystore** (once, on your machine):
+   ```powershell
+   keytool -genkeypair -v -keystore upload.jks -alias upload `
      -keyalg RSA -keysize 2048 -validity 10000
    ```
-   Store it OUTSIDE the repo. It's `.gitignore`d (`*.jks`) as a backstop.
+   Answer the prompts; remember the **store password**, **alias** (`upload`), and
+   **key password**. Store `upload.jks` OUTSIDE the repo and back it up (Unraid).
+   It's `.gitignore`d (`*.jks`) as a backstop. **Losing it is not fatal under
+   Play App Signing** (you can request an upload-key reset from Google), but keep
+   it safe anyway.
 
-2. **Register its SHA-256** with Google (for the Android OAuth client) and Clerk
-   - same SHA used for native Google sign-in. See `AUTH_SETUP.md` step 1.
+2. **Add the GitHub Actions secrets** (repo Settings -> Secrets and variables ->
+   Actions):
+   - `ANDROID_KEYSTORE_BASE64` - base64 of the keystore:
+     ```powershell
+     [Convert]::ToBase64String([IO.File]::ReadAllBytes("upload.jks")) | Set-Content upload.jks.b64
+     ```
+     Paste the contents of `upload.jks.b64` (then delete that file).
+   - `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
 
-3. **Configure Gradle signing** in `android/app/build.gradle` (or via
-   `~/.gradle/gradle.properties` / EAS credentials). Because `android/` is
-   gitignored and regenerated, the durable home for this is a small config
-   plugin (follow `plugins/standalone-js` as the pattern) or EAS credentials.
+3. **Register the right SHA-256 for native Google sign-in.** With **Play App
+   Signing** (recommended, see below) Google re-signs the app, so end users get
+   **Google's** app-signing cert - NOT your upload key. Register the
+   **Play Console app-signing key SHA-256** (Play Console -> Setup -> App
+   integrity -> App signing), plus your **debug** SHA for dev builds. Your
+   *upload* key SHA is not what users receive, so it is not the one to register
+   for production sign-in. See `AUTH_SETUP.md`.
 
-4. **Build the release artifact**:
-   ```bash
-   npx expo prebuild --platform android
-   cd android && ./gradlew :app:bundleRelease   # .aab for the Play Store
-   ```
+### Building a release
+
+- **Via CI (the real path):** Actions tab -> **Build Android Release** ->
+  Run workflow. Pick `aab` (Play upload) or `apk` (signed sideload test). The
+  signed artifact is uploaded under `app-release-aab-<run>` / `app-release-apk-<run>`.
+
+- **Locally (to test the pipeline before trusting CI):** set the signing env
+  vars (see `.env.example` "Android RELEASE signing"), then:
+  ```powershell
+  $env:HEARTHSHELF_RELEASE_SIGNING = '1'
+  npx expo prebuild --platform android
+  cd android
+  ./gradlew :app:bundleRelease `
+    "-PHEARTHSHELF_RELEASE_KEYSTORE_PATH=C:\path\to\upload.jks" `
+    "-PHEARTHSHELF_RELEASE_KEYSTORE_PASSWORD=..." `
+    "-PHEARTHSHELF_RELEASE_KEY_ALIAS=upload" `
+    "-PHEARTHSHELF_RELEASE_KEY_PASSWORD=..."
+  ```
+  (Or put those four as `HEARTHSHELF_RELEASE_*` in `gradle.properties`.) The
+  `.aab` lands in `android/app/build/outputs/bundle/release/`.
 
 ## Play Store - internal testing track
 

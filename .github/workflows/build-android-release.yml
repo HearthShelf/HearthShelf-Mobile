@@ -1,0 +1,103 @@
+name: Build Android Release
+
+# Produces a SIGNED release .aab (Android App Bundle) for the Play Store.
+#
+# Manual dispatch ONLY - never on push. Release signing is deliberately kept off
+# the automatic push build so a merge can never ship to the store; promotion is
+# always an explicit human action (matches RELEASE.md).
+#
+# The upload keystore never lives in the repo. It is stored as a base64 GitHub
+# Actions secret, decoded to a temp file on the runner, and the signing
+# passwords are secrets too. The hearthshelf-signing config plugin injects the
+# release signingConfig at prebuild and reads the values as Gradle properties;
+# we pass them via ORG_GRADLE_PROJECT_* env vars (Gradle maps
+# ORG_GRADLE_PROJECT_FOO -> the `FOO` project property automatically), so no
+# secret is ever written into build.gradle.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   ANDROID_KEYSTORE_BASE64      base64 of your upload.jks  (base64 -w0 upload.jks)
+#   ANDROID_KEYSTORE_PASSWORD    the keystore (store) password
+#   ANDROID_KEY_ALIAS            the key alias (e.g. upload)
+#   ANDROID_KEY_PASSWORD         the key password
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_kind:
+        description: 'Bundle for Play (.aab) or a signed APK for sideload testing'
+        type: choice
+        default: aab
+        options: [aab, apk]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21 # RN 0.86 / Expo 57 request a Java 21 toolchain
+
+      - uses: android-actions/setup-android@v3
+
+      - run: npm ci
+
+      - name: Decode upload keystore
+        id: keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          # Fail early if the secret was empty/missing rather than producing a
+          # broken build much later.
+          test -s "$RUNNER_TEMP/upload.jks" || { echo "::error::ANDROID_KEYSTORE_BASE64 is empty or missing"; exit 1; }
+
+      - name: Prebuild (runs config plugins, incl. release signing)
+        env:
+          HEARTHSHELF_RELEASE_SIGNING: '1'
+          HEARTHSHELF_RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/upload.jks
+          HEARTHSHELF_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          HEARTHSHELF_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          HEARTHSHELF_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          # A release build embeds its JS by default, so standalone-js is not
+          # needed here (that plugin only affects the DEBUG variant).
+          EXPO_ANDROID_VERSION_CODE: ${{ github.run_number }}
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build signed artifact
+        env:
+          # Gradle maps ORG_GRADLE_PROJECT_X -> project property X, which is what
+          # the injected signingConfig reads via providers.gradleProperty('X').
+          ORG_GRADLE_PROJECT_HEARTHSHELF_RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/upload.jks
+          ORG_GRADLE_PROJECT_HEARTHSHELF_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_HEARTHSHELF_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ORG_GRADLE_PROJECT_HEARTHSHELF_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ "${{ inputs.artifact_kind }}" = "apk" ]; then
+            ./gradlew :app:assembleRelease
+          else
+            ./gradlew :app:bundleRelease
+          fi
+        working-directory: android
+
+      - name: Upload .aab
+        if: inputs.artifact_kind == 'aab'
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-aab-${{ github.run_number }}
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+
+      - name: Upload signed APK
+        if: inputs.artifact_kind == 'apk'
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk-${{ github.run_number }}
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
