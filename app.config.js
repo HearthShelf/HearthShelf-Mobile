@@ -84,6 +84,7 @@ module.exports = {
     'expo-secure-store',
     'expo-router',
     'expo-background-task',
+    'expo-sqlite',
     [
       'react-native-video',
       {

@@ -40,6 +40,7 @@ import {
 import { getProgressState, subscribeProgress, refreshProgress } from '@/store/progress'
 import { playItemById } from '@/player/playback'
 import { setAutoDownloadContinueListening } from '@/player/downloads'
+import { catalogHomeShelves } from '@/player/offlineCatalog'
 import {
   AppText,
   Cover,
@@ -218,12 +219,27 @@ export default function HomeScreen() {
     setLoading(false)
   }, [])
 
+  // Offline: build Home from downloaded books (Continue + genre categories)
+  // instead of the server, so the home screen stays useful with no network.
+  const loadHomeOffline = useCallback(() => {
+    const { inProgress: ip, shelves: sh } = catalogHomeShelves(
+      (id) => getProgressState().byId.get(id)?.progress,
+    )
+    setInProgress(ip)
+    setShelves(sh)
+    setStats(null)
+    setLoading(false)
+  }, [])
+
   useEffect(() => {
-    // Only load once the session exists (reconnects re-fire this too, e.g. after
+    // Load once the session exists (reconnects re-fire this too, e.g. after
     // switching servers from the splash's "Manage servers").
-    if (!connected) return
-    loadHome().catch(() => setLoading(false))
-  }, [connected, loadHome])
+    if (connected) {
+      loadHome().catch(() => setLoading(false))
+    } else if (status.phase === 'offline') {
+      loadHomeOffline()
+    }
+  }, [connected, status.phase, loadHome, loadHomeOffline])
 
   useEffect(() => {
     if (!connected || !nowPlaying) {

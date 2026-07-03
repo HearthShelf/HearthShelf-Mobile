@@ -22,7 +22,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { Paths, File, Directory } from 'expo-file-system'
 import { createDownloadResumable, type DownloadResumable } from 'expo-file-system/legacy'
 import type { ABSChapter } from '@hearthshelf/core'
-import { startPlay, mediaUrl, coverUrl, closeSession } from '@/api/abs'
+import { startPlay, mediaUrl, coverUrl, closeSession, getItemDetail } from '@/api/abs'
+import { saveCatalogItem, removeCatalogItem } from './offlineCatalog'
 
 export interface DownloadedTrack {
   index: number
@@ -262,6 +263,16 @@ export async function downloadItem(itemId: string, title: string, author: string
       tracks: downloaded,
     })
     persist()
+
+    // Snapshot the book's library metadata (genres, series, narrator, year) so
+    // Home / Library / Series can browse it offline. Best-effort: the download
+    // itself is already done and plays fine without this.
+    try {
+      const detail = await getItemDetail(itemId)
+      await saveCatalogItem(detail, sessionDuration)
+    } catch {
+      // Rich offline browse for this item is degraded, but playback is intact.
+    }
   } catch (e) {
     active.delete(itemId)
     const msg = (e as Error).message
@@ -311,6 +322,8 @@ export async function deleteDownload(itemId: string): Promise<void> {
   byId.delete(itemId)
   emit({ byId })
   persist()
+  // Drop its offline browse metadata too.
+  void removeCatalogItem(itemId)
 }
 
 /** Total bytes used by all downloads. */

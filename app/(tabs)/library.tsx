@@ -72,6 +72,14 @@ import { DUR } from '@/ui/motion'
 import { BookTile } from '@/ui/BookTile'
 import { BookSelectionToolbar } from '@/ui/BookSelectionToolbar'
 import { getProgressState, subscribeProgress, refreshProgress } from '@/store/progress'
+import {
+  catalogAsLibraryItems,
+  catalogSeries,
+  catalogAuthors,
+  catalogNarrators,
+  subscribeCatalog,
+  getCatalogState,
+} from '@/player/offlineCatalog'
 import { useContentInset, useMiniPlayerInset } from '@/ui/useContentInset'
 import { useBookSelection } from '@/ui/useBookSelection'
 import { AzRail, AZ_RAIL_WIDTH } from '@/ui/AzRail'
@@ -431,6 +439,9 @@ function BooksView({
   const [items, setItems] = useState<ABSLibraryItem[] | null>(null)
   // Shared per-item progress; mark-finished anywhere updates this view live.
   const progress = useSyncExternalStore(subscribeProgress, getProgressState).byId
+  // Re-run the load when the offline catalog changes (a book finishes
+  // downloading), so an offline library picks up new downloads live.
+  const catalogVersion = useSyncExternalStore(subscribeCatalog, getCatalogState)
   const [error, setError] = useState<string | null>(null)
   const selection = useBookSelection()
 
@@ -479,13 +490,18 @@ function BooksView({
         if (cancelled) return
         setItems(page.results)
       } catch (e) {
-        if (!cancelled) setError((e as Error).message)
+        if (cancelled) return
+        // Offline (or the server is unreachable): show downloaded books from the
+        // local catalog instead of a bare error, so the library stays browseable.
+        const offline = catalogAsLibraryItems()
+        if (offline.length > 0) setItems(offline)
+        else setError((e as Error).message)
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [libraryId])
+  }, [libraryId, catalogVersion])
 
   const progressOf = useCallback<ProgressOf>(
     (id) => {
@@ -1060,7 +1076,11 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
           setGroups(narrators.map((n: ABSNarrator) => narratorToRow(n)))
         }
       } catch (e) {
-        if (!cancelled) setError((e as Error).message)
+        if (cancelled) return
+        // Offline: build the groups from downloaded books instead of erroring.
+        const offline = offlineGroups(mode)
+        if (offline.length > 0) setGroups(offline)
+        else setError((e as Error).message)
       }
     })()
     return () => {
@@ -1203,6 +1223,29 @@ function seriesToRow(s: ABSSeries): GroupRow {
     count,
     covers: s.books,
   }
+}
+
+/** Build group rows from downloaded books when offline (series/authors/narrators).
+ *  Series use the same stacked-cover row as online; authors/narrators show counts
+ *  (their avatar art needs the server, so it falls back to initials offline). */
+function offlineGroups(mode: ViewMode): GroupRow[] {
+  if (mode === 'series') {
+    return catalogSeries().map((s) => ({
+      key: s.id,
+      name: s.name,
+      sub: `${s.books.length} ${s.books.length === 1 ? 'book' : 'books'}`,
+      count: s.books.length,
+      covers: s.books,
+    }))
+  }
+  const groups = mode === 'authors' ? catalogAuthors() : catalogNarrators()
+  return groups.map((g) => ({
+    key: g.name,
+    name: g.name,
+    sub: `${g.count} ${g.count === 1 ? 'title' : 'titles'}`,
+    count: g.count,
+    covers: [],
+  }))
 }
 
 function authorToRow(a: ABSLibraryAuthor): GroupRow {

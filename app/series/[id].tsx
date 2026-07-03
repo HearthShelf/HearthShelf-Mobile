@@ -14,6 +14,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import type { ABSLibraryItem, ABSMediaProgress, ABSSeries } from '@hearthshelf/core'
 import { coverHue } from '@hearthshelf/core'
 import { coverUrl, getLibrarySeries, itemAuthor, itemNarrator, itemTitle } from '@/api/abs'
+import { catalogSeriesById } from '@/player/offlineCatalog'
 import {
   getProgressState,
   subscribeProgress,
@@ -78,7 +79,11 @@ export default function SeriesDetailScreen() {
         // Progress is best-effort - a failure shouldn't block the page.
         void refreshProgress().catch(() => {})
       } catch (e) {
-        if (!cancelled) setError((e as Error).message)
+        if (cancelled) return
+        // Offline: show this series' downloaded books from the local catalog.
+        const local = catalogSeriesById(id)
+        if (local && local.books.length > 0) setSeries(local)
+        else setError((e as Error).message)
       }
     })()
     return () => {
