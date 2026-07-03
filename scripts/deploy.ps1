@@ -35,8 +35,11 @@
   plugins/hearthshelf-auto (native Kotlin) or the app config. Not needed for JS-only edits.
 
 .PARAMETER Clean
-  Remove the worklets / expo-modules-core / app .cxx build caches before building.
-  Use when the build fails with: ninja: error '...libworklets.so' ... missing and no known rule.
+  Remove the worklets / reanimated / expo-modules-core / app .cxx build caches
+  before building. Use when the build fails with a stale-CMake ninja error:
+  either "ninja: error '...libworklets.so' ... missing and no known rule", or a
+  reanimated "fatal error: file '...sysroot/.../algorithm' has been modified since
+  the precompiled header ... was built" (stale PCH after an NDK mtime change).
 
 .PARAMETER Release
   Build :app:assembleRelease instead of debug. Requires a signing keystore configured
@@ -233,6 +236,8 @@ if ($Clean) {
   $paths = @(
     'node_modules\react-native-worklets\android\build'
     'node_modules\react-native-worklets\android\.cxx'
+    'node_modules\react-native-reanimated\android\build'
+    'node_modules\react-native-reanimated\android\.cxx'
     'node_modules\expo-modules-core\android\build'
     'node_modules\expo-modules-core\android\.cxx'
     'android\app\.cxx'
