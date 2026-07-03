@@ -16,9 +16,19 @@ import {
   type HSLeaderboardEntry,
   type LeaderboardWindow,
 } from '@hearthshelf/core'
-import { getHSStats, avatarUrl } from '@/api/abs'
+import { useRouter } from 'expo-router'
+import { getHSStats, avatarUrl, coverUrl } from '@/api/abs'
 import { getLeaderboard } from '@/api/social'
-import { AppText, Avatar, Centered, Cover, Loading, PrimaryButton, Screen } from '@/ui/primitives'
+import {
+  AppText,
+  Avatar,
+  Centered,
+  Cover,
+  Loading,
+  PrimaryButton,
+  Screen,
+  Touchable,
+} from '@/ui/primitives'
 import { Seg } from '@/ui/settingsControls'
 import { radius, spacing, fonts, type Palette } from '@/ui/theme'
 import { useTheme } from '@/ui/ThemeProvider'
@@ -34,6 +44,7 @@ type Status =
   | { phase: 'ready'; stats: HSListeningStats }
 
 export default function StatsTab() {
+  const router = useRouter()
   const { colors, shadow } = useTheme()
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   const [status, setStatus] = useState<Status>({ phase: 'loading' })
@@ -159,8 +170,13 @@ export default function StatsTab() {
                 </AppText>
                 <View style={{ gap: spacing.sm }}>
                   {stats.mostListened.slice(0, 8).map((item) => (
-                    <View key={item.id} style={styles.listenedRow}>
+                    <Touchable
+                      key={item.id}
+                      style={styles.listenedRow}
+                      onPress={() => router.push(`/item/${item.id}`)}
+                    >
                       <Cover
+                        uri={coverUrl(item.id)}
                         itemId={item.id}
                         size={44}
                         radius={radius.tile}
@@ -180,7 +196,7 @@ export default function StatsTab() {
                       <AppText variant="mono" color={colors.textMuted}>
                         {formatDuration(item.timeSec)}
                       </AppText>
-                    </View>
+                    </Touchable>
                   ))}
                 </View>
               </View>
