@@ -7,6 +7,7 @@
  * web app exactly.
  */
 import { CONTROL_PLANE_URL } from '@/lib/config'
+import { fetchWithTimeout } from './fetchWithTimeout'
 
 export type GetToken = () => Promise<string | null>
 
@@ -36,7 +37,7 @@ async function request<T>(getToken: GetToken, path: string, init?: RequestInit):
   headers.set('Content-Type', 'application/json')
   if (token) headers.set('Authorization', `Bearer ${token}`)
 
-  const res = await fetch(`${CONTROL_PLANE_URL}${path}`, { ...init, headers })
+  const res = await fetchWithTimeout(`${CONTROL_PLANE_URL}${path}`, { ...init, headers })
   if (!res.ok) {
     let detail = res.statusText
     try {
@@ -63,7 +64,13 @@ export interface LinkedServer {
 }
 
 interface ServersResponse {
-  servers: Array<{ id: string; name: string; url: string; role: 'admin' | 'user'; is_default?: boolean }>
+  servers: Array<{
+    id: string
+    name: string
+    url: string
+    role: 'admin' | 'user'
+    is_default?: boolean
+  }>
 }
 
 /** List the servers the signed-in user has linked. */

@@ -218,46 +218,56 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     else setStatus({ phase: 'select-server', servers })
   }, [connectTo, tokenFn])
 
+  const connectingRef = useRef(false)
   const connect = useCallback(async () => {
+    // One attempt at a time: Retry, the NetInfo watcher, and the foreground probe
+    // can all fire together after signal returns. A second concurrent connect
+    // would race the first and could overwrite `ready` with `offline`.
+    if (connectingRef.current) return
+    connectingRef.current = true
     setStatus({ phase: 'connecting' })
-    // Try the handshake, retrying a stall as long as the network is actually up -
-    // a slow first connect on cellular shouldn't strand a connected user in
-    // offline mode. Only a genuinely unreachable network (or exhausted retries)
-    // falls back to offline.
-    for (let attempt = 0; ; attempt++) {
-      try {
-        // Race the connect against a timeout: a dead network can leave the ABS
-        // fetch hanging well past when we should stop waiting.
-        let timer: ReturnType<typeof setTimeout> | undefined
-        const timeout = new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new ConnectTimeoutError()), CONNECT_TIMEOUT_MS)
-        })
+    try {
+      // Try the handshake, retrying a stall as long as the network is actually up -
+      // a slow first connect on cellular shouldn't strand a connected user in
+      // offline mode. Only a genuinely unreachable network (or exhausted retries)
+      // falls back to offline.
+      for (let attempt = 0; ; attempt++) {
         try {
-          await Promise.race([runConnect(), timeout])
-        } finally {
-          if (timer) clearTimeout(timer)
-        }
-        return
-      } catch (e) {
-        if (e instanceof NoLinkedServersError) {
-          setStatus({ phase: 'no-servers' })
+          // Race the connect against a timeout: a dead network can leave the ABS
+          // fetch hanging well past when we should stop waiting.
+          let timer: ReturnType<typeof setTimeout> | undefined
+          const timeout = new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new ConnectTimeoutError()), CONNECT_TIMEOUT_MS)
+          })
+          try {
+            await Promise.race([runConnect(), timeout])
+          } finally {
+            if (timer) clearTimeout(timer)
+          }
+          return
+        } catch (e) {
+          if (e instanceof NoLinkedServersError) {
+            setStatus({ phase: 'no-servers' })
+            return
+          }
+          // If the network is up, this was slowness, not offline - retry (up to
+          // the cap) before giving up. isCurrentlyReachable is conservative
+          // (assumes online on any error), so we never loop forever on a NetInfo
+          // hiccup: the retry cap still bounds it.
+          const reachable = await isCurrentlyReachable()
+          if (reachable && attempt < CONNECT_RETRIES) {
+            setStatus({ phase: 'connecting' })
+            continue
+          }
+          // Truly unreachable (or out of retries): play downloads offline rather
+          // than stranding the user on an error.
+          if (hasOfflineContent()) setStatus({ phase: 'offline' })
+          else setStatus({ phase: 'error', message: (e as Error).message })
           return
         }
-        // If the network is up, this was slowness, not offline - retry (up to
-        // the cap) before giving up. isCurrentlyReachable is conservative
-        // (assumes online on any error), so we never loop forever on a NetInfo
-        // hiccup: the retry cap still bounds it.
-        const reachable = await isCurrentlyReachable()
-        if (reachable && attempt < CONNECT_RETRIES) {
-          setStatus({ phase: 'connecting' })
-          continue
-        }
-        // Truly unreachable (or out of retries): play downloads offline rather
-        // than stranding the user on an error.
-        if (hasOfflineContent()) setStatus({ phase: 'offline' })
-        else setStatus({ phase: 'error', message: (e as Error).message })
-        return
       }
+    } finally {
+      connectingRef.current = false
     }
   }, [runConnect])
 

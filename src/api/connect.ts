@@ -9,6 +9,7 @@
  * The app then talks straight to the server's ABS /api/* with that token.
  */
 import { mintGrant, type GetToken } from './controlPlane'
+import { fetchWithTimeout } from './fetchWithTimeout'
 
 export interface ConnectResult {
   serverUrl: string
@@ -25,8 +26,10 @@ export async function connectServer(
   // 1. Mint a grant for THIS server.
   const { grant } = await mintGrant(getToken, serverId)
 
-  // 2. Exchange it at the server's backend for an ABS token.
-  const res = await fetch(`${origin}/hs/hosted/connect`, {
+  // 2. Exchange it at the server's backend for an ABS token. Timed out so a
+  // half-open socket (e.g. left over from a Wi-Fi->cellular handoff) can't hang
+  // the whole connect indefinitely - it aborts and a retry gets a fresh socket.
+  const res = await fetchWithTimeout(`${origin}/hs/hosted/connect`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ grant }),
