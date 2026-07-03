@@ -24,6 +24,13 @@ This does not require an Apple developer account or a physical device. It proves
 the native iOS project compiles, but it does not prove device signing,
 TestFlight, push/entitlement behavior, or CarPlay.
 
+The iOS media controller and CarPlay source of truth is
+`plugins/hearthshelf-carplay/`. It owns AVPlayer playback, lock-screen media
+commands, and `MPPlayableContentManager` browse/play callbacks. A real CarPlay
+launcher will not show the app until Apple grants the playable-content
+entitlement; set `HEARTHSHELF_IOS_CARPLAY_ENTITLEMENT=1` only for signed builds
+using an Apple profile that actually includes that entitlement.
+
 ## Gradle gotcha (already fixed in `android/gradle.properties`)
 
 RN 0.85 / AGP 9 need a JDK 21 toolchain, and toolchain auto-download is off, so

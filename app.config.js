@@ -97,6 +97,7 @@ module.exports = {
       },
     ],
     './plugins/hearthshelf-auto/index.js',
+    './plugins/hearthshelf-carplay/index.js',
     './plugins/standalone-js/index.js',
   ],
   extra,

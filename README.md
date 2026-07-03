@@ -22,8 +22,9 @@ ruled out) and `TESTING.md` for build/run/in-car testing.
 - **Android Auto:** a native Kotlin Media3 `MediaLibraryService`
   (`plugins/hearthshelf-auto`, an Expo config plugin) - the only free path that
   works; Google forbids the Car App Library template model for car *audio*.
-- **iOS:** Expo prebuild + Xcode simulator builds in GitHub Actions; CarPlay and
-  TestFlight are gated on Apple entitlement/account setup.
+- **iOS:** native Swift media controller + CarPlay audio browse surface
+  (`plugins/hearthshelf-carplay`), with simulator builds in GitHub Actions.
+  Real CarPlay visibility still needs Apple's playable-content entitlement.
 
 ## Quick start
 

@@ -1,0 +1,73 @@
+/**
+ * Expo config plugin: wires the native iOS media controller + CarPlay audio
+ * surface into the generated ios/ project so it survives `expo prebuild`.
+ *
+ * The native module intentionally uses the same JS name as Android:
+ * `HearthShelfAuto`. PlayerHost can drive one cross-platform native player,
+ * while the platform-specific code owns the OS media session.
+ */
+const {
+  withDangerousMod,
+  withEntitlementsPlist,
+  withInfoPlist,
+  withXcodeProject,
+} = require('expo/config-plugins')
+const fs = require('fs')
+const path = require('path')
+
+function copySwift(config) {
+  return withDangerousMod(config, [
+    'ios',
+    async (cfg) => {
+      const projectName = cfg.modRequest.projectName
+      const src = path.join(cfg.modRequest.projectRoot, 'plugins', 'hearthshelf-carplay', 'ios')
+      const dest = path.join(cfg.modRequest.platformProjectRoot, projectName)
+      fs.mkdirSync(dest, { recursive: true })
+      for (const f of ['HearthShelfCarPlay.swift', 'HearthShelfCarPlayBridge.m']) {
+        fs.copyFileSync(path.join(src, f), path.join(dest, f))
+      }
+      return cfg
+    },
+  ])
+}
+
+function addSourceFiles(config) {
+  return withXcodeProject(config, (cfg) => {
+    const project = cfg.modResults
+    const projectName = cfg.modRequest.projectName
+    const group = project.findPBXGroupKey({ name: projectName })
+    for (const file of ['HearthShelfCarPlay.swift', 'HearthShelfCarPlayBridge.m']) {
+      if (!project.hasFile(file)) {
+        project.addSourceFile(file, { target: project.getFirstTarget().uuid }, group)
+      }
+    }
+    return cfg
+  })
+}
+
+function addInfoPlist(config) {
+  return withInfoPlist(config, (cfg) => {
+    const plist = cfg.modResults
+    const modes = new Set([...(plist.UIBackgroundModes || []), 'audio'])
+    plist.UIBackgroundModes = Array.from(modes)
+    plist.MPPlayableContentManager = true
+    return cfg
+  })
+}
+
+function addCarPlayEntitlement(config) {
+  return withEntitlementsPlist(config, (cfg) => {
+    if (process.env.HEARTHSHELF_IOS_CARPLAY_ENTITLEMENT === '1') {
+      cfg.modResults['com.apple.developer.playable-content'] = true
+    }
+    return cfg
+  })
+}
+
+module.exports = function withHearthShelfCarPlay(config) {
+  config = copySwift(config)
+  config = addSourceFiles(config)
+  config = addInfoPlist(config)
+  config = addCarPlayEntitlement(config)
+  return config
+}

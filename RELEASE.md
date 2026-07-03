@@ -104,9 +104,14 @@ Same RN codebase. Current state:
 
 - Simulator compile is handled by GitHub Actions on macOS.
 - iOS background audio mode is declared in `app.config.js`.
+- The native iOS media controller + CarPlay browse/play surface lives in
+  `plugins/hearthshelf-carplay` and is copied into the generated iOS project by
+  its Expo config plugin.
 - Native Google sign-in stays on browser OAuth until the Web client ID, iOS
   client ID, and iOS URL scheme env vars are all present.
 - Device/TestFlight builds still need an Apple developer account, signing
   assets, and either EAS Build/Submit or a macOS signing workflow.
-- CarPlay still needs a Swift content-tree module mirroring the Android Auto
-  service plus Apple's CarPlay audio entitlement approval.
+- Real CarPlay visibility still needs Apple's playable-content entitlement
+  approval. The plugin only writes that entitlement when
+  `HEARTHSHELF_IOS_CARPLAY_ENTITLEMENT=1`, so unsigned simulator builds remain
+  possible before approval.
