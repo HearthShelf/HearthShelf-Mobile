@@ -8,7 +8,7 @@ import { BottomSheetModalProvider } from '@gorhom/bottom-sheet'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { useFonts } from 'expo-font'
 import * as SplashScreen from 'expo-splash-screen'
-import { tokenCache } from '@/lib/tokenCache'
+import { tokenCache, hasCachedClerkSession } from '@/lib/tokenCache'
 import { CLERK_PUBLISHABLE_KEY } from '@/lib/config'
 import { PlayerHost } from '@/player/PlayerHost'
 import { MiniPlayerDock } from '@/player/MiniPlayerDock'
@@ -58,19 +58,42 @@ function hideOsSplash() {
  * in, the ConnectionProvider + ConnectionGate keep that same splash up through the
  * server connect, so there's one continuous warm boot screen (see ConnectionGate).
  */
+/** How long to wait for Clerk to load before falling back to the cached session.
+ *  Offline, Clerk's isLoaded never resolves (it can't reach Clerk's servers), so
+ *  without this the app hangs on the splash forever. */
+const CLERK_LOAD_TIMEOUT_MS = 4000
+
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth()
   const segments = useSegments()
   const router = useRouter()
+  // Set when Clerk hasn't loaded in time AND we have a cached session, so a
+  // signed-in user launching offline reaches offline mode instead of hanging.
+  const [offlineFallback, setOfflineFallback] = useState(false)
 
   useEffect(() => {
-    if (!isLoaded) return
-    const onSignIn = segments[0] === 'sign-in'
-    if (!isSignedIn && !onSignIn) router.replace('/sign-in')
-    else if (isSignedIn && onSignIn) router.replace('/(tabs)')
-  }, [isLoaded, isSignedIn, segments, router])
+    if (isLoaded) return
+    const t = setTimeout(() => {
+      void hasCachedClerkSession().then((cached) => {
+        if (cached) setOfflineFallback(true)
+      })
+    }, CLERK_LOAD_TIMEOUT_MS)
+    return () => clearTimeout(t)
+  }, [isLoaded])
 
-  if (!isLoaded) return <HearthSplash phase={{ kind: 'connecting' }} onReady={hideOsSplash} />
+  // Treat a timed-out-but-cached session as signed in: Clerk can't confirm us
+  // offline, but the cached client proves we were.
+  const effectiveSignedIn = isSignedIn || (!isLoaded && offlineFallback)
+  const ready = isLoaded || offlineFallback
+
+  useEffect(() => {
+    if (!ready) return
+    const onSignIn = segments[0] === 'sign-in'
+    if (!effectiveSignedIn && !onSignIn) router.replace('/sign-in')
+    else if (effectiveSignedIn && onSignIn) router.replace('/(tabs)')
+  }, [ready, effectiveSignedIn, segments, router])
+
+  if (!ready) return <HearthSplash phase={{ kind: 'connecting' }} onReady={hideOsSplash} />
 
   // The provider mounts in both auth states: routed screens render before the
   // sign-in redirect lands (and linger through sign-out), and they call
@@ -79,7 +102,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   // isn't covered by a connect overlay.
   return (
     <ConnectionProvider>
-      {isSignedIn ? <ConnectionGate>{children}</ConnectionGate> : children}
+      {effectiveSignedIn ? <ConnectionGate>{children}</ConnectionGate> : children}
     </ConnectionProvider>
   )
 }

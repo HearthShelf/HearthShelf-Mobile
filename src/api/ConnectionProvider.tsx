@@ -17,6 +17,7 @@ import { fetchLinkedServers, type LinkedServer } from './controlPlane'
 import { connectServer } from './connect'
 import { setSession, setLastServerId, getLastServerId } from './session'
 import { CLERK_JWT_TEMPLATE } from '@/lib/config'
+import { hasCachedClerkSession } from '@/lib/tokenCache'
 import { clearAutoSession, setAutoSession, setAutoNotePops } from '@/player/autoBridge'
 import { startQueueSync } from '@/player/queueSync'
 import { startClubSync } from '@/player/clubSync'
@@ -114,9 +115,18 @@ class NoLinkedServersError extends Error {
 }
 
 export function ConnectionProvider({ children }: { children: React.ReactNode }) {
-  const { getToken, isSignedIn } = useAuth()
+  const { getToken, isLoaded, isSignedIn } = useAuth()
   const [status, setStatus] = useState<ConnectionStatus>({ phase: 'connecting' })
   const [activeRole, setActiveRole] = useState<'admin' | 'user'>('user')
+  // Offline, Clerk never loads (isSignedIn stays undefined). If a session is
+  // cached, treat the user as signed in so the connect flow runs and falls back
+  // to the offline phase via its own timeout - otherwise we'd park on the splash.
+  const [cachedSession, setCachedSession] = useState(false)
+  useEffect(() => {
+    if (isLoaded) return
+    void hasCachedClerkSession().then(setCachedSession)
+  }, [isLoaded])
+  const effectiveSignedIn = isSignedIn || (!isLoaded && cachedSession)
 
   // getToken identity changes across renders; keep a stable wrapper.
   const getTokenRef = useRef(getToken)
@@ -213,18 +223,18 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   // that would fail on a null token; consumers treat anything short of `ready` as
   // loading, and the redirect to /sign-in takes over.
   useEffect(() => {
-    if (!isSignedIn) {
+    if (!effectiveSignedIn) {
       setStatus({ phase: 'connecting' })
       return
     }
     void connect()
-  }, [connect, isSignedIn])
+  }, [connect, effectiveSignedIn])
 
   // Watch connectivity for the whole signed-in lifetime: when the network
   // returns while we're offline, retry the connect and flush pending progress.
   // Event-driven (no polling), so it costs nothing while offline.
   useEffect(() => {
-    if (!isSignedIn) return
+    if (!effectiveSignedIn) return
     startConnectivityWatch(() => {
       setStatus((cur) => {
         if (cur.phase !== 'ready') void connect()
@@ -232,7 +242,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
       })
     })
     return () => stopConnectivityWatch()
-  }, [connect, isSignedIn])
+  }, [connect, effectiveSignedIn])
 
   const serverName = status.phase === 'ready' ? status.serverName : null
 
