@@ -90,6 +90,51 @@ an account you land on `/home` connected to your server - confirming the
 downstream grant -> `/hs/hosted/connect` -> ABS token handshake still works
 (the Clerk session is identical regardless of which Google flow produced it).
 
+## Discord sign-in
+
+"Continue with Discord" is wired in `app/sign-in.tsx` and needs no client IDs in
+this repo - Clerk has no native Discord hook, so it always uses the browser-tab
+OAuth flow (`startSSOFlow({ strategy: 'oauth_discord' })`), the same mechanism as
+the Google browser fallback. All the Discord credentials live in Clerk.
+
+To turn it on:
+
+1. **Discord Developer Portal** (https://discord.com/developers/applications):
+   create an application -> OAuth2. Copy the **Client ID** and **Client Secret**.
+   Add Clerk's redirect URL (shown in the Clerk dashboard step below) to the
+   OAuth2 **Redirects** list.
+2. **Clerk dashboard** -> **User & Authentication -> Social Connections ->
+   Discord** -> enable. For production, toggle **"Use custom credentials"** ON
+   and paste the Discord Client ID + Secret; copy the **Redirect URI** Clerk
+   shows back into the Discord portal (step 1).
+3. No env var and no rebuild are needed for a JS-only change - but the button
+   already ships, so once the Clerk connection is enabled it works on the next
+   run. The app-side redirect it uses is the same `hearthshelf://sso-callback`
+   deep link already allowlisted for Google's browser flow.
+
+There is no native account-picker for Discord on Android or iOS; it always opens
+the in-app browser tab. That is expected, not a gap.
+
+## iOS readiness (native Google + Discord)
+
+The code paths for iOS already exist; iOS is gated only on Apple provisioning
+(the $99 Apple Developer enrollment) and dashboard config, not on new code here:
+
+- **Native Google on iOS**: `NATIVE_GOOGLE_ENABLED` has an iOS branch that turns
+  on when `EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID` and
+  `EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME` are set (plus the shared web client
+  ID). `useSignInWithGoogle()` drives `ASAuthorization` on iOS. Create the iOS
+  OAuth client (step 2 above), register it on Clerk's Native Applications page,
+  and set the two env vars. The reversed iOS client ID goes in
+  `EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME`; the `@clerk/expo` config plugin
+  writes it into the iOS `CFBundleURLTypes` during prebuild.
+- **Discord on iOS**: nothing iOS-specific - the browser-tab flow is identical
+  across platforms once the Clerk Discord connection is enabled.
+
+Until the Apple account is paid and an iOS build can be produced, none of this is
+verifiable on-device; the GitHub Actions iOS simulator workflow only proves the
+native project compiles.
+
 ## Notes / decisions still open
 
 - **Dev vs prod Clerk instance**: the default `pk_live_...` points at the prod

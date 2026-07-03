@@ -28,6 +28,9 @@ WebBrowser.maybeCompleteAuthSession()
  *     uses Clerk's native Android Credential Manager account-picker sheet via
  *     useSignInWithGoogle() - one tap, no browser.
  *   - Otherwise it falls back to the browser-tab OAuth flow via useSSO().
+ * "Continue with Discord" always uses the browser-tab OAuth flow - Clerk has no
+ * native Discord hook, so there is no account-picker sheet for it on any
+ * platform.
  * Email/password is kept as a secondary fallback. Either way the result is a
  * real Clerk session, which the control plane verifies for the grant ->
  * /hs/hosted/connect -> ABS token handshake.
@@ -53,37 +56,58 @@ export default function SignInScreen() {
     }
   }, [])
 
-  async function onGoogle() {
+  // Completes a flow that returns a created session id + its own setActive
+  // (both the native Google hook and useSSO share this shape). `label` is only
+  // used to phrase the "did not complete" / failure messages.
+  async function completeFlow(
+    label: string,
+    run: () => Promise<{
+      createdSessionId?: string | null
+      setActive?: (opts: { session: string }) => Promise<unknown>
+    }>,
+  ) {
     if (busy) return
     setBusy(true)
     setError(null)
     try {
-      // Native account-picker sheet (Android Credential Manager) when the
-      // Google client IDs are provisioned; otherwise the browser-tab OAuth flow.
-      const { createdSessionId, setActive: flowSetActive } = NATIVE_GOOGLE_ENABLED
-        ? await startGoogleAuthenticationFlow()
-        : // Let useSSO build its own redirect (scheme + 'sso-callback' path) so
-          // it matches Clerk's native flow exactly. Passing a custom one (e.g.
-          // '/home') caused a redirect-url mismatch. The value to allowlist in
-          // the Clerk dashboard is `hearthshelf://sso-callback`.
-          await startSSOFlow({ strategy: 'oauth_google' })
-
+      const { createdSessionId, setActive: flowSetActive } = await run()
       if (createdSessionId && flowSetActive) {
         await flowSetActive({ session: createdSessionId })
         router.replace('/(tabs)')
       } else {
         // No session usually means the user cancelled the picker / browser flow.
-        setError('Google sign-in did not complete')
+        setError(`${label} sign-in did not complete`)
       }
     } catch (e) {
       const msg =
         (e as { errors?: Array<{ message?: string }> })?.errors?.[0]?.message ||
         (e as Error).message ||
-        'Google sign-in failed'
+        `${label} sign-in failed`
       setError(msg)
     } finally {
       setBusy(false)
     }
+  }
+
+  function onGoogle() {
+    // Native account-picker sheet (Android Credential Manager / iOS
+    // ASAuthorization) when the Google client IDs are provisioned; otherwise
+    // the browser-tab OAuth flow.
+    //
+    // Let useSSO build its own redirect (scheme + 'sso-callback' path) so it
+    // matches Clerk's native flow exactly. Passing a custom one (e.g. '/home')
+    // caused a redirect-url mismatch. The value to allowlist in the Clerk
+    // dashboard is `hearthshelf://sso-callback`.
+    return completeFlow('Google', () =>
+      NATIVE_GOOGLE_ENABLED
+        ? startGoogleAuthenticationFlow()
+        : startSSOFlow({ strategy: 'oauth_google' }),
+    )
+  }
+
+  function onDiscord() {
+    // Discord has no native Clerk hook - always the browser-tab OAuth flow.
+    return completeFlow('Discord', () => startSSOFlow({ strategy: 'oauth_discord' }))
   }
 
   async function onSignIn() {
@@ -123,6 +147,14 @@ export default function SignInScreen() {
           <ActivityIndicator color="#1f1b18" />
         ) : (
           <Text style={styles.googleText}>Continue with Google</Text>
+        )}
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.discord} onPress={onDiscord} disabled={busy}>
+        {busy ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.discordText}>Continue with Discord</Text>
         )}
       </TouchableOpacity>
 
@@ -194,6 +226,14 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   googleText: { color: '#1f1b18', fontSize: 16, fontWeight: '600' },
+  discord: {
+    backgroundColor: '#5865F2',
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  discordText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 16 },
   divider: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: '#3a322c' },
   dividerText: { color: '#a99', fontSize: 13 },
