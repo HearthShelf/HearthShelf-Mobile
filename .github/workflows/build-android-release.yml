@@ -79,10 +79,12 @@ jobs:
           ORG_GRADLE_PROJECT_HEARTHSHELF_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ORG_GRADLE_PROJECT_HEARTHSHELF_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          # --stacktrace surfaces the real exception (packageRelease wraps the
+          # cause in IncrementalSplitterRunnable and hides it otherwise).
           if [ "${{ inputs.artifact_kind }}" = "apk" ]; then
-            ./gradlew :app:assembleRelease
+            ./gradlew :app:assembleRelease --stacktrace
           else
-            ./gradlew :app:bundleRelease
+            ./gradlew :app:bundleRelease --stacktrace
           fi
         working-directory: android
 
