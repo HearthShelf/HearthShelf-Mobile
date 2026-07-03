@@ -454,3 +454,9 @@ export function localSourceFor(itemId: string): DownloadEntry | null {
   const e = state.byId.get(itemId)
   return e && e.status === 'done' && e.tracks.length > 0 ? e : null
 }
+
+/** Local file uri of a downloaded book's cover, or null. Covers show offline
+ *  (and save a network round-trip online) by reading the saved cover.jpg. */
+export function localCoverFor(itemId: string): string | null {
+  return state.byId.get(itemId)?.coverUri ?? null
+}

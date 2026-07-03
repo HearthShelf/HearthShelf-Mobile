@@ -18,7 +18,12 @@
  * matching the other stores (downloads, progress).
  */
 import * as SQLite from 'expo-sqlite'
-import type { ABSBookShelf, ABSLibraryItem, ABSLibraryItemDetail } from '@hearthshelf/core'
+import type {
+  ABSBookShelf,
+  ABSChapter,
+  ABSLibraryItem,
+  ABSLibraryItemDetail,
+} from '@hearthshelf/core'
 
 /** Whether a catalog row is an actual download or a metadata-only series skeleton. */
 export type CatalogPresence = 'downloaded' | 'skeleton'
@@ -456,6 +461,68 @@ function catalogToLibraryItem(c: CatalogItem): ABSLibraryItem {
         language: null,
         explicit: false,
       },
+    },
+  }
+}
+
+/** The bits of a downloaded book the offline detail needs from the downloads
+ *  store (chapters + audio the catalog doesn't keep). Passed in so this module
+ *  stays independent of the downloads store. */
+export interface OfflineDetailAudio {
+  duration: number
+  chapters: ABSChapter[]
+  tracks: { index: number; duration: number }[]
+}
+
+/**
+ * Reconstruct an ABSLibraryItemDetail for a downloaded book entirely offline,
+ * from its catalog row (rich metadata) plus its on-disk audio (chapters, tracks,
+ * duration). Lets the item detail screen render and play a downloaded book with
+ * no server. Returns null if we have no catalog row for it. Fields the server
+ * would supply but we never snapshot (description, isbn/asin, publisher, ratings)
+ * come back empty - acceptable degradation offline; everything needed to browse
+ * and play is present.
+ */
+export function offlineDetailFor(
+  itemId: string,
+  audio: OfflineDetailAudio,
+): ABSLibraryItemDetail | null {
+  const c = state.byId.get(itemId)
+  if (!c) return null
+  const base = catalogToLibraryItem(c)
+  const authors = c.author
+    ? c.author.split(',').map((name, i) => ({ id: `offline-author-${i}`, name: name.trim() }))
+    : []
+  const narrators = c.narrator
+    ? c.narrator.split(',').map((n) => n.trim()).filter(Boolean)
+    : []
+  const audioFiles = audio.tracks.map((t) => ({
+    index: t.index,
+    ino: `offline-${t.index}`,
+    duration: t.duration,
+    metadata: { filename: `track-${t.index}`, ext: '', size: 0 },
+  }))
+  return {
+    ...base,
+    media: {
+      id: c.id,
+      coverPath: null,
+      tags: [],
+      numTracks: audioFiles.length,
+      numAudioFiles: audioFiles.length,
+      size: 0,
+      metadata: {
+        ...base.media.metadata,
+        authors,
+        narrators,
+        series: c.series.map((s) => ({ id: s.id, name: s.name, sequence: s.sequence })),
+        isbn: null,
+        asin: null,
+        publisher: null,
+        rating: null,
+      },
+      audioFiles,
+      chapters: audio.chapters,
     },
   }
 }

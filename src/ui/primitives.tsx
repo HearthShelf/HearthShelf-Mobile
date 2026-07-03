@@ -3,7 +3,7 @@
  * these so colors/radii/spacing come from src/ui/theme.ts rather than per-screen
  * hardcoded hex. Bottom sheets use @gorhom/bottom-sheet (see Sheet below).
  */
-import { forwardRef, useEffect, useMemo, useState } from 'react'
+import { forwardRef, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import {
   ActivityIndicator,
   Image,
@@ -30,6 +30,7 @@ import {
   BottomSheetView,
   type BottomSheetModalProps,
 } from '@gorhom/bottom-sheet'
+import { localCoverFor, subscribeDownloads } from '@/player/downloads'
 import { CoverDownloadOverlay } from './CoverDownloadOverlay'
 import { Icon, icons, type IconName } from './icons'
 import { TypesetCover } from './TypesetCover'
@@ -326,6 +327,17 @@ export function Cover({
   const w = size ?? width
   const dims: ImageStyle = size ? { width: size, height: size } : { width: w, aspectRatio }
 
+  // Prefer a downloaded book's saved cover, so covers show offline (and skip a
+  // network round-trip online). Re-resolves when a download completes.
+  const localCover = useSyncExternalStore(
+    subscribeDownloads,
+    () => (itemId ? localCoverFor(itemId) : null),
+  )
+  const src = localCover ?? uri
+  // A changed source (download completed, or a recycled row rebinds a new item)
+  // deserves a fresh load attempt - clear any prior failure.
+  useEffect(() => setFailed(false), [src])
+
   // The overlay needs a pixel size to scale its ring. Use the known width when
   // we have one, otherwise fall back to the measured layout width (for callers
   // that size the cover via flex/style rather than an explicit width).
@@ -337,7 +349,7 @@ export function Cover({
     ? (e: LayoutChangeEvent) => setMeasured(e.nativeEvent.layout.width)
     : undefined
 
-  const hasUri = !!uri
+  const hasUri = !!src
   if (!hasUri || failed) {
     const body = fallback ? (
       <TypesetCover
@@ -364,7 +376,7 @@ export function Cover({
 
   const image = (
     <Image
-      source={{ uri }}
+      source={{ uri: src }}
       onError={() => setFailed(true)}
       style={[styles.cover, dims, { borderRadius: r }, style]}
     />

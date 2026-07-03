@@ -65,7 +65,9 @@ import {
   downloadItem,
   cancelDownload,
   deleteDownload,
+  downloadFor,
 } from '@/player/downloads'
+import { offlineDetailFor } from '@/player/offlineCatalog'
 import { requestSeek } from '@/player/store'
 import { playItemById } from '@/player/playback'
 import { AddToListSheet } from '@/player/AddToListSheet'
@@ -149,8 +151,29 @@ export default function ItemDetailScreen() {
     if (!id) return
     let cancelled = false
     void (async () => {
+      let d: ABSLibraryItemDetail
       try {
-        const d = await getItemDetail(id)
+        d = await getItemDetail(id)
+      } catch (e) {
+        // Offline (or the server is unreachable): rebuild the detail from the
+        // downloaded book's own cached metadata + audio, so a downloaded book
+        // still opens and plays. Only the server-only extras (who's listening,
+        // notes, description) are missing.
+        const dl = downloadFor(id)
+        const offline = dl
+          ? offlineDetailFor(id, {
+              duration: dl.duration,
+              chapters: dl.chapters,
+              tracks: dl.tracks,
+            })
+          : null
+        if (!cancelled) {
+          if (offline) setDetail(offline)
+          else setError((e as Error).message)
+        }
+        return
+      }
+      try {
         if (cancelled) return
         setDetail(d)
 
