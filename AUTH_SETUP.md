@@ -2,9 +2,9 @@
 
 The app code for native Google sign-in is done (`useSignInWithGoogle()` in
 `app/sign-in.tsx`, gated by `NATIVE_GOOGLE_ENABLED`). It stays on the working
-browser-tab OAuth flow until the steps below are completed and the env vars are
-set - at which point it switches to the native Android Credential Manager
-account-picker with no code change.
+browser-tab OAuth flow until the platform credentials below are completed and
+the env vars are set - at which point it switches to the native Google flow with
+no code change.
 
 These steps need a Google Cloud account and the HearthShelf Clerk dashboard;
 they can't be automated from here. Sourced from Clerk's Expo "Sign in with
@@ -37,8 +37,8 @@ In Google Cloud Console -> APIs & Services -> Credentials, create:
   (Used by Clerk's backend to verify the ID token.)
 - **Android** client -> package name `com.hearthshelf.mobile` + the SHA-256
   from step 1. Gives an **Android Client ID** (no secret).
-- **iOS** client (for the later iOS milestone) -> bundle ID
-  `com.hearthshelf.mobile`. Gives an **iOS Client ID** + a reversed URL scheme.
+- **iOS** client -> bundle ID `com.hearthshelf.mobile`. Gives an **iOS Client
+  ID** + a reversed URL scheme.
 
 ## 3. Configure Clerk dashboard
 
@@ -61,10 +61,13 @@ Copy `.env.example` -> `.env` and fill in the **public** IDs (never the secret):
 ```
 EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID=<web client id>
 EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID=<android client id>
+EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID=<ios client id>
+EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME=<reversed ios client id>
 ```
 
-Setting `EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID` flips `NATIVE_GOOGLE_ENABLED`
-on. Metro inlines `EXPO_PUBLIC_*` at build time, so:
+Android native sign-in turns on when the Web and Android client IDs are present.
+iOS native sign-in turns on when the Web client ID, iOS client ID, and iOS URL
+scheme are present. Metro inlines `EXPO_PUBLIC_*` at build time, so:
 
 ## 5. Rebuild (native, not Expo Go)
 
@@ -72,6 +75,10 @@ on. Metro inlines `EXPO_PUBLIC_*` at build time, so:
 npx expo prebuild --platform android   # re-runs config plugins
 npm run android                        # build + install dev client
 ```
+
+For iOS without a Mac, run the GitHub Actions iOS simulator workflow. It verifies
+the native project compiles, but real sign-in still needs an iOS device or
+simulator runtime with the proper Clerk/Google dashboard setup.
 
 Native Google sign-in does not work in Expo Go - it needs a dev/native build.
 

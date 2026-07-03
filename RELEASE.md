@@ -1,7 +1,7 @@
 # Release & build pipeline
 
 How HearthShelf Mobile gets from source to an installable/Play-Store build.
-Android first; iOS is a later milestone.
+Android first; iOS simulator builds are now wired for early native validation.
 
 ## What's automated (in this repo)
 
@@ -17,6 +17,11 @@ Android first; iOS is a later milestone.
   input off. The CI run number is stamped as the Android `versionCode`
   (`EXPO_ANDROID_VERSION_CODE`, read in `app.config.js`) so every build is
   distinguishable on-device and monotonic.
+- **iOS simulator build** (`.github/workflows/build-ios-simulator.yml`): runs on
+  manual dispatch and on PRs that touch native/app files. It uses a macOS runner
+  to prebuild iOS, install Pods, compile an unsigned Simulator `.app`, and upload
+  it as an artifact. This does **not** need an Apple developer account, signing
+  certificate, provisioning profile, TestFlight, or a device.
 
 Both check out the `packages/core` submodule (`submodules: recursive`).
 
@@ -49,6 +54,7 @@ every prebuild - see TESTING.md. Now it survives.)
   `EXPO_ANDROID_VERSION_CODE` (see `app.config.js`); the `app.json` value is the
   local-dev fallback.
 - iOS build number (later): `expo.ios.buildNumber`.
+  GitHub Actions stamps it from `EXPO_IOS_BUILD_NUMBER`; local fallback is `1`.
 
 ## Release signing (manual - needs YOUR keystore)
 
@@ -92,9 +98,15 @@ a Play service-account JSON as a CI secret.
 Add a lightweight error reporter (e.g. Sentry's Expo plugin) so tester crashes
 are visible. Defer until there's a tester pool; it's additive.
 
-## iOS (later milestone)
+## iOS
 
-Same RN codebase. Adds: iOS Google client ID + URL scheme
-(`EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME`, already plumbed), a CarPlay Swift
-content-tree module mirroring the Android Auto service, the Apple CarPlay audio
-**entitlement** request, and a TestFlight pipeline.
+Same RN codebase. Current state:
+
+- Simulator compile is handled by GitHub Actions on macOS.
+- iOS background audio mode is declared in `app.config.js`.
+- Native Google sign-in stays on browser OAuth until the Web client ID, iOS
+  client ID, and iOS URL scheme env vars are all present.
+- Device/TestFlight builds still need an Apple developer account, signing
+  assets, and either EAS Build/Submit or a macOS signing workflow.
+- CarPlay still needs a Swift content-tree module mirroring the Android Auto
+  service plus Apple's CarPlay audio entitlement approval.

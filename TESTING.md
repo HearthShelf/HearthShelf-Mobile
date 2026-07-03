@@ -12,6 +12,18 @@ The build toolchain is installed on this machine (no EAS needed):
 - **Android Auto Desktop Head Unit (DHU)** at
   `%LOCALAPPDATA%\Android\Sdk\extras\google\auto\desktop-head-unit.exe`.
 
+## iOS from Windows
+
+Local iOS native generation/builds are not available on Windows; Expo refuses to
+generate the iOS project here and Xcode only runs on macOS. Use the GitHub
+Actions workflow **Build iOS Simulator** instead. It runs on a macOS runner,
+prebuilds the iOS project, installs Pods, compiles an unsigned Simulator `.app`,
+and uploads it as an artifact.
+
+This does not require an Apple developer account or a physical device. It proves
+the native iOS project compiles, but it does not prove device signing,
+TestFlight, push/entitlement behavior, or CarPlay.
+
 ## Gradle gotcha (already fixed in `android/gradle.properties`)
 
 RN 0.85 / AGP 9 need a JDK 21 toolchain, and toolchain auto-download is off, so
@@ -27,7 +39,7 @@ org.gradle.java.installations.paths=C:/Program Files/Eclipse Adoptium/jdk-21.0.1
 ## Peer deps that must be installed (Clerk + expo-router)
 
 `create-expo-app` + ad-hoc installs don't pull every transitive native peer, so
-these had to be added explicitly (all at SDK-56 versions; `expo install --check`
+these had to be added explicitly (all at SDK-57 versions; `expo install --check`
 stays green):
 
 - expo-router needs: `expo-linking`, `expo-constants`, `expo-status-bar`
@@ -40,7 +52,7 @@ rebuild the APK** - a JS-only reload throws `Cannot find native module
 'ExpoLinking'` because the old APK lacks the native side. Lesson: add native deps
 *before* building, or rebuild after.
 
-> Do NOT run `ncu -u` here. This is an Expo SDK 56 app; `expo install --check`
+> Do NOT run `ncu -u` here. This is an Expo SDK 57 app; `expo install --check`
 > is the source of truth for versions. `ncu` wants to bump react-native, gesture-
 > handler, and async-storage past what SDK 56 supports, which breaks the native
 > build. "Up to date" for an Expo app = "matches the SDK," and it already does.

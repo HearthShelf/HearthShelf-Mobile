@@ -16,7 +16,8 @@ const extra = {
   EXPO_PUBLIC_CONTROL_PLANE_URL: process.env.EXPO_PUBLIC_CONTROL_PLANE_URL,
   EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY,
   EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID: process.env.EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID,
-  EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID: process.env.EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID,
+  EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID:
+    process.env.EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID,
   EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID: process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID,
   EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME: process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME,
 }
@@ -27,6 +28,10 @@ const extra = {
 const versionCode = process.env.EXPO_ANDROID_VERSION_CODE
   ? Number(process.env.EXPO_ANDROID_VERSION_CODE)
   : 1
+
+// iOS build numbers are strings in Expo/Apple tooling. GitHub Actions can stamp
+// this with its run number; local builds fall back to the static value.
+const iosBuildNumber = process.env.EXPO_IOS_BUILD_NUMBER || '1'
 
 module.exports = {
   name: 'HearthShelf',
@@ -39,7 +44,9 @@ module.exports = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: 'com.hearthshelf.mobile',
+    buildNumber: iosBuildNumber,
     infoPlist: {
+      ITSAppUsesNonExemptEncryption: false,
       UIBackgroundModes: ['audio'],
     },
   },

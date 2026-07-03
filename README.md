@@ -4,7 +4,9 @@ React Native (Expo) mobile app for HearthShelf - a browser-first, self-hosted
 UI/UX over AudiobookShelf (ABS). The phone app signs into the hosted front door
 (`app.hearthshelf.com`), connects to the user's linked server, and plays their
 audiobook library - including in the car via **Android Auto** (native Media3
-`MediaLibraryService`).
+`MediaLibraryService`). iOS uses the same React Native app; GitHub Actions can
+build an unsigned iOS Simulator app, while device/TestFlight builds wait on
+Apple developer credentials.
 
 This started as a spike (`spike/android-auto-rn` in the `HearthShelf` repo) and
 was extracted here once it was proven end-to-end on a real device + a real car.
@@ -13,13 +15,15 @@ ruled out) and `TESTING.md` for build/run/in-car testing.
 
 ## Stack
 
-- **App:** Expo SDK 56, React Native 0.85, Expo Router, TypeScript
+- **App:** Expo SDK 57, React Native 0.86, Expo Router, TypeScript
 - **Auth:** Clerk (Google OAuth) -> control-plane grant -> `/hs/hosted/connect`
   -> per-user ABS token (mirrors the web app's flow)
 - **Audio:** `react-native-video` (Media3 engine, background + lock-screen)
 - **Android Auto:** a native Kotlin Media3 `MediaLibraryService`
   (`plugins/hearthshelf-auto`, an Expo config plugin) - the only free path that
   works; Google forbids the Car App Library template model for car *audio*.
+- **iOS:** Expo prebuild + Xcode simulator builds in GitHub Actions; CarPlay and
+  TestFlight are gated on Apple entitlement/account setup.
 
 ## Quick start
 
@@ -29,8 +33,9 @@ npx expo prebuild --platform android   # runs the config plugins (incl. Android 
 npm run android                        # build + run on a connected device
 ```
 
-A local Android toolchain (JDK 17 + Android SDK) is required - see `TESTING.md`.
-No EAS account needed for local builds.
+A local Android toolchain (JDK 21 + Android SDK) is required - see `TESTING.md`.
+iOS builds require macOS/Xcode, so use the GitHub Actions simulator workflow
+until you have a Mac or cloud release credentials.
 
 ## Relationship to the other repos
 

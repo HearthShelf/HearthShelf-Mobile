@@ -10,6 +10,7 @@
  * dashboard, never here.
  */
 import Constants from 'expo-constants'
+import { Platform } from 'react-native'
 
 const extra = (Constants.expoConfig?.extra ?? {}) as Record<string, string | undefined>
 
@@ -48,11 +49,16 @@ export const CLERK_JWT_TEMPLATE = 'hearthshelf'
 export const GOOGLE_WEB_CLIENT_ID = cfg('EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID', '')
 export const GOOGLE_ANDROID_CLIENT_ID = cfg('EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID', '')
 export const GOOGLE_IOS_CLIENT_ID = cfg('EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID', '')
+export const GOOGLE_IOS_URL_SCHEME = cfg('EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME', '')
 
 /**
  * Whether to offer the native Google account-picker. Clerk's native flow needs
- * the dashboard credentials configured; until the Web client ID is provisioned
- * we fall back to the browser-tab OAuth flow (useSSO), which needs no client ID
- * here. Flipping this on is a config change, not a code change.
+ * the dashboard credentials configured; until the platform credentials are
+ * provisioned we fall back to the browser-tab OAuth flow (useSSO), which needs
+ * no client ID here. Flipping this on is a config change, not a code change.
  */
-export const NATIVE_GOOGLE_ENABLED = GOOGLE_WEB_CLIENT_ID.length > 0
+export const NATIVE_GOOGLE_ENABLED =
+  GOOGLE_WEB_CLIENT_ID.length > 0 &&
+  (Platform.OS === 'android'
+    ? GOOGLE_ANDROID_CLIENT_ID.length > 0
+    : Platform.OS === 'ios' && GOOGLE_IOS_CLIENT_ID.length > 0 && GOOGLE_IOS_URL_SCHEME.length > 0)
