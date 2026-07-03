@@ -19,7 +19,7 @@ import * as Crypto from 'expo-crypto'
 import type { QueueMode, AutoRulePref, SettingValue } from '@hearthshelf/core'
 import { DEFAULT_AUTO_RULES, SETTINGS_CATALOG } from '@hearthshelf/core'
 
-export type ThemePref = 'dark' | 'light' | 'flat' | 'oled'
+export type ThemePref = 'auto' | 'dark' | 'light' | 'flat' | 'oled'
 export type AccentMode = 'dynamic' | 'manual'
 export type GlowMode = 'gradient' | 'image'
 /** Full-player background: blurred cover art, a breathing hue gradient, or the

@@ -266,10 +266,7 @@ async function upsertRows(items: CatalogItem[]): Promise<void> {
 /** A 'skeleton' write must not overwrite an existing 'downloaded' row (in memory
  *  or on disk). For those, keep the downloaded presence but let the richer
  *  series metadata through - so the downloaded book still gets its series info. */
-async function resolveRow(
-  d: SQLite.SQLiteDatabase,
-  item: CatalogItem,
-): Promise<CatalogItem> {
+async function resolveRow(d: SQLite.SQLiteDatabase, item: CatalogItem): Promise<CatalogItem> {
   if (item.presence === 'downloaded') return item
   // item is a skeleton: does a downloaded row already exist for this id?
   if (state.byId.get(item.id)?.presence === 'downloaded') {
@@ -494,7 +491,10 @@ export function offlineDetailFor(
     ? c.author.split(',').map((name, i) => ({ id: `offline-author-${i}`, name: name.trim() }))
     : []
   const narrators = c.narrator
-    ? c.narrator.split(',').map((n) => n.trim()).filter(Boolean)
+    ? c.narrator
+        .split(',')
+        .map((n) => n.trim())
+        .filter(Boolean)
     : []
   const audioFiles = audio.tracks.map((t) => ({
     index: t.index,
@@ -593,7 +593,11 @@ export function catalogAuthors(): CatalogGroup[] {
 export function catalogNarrators(): CatalogGroup[] {
   const names: string[] = []
   for (const c of catalogItems()) {
-    for (const n of c.narrator.split(',').map((s) => s.trim()).filter(Boolean)) names.push(n)
+    for (const n of c.narrator
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean))
+      names.push(n)
   }
   return groupByName(names)
 }
@@ -602,9 +606,10 @@ export function catalogNarrators(): CatalogGroup[] {
  *  - `inProgress`: downloaded books you've started (for the hero + Continue row),
  *    most-progressed first.
  *  - `shelves`: the rest of your downloads grouped into genre categories. */
-export function catalogHomeShelves(
-  progressOf: (id: string) => number | undefined,
-): { inProgress: ABSLibraryItem[]; shelves: ABSBookShelf[] } {
+export function catalogHomeShelves(progressOf: (id: string) => number | undefined): {
+  inProgress: ABSLibraryItem[]
+  shelves: ABSBookShelf[]
+} {
   const items = catalogItems()
   const inProgress = items
     .filter((c) => {

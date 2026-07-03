@@ -329,9 +329,8 @@ export function Cover({
 
   // Prefer a downloaded book's saved cover, so covers show offline (and skip a
   // network round-trip online). Re-resolves when a download completes.
-  const localCover = useSyncExternalStore(
-    subscribeDownloads,
-    () => (itemId ? localCoverFor(itemId) : null),
+  const localCover = useSyncExternalStore(subscribeDownloads, () =>
+    itemId ? localCoverFor(itemId) : null,
   )
   const src = localCover ?? uri
   // A changed source (download completed, or a recycled row rebinds a new item)

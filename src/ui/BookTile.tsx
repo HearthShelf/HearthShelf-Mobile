@@ -16,7 +16,8 @@ import { getSettingsState, subscribeSettings, COVER_ASPECT_RATIO } from '@/store
 import { AppText, Cover } from './primitives'
 import { SpringPressable } from './motion'
 import { Icon, icons } from './icons'
-import { colors, radius, spacing } from './theme'
+import { radius, spacing } from './theme'
+import { useColors } from './ThemeProvider'
 
 export function BookTile({
   item,
@@ -34,6 +35,7 @@ export function BookTile({
   onToggle?: () => void
 }) {
   const router = useRouter()
+  const colors = useColors()
   const { coverAspect } = useSyncExternalStore(subscribeSettings, getSettingsState)
   const title = itemTitle(item)
   return (
@@ -52,11 +54,19 @@ export function BookTile({
           fallback={{ hue: coverHue(item.id), initial: coverInitial(title), title }}
         />
         {selecting ? (
-          <View style={[styles.check, selected && styles.checkOn]}>
+          <View
+            style={[
+              styles.check,
+              { borderColor: colors.text, backgroundColor: colors.scrim },
+              selected && { backgroundColor: colors.accent, borderColor: colors.accent },
+            ]}
+          >
             {selected ? <Icon name={icons.check} size={16} color={colors.onAccent} /> : null}
           </View>
         ) : null}
-        {selected ? <View style={styles.selOverlay} pointerEvents="none" /> : null}
+        {selected ? (
+          <View style={[styles.selOverlay, { borderColor: colors.accent }]} pointerEvents="none" />
+        ) : null}
       </View>
       <View style={styles.meta}>
         <AppText variant="caption" numberOfLines={2}>
@@ -81,12 +91,9 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 7,
     borderWidth: 2,
-    borderColor: colors.text,
-    backgroundColor: colors.scrim,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkOn: { backgroundColor: colors.accent, borderColor: colors.accent },
   selOverlay: {
     position: 'absolute',
     top: 0,
@@ -95,6 +102,5 @@ const styles = StyleSheet.create({
     bottom: 0,
     borderRadius: radius.tile,
     borderWidth: 2,
-    borderColor: colors.accent,
   },
 })

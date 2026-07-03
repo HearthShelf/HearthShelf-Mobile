@@ -24,7 +24,7 @@ export default function AppearancePanel() {
         <SettingsRow
           icon="dark-mode"
           title="Theme"
-          desc="Dark is home; Light for daytime; OLED goes pure black."
+          desc="Auto follows your device; Dark is home; Light for daytime; OLED goes pure black."
           stacked
         >
           <Seg
@@ -32,6 +32,7 @@ export default function AppearancePanel() {
             onChange={(v) => setSetting('theme', v)}
             fill
             options={[
+              { value: 'auto', label: 'Auto' },
               { value: 'dark', label: 'Dark' },
               { value: 'light', label: 'Light' },
               { value: 'oled', label: 'OLED' },
@@ -45,7 +46,10 @@ export default function AppearancePanel() {
           stacked
           last
         >
-          <AccentSwatchPicker value={s.accentHex} onChange={(hex) => setSetting('accentHex', hex)} />
+          <AccentSwatchPicker
+            value={s.accentHex}
+            onChange={(hex) => setSetting('accentHex', hex)}
+          />
         </SettingsRow>
       </SettingsGroup>
 

@@ -10,6 +10,7 @@
  */
 import { createContext, useContext, useMemo } from 'react'
 import { useSyncExternalStore } from 'react'
+import { useColorScheme } from 'react-native'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { buildPalette, buildShadow, EMBER, type Palette, type ThemeName } from './theme'
 
@@ -23,7 +24,11 @@ const ThemeCtx = createContext<ActiveTheme | null>(null)
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const s = useSyncExternalStore(subscribeSettings, getSettingsState)
-  const name = s.theme as ThemeName
+  // 'auto' follows the OS appearance (system dark -> our Dark palette, system
+  // light -> Light); every other value is a concrete palette. useColorScheme()
+  // re-renders on OS light/dark changes, so Auto flips live.
+  const scheme = useColorScheme()
+  const name: ThemeName = s.theme === 'auto' ? (scheme === 'light' ? 'light' : 'dark') : s.theme
   // accentMode 'dynamic' means "follow the cover art"; until that's wired we use
   // the chosen accentHex (or ember). 'manual' always uses accentHex.
   const accent = s.accentMode === 'manual' ? s.accentHex || EMBER : s.accentHex || EMBER

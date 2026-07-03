@@ -11,7 +11,8 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 import { Icon, iconFor, icons } from './icons'
 import { haptics } from './haptics'
 import { POP_SPRING } from './motion'
-import { colors, fonts, radius } from './theme'
+import { fonts, radius } from './theme'
+import { useColors } from './ThemeProvider'
 
 export const TAB_BAR_HEIGHT = 60
 
@@ -38,9 +39,18 @@ export function AppTabBar({
   onPressTab: (name: string) => void
 }) {
   const insets = useSafeAreaInsets()
+  const colors = useColors()
   return (
     <View
-      style={[styles.bar, { height: TAB_BAR_HEIGHT + insets.bottom, paddingBottom: insets.bottom }]}
+      style={[
+        styles.bar,
+        {
+          height: TAB_BAR_HEIGHT + insets.bottom,
+          paddingBottom: insets.bottom,
+          backgroundColor: colors.popover,
+          borderTopColor: colors.hairline,
+        },
+      ]}
     >
       {TABS.map((meta) => {
         const focused = meta.name === activeName
@@ -54,7 +64,7 @@ export function AppTabBar({
               onPressTab(meta.name)
             }}
           >
-            <TabPill focused={focused}>
+            <TabPill focused={focused} activeColor={colors.accentTile}>
               <Icon name={iconFor(meta.icon, focused)} size={22} color={tint} />
             </TabPill>
             <Text
@@ -71,7 +81,15 @@ export function AppTabBar({
 }
 
 /** The active-tab pill pops in with the app's standard spring when focused. */
-function TabPill({ focused, children }: { focused: boolean; children: React.ReactNode }) {
+function TabPill({
+  focused,
+  activeColor,
+  children,
+}: {
+  focused: boolean
+  activeColor: string
+  children: React.ReactNode
+}) {
   const scale = useSharedValue(1)
   useEffect(() => {
     if (focused) {
@@ -81,7 +99,7 @@ function TabPill({ focused, children }: { focused: boolean; children: React.Reac
   }, [focused, scale])
   const animated = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }))
   return (
-    <Animated.View style={[styles.pill, focused && styles.pillActive, animated]}>
+    <Animated.View style={[styles.pill, focused && { backgroundColor: activeColor }, animated]}>
       {children}
     </Animated.View>
   )
@@ -90,9 +108,7 @@ function TabPill({ focused, children }: { focused: boolean; children: React.Reac
 const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
-    backgroundColor: colors.popover,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.hairline,
   },
   // DS: each tab has vertical padding so the pill has room and its rounded ends
   // aren't clipped by the bar's top border; 4px pill->label gap.
@@ -114,7 +130,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  pillActive: { backgroundColor: colors.accentTile },
   tabLabel: {
     fontSize: 10,
     fontWeight: '600',
