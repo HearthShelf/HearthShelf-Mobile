@@ -1,44 +1,39 @@
 /**
- * Progress written while offline, waiting to reach the server.
+ * Playback sessions recorded while the server was unreachable, waiting to reach
+ * ABS.
  *
- * When a downloaded book plays with no server session (playback.ts, `active`
- * null), each position tick lands here instead of being dropped. The newest
- * position per item wins - we only need where the listener actually got to, not
- * every intermediate tick. On reconnect (connectivity watcher / background task)
- * flush() PATCHes each item's final position to ABS and clears it.
+ * A downloaded book played offline (playback.ts, `offline` set) accrues a local
+ * session here - real listened-time plus the final position - keyed by the book.
+ * The newest record per item wins; a session only grows within one listen. On
+ * reconnect (connectivity watcher / background task) flush() POSTs them to ABS's
+ * /api/session/local-all, which ingests each as a real playback session, so an
+ * hour listened offline shows up in recent listens and stats with the right
+ * listened-time and date - not just a moved progress bar.
  *
- * Persisted to AsyncStorage so a position survives the app being killed offline
+ * Persisted to AsyncStorage so an offline listen survives the app being killed
  * and still syncs the next time the network returns.
  *
  * Plain subscribe/snapshot store (same shape as the other stores).
  */
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { putItemProgress } from '@/api/abs'
+import { syncLocalSessions, type LocalSession } from '@/api/abs'
 import { getSession } from '@/api/session'
 
-export interface PendingProgress {
-  itemId: string
-  currentTime: number
-  duration: number
-  /** When this position was recorded (ms epoch), for newest-wins on flush. */
-  atMs: number
+export interface PendingSessionState {
+  byId: ReadonlyMap<string, LocalSession>
 }
 
-export interface PendingProgressState {
-  byId: ReadonlyMap<string, PendingProgress>
-}
-
-const STORE_KEY = 'hs.pendingProgress.v1'
+const STORE_KEY = 'hs.pendingSessions.v1'
 
 /** Name of the OS background task that flushes this store. Lives here (not in
  *  connectivity.ts) so the headless task module can reference it without pulling
  *  NetInfo into the cold-wake bundle. */
 export const BACKGROUND_FLUSH_TASK = 'hs-flush-pending-progress'
 
-let state: PendingProgressState = { byId: new Map() }
+let state: PendingSessionState = { byId: new Map() }
 const listeners = new Set<() => void>()
 
-function emit(byId: Map<string, PendingProgress>): void {
+function emit(byId: Map<string, LocalSession>): void {
   state = { byId }
   listeners.forEach((l) => l())
 }
@@ -48,11 +43,11 @@ function persist(): void {
   void AsyncStorage.setItem(STORE_KEY, JSON.stringify({ items })).catch(() => {})
 }
 
-export function getPendingProgressState(): PendingProgressState {
+export function getPendingSessionState(): PendingSessionState {
   return state
 }
 
-export function subscribePendingProgress(fn: () => void): () => void {
+export function subscribePendingSessions(fn: () => void): () => void {
   listeners.add(fn)
   return () => {
     listeners.delete(fn)
@@ -63,15 +58,15 @@ export function pendingCount(): number {
   return state.byId.size
 }
 
-/** Load persisted pending positions on app start. */
+/** Load persisted pending sessions on app start. */
 export async function hydratePendingProgress(): Promise<void> {
   try {
     const raw = await AsyncStorage.getItem(STORE_KEY)
     if (!raw) return
-    const parsed = JSON.parse(raw) as { items?: PendingProgress[] }
-    const byId = new Map<string, PendingProgress>()
-    for (const p of parsed.items ?? []) {
-      if (p && typeof p.itemId === 'string') byId.set(p.itemId, p)
+    const parsed = JSON.parse(raw) as { items?: LocalSession[] }
+    const byId = new Map<string, LocalSession>()
+    for (const s of parsed.items ?? []) {
+      if (s && typeof s.libraryItemId === 'string') byId.set(s.libraryItemId, s)
     }
     emit(byId)
   } catch {
@@ -80,20 +75,20 @@ export async function hydratePendingProgress(): Promise<void> {
 }
 
 /**
- * Record where the listener is in an item, to sync when the server is reachable.
- * Newest position per item wins; a later record for the same item overwrites the
- * earlier one (progress only moves forward within a session).
+ * Record (or update) the offline session for a book. Keyed by libraryItemId so a
+ * single offline listen accumulates into one session record - the latest tick's
+ * position and listened-time overwrite the earlier one.
  */
-export function recordProgress(itemId: string, currentTime: number, duration: number): void {
-  if (!itemId) return
+export function recordLocalSession(session: LocalSession): void {
+  if (!session.libraryItemId) return
   const byId = new Map(state.byId)
-  byId.set(itemId, { itemId, currentTime, duration, atMs: Date.now() })
+  byId.set(session.libraryItemId, session)
   emit(byId)
   persist()
 }
 
 /**
- * Push every pending position to ABS, clearing each on success and keeping it on
+ * Replay every pending session to ABS, clearing each on success and keeping it on
  * failure (so a partial network blip retries next time). No-op when there's no
  * session (still offline) or nothing pending. Safe to call repeatedly.
  */
@@ -102,25 +97,24 @@ export async function flushPendingProgress(): Promise<void> {
   const items = [...state.byId.values()]
   if (!items.length) return
 
-  const synced: string[] = []
-  for (const p of items) {
-    try {
-      const progress = p.duration > 0 ? Math.min(1, p.currentTime / p.duration) : 0
-      await putItemProgress(p.itemId, {
-        currentTime: Math.round(p.currentTime),
-        duration: p.duration,
-        progress,
-      })
-      synced.push(p.itemId)
-    } catch {
-      // Leave it pending; the next reconnect/background pass retries.
-    }
+  try {
+    await syncLocalSessions(items)
+  } catch {
+    // Leave everything pending; the next reconnect/background pass retries.
+    return
   }
 
-  if (synced.length) {
-    const byId = new Map(state.byId)
-    for (const id of synced) byId.delete(id)
-    emit(byId)
-    persist()
+  // All ingested in one call - clear the ids we just sent (guarding against any
+  // that were re-recorded meanwhile, though offline playback can't run once a
+  // server session exists).
+  const sentIds = new Set(items.map((s) => s.libraryItemId))
+  const byId = new Map(state.byId)
+  for (const id of sentIds) {
+    const cur = byId.get(id)
+    if (cur && cur.updatedAt <= (items.find((s) => s.libraryItemId === id)?.updatedAt ?? 0)) {
+      byId.delete(id)
+    }
   }
+  emit(byId)
+  persist()
 }

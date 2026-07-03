@@ -252,22 +252,6 @@ export async function setItemFinished(itemId: string, finished: boolean): Promis
   })
 }
 
-/**
- * Write a listening position straight to the user's progress, no play session
- * (ABS PATCH /api/me/progress/:id). Used to flush progress recorded offline once
- * the server is reachable again - the offline session is long gone, so we can't
- * resume it, but ABS updates progress from this route regardless.
- */
-export async function putItemProgress(
-  itemId: string,
-  payload: { currentTime: number; duration: number; progress: number },
-): Promise<void> {
-  await absRequest<void>(`/api/me/progress/${encodeURIComponent(itemId)}`, {
-    method: 'PATCH',
-    body: JSON.stringify(payload),
-  })
-}
-
 // ---- Bookmarks ----
 // User-scoped, per item. ABS has no per-item bookmark GET, so reads go through
 // /api/me (bookmarks[]); create/delete hit the per-item routes.
@@ -441,6 +425,41 @@ export async function closeSession(sessionId: string, payload: SyncPayload): Pro
   await absRequest<void>(`/api/session/${sessionId}/close`, {
     method: 'POST',
     body: JSON.stringify(payload),
+  })
+}
+
+/** A playback session recorded locally (offline) to replay to ABS on reconnect.
+ *  ABS fills in library/book/duration/metadata server-side from libraryItemId,
+ *  so only these fields are required. It honors the client timeListening and
+ *  updatedAt, so a fully-offline listen is credited with the right time + date. */
+export interface LocalSession {
+  id: string
+  libraryItemId: string
+  mediaType: 'book'
+  displayTitle: string
+  duration: number
+  currentTime: number
+  timeListening: number
+  /** ms epoch. */
+  startedAt: number
+  /** ms epoch. */
+  updatedAt: number
+}
+
+/** Replay locally-recorded sessions to ABS (POST /api/session/local-all). Each
+ *  is ingested as a real playback session, so offline listening lands in recent
+ *  listens and stats with its true listened-time. */
+export async function syncLocalSessions(sessions: LocalSession[]): Promise<void> {
+  await absRequest<void>('/api/session/local-all', {
+    method: 'POST',
+    body: JSON.stringify({
+      deviceInfo: {
+        deviceId: 'hearthshelf-mobile',
+        clientName: 'HearthShelf Mobile',
+        clientVersion: '0.0.1',
+      },
+      sessions,
+    }),
   })
 }
 
