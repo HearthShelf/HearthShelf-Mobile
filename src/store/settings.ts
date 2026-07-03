@@ -131,6 +131,11 @@ export interface SettingsState {
   shareReadBooks: boolean | null
   shareCurrentlyListening: boolean | null
 
+  // Book clubs (account). clubsEnabled off hides every club surface;
+  // clubPlayerButton hides just the player's open-club button.
+  clubsEnabled: boolean
+  clubPlayerButton: boolean
+
   // Social pops (device). Show a toast when playback crosses a club note; can be
   // silenced on one device without leaving the club.
   notePops: boolean
@@ -183,6 +188,8 @@ let state: SettingsState = {
   useGravatar: false,
   shareReadBooks: null,
   shareCurrentlyListening: null,
+  clubsEnabled: true,
+  clubPlayerButton: true,
   notePops: true,
   noteDefaultVisibility: 'public',
 

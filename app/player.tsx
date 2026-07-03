@@ -42,6 +42,7 @@ import {
 import { getQueueState, subscribeQueue } from '@/player/queue'
 import { getProgressState } from '@/store/progress'
 import { getImmersive, subscribeImmersive, setImmersive } from '@/player/immersive'
+import { getActiveClub, subscribeActiveClub } from '@/player/clubSync'
 import { getSettingsState, subscribeSettings, COVER_ASPECT_RATIO } from '@/store/settings'
 import { useBookmarks } from '@/player/useBookmarks'
 import { coverUrl, getItemDetail, getRecentSessions } from '@/api/abs'
@@ -161,6 +162,10 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // owns the tab bar when the player is embedded in the Now Playing tab - can hide
   // it too. Reset on unmount so leaving the player never strands the nav hidden.
   const immersive = useSyncExternalStore(subscribeImmersive, getImmersive)
+  // The club whose current book is playing (if any), for the open-club shortcut.
+  const activeClub = useSyncExternalStore(subscribeActiveClub, getActiveClub)
+  const showClubButton =
+    settings.clubsEnabled && settings.clubPlayerButton && !!activeClub && !immersive
   const enter = useCallback(() => {
     haptics.mode()
     setImmersive(true)
@@ -423,6 +428,15 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                 color="#fff"
                 onPress={onBookmark}
                 style={styles.bookmarkBtn}
+              />
+            )}
+            {showClubButton && (
+              <IconButton
+                name={icons.club}
+                size={19}
+                color="#fff"
+                onPress={() => router.push(`/club/${encodeURIComponent(activeClub!.id)}`)}
+                style={styles.clubBtn}
               />
             )}
           </Pressable>
@@ -1040,6 +1054,17 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       position: 'absolute',
       top: 10,
       right: 10,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: 'rgba(20,17,15,0.5)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    clubBtn: {
+      position: 'absolute',
+      top: 10,
+      left: 10,
       width: 36,
       height: 36,
       borderRadius: 18,

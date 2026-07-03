@@ -28,7 +28,41 @@ let appStateSub: { remove: () => void } | null = null
 let unsubPlayer: (() => void) | null = null
 // The club whose current book is the playing item (or '' when none).
 let activeClubId = ''
+let activeClubName = ''
 let activeItemId = ''
+
+// Subscribers (e.g. the player's open-club button) notified when the playing
+// book's club changes. Kept tiny - the useSyncExternalStore convention the app
+// uses elsewhere.
+const clubListeners = new Set<() => void>()
+function emitClub(): void {
+  clubListeners.forEach((l) => l())
+}
+
+export interface ActiveClub {
+  id: string
+  name: string
+}
+
+/** The club whose current book is the now-playing item, or null. Reactive via
+ *  subscribeActiveClub. */
+export function getActiveClub(): ActiveClub | null {
+  return activeClubId ? { id: activeClubId, name: activeClubName } : null
+}
+
+export function subscribeActiveClub(fn: () => void): () => void {
+  clubListeners.add(fn)
+  return () => {
+    clubListeners.delete(fn)
+  }
+}
+
+function setActiveClub(id: string, name: string): void {
+  if (id === activeClubId && name === activeClubName) return
+  activeClubId = id
+  activeClubName = name
+  emitClub()
+}
 // A caller (open club/notes surface) can force polling on even when the playing
 // book isn't a club book. Kept as a count so nested opens balance out.
 let surfaceOpen = 0
@@ -36,7 +70,7 @@ let surfaceOpen = 0
 async function resolveActiveClub(): Promise<void> {
   const itemId = getPlayerState().nowPlaying?.itemId ?? ''
   if (!itemId) {
-    activeClubId = ''
+    setActiveClub('', '')
     activeItemId = ''
     clearPopStubs()
     return
@@ -45,12 +79,12 @@ async function resolveActiveClub(): Promise<void> {
   const res = await getClubs(itemId)
   const club = res.mine.find((c) => c.currentBook?.libraryItemId === itemId)
   if (!club) {
-    activeClubId = ''
+    setActiveClub('', '')
     activeItemId = ''
     clearPopStubs()
     return
   }
-  activeClubId = club.id
+  setActiveClub(club.id, club.name)
   activeItemId = itemId
   // Pull this book's locked stubs at the reader's position and feed the watcher.
   const notes = await getNotes({
@@ -125,7 +159,7 @@ export function stopClubSync(): void {
   appStateSub?.remove()
   unsubPlayer = null
   appStateSub = null
-  activeClubId = ''
+  setActiveClub('', '')
   activeItemId = ''
   surfaceOpen = 0
   stopNotePops()

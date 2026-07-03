@@ -11,7 +11,14 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { getSettingsState, subscribeSettings, setSetting } from '@/store/settings'
 import { getCommunityConfig } from '@/api/social'
 import { setCarNotePopsEnabled } from '@/social/carNotePrefs'
-import { SettingsPanel, SettingsGroup, SettingsLabel, SettingsRow, Seg, SettingsToggle } from '@/ui/settingsControls'
+import {
+  SettingsPanel,
+  SettingsGroup,
+  SettingsLabel,
+  SettingsRow,
+  Seg,
+  SettingsToggle,
+} from '@/ui/settingsControls'
 
 /** The tri-state presence choice as a segment value. 'default' = null (unset). */
 type ShareChoice = 'default' | 'share' | 'hide'
@@ -102,21 +109,42 @@ export default function SocialPanel() {
       <SettingsLabel>Book Club</SettingsLabel>
       <SettingsGroup>
         <SettingsRow
-          title="Note pops"
-          desc="Alert you when your playback reaches a club note - a toast in the app, a notification when it's in the background or in the car. This device only."
+          title="Enable book clubs"
+          desc="Read along with others, share notes, and race your progress. Turn off to hide book clubs everywhere in the app."
           control={
-            <SettingsToggle
-              on={s.notePops}
-              onChange={(v) => {
-                setSetting('notePops', v)
-                // Mirror the master on/off to the native car service so car-side
-                // note pops honor it too (see src/social/carNotePrefs.ts).
-                setCarNotePopsEnabled(v)
-              }}
-            />
+            <SettingsToggle on={s.clubsEnabled} onChange={(v) => setSetting('clubsEnabled', v)} />
           }
-          last
         />
+        {s.clubsEnabled ? (
+          <>
+            <SettingsRow
+              title="Club button on player"
+              desc="Show a shortcut on the player to open the club when you're listening to a club's current book."
+              control={
+                <SettingsToggle
+                  on={s.clubPlayerButton}
+                  onChange={(v) => setSetting('clubPlayerButton', v)}
+                />
+              }
+            />
+            <SettingsRow
+              title="Note pops"
+              desc="Alert you when your playback reaches a club note - a toast in the app, a notification when it's in the background or in the car. This device only."
+              control={
+                <SettingsToggle
+                  on={s.notePops}
+                  onChange={(v) => {
+                    setSetting('notePops', v)
+                    // Mirror the master on/off to the native car service so car-side
+                    // note pops honor it too (see src/social/carNotePrefs.ts).
+                    setCarNotePopsEnabled(v)
+                  }}
+                />
+              }
+              last
+            />
+          </>
+        ) : null}
       </SettingsGroup>
     </SettingsPanel>
   )
