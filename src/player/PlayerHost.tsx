@@ -23,6 +23,7 @@ import {
   togglePlay,
 } from './store'
 import { syncProgress } from './playback'
+import { advanceQueueOnEnd } from './advance'
 import { useShakeToExtend } from './shakeToExtend'
 import { Toast, useToast } from '@/ui/Toast'
 
@@ -98,6 +99,10 @@ export function PlayerHost() {
       // stays the source of truth.
       emitter.addListener('onTogglePlay', () => togglePlay()),
       emitter.addListener('onJump', (e: { delta: number }) => jumpBy(e.delta)),
+      // Book ended: advance to the head of the (server-owned) up-next queue.
+      emitter.addListener('onEnded', () => {
+        void advanceQueueOnEnd().catch(() => {})
+      }),
     ]
     return () => subs.forEach((s) => s.remove())
   }, [])

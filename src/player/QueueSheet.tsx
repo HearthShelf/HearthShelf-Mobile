@@ -146,7 +146,9 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
                 renderItem={(params: RenderItemParams<QueueEntry>) => (
                   <QueueRow
                     {...params}
-                    draggable={settings.queueMode === 'manual'}
+                    // Manual is the only hand-edited mode; Auto/Playlist are
+                    // server-owned, so reorder + remove are read-only there.
+                    editable={settings.queueMode === 'manual'}
                     dragActive={dragActive}
                     onJump={() => {
                       sheetRef.current?.dismiss()
@@ -189,12 +191,12 @@ function QueueRow({
   item,
   drag,
   isActive,
-  draggable,
+  editable,
   dragActive,
   onJump,
   onRemove,
 }: RenderItemParams<QueueEntry> & {
-  draggable: boolean
+  editable: boolean
   dragActive: boolean
   onJump: () => void
   onRemove: () => void
@@ -203,7 +205,7 @@ function QueueRow({
   const styles = useMemo(() => makeStyles(colors), [colors])
   return (
     <View style={[styles.row, isActive && styles.rowDragging]}>
-      {draggable ? (
+      {editable ? (
         <Pressable onLongPress={drag} disabled={dragActive} hitSlop={8}>
           <Icon name={icons.dragHandle} size={20} color={colors.textMuted} />
         </Pressable>
@@ -230,7 +232,11 @@ function QueueRow({
           </AppText>
         </View>
       </Touchable>
-      <IconButton name={icons.close} size={20} color={colors.textMuted} onPress={onRemove} />
+      {editable ? (
+        <IconButton name={icons.close} size={20} color={colors.textMuted} onPress={onRemove} />
+      ) : (
+        <View style={{ width: 20 }} />
+      )}
     </View>
   )
 }

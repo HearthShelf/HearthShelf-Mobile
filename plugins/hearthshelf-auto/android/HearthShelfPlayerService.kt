@@ -107,7 +107,10 @@ class HearthShelfPlayerService : MediaSessionService() {
         HearthShelfAutoModule.emitState(isPlaying)
       }
       override fun onPlaybackStateChanged(state: Int) {
-        if (state == Player.STATE_ENDED) HearthShelfAutoModule.emitState(false)
+        if (state == Player.STATE_ENDED) {
+          HearthShelfAutoModule.emitState(false)
+          HearthShelfAutoModule.emitEnded()
+        }
       }
     })
 

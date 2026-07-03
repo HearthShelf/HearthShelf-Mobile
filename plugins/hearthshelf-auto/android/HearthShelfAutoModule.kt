@@ -186,6 +186,12 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
       val map = Arguments.createMap().apply { putDouble("delta", deltaSec) }
       emitter?.invoke("onJump", map)
     }
+    // The current book reached its end. JS advances the up-next queue (server
+    // owns the queue; JS plays its head) rather than the service picking a next
+    // track, so the phone + car share one queue.
+    fun emitEnded() {
+      emitter?.invoke("onEnded", Arguments.createMap())
+    }
   }
 }
 

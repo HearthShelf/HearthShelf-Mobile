@@ -276,7 +276,12 @@ class HearthShelfAutoService : MediaLibraryService() {
           pendingSeekMs = 0
           player.seekTo(win, off)
         }
-        if (state == Player.STATE_ENDED) syncProgress(absolutePositionMs(player), force = true)
+        if (state == Player.STATE_ENDED) {
+          syncProgress(absolutePositionMs(player), force = true)
+          // Book finished: let JS advance the shared up-next queue (server owns
+          // it). The store change flows back to load the next book.
+          HearthShelfAutoModule.emitEnded()
+        }
       }
       override fun onIsPlayingChanged(isPlaying: Boolean) {
         if (!isPlaying) syncProgress(absolutePositionMs(player), force = true)

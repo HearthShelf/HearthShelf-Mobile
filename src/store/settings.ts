@@ -17,7 +17,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Crypto from 'expo-crypto'
 import type { QueueMode, AutoRulePref, SettingValue } from '@hearthshelf/core'
-import { DEFAULT_AUTO_RULES, SETTINGS_CATALOG } from '@hearthshelf/core'
+import { DEFAULT_AUTO_RULES, SETTINGS_CATALOG, normalizeAutoRules } from '@hearthshelf/core'
 
 export type ThemePref = 'auto' | 'dark' | 'light' | 'flat' | 'oled'
 export type AccentMode = 'dynamic' | 'manual'
@@ -273,6 +273,7 @@ export function applyServerKeys(
     if (remote.updatedAt >= localAt) {
       let value: unknown = remote.value
       if (key === 'playerActions') value = normalizePlayerActions(value as PlayerActionPref[])
+      if (key === 'queueAutoRules') value = normalizeAutoRules(value)
       patch[key] = value
       nextMeta[key] = remote.updatedAt
       changed = true
