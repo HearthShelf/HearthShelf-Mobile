@@ -92,6 +92,7 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
               <Icon name={icons.nowPlaying} size={18} color={colors.accent} />
               <Cover
                 uri={nowPlaying.artworkUrl}
+                itemId={nowPlaying.itemId}
                 size={46}
                 radius={radius.tile}
                 fallback={{
@@ -212,6 +213,7 @@ function QueueRow({
       <Touchable style={styles.rowTap} onPress={onJump}>
         <Cover
           uri={coverUrl(item.libraryItemId)}
+          itemId={item.libraryItemId}
           size={46}
           radius={radius.tile}
           fallback={{
@@ -235,52 +237,62 @@ function QueueRow({
 
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
-  segFull: {
-    flexDirection: 'row',
-    gap: 4,
-    backgroundColor: colors.fill,
-    borderRadius: radius.card,
-    padding: 4,
-    marginBottom: spacing.sm,
-  },
-  seg: { flex: 1, alignItems: 'center', paddingVertical: spacing.sm + 2, borderRadius: radius.row },
-  segOn: { backgroundColor: colors.card },
-  subRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
-  rulesBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.pill,
-    backgroundColor: colors.fill,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xs,
-  },
-  rowNow: {
-    backgroundColor: colors.accentWash,
-    borderRadius: radius.row,
-    marginBottom: spacing.sm,
-  },
-  rowTap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md, minWidth: 0 },
-  rowDragging: { backgroundColor: colors.high, borderRadius: radius.row },
-  empty: { alignItems: 'center', paddingVertical: spacing.xxl, paddingHorizontal: spacing.xl },
-  hintRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: spacing.md },
-  toggleTrack: {
-    width: 46,
-    height: 27,
-    borderRadius: 999,
-    backgroundColor: colors.elevated,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    justifyContent: 'center',
-  },
-  toggleTrackOn: { backgroundColor: colors.accent, borderColor: colors.accent },
-  toggleKnob: { width: 21, height: 21, borderRadius: 11, backgroundColor: '#fff', marginLeft: 3 },
-  toggleKnobOn: { marginLeft: 22 },
-})
+    segFull: {
+      flexDirection: 'row',
+      gap: 4,
+      backgroundColor: colors.fill,
+      borderRadius: radius.card,
+      padding: 4,
+      marginBottom: spacing.sm,
+    },
+    seg: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: spacing.sm + 2,
+      borderRadius: radius.row,
+    },
+    segOn: { backgroundColor: colors.card },
+    subRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      marginBottom: spacing.md,
+    },
+    rulesBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.xs,
+    },
+    rowNow: {
+      backgroundColor: colors.accentWash,
+      borderRadius: radius.row,
+      marginBottom: spacing.sm,
+    },
+    rowTap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md, minWidth: 0 },
+    rowDragging: { backgroundColor: colors.high, borderRadius: radius.row },
+    empty: { alignItems: 'center', paddingVertical: spacing.xxl, paddingHorizontal: spacing.xl },
+    hintRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: spacing.md },
+    toggleTrack: {
+      width: 46,
+      height: 27,
+      borderRadius: 999,
+      backgroundColor: colors.elevated,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      justifyContent: 'center',
+    },
+    toggleTrackOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+    toggleKnob: { width: 21, height: 21, borderRadius: 11, backgroundColor: '#fff', marginLeft: 3 },
+    toggleKnobOn: { marginLeft: 22 },
+  })

@@ -10,7 +10,14 @@
  * `onMarkedFinished` so the opener can update its own lists (e.g. drop a
  * newly-finished book out of Continue) without a full reload.
  */
-import { forwardRef, useImperativeHandle, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import {
+  forwardRef,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { StyleSheet, View } from 'react-native'
 import type { ABSLibraryItem } from '@hearthshelf/core'
 import { coverHue } from '@hearthshelf/core'
@@ -120,6 +127,7 @@ export const BookActionsSheet = forwardRef<
           <View style={styles.header}>
             <Cover
               uri={coverUrl(item.id)}
+              itemId={item.id}
               size={52}
               radius={radius.tile}
               fallback={{

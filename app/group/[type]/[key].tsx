@@ -143,6 +143,7 @@ function GroupBookCard({ item, width }: { item: ABSLibraryItem; width: number })
     <Pressable style={{ width }} onPress={() => router.push(`/item/${item.id}`)}>
       <Cover
         uri={coverUrl(item.id)}
+        itemId={item.id}
         width={width}
         aspectRatio={1}
         radius={radius.card}

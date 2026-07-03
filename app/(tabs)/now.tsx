@@ -82,6 +82,7 @@ function EmptyState() {
             >
               <Cover
                 uri={coverUrl(last.id)}
+                itemId={last.id}
                 width={132}
                 aspectRatio={2 / 3}
                 radius={radius.tile}

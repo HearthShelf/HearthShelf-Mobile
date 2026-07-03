@@ -83,7 +83,11 @@ export default function StatsTab() {
     <Screen>
       <Animated.ScrollView
         entering={FadeIn.duration(DUR.base)}
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: contentInset, gap: spacing.lg }}
+        contentContainerStyle={{
+          padding: spacing.lg,
+          paddingBottom: contentInset,
+          gap: spacing.lg,
+        }}
         showsVerticalScrollIndicator={false}
       >
         <View>
@@ -157,6 +161,7 @@ export default function StatsTab() {
                   {stats.mostListened.slice(0, 8).map((item) => (
                     <View key={item.id} style={styles.listenedRow}>
                       <Cover
+                        itemId={item.id}
                         size={44}
                         radius={radius.tile}
                         fallback={{
@@ -275,7 +280,12 @@ function Leaderboard() {
               >
                 {entry.rank}
               </AppText>
-              <Avatar uri={avatarUrl(entry.userId)} size={36} name={entry.username} hue={coverHue(entry.userId)} />
+              <Avatar
+                uri={avatarUrl(entry.userId)}
+                size={36}
+                name={entry.username}
+                hue={coverHue(entry.userId)}
+              />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <AppText variant="label" numberOfLines={1}>
                   {entry.username}

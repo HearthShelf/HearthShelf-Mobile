@@ -404,6 +404,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
           <Pressable onPress={onCoverTap} style={styles.coverTap}>
             <Cover
               uri={nowPlaying.artworkUrl}
+              itemId={nowPlaying.itemId}
               width={coverWidth}
               aspectRatio={coverAspect}
               radius={radius.card}
@@ -441,7 +442,9 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
             <TimelineMarkers
               markers={timelineMarkers}
               onOpenNote={(timeSec) => notesRef.current?.presentAt(timeSec)}
-              onAheadTeaser={(timeSec) => toast.show(`A note awaits at ${formatTimestamp(timeSec)}`)}
+              onAheadTeaser={(timeSec) =>
+                toast.show(`A note awaits at ${formatTimestamp(timeSec)}`)
+              }
             />
           )}
           <Scrubber

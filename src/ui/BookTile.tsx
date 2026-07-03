@@ -46,6 +46,7 @@ export function BookTile({
       <View>
         <Cover
           uri={coverUrl(item.id)}
+          itemId={item.id}
           width={width}
           aspectRatio={COVER_ASPECT_RATIO[coverAspect]}
           fallback={{ hue: coverHue(item.id), initial: coverInitial(title), title }}

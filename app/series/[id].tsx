@@ -402,6 +402,7 @@ function BookRow({
       )}
       <Cover
         uri={coverUrl(book.id)}
+        itemId={book.id}
         size={56}
         radius={radius.tile}
         fallback={{ hue: coverHue(book.id), initial: title.charAt(0).toUpperCase() }}

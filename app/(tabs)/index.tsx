@@ -242,10 +242,13 @@ export default function HomeScreen() {
     if (!itemChanged && !paused) return
 
     if (playbackRefreshRef.current) clearTimeout(playbackRefreshRef.current)
-    playbackRefreshRef.current = setTimeout(() => {
-      playbackRefreshRef.current = null
-      void loadHome({ silent: true }).catch(() => {})
-    }, paused ? 900 : 500)
+    playbackRefreshRef.current = setTimeout(
+      () => {
+        playbackRefreshRef.current = null
+        void loadHome({ silent: true }).catch(() => {})
+      },
+      paused ? 900 : 500,
+    )
   }, [connected, nowPlaying, isPlaying, loadHome])
 
   useEffect(
@@ -717,6 +720,7 @@ function Shelf({
             >
               <Cover
                 uri={coverUrl(item.id)}
+                itemId={item.id}
                 width={120}
                 aspectRatio={COVER_ASPECT_RATIO[coverAspect]}
               />
@@ -750,6 +754,7 @@ function Shelf({
             >
               <Cover
                 uri={coverUrl(item.id)}
+                itemId={item.id}
                 width={100}
                 aspectRatio={COVER_ASPECT_RATIO[coverAspect]}
                 fallback={{

@@ -10,6 +10,7 @@ import { useRouter } from 'expo-router'
 import { formatTimestamp } from '@hearthshelf/core'
 import { AppText, IconButton, ProgressBar, icons } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
+import { CoverDownloadOverlay } from '@/ui/CoverDownloadOverlay'
 import { DUR, SpringPressable } from '@/ui/motion'
 import { spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
@@ -56,11 +57,12 @@ export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
       <ProgressBar progress={progress} height={2} style={styles.progress} />
       <View style={styles.bar}>
         <Pressable style={styles.tap} onPress={() => router.push('/player')}>
-          {nowPlaying.artworkUrl ? (
-            <Image source={{ uri: nowPlaying.artworkUrl }} style={styles.cover} />
-          ) : (
-            <View style={styles.cover} />
-          )}
+          <View style={styles.cover}>
+            {nowPlaying.artworkUrl ? (
+              <Image source={{ uri: nowPlaying.artworkUrl }} style={styles.coverImg} />
+            ) : null}
+            <CoverDownloadOverlay itemId={nowPlaying.itemId} size={42} radius={8} />
+          </View>
           <View style={styles.meta}>
             <AppText variant="label" numberOfLines={1}>
               {nowPlaying.title}
@@ -109,7 +111,14 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.popover,
     },
     tap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md, minWidth: 0 },
-    cover: { width: 42, height: 42, borderRadius: 8, backgroundColor: colors.high },
+    cover: {
+      width: 42,
+      height: 42,
+      borderRadius: 8,
+      backgroundColor: colors.high,
+      overflow: 'hidden',
+    },
+    coverImg: { width: 42, height: 42, borderRadius: 8 },
     meta: { flex: 1, minWidth: 0 },
     play: {
       width: 42,

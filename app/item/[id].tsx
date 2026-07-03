@@ -331,9 +331,29 @@ export default function ItemDetailScreen() {
 
   // The job of the screen changes with listening state; so does the order.
   const sectionOrder: SectionKey[] = isInProgress
-    ? ['status', 'cta', 'listeningNow', 'chapters', 'club', 'notes', 'series', 'about', 'finishedBy']
+    ? [
+        'status',
+        'cta',
+        'listeningNow',
+        'chapters',
+        'club',
+        'notes',
+        'series',
+        'about',
+        'finishedBy',
+      ]
     : isFinished
-      ? ['status', 'series', 'cta', 'club', 'notes', 'about', 'finishedBy', 'listeningNow', 'chapters']
+      ? [
+          'status',
+          'series',
+          'cta',
+          'club',
+          'notes',
+          'about',
+          'finishedBy',
+          'listeningNow',
+          'chapters',
+        ]
       : ['cta', 'about', 'listeningNow', 'club', 'notes', 'finishedBy', 'series', 'chapters']
 
   const sections: Record<SectionKey, React.ReactNode> = {
@@ -382,15 +402,13 @@ export default function ItemDetailScreen() {
         onNarrator={openNarrator}
       />
     ),
-    finishedBy: finishedBy.length > 0 ? <FinishedBySection key="finishedBy" users={finishedBy} /> : null,
+    finishedBy:
+      finishedBy.length > 0 ? <FinishedBySection key="finishedBy" users={finishedBy} /> : null,
     listeningNow:
-      listeningNow.length > 0 ? <ListeningNowSection key="listeningNow" users={listeningNow} /> : null,
-    notes: (
-      <NotesSection
-        key="notes"
-        onOpen={() => notesSheetRef.current?.present()}
-      />
-    ),
+      listeningNow.length > 0 ? (
+        <ListeningNowSection key="listeningNow" users={listeningNow} />
+      ) : null,
+    notes: <NotesSection key="notes" onOpen={() => notesSheetRef.current?.present()} />,
     club: <ClubCard key="club" libraryItemId={detail.id} onToast={show} />,
     series: series ? (
       <SeriesCard
@@ -589,6 +607,7 @@ function Hero({
       <Pressable onPress={onZoom}>
         <Cover
           uri={coverUrl(detail.id)}
+          itemId={detail.id}
           size={172}
           radius={radius.card}
           fallback={{ hue, initial: title.charAt(0).toUpperCase(), title }}
@@ -765,7 +784,12 @@ function FinishedBySection({ users }: { users: HSFinishedByUser[] }) {
       <View style={styles.finishedByRow}>
         {users.map((u) => (
           <View key={u.userId} style={styles.finishedByChip}>
-            <Avatar uri={avatarUrl(u.userId)} size={28} name={u.username} hue={coverHue(u.userId)} />
+            <Avatar
+              uri={avatarUrl(u.userId)}
+              size={28}
+              name={u.username}
+              hue={coverHue(u.userId)}
+            />
             <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
               {u.username}
             </AppText>
@@ -793,7 +817,12 @@ function ListeningNowSection({ users }: { users: HSListeningNowUser[] }) {
         {users.map((u) => (
           <View key={u.userId} style={styles.finishedByChip}>
             <View>
-              <Avatar uri={avatarUrl(u.userId)} size={28} name={u.username} hue={coverHue(u.userId)} />
+              <Avatar
+                uri={avatarUrl(u.userId)}
+                size={28}
+                name={u.username}
+                hue={coverHue(u.userId)}
+              />
               <View style={styles.listeningPulse} />
             </View>
             <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>

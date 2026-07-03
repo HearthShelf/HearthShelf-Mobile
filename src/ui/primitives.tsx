@@ -12,6 +12,7 @@ import {
   Text,
   View,
   type ImageStyle,
+  type LayoutChangeEvent,
   type StyleProp,
   type TextStyle,
   type ViewStyle,
@@ -29,6 +30,7 @@ import {
   BottomSheetView,
   type BottomSheetModalProps,
 } from '@gorhom/bottom-sheet'
+import { CoverDownloadOverlay } from './CoverDownloadOverlay'
 import { Icon, icons, type IconName } from './icons'
 import { TypesetCover } from './TypesetCover'
 import { radius, spacing, type as typeScale, type Palette } from './theme'
@@ -304,6 +306,7 @@ export function Cover({
   radius: r = radius.tile,
   fallback,
   style,
+  itemId,
 }: {
   uri?: string
   size?: number
@@ -313,37 +316,65 @@ export function Cover({
   /** Shown when there's no uri or the image fails to load. Real artwork wins. */
   fallback?: CoverFallback
   style?: StyleProp<ImageStyle>
+  /** When set, an in-flight download of this item dims the cover and draws a
+   *  progress ring on top. Pass it anywhere a book's own cover is shown. */
+  itemId?: string
 }) {
   const styles = useStyles()
   const [failed, setFailed] = useState(false)
+  const [measured, setMeasured] = useState(0)
   const w = size ?? width
   const dims: ImageStyle = size ? { width: size, height: size } : { width: w, aspectRatio }
 
+  // The overlay needs a pixel size to scale its ring. Use the known width when
+  // we have one, otherwise fall back to the measured layout width (for callers
+  // that size the cover via flex/style rather than an explicit width).
+  const coverSize = size ?? width ?? measured
+  const overlay = itemId ? (
+    <CoverDownloadOverlay itemId={itemId} size={coverSize} radius={r} />
+  ) : null
+  const onLayout = itemId
+    ? (e: LayoutChangeEvent) => setMeasured(e.nativeEvent.layout.width)
+    : undefined
+
   const hasUri = !!uri
   if (!hasUri || failed) {
-    if (fallback) {
-      return (
-        <TypesetCover
-          hue={fallback.hue}
-          initial={fallback.initial}
-          kicker={fallback.kicker}
-          title={fallback.title}
-          radius={r}
-          style={[dims as StyleProp<ViewStyle>, style as StyleProp<ViewStyle>]}
-        />
-      )
-    }
-    // No uri (e.g. mid server-switch) and no fallback: a plain placeholder, not
-    // an <Image source={{ uri: '' }}> which warns "uri should not be empty".
-    return <View style={[styles.cover, dims, { borderRadius: r }, style as StyleProp<ViewStyle>]} />
+    const body = fallback ? (
+      <TypesetCover
+        hue={fallback.hue}
+        initial={fallback.initial}
+        kicker={fallback.kicker}
+        title={fallback.title}
+        radius={r}
+        style={[dims as StyleProp<ViewStyle>, style as StyleProp<ViewStyle>]}
+      />
+    ) : (
+      // No uri (e.g. mid server-switch) and no fallback: a plain placeholder, not
+      // an <Image source={{ uri: '' }}> which warns "uri should not be empty".
+      <View style={[styles.cover, dims, { borderRadius: r }, style as StyleProp<ViewStyle>]} />
+    )
+    if (!overlay) return body
+    return (
+      <View style={dims as StyleProp<ViewStyle>} onLayout={onLayout}>
+        {body}
+        {overlay}
+      </View>
+    )
   }
 
-  return (
+  const image = (
     <Image
       source={{ uri }}
       onError={() => setFailed(true)}
       style={[styles.cover, dims, { borderRadius: r }, style]}
     />
+  )
+  if (!overlay) return image
+  return (
+    <View style={dims as StyleProp<ViewStyle>} onLayout={onLayout}>
+      {image}
+      {overlay}
+    </View>
   )
 }
 

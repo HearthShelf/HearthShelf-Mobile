@@ -113,15 +113,15 @@ export default function ClubRoomScreen() {
   // The book being viewed and whether the player is currently on it - drives
   // whether the composer stamps a timestamp.
   const viewedBook: HSClubBook | null =
-    detail?.books.find((b) => b.libraryItemId === (viewBookId ?? detail.club.currentBook?.libraryItemId)) ??
+    detail?.books.find(
+      (b) => b.libraryItemId === (viewBookId ?? detail.club.currentBook?.libraryItemId),
+    ) ??
     detail?.club.currentBook ??
     null
   const playingThisBook =
     !!player.nowPlaying && !!viewedBook && player.nowPlaying.itemId === viewedBook.libraryItemId
   const position = playingThisBook ? player.position : 0
-  const chapters: ChapterMark[] = playingThisBook
-    ? player.nowPlaying!.chapters
-    : []
+  const chapters: ChapterMark[] = playingThisBook ? player.nowPlaying!.chapters : []
 
   const load = useCallback(
     async (opts: { markRead?: boolean } = {}) => {
@@ -293,9 +293,13 @@ export default function ClubRoomScreen() {
           <View style={styles.bookHeader}>
             <Cover
               uri={coverUrl(viewedBook.libraryItemId)}
+              itemId={viewedBook.libraryItemId}
               size={54}
               radius={radius.tile}
-              fallback={{ hue: coverHue(viewedBook.libraryItemId), initial: (viewedBook.title || '?').charAt(0) }}
+              fallback={{
+                hue: coverHue(viewedBook.libraryItemId),
+                initial: (viewedBook.title || '?').charAt(0),
+              }}
             />
             <View style={{ flex: 1, minWidth: 0 }}>
               <AppText variant="eyebrow" color={colors.textMuted}>
@@ -311,7 +315,10 @@ export default function ClubRoomScreen() {
               ) : null}
             </View>
             {pastBooks.length > 0 || !isCurrentView ? (
-              <Touchable style={styles.historyBtn} onPress={() => historySheetRef.current?.present()}>
+              <Touchable
+                style={styles.historyBtn}
+                onPress={() => historySheetRef.current?.present()}
+              >
                 <Icon name={icons.recent} size={18} color={colors.accent} />
               </Touchable>
             ) : null}
@@ -327,7 +334,11 @@ export default function ClubRoomScreen() {
         {/* Progress race for the viewed book. */}
         {viewedBook ? (
           <View style={styles.raceSection}>
-            <AppText variant="eyebrow" color={colors.textMuted} style={{ marginBottom: spacing.sm }}>
+            <AppText
+              variant="eyebrow"
+              color={colors.textMuted}
+              style={{ marginBottom: spacing.sm }}
+            >
               Where everyone is
             </AppText>
             {sortedMembers.map((m) => (
@@ -348,7 +359,11 @@ export default function ClubRoomScreen() {
             Discussion
           </AppText>
           {detail.notes.notes.length === 0 ? (
-            <AppText variant="meta" color={colors.textMuted} style={{ paddingVertical: spacing.lg }}>
+            <AppText
+              variant="meta"
+              color={colors.textMuted}
+              style={{ paddingVertical: spacing.lg }}
+            >
               No notes on this book yet.
             </AppText>
           ) : (
@@ -370,8 +385,9 @@ export default function ClubRoomScreen() {
             <View style={styles.teaser}>
               <Icon name={icons.notes} size={16} color={colors.textMuted} />
               <AppText variant="caption" color={colors.textMuted}>
-                {detail.notes.hiddenAhead} {detail.notes.hiddenAhead === 1 ? 'note is' : 'notes are'}{' '}
-                ahead of you. Keep listening to unlock them.
+                {detail.notes.hiddenAhead}{' '}
+                {detail.notes.hiddenAhead === 1 ? 'note is' : 'notes are'} ahead of you. Keep
+                listening to unlock them.
               </AppText>
             </View>
           ) : null}
@@ -383,10 +399,20 @@ export default function ClubRoomScreen() {
         <View style={styles.composer}>
           {replyTo ? (
             <View style={styles.replyBanner}>
-              <AppText variant="caption" color={colors.textMuted} numberOfLines={1} style={{ flex: 1 }}>
+              <AppText
+                variant="caption"
+                color={colors.textMuted}
+                numberOfLines={1}
+                style={{ flex: 1 }}
+              >
                 Replying to {replyTo.username}
               </AppText>
-              <IconButton name={icons.close} size={16} color={colors.textMuted} onPress={() => setReplyTo(null)} />
+              <IconButton
+                name={icons.close}
+                size={16}
+                color={colors.textMuted}
+                onPress={() => setReplyTo(null)}
+              />
             </View>
           ) : null}
           <View style={styles.composerRow}>
@@ -442,7 +468,12 @@ export default function ClubRoomScreen() {
       <Sheet ref={membersSheetRef} title="Members" snapPoints={['60%']}>
         {sortedMembers.map((m) => (
           <View key={m.userId} style={styles.memberRow}>
-            <Avatar uri={avatarUrl(m.userId)} size={34} name={m.username} hue={coverHue(m.userId)} />
+            <Avatar
+              uri={avatarUrl(m.userId)}
+              size={34}
+              name={m.username}
+              hue={coverHue(m.userId)}
+            />
             <View style={{ flex: 1, minWidth: 0 }}>
               <AppText variant="label" numberOfLines={1}>
                 {m.username}
@@ -473,7 +504,8 @@ export default function ClubRoomScreen() {
         ) : (
           detail.books.map((b) => {
             const current = b.finishedAt == null
-            const active = b.libraryItemId === (viewBookId ?? detail.club.currentBook?.libraryItemId)
+            const active =
+              b.libraryItemId === (viewBookId ?? detail.club.currentBook?.libraryItemId)
             return (
               <Touchable
                 key={b.libraryItemId}
@@ -485,6 +517,7 @@ export default function ClubRoomScreen() {
               >
                 <Cover
                   uri={coverUrl(b.libraryItemId)}
+                  itemId={b.libraryItemId}
                   size={40}
                   radius={radius.tile}
                   fallback={{ hue: coverHue(b.libraryItemId), initial: (b.title || '?').charAt(0) }}
@@ -541,12 +574,22 @@ function MemberRace({ member, isMe }: { member: HSClubMember; isMe: boolean }) {
   return (
     <View style={styles.raceRow}>
       <View>
-        <Avatar uri={avatarUrl(member.userId)} size={30} name={member.username} hue={coverHue(member.userId)} />
+        <Avatar
+          uri={avatarUrl(member.userId)}
+          size={30}
+          name={member.username}
+          hue={coverHue(member.userId)}
+        />
         {member.listeningNow ? <View style={styles.racePulse} /> : null}
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         <View style={styles.raceMeta}>
-          <AppText variant="caption" color={isMe ? colors.accent : colors.text} numberOfLines={1} style={{ flex: 1 }}>
+          <AppText
+            variant="caption"
+            color={isMe ? colors.accent : colors.text}
+            numberOfLines={1}
+            style={{ flex: 1 }}
+          >
             {member.username}
             {isMe ? ' (you)' : ''}
           </AppText>
@@ -562,7 +605,10 @@ function MemberRace({ member, isMe }: { member: HSClubMember; isMe: boolean }) {
           <View
             style={[
               styles.raceFill,
-              { width: `${(finished ? 1 : fraction) * 100}%`, backgroundColor: finished ? colors.success : colors.accent },
+              {
+                width: `${(finished ? 1 : fraction) * 100}%`,
+                backgroundColor: finished ? colors.success : colors.accent,
+              },
             ]}
           />
         </View>
