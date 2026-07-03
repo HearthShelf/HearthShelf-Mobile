@@ -47,7 +47,9 @@ module.exports = {
     buildNumber: iosBuildNumber,
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
-      UIBackgroundModes: ['audio'],
+      // audio: background playback; processing: offline-progress background flush
+      // (expo-background-task also adds this during prebuild).
+      UIBackgroundModes: ['audio', 'processing'],
     },
   },
   android: {
@@ -81,6 +83,7 @@ module.exports = {
     '@clerk/expo',
     'expo-secure-store',
     'expo-router',
+    'expo-background-task',
     [
       'react-native-video',
       {

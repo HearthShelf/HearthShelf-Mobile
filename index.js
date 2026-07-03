@@ -7,3 +7,7 @@ import 'expo-router/entry'
 // - see docs/social.md). Also consumes a cold-start notification tap.
 import { registerNoteEventHandlers } from '@/social/noteEvents'
 void registerNoteEventHandlers()
+
+// Define the offline-progress background flush task at module load so a headless
+// OS wake (network returned) can find it by name (see backgroundFlushTask.ts).
+import '@/player/backgroundFlushTask'

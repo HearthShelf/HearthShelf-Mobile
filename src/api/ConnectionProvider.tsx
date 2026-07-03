@@ -21,7 +21,9 @@ import { setAutoSession, setAutoNotePops } from '@/player/autoBridge'
 import { startQueueSync } from '@/player/queueSync'
 import { startClubSync } from '@/player/clubSync'
 import { ensureDeviceId, getSettingsState, subscribeSettings } from '@/store/settings'
-import { hydrateDownloads } from '@/player/downloads'
+import { hydrateDownloads, getDownloadsState } from '@/player/downloads'
+import { startConnectivityWatch, stopConnectivityWatch } from '@/player/connectivity'
+import { hydratePendingProgress, flushPendingProgress } from '@/player/pendingProgress'
 import type { SplashServer } from '@/ui/SplashScreen'
 
 export type ConnectionStatus =
@@ -29,7 +31,28 @@ export type ConnectionStatus =
   | { phase: 'select-server'; servers: LinkedServer[] }
   | { phase: 'no-servers' }
   | { phase: 'error'; message: string }
+  // Couldn't reach the server on launch, but downloaded books are on disk, so
+  // we let the user into the app to play them. `retry` re-runs the connect.
+  | { phase: 'offline' }
   | { phase: 'ready'; serverName: string }
+
+/** How long to wait for the launch connect before falling back to offline. */
+const CONNECT_TIMEOUT_MS = 7000
+
+class ConnectTimeoutError extends Error {
+  constructor() {
+    super('connect_timeout')
+    this.name = 'ConnectTimeoutError'
+  }
+}
+
+/** True if there's downloaded content worth entering offline mode for. */
+function hasOfflineContent(): boolean {
+  for (const e of getDownloadsState().byId.values()) {
+    if (e.status === 'done') return true
+  }
+  return false
+}
 
 interface ConnectionValue {
   status: ConnectionStatus
@@ -98,8 +121,6 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         // Ensure the per-install deviceId is loaded before sync starts, so
         // device-scoped settings round-trip on the first pull.
         await ensureDeviceId()
-        // Load any previously downloaded books so they're playable offline.
-        await hydrateDownloads()
         const { skipBack, skipForward } = getSettingsState()
         setAutoSession(serverUrl, token, skipBack, skipForward)
         // Mirror notePops into the car service (it can't read the settings store)
@@ -108,6 +129,8 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         ensureNotePopsMirror()
         startQueueSync()
         startClubSync()
+        // Now that a session exists, push any progress banked while offline.
+        void flushPendingProgress()
         // The picker path (SplashServer) has no role; only linked-server objects
         // carry it. Fall back to 'user' so admin UI stays hidden when unknown.
         setActiveRole('role' in server && server.role === 'admin' ? 'admin' : 'user')
@@ -119,27 +142,52 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     [tokenFn],
   )
 
+  const runConnect = useCallback(async () => {
+    const servers = await fetchLinkedServers(tokenFn)
+    if (servers.length === 0) throw new NoLinkedServersError()
+    if (servers.length === 1) {
+      await connectTo(servers[0])
+      return
+    }
+    // Precedence: this device's last-used server, then the account default
+    // (set on another device), then show the picker.
+    const lastId = await getLastServerId()
+    const remembered = lastId ? servers.find((s) => s.id === lastId) : undefined
+    const preferred = remembered ?? servers.find((s) => s.isDefault)
+    if (preferred) await connectTo(preferred)
+    else setStatus({ phase: 'select-server', servers })
+  }, [connectTo, tokenFn])
+
   const connect = useCallback(async () => {
     setStatus({ phase: 'connecting' })
     try {
-      const servers = await fetchLinkedServers(tokenFn)
-      if (servers.length === 0) throw new NoLinkedServersError()
-      if (servers.length === 1) {
-        await connectTo(servers[0])
-        return
+      // Race the connect against a timeout: a dead network can leave the ABS
+      // fetch hanging well past when we should have fallen back to offline.
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new ConnectTimeoutError()), CONNECT_TIMEOUT_MS)
+      })
+      try {
+        await Promise.race([runConnect(), timeout])
+      } finally {
+        if (timer) clearTimeout(timer)
       }
-      // Precedence: this device's last-used server, then the account default
-      // (set on another device), then show the picker.
-      const lastId = await getLastServerId()
-      const remembered = lastId ? servers.find((s) => s.id === lastId) : undefined
-      const preferred = remembered ?? servers.find((s) => s.isDefault)
-      if (preferred) await connectTo(preferred)
-      else setStatus({ phase: 'select-server', servers })
     } catch (e) {
       if (e instanceof NoLinkedServersError) setStatus({ phase: 'no-servers' })
+      // Timed out or the network failed: if there are downloaded books, let the
+      // user in to play them offline instead of stranding them on an error.
+      else if (hasOfflineContent()) setStatus({ phase: 'offline' })
       else setStatus({ phase: 'error', message: (e as Error).message })
     }
-  }, [connectTo, tokenFn])
+  }, [runConnect])
+
+  // Load downloaded books once at mount, before any connect attempt - offline
+  // launch depends on the manifest being in memory to detect downloaded content
+  // and to resolve local playback. Runs regardless of auth/connection state.
+  useEffect(() => {
+    void hydrateDownloads()
+    void hydratePendingProgress()
+  }, [])
 
   // The provider is mounted for the whole app lifetime, signed in or not (screens
   // render once before the auth redirect lands, and stay mounted briefly during
@@ -154,10 +202,26 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     void connect()
   }, [connect, isSignedIn])
 
+  // Watch connectivity for the whole signed-in lifetime: when the network
+  // returns while we're offline, retry the connect and flush pending progress.
+  // Event-driven (no polling), so it costs nothing while offline.
+  useEffect(() => {
+    if (!isSignedIn) return
+    startConnectivityWatch(() => {
+      setStatus((cur) => {
+        if (cur.phase !== 'ready') void connect()
+        return cur
+      })
+    })
+    return () => stopConnectivityWatch()
+  }, [connect, isSignedIn])
+
   const serverName = status.phase === 'ready' ? status.serverName : null
 
   return (
-    <Ctx.Provider value={{ status, serverName, activeRole, retry: () => void connect(), connectTo }}>
+    <Ctx.Provider
+      value={{ status, serverName, activeRole, retry: () => void connect(), connectTo }}
+    >
       {children}
     </Ctx.Provider>
   )

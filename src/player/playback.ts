@@ -8,6 +8,7 @@
 import { startPlay, mediaUrl, coverUrl, closeSession, syncSession } from '@/api/abs'
 import { loadTrack, getState, type NowPlaying } from './store'
 import { localSourceFor, applyAutoDownloads } from './downloads'
+import { recordProgress } from './pendingProgress'
 import { getQueueState } from './queue'
 
 interface ActiveSession {
@@ -17,6 +18,9 @@ interface ActiveSession {
 }
 
 let active: ActiveSession | null = null
+// The downloaded item playing with no server session, so offline progress ticks
+// know which item (and how long) to record for later sync. Null while streaming.
+let offlineItem: { itemId: string; duration: number } | null = null
 
 /** Start playback for an ABS library item id. Title/author fall back to the
  *  play-session's display fields, so the car can play an item with only its id.
@@ -56,6 +60,7 @@ export async function playItemById(itemId: string): Promise<void> {
   }
   loadTrack(np)
 
+  offlineItem = null
   active = {
     sessionId: session.id,
     duration: session.duration,
@@ -97,6 +102,7 @@ async function playFromDownload(itemId: string): Promise<void> {
   }
   loadTrack(np)
   active = null
+  offlineItem = { itemId, duration: local.duration }
 }
 
 /**
@@ -106,7 +112,12 @@ async function playFromDownload(itemId: string): Promise<void> {
  * the last <15s (and the true stop point) unsynced, and "recent listens" lags.
  */
 export async function syncProgress(currentTime: number, force = false): Promise<void> {
-  if (!active) return
+  if (!active) {
+    // Downloaded book playing offline: bank the position locally so it syncs to
+    // the server the next time we're online (connectivity watcher / bg task).
+    if (offlineItem) recordProgress(offlineItem.itemId, currentTime, offlineItem.duration)
+    return
+  }
   const delta = Math.max(0, Math.round(currentTime - active.lastSyncedTime))
   if (!force && delta < 15) return
   active.lastSyncedTime = currentTime
@@ -138,5 +149,11 @@ async function safeClose(): Promise<void> {
 }
 
 export async function stopPlayback(): Promise<void> {
+  // Bank the final offline position before we forget which item was playing, so
+  // stopping (not just ticking) lands the true stop point for later sync.
+  if (!active && offlineItem) {
+    recordProgress(offlineItem.itemId, getState().position, offlineItem.duration)
+  }
+  offlineItem = null
   await safeClose()
 }

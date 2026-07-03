@@ -252,6 +252,22 @@ export async function setItemFinished(itemId: string, finished: boolean): Promis
   })
 }
 
+/**
+ * Write a listening position straight to the user's progress, no play session
+ * (ABS PATCH /api/me/progress/:id). Used to flush progress recorded offline once
+ * the server is reachable again - the offline session is long gone, so we can't
+ * resume it, but ABS updates progress from this route regardless.
+ */
+export async function putItemProgress(
+  itemId: string,
+  payload: { currentTime: number; duration: number; progress: number },
+): Promise<void> {
+  await absRequest<void>(`/api/me/progress/${encodeURIComponent(itemId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
 // ---- Bookmarks ----
 // User-scoped, per item. ABS has no per-item bookmark GET, so reads go through
 // /api/me (bookmarks[]); create/delete hit the per-item routes.

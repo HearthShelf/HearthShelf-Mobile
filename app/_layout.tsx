@@ -14,6 +14,7 @@ import { PlayerHost } from '@/player/PlayerHost'
 import { MiniPlayerDock } from '@/player/MiniPlayerDock'
 import { PopToast } from '@/social/PopToast'
 import { SplashScreen as HearthSplash, type SplashPhase } from '@/ui/SplashScreen'
+import { OfflineBanner } from '@/ui/OfflineBanner'
 import { ConnectionProvider, useConnection } from '@/api/ConnectionProvider'
 import { clearSession } from '@/api/session'
 import { clearMeId } from '@/api/me'
@@ -21,6 +22,7 @@ import { clearTrack } from '@/player/store'
 import { clearAutoSession } from '@/player/autoBridge'
 import { stopQueueSync } from '@/player/queueSync'
 import { stopClubSync } from '@/player/clubSync'
+import { unregisterBackgroundFlush } from '@/player/connectivity'
 import { ensureNotificationChannels } from '@/lib/notifications'
 import { mountNoteForegroundHandler } from '@/social/noteEvents'
 import { fonts } from '@/ui/theme'
@@ -101,13 +103,16 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
     clearAutoSession()
     stopQueueSync()
     stopClubSync()
+    void unregisterBackgroundFlush()
     clearMeId()
     await clearSession()
     await signOut()
     router.replace('/sign-in')
   }, [signOut, router])
 
-  const covered = status.phase !== 'ready' && !peekingServers
+  // Offline mode lets the user in (downloaded books only), so the splash lifts
+  // just like `ready`; a persistent banner marks the degraded state instead.
+  const covered = status.phase !== 'ready' && status.phase !== 'offline' && !peekingServers
 
   const phase: SplashPhase =
     status.phase === 'connecting'
@@ -123,6 +128,7 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
   return (
     <View style={styles.gateRoot}>
       {children}
+      {status.phase === 'offline' ? <OfflineBanner onRetry={retry} /> : null}
       {covered ? (
         <View style={StyleSheet.absoluteFill}>
           <HearthSplash

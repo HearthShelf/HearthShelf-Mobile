@@ -88,6 +88,7 @@ export const icons = {
   server: 'dns',
   signOut: 'logout',
   retry: 'refresh',
+  cloudOff: 'cloud-off',
   // Settings
   palette: 'palette',
   darkMode: 'dark-mode',
