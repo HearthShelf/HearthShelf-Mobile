@@ -38,8 +38,7 @@ export function useBookSelection(): BookSelection {
   }, [])
 
   const begin = useCallback((id: string) => {
-    // Entering multi-select is the canonical long-press "mode on" cue.
-    haptics.mode()
+    haptics.longPress()
     setSelecting(true)
     setSelected((s) => {
       const next = new Set(s)

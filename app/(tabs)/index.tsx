@@ -230,7 +230,7 @@ export default function HomeScreen() {
 
   const openActions = useCallback(
     (item: ABSLibraryItem) => {
-      haptics.mode()
+      haptics.longPress()
       actionsRef.current?.present(item, progressById.get(item.id)?.isFinished === true)
     },
     [progressById],

@@ -12,7 +12,8 @@
  *
  * Levels:
  *   off      - nothing fires.
- *   minimal  - eyes-off transport (play/pause, skip, chapter) + the A-Z ratchet.
+ *   minimal  - eyes-off transport (play/pause, skip, chapter), long-press cues,
+ *              + the A-Z ratchet.
  *   all      - the above plus save/mode/completion/destructive cues.
  */
 import * as Haptics from 'expo-haptics'
@@ -63,10 +64,17 @@ function mode(): void {
   fire(Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium))
 }
 
+/** A long-press affordance (home book actions, library multi-select). Fires at
+ *  minimal + all, with a light cue so it stays quieter than mode changes. */
+function longPress(): void {
+  if (level() === 'off') return
+  fire(Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light))
+}
+
 /** A destructive or cautionary confirm (delete, remove from queue). All only. */
 function warn(): void {
   if (level() !== 'all') return
   fire(Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning))
 }
 
-export const haptics = { transport, select, success, mode, warn }
+export const haptics = { transport, select, success, mode, longPress, warn }
