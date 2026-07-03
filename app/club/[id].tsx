@@ -17,6 +17,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -27,8 +29,17 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type { HSClubBook, HSClubDetail, HSClubMember, HSNote } from '@hearthshelf/core'
 import { coverHue, formatTimestamp, sortMembersByProgress } from '@hearthshelf/core'
-import { getClub, setClubMembership, markClubRead, archiveClub, kickClubMember } from '@/api/clubs'
+import {
+  getClub,
+  setClubMembership,
+  markClubRead,
+  archiveClub,
+  kickClubMember,
+  setClubCurrentBook,
+  removeClubQueued,
+} from '@/api/clubs'
 import { holdClubPolling } from '@/player/clubSync'
+import { useMiniPlayerInset } from '@/ui/useContentInset'
 import { postNote, deleteNote } from '@/api/notes'
 import { getMeId } from '@/api/me'
 import { coverUrl, avatarUrl } from '@/api/abs'
@@ -71,6 +82,8 @@ export default function ClubRoomScreen() {
   const meId = getMeId()
 
   const player = useSyncExternalStore(subscribePlayer, getPlayerState)
+  // Clearance so the composer/join bar sits above the docked mini player.
+  const miniInset = useMiniPlayerInset()
 
   const [detail, setDetail] = useState<HSClubDetail | null>(null)
   const [loadError, setLoadError] = useState(false)
@@ -235,6 +248,31 @@ export default function ClubRoomScreen() {
     else show('Could not remove')
   }
 
+  // Owner: promote a queued book to be the current book now (finishes the old
+  // one), or drop it from the queue.
+  const promoteQueued = async (book: HSClubBook) => {
+    if (!detail || busy) return
+    setBusy(true)
+    haptics.success()
+    const ok = await setClubCurrentBook(detail.club.id, book.libraryItemId)
+    setBusy(false)
+    if (ok) {
+      show(`Now reading ${book.title || 'the next book'}`)
+      setViewBookId(undefined)
+      await load({ markRead: true })
+    } else show('Could not start the book')
+  }
+
+  const dropQueued = async (book: HSClubBook) => {
+    if (!detail || busy) return
+    setBusy(true)
+    haptics.warn()
+    const ok = await removeClubQueued(detail.club.id, book.libraryItemId)
+    setBusy(false)
+    if (ok) await load()
+    else show('Could not remove')
+  }
+
   if (loadError) {
     return (
       <Screen>
@@ -291,16 +329,18 @@ export default function ClubRoomScreen() {
       >
         {viewedBook ? (
           <View style={styles.bookHeader}>
-            <Cover
-              uri={coverUrl(viewedBook.libraryItemId)}
-              itemId={viewedBook.libraryItemId}
-              size={54}
-              radius={radius.tile}
-              fallback={{
-                hue: coverHue(viewedBook.libraryItemId),
-                initial: (viewedBook.title || '?').charAt(0),
-              }}
-            />
+            <Touchable onPress={() => router.push(`/item/${viewedBook.libraryItemId}`)}>
+              <Cover
+                uri={coverUrl(viewedBook.libraryItemId)}
+                itemId={viewedBook.libraryItemId}
+                size={54}
+                radius={radius.tile}
+                fallback={{
+                  hue: coverHue(viewedBook.libraryItemId),
+                  initial: (viewedBook.title || '?').charAt(0),
+                }}
+              />
+            </Touchable>
             <View style={{ flex: 1, minWidth: 0 }}>
               <AppText variant="eyebrow" color={colors.textMuted}>
                 {isCurrentView ? 'Reading now' : 'Past book'}
@@ -343,6 +383,67 @@ export default function ClubRoomScreen() {
             </AppText>
             {sortedMembers.map((m) => (
               <MemberRace key={m.userId} member={m} isMe={m.userId === meId} />
+            ))}
+          </View>
+        ) : null}
+
+        {/* Up next queue. Everyone sees what's lined up; the owner can start the
+            next book now or remove one. Only shown on the current-book view. */}
+        {isCurrentView && detail.queue.length > 0 ? (
+          <View style={styles.queueSection}>
+            <AppText
+              variant="eyebrow"
+              color={colors.textMuted}
+              style={{ marginBottom: spacing.sm }}
+            >
+              Up next
+            </AppText>
+            {detail.queue.map((b) => (
+              <View key={b.libraryItemId} style={styles.queueRow}>
+                <Touchable onPress={() => router.push(`/item/${b.libraryItemId}`)}>
+                  <Cover
+                    uri={coverUrl(b.libraryItemId)}
+                    itemId={b.libraryItemId}
+                    size={40}
+                    radius={radius.tile}
+                    fallback={{
+                      hue: coverHue(b.libraryItemId),
+                      initial: (b.title || '?').charAt(0),
+                    }}
+                  />
+                </Touchable>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <AppText variant="meta" numberOfLines={1}>
+                    {b.title || 'Untitled'}
+                  </AppText>
+                  {b.author ? (
+                    <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
+                      {b.author}
+                    </AppText>
+                  ) : null}
+                </View>
+                {isOwner ? (
+                  <>
+                    <Touchable
+                      hitSlop={8}
+                      disabled={busy}
+                      onPress={() => void dropQueued(b)}
+                      style={{ padding: spacing.xs }}
+                    >
+                      <Icon name={icons.close} size={16} color={colors.textMuted} />
+                    </Touchable>
+                    <Touchable
+                      style={styles.queueStartBtn}
+                      disabled={busy}
+                      onPress={() => void promoteQueued(b)}
+                    >
+                      <AppText variant="caption" color={colors.onAccent}>
+                        Start
+                      </AppText>
+                    </Touchable>
+                  </>
+                ) : null}
+              </View>
             ))}
           </View>
         ) : null}
@@ -394,73 +495,79 @@ export default function ClubRoomScreen() {
         </View>
       </ScrollView>
 
-      {/* Composer - members only, on the current book. */}
-      {isMember && isCurrentView && viewedBook ? (
-        <View style={styles.composer}>
-          {replyTo ? (
-            <View style={styles.replyBanner}>
-              <AppText
-                variant="caption"
-                color={colors.textMuted}
-                numberOfLines={1}
-                style={{ flex: 1 }}
-              >
-                Replying to {replyTo.username}
-              </AppText>
-              <IconButton
-                name={icons.close}
-                size={16}
-                color={colors.textMuted}
-                onPress={() => setReplyTo(null)}
+      {/* Composer - members only, on the current book. Wrapped so the keyboard
+          lifts it and it clears the docked mini player above the tab bar. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ paddingBottom: miniInset }}
+      >
+        {isMember && isCurrentView && viewedBook ? (
+          <View style={styles.composer}>
+            {replyTo ? (
+              <View style={styles.replyBanner}>
+                <AppText
+                  variant="caption"
+                  color={colors.textMuted}
+                  numberOfLines={1}
+                  style={{ flex: 1 }}
+                >
+                  Replying to {replyTo.username}
+                </AppText>
+                <IconButton
+                  name={icons.close}
+                  size={16}
+                  color={colors.textMuted}
+                  onPress={() => setReplyTo(null)}
+                />
+              </View>
+            ) : null}
+            <View style={styles.composerRow}>
+              <TextInput
+                style={styles.input}
+                placeholder={
+                  playingThisBook
+                    ? `Note at ${formatTimestamp(position)}…`
+                    : 'Leave a note (play the book to timestamp it)…'
+                }
+                placeholderTextColor={colors.textFaint}
+                value={body}
+                onChangeText={setBody}
+                multiline
+                maxLength={2000}
               />
+              <Touchable
+                style={[styles.sendBtn, (!body.trim() || busy) && { opacity: 0.5 }]}
+                disabled={!body.trim() || busy}
+                onPress={() => void submit()}
+              >
+                <Icon name={icons.send} size={18} color={colors.onAccent} />
+              </Touchable>
             </View>
-          ) : null}
-          <View style={styles.composerRow}>
-            <TextInput
-              style={styles.input}
-              placeholder={
-                playingThisBook
-                  ? `Note at ${formatTimestamp(position)}…`
-                  : 'Leave a note (play the book to timestamp it)…'
-              }
-              placeholderTextColor={colors.textFaint}
-              value={body}
-              onChangeText={setBody}
-              multiline
-              maxLength={2000}
-            />
+            {!replyTo ? <SafeSwitch on={safe} onChange={setSafe} /> : null}
+          </View>
+        ) : !isMember ? (
+          <View style={styles.joinBar}>
+            <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
+              Members see your progress in this club's books.
+            </AppText>
             <Touchable
-              style={[styles.sendBtn, (!body.trim() || busy) && { opacity: 0.5 }]}
-              disabled={!body.trim() || busy}
-              onPress={() => void submit()}
+              style={styles.joinBtn}
+              disabled={busy}
+              onPress={async () => {
+                setBusy(true)
+                const ok = await setClubMembership(detail.club.id, true)
+                setBusy(false)
+                if (ok) await load({ markRead: true })
+                else show('Could not join')
+              }}
             >
-              <Icon name={icons.send} size={18} color={colors.onAccent} />
+              <AppText variant="label" color={colors.onAccent}>
+                Join club
+              </AppText>
             </Touchable>
           </View>
-          {!replyTo ? <SafeSwitch on={safe} onChange={setSafe} /> : null}
-        </View>
-      ) : !isMember ? (
-        <View style={styles.joinBar}>
-          <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
-            Members see your progress in this club's books.
-          </AppText>
-          <Touchable
-            style={styles.joinBtn}
-            disabled={busy}
-            onPress={async () => {
-              setBusy(true)
-              const ok = await setClubMembership(detail.club.id, true)
-              setBusy(false)
-              if (ok) await load({ markRead: true })
-              else show('Could not join')
-            }}
-          >
-            <AppText variant="label" color={colors.onAccent}>
-              Join club
-            </AppText>
-          </Touchable>
-        </View>
-      ) : null}
+        ) : null}
+      </KeyboardAvoidingView>
 
       <AppTabBar activeName={null} onPressTab={goToTab} />
 
@@ -723,6 +830,28 @@ const makeStyles = (colors: Palette) =>
       marginTop: 4,
     },
     raceFill: { height: '100%', borderRadius: 3 },
+    queueSection: {
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      marginHorizontal: spacing.lg,
+      marginTop: spacing.md,
+      borderRadius: radius.card,
+      backgroundColor: colors.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    queueRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.sm,
+    },
+    queueStartBtn: {
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs,
+      borderRadius: radius.pill,
+      backgroundColor: colors.accent,
+    },
     chatSection: { paddingHorizontal: spacing.lg, marginTop: spacing.lg },
     teaser: {
       flexDirection: 'row',
