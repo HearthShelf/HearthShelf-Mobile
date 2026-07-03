@@ -2,6 +2,10 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // @hearthshelf/core's relative imports carry .ts so its dual-publish build can
+    // rewrite them to .js for the no-bundler server; consumers must allow the .ts
+    // specifier (Metro resolves it fine at runtime).
+    "allowImportingTsExtensions": true,
     "paths": {
       "@/*": ["./src/*"],
       "@hearthshelf/core": ["./packages/core/src/index.ts"],
