@@ -16,6 +16,9 @@ import { AppText } from '@/ui/primitives'
 import { spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { SettingsPanel, SettingsGroup, SettingsRow } from '@/ui/settingsControls'
+import { SettingsToggle } from '@/ui/settingsControls'
+import { getSettingsState, setSetting, subscribeSettings } from '@/store/settings'
+import { useSyncExternalStore } from 'react'
 
 function fmtDay(d: Date | null | undefined): string {
   if (!d) return '-'
@@ -26,6 +29,7 @@ export default function AccountScreen() {
   const router = useRouter()
   const { user } = useUser()
   const { signOut } = useAuth()
+  const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
 
@@ -60,6 +64,22 @@ export default function AccountScreen() {
       </View>
 
       <SettingsGroup>
+        <SettingsRow
+          icon="account-circle"
+          title="Profile photo"
+          desc="Shown from your HearthShelf account. Mobile upload needs the native image-picker pass."
+        />
+        <SettingsRow
+          icon="public"
+          title="Use Gravatar"
+          desc="Show your Gravatar when no profile photo is uploaded."
+          control={
+            <SettingsToggle
+              on={settings.useGravatar}
+              onChange={(v) => setSetting('useGravatar', v)}
+            />
+          }
+        />
         <SettingsRow icon="badge" title="Account type" desc="HearthShelf account" />
         <SettingsRow icon="calendar-today" title="Member since" desc={memberSince} last />
       </SettingsGroup>

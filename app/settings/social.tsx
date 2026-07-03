@@ -44,6 +44,7 @@ export default function SocialPanel() {
   }, [])
 
   const choice = choiceFromValue(s.shareCurrentlyListening)
+  const readChoice = choiceFromValue(s.shareReadBooks)
   // Copy for the "Follow default" state names what that default currently is.
   const defaultLabel =
     defaultShareListening == null
@@ -62,10 +63,33 @@ export default function SocialPanel() {
     <SettingsPanel>
       <SettingsLabel>People</SettingsLabel>
       <SettingsGroup>
+        <SettingsRow
+          title="Reading list"
+          desc={
+            readChoice === 'default'
+              ? 'Appear on server reading lists using the server default until you choose.'
+              : readChoice === 'share'
+                ? 'Other listeners can see your finished reading history on shared server surfaces.'
+                : 'Your finished reading history stays hidden from shared server surfaces.'
+          }
+          stacked
+        >
+          <Seg
+            value={readChoice}
+            onChange={(c) => setSetting('shareReadBooks', valueFromChoice(c))}
+            fill
+            options={[
+              { value: 'default', label: 'Default' },
+              { value: 'share', label: 'Share' },
+              { value: 'hide', label: 'Hide' },
+            ]}
+          />
+        </SettingsRow>
         <SettingsRow title="Listening now" desc={desc} stacked last>
           <Seg
             value={choice}
             onChange={(c) => setSetting('shareCurrentlyListening', valueFromChoice(c))}
+            fill
             options={[
               { value: 'default', label: 'Default' },
               { value: 'share', label: 'Share' },

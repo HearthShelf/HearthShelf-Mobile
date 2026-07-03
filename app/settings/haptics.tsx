@@ -17,6 +17,7 @@ export default function HapticsPanel() {
           <Seg
             value={s.haptics}
             onChange={(v) => setSetting('haptics', v)}
+            fill
             options={[
               { value: 'off', label: 'Off' },
               { value: 'minimal', label: 'Minimal' },
@@ -29,6 +30,7 @@ export default function HapticsPanel() {
             <Seg
               value={s.hapticIntensity}
               onChange={(v) => setSetting('hapticIntensity', v)}
+              fill
               options={[
                 { value: 'light', label: 'Light' },
                 { value: 'medium', label: 'Medium' },

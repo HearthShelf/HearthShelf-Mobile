@@ -171,15 +171,20 @@ export function Seg<T extends string>({
   value,
   onChange,
   options,
+  fill,
 }: {
   value: T
   onChange: (v: T) => void
   options: { value: T; label: string }[]
+  /** Stretches to the full row width with equal-width segments. Use when `Seg` is
+   *  the sole control on its own row (e.g. a `stacked` SettingsRow); leave off when
+   *  it sits inline next to a label, where it should hug its content instead. */
+  fill?: boolean
 }) {
   const colors = useColors()
   const styles = useStyles()
   return (
-    <View style={styles.seg}>
+    <View style={[styles.seg, fill && styles.segFill]}>
       {options.map((o) => {
         const on = o.value === value
         return (
@@ -189,6 +194,7 @@ export function Seg<T extends string>({
             android_ripple={{ color: colors.fillStrong }}
             style={({ pressed }) => [
               styles.segItem,
+              fill && styles.segItemFill,
               on && styles.segItemOn,
               pressed && styles.pressed,
             ]}
@@ -196,7 +202,7 @@ export function Seg<T extends string>({
             <AppText
               variant="caption"
               color={on ? colors.onAccent : colors.textMuted}
-              style={on && styles.segTextOn}
+              style={[styles.segText, on && styles.segTextOn]}
             >
               {o.label}
             </AppText>
@@ -398,13 +404,23 @@ const makeStyles = (colors: Palette) =>
   pressed: { opacity: 0.65 },
   seg: {
     flexDirection: 'row',
+    alignSelf: 'flex-start',
     backgroundColor: colors.fill,
     borderRadius: radius.pill,
     padding: 3,
     gap: 2,
   },
-  segItem: { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill },
+  segFill: { alignSelf: 'stretch' },
+  segItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+  },
+  segItemFill: { flex: 1 },
   segItemOn: { backgroundColor: colors.accent },
+  segText: { textAlign: 'center' },
   segTextOn: { fontWeight: '700' },
   toggleTrack: {
     width: 46,

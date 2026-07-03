@@ -17,7 +17,7 @@ import { fetchLinkedServers, type LinkedServer } from './controlPlane'
 import { connectServer } from './connect'
 import { setSession, setLastServerId, getLastServerId } from './session'
 import { CLERK_JWT_TEMPLATE } from '@/lib/config'
-import { setAutoSession, setAutoNotePops } from '@/player/autoBridge'
+import { clearAutoSession, setAutoSession, setAutoNotePops } from '@/player/autoBridge'
 import { startQueueSync } from '@/player/queueSync'
 import { startClubSync } from '@/player/clubSync'
 import { ensureDeviceId, getSettingsState, subscribeSettings } from '@/store/settings'
@@ -75,6 +75,8 @@ const Ctx = createContext<ConnectionValue | null>(null)
 // connect). Guarded so re-connects don't stack subscriptions.
 let notePopsMirrorArmed = false
 let lastMirroredNotePops: boolean | null = null
+let carModeMirrorArmed = false
+let lastAutoSession: { serverUrl: string; token: string } | null = null
 function ensureNotePopsMirror(): void {
   if (notePopsMirrorArmed) return
   notePopsMirrorArmed = true
@@ -85,6 +87,22 @@ function ensureNotePopsMirror(): void {
       lastMirroredNotePops = next
       setAutoNotePops(next)
     }
+  })
+}
+
+function pushAutoSession(serverUrl: string, token: string): void {
+  const { carMode, skipBack, skipForward } = getSettingsState()
+  lastAutoSession = { serverUrl, token }
+  if (carMode === 'off') clearAutoSession()
+  else setAutoSession(serverUrl, token, skipBack, skipForward)
+}
+
+function ensureCarModeMirror(): void {
+  if (carModeMirrorArmed) return
+  carModeMirrorArmed = true
+  subscribeSettings(() => {
+    if (!lastAutoSession) return
+    pushAutoSession(lastAutoSession.serverUrl, lastAutoSession.token)
   })
 }
 
@@ -121,8 +139,8 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         // Ensure the per-install deviceId is loaded before sync starts, so
         // device-scoped settings round-trip on the first pull.
         await ensureDeviceId()
-        const { skipBack, skipForward } = getSettingsState()
-        setAutoSession(serverUrl, token, skipBack, skipForward)
+        pushAutoSession(serverUrl, token)
+        ensureCarModeMirror()
         // Mirror notePops into the car service (it can't read the settings store)
         // and keep it in sync as the user toggles it.
         setAutoNotePops(getSettingsState().notePops)

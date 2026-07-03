@@ -10,6 +10,8 @@ import {
   SettingsLabel,
   SettingsRow,
   Seg,
+  SettingsToggle,
+  SettingsSlider,
   AccentSwatchPicker,
 } from '@/ui/settingsControls'
 
@@ -28,6 +30,7 @@ export default function AppearancePanel() {
           <Seg
             value={s.theme}
             onChange={(v) => setSetting('theme', v)}
+            fill
             options={[
               { value: 'dark', label: 'Dark' },
               { value: 'light', label: 'Light' },
@@ -49,6 +52,21 @@ export default function AppearancePanel() {
       <SettingsLabel>Covers</SettingsLabel>
       <SettingsGroup>
         <SettingsRow
+          icon="blur-on"
+          title="Cover glow intensity"
+          desc="How strongly cover colours bloom behind artwork."
+          stacked
+        >
+          <SettingsSlider
+            value={s.glow}
+            min={0}
+            max={60}
+            step={1}
+            onChange={(v) => setSetting('glow', v)}
+            formatLabel={(v) => `${v}`}
+          />
+        </SettingsRow>
+        <SettingsRow
           icon="crop"
           title="Cover shape"
           desc="How book covers are cropped in lists and the player."
@@ -67,7 +85,6 @@ export default function AppearancePanel() {
           icon="blur-on"
           title="Cover glow style"
           desc="Gradient blooms live; Image is the lighter-weight option."
-          last
           control={
             <Seg
               value={s.glowMode}
@@ -76,6 +93,18 @@ export default function AppearancePanel() {
                 { value: 'gradient', label: 'Gradient' },
                 { value: 'image', label: 'Image' },
               ]}
+            />
+          }
+        />
+        <SettingsRow
+          icon="sync"
+          title="Use shared settings"
+          desc="Use the synced setting store on this device. Turn off to keep this device on local cached settings."
+          last
+          control={
+            <SettingsToggle
+              on={s.useSharedSettings}
+              onChange={(v) => setSetting('useSharedSettings', v)}
             />
           }
         />

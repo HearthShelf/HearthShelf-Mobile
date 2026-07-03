@@ -32,6 +32,7 @@ export type CoverAspect = 'square' | 'portrait'
 /** How much haptic feedback to fire. See src/ui/haptics.ts for what each covers. */
 export type HapticLevel = 'off' | 'minimal' | 'all'
 export type HapticIntensity = 'light' | 'medium'
+export type CarMode = 'auto' | 'on' | 'off'
 /** Aspect ratio (width/height) for cover tiles, per the CoverAspect setting. */
 export const COVER_ASPECT_RATIO: Record<CoverAspect, number> = { square: 1, portrait: 2 / 3 }
 
@@ -91,6 +92,7 @@ export interface SettingsState {
   theme: ThemePref
   accentMode: AccentMode
   accentHex: string
+  glow: number
   glowMode: GlowMode
   coverAspect: CoverAspect
 
@@ -98,10 +100,13 @@ export interface SettingsState {
   scrubber: ScrubberScope
   defaultSpeed: number
   skipForward: number
+  skipForwardCustom: number
   skipBack: number
+  skipBackCustom: number
   playerBg: PlayerBg
   haptics: HapticLevel
   hapticIntensity: HapticIntensity
+  carMode: CarMode
 
   // Sleep timer defaults (seed player/store.ts's sleepBehavior on a fresh session)
   sleepRewindSec: number
@@ -110,6 +115,10 @@ export interface SettingsState {
   sleepFadeLen: number
   sleepShakeExtend: boolean
   sleepShakeMinutes: number
+  autoSleep: boolean
+  autoSleepStart: string
+  autoSleepEnd: string
+  autoSleepDur: number
 
   // Player action buttons: arrangement across on-screen/tray/hidden, and whether
   // on-screen buttons drop their labels to fit more per row.
@@ -118,6 +127,8 @@ export interface SettingsState {
 
   // Social / community (account). Tri-state presence sharing: null = never chose
   // (follow the server's community default, which ships OFF for presence).
+  useGravatar: boolean
+  shareReadBooks: boolean | null
   shareCurrentlyListening: boolean | null
 
   // Social pops (device). Show a toast when playback crosses a club note; can be
@@ -140,16 +151,20 @@ let state: SettingsState = {
   theme: 'dark',
   accentMode: 'manual',
   accentHex: EMBER,
+  glow: 60,
   glowMode: 'gradient',
   coverAspect: 'square',
 
   scrubber: 'chapter',
   defaultSpeed: 1,
   skipForward: 30,
+  skipForwardCustom: 45,
   skipBack: 15,
+  skipBackCustom: 20,
   playerBg: 'blurred',
   haptics: 'minimal',
   hapticIntensity: 'light',
+  carMode: 'auto',
 
   sleepRewindSec: 30,
   chapterBarrier: true,
@@ -157,10 +172,16 @@ let state: SettingsState = {
   sleepFadeLen: 20,
   sleepShakeExtend: false,
   sleepShakeMinutes: 5,
+  autoSleep: false,
+  autoSleepStart: '22:00',
+  autoSleepEnd: '06:00',
+  autoSleepDur: 30,
 
   playerActions: DEFAULT_PLAYER_ACTIONS,
   playerActionsIconOnly: false,
 
+  useGravatar: false,
+  shareReadBooks: null,
   shareCurrentlyListening: null,
   notePops: true,
   noteDefaultVisibility: 'public',

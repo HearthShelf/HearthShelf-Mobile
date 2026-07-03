@@ -3,6 +3,7 @@
  * seed player/store.ts's sleepBehavior when a fresh session starts.
  */
 import { useSyncExternalStore } from 'react'
+import { TextInput, View } from 'react-native'
 import { getSettingsState, subscribeSettings, setSetting } from '@/store/settings'
 import {
   SettingsPanel,
@@ -10,7 +11,10 @@ import {
   SettingsRow,
   SettingsToggle,
   SettingsSlider,
+  ChipRow,
 } from '@/ui/settingsControls'
+import { useColors } from '@/ui/ThemeProvider'
+import { spacing } from '@/ui/theme'
 
 function fmtRewind(sec: number): string {
   if (sec === 0) return 'Off'
@@ -22,6 +26,7 @@ function fmtRewind(sec: number): string {
 
 export default function SleepPanel() {
   const s = useSyncExternalStore(subscribeSettings, getSettingsState)
+  const colors = useColors()
 
   return (
     <SettingsPanel>
@@ -89,6 +94,50 @@ export default function SleepPanel() {
               formatLabel={(v) => `${v} min`}
             />
           </SettingsRow>
+        )}
+        <SettingsRow
+          title="Auto sleep timer"
+          desc="Start a timer automatically when you press play during quiet hours."
+          control={<SettingsToggle on={s.autoSleep} onChange={(v) => setSetting('autoSleep', v)} />}
+          last={!s.autoSleep}
+        />
+        {s.autoSleep && (
+          <>
+            <SettingsRow title="Quiet hours" desc="Use 24-hour HH:MM times." stacked>
+              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                <TextInput
+                  value={s.autoSleepStart}
+                  onChangeText={(v) => setSetting('autoSleepStart', v)}
+                  placeholder="22:00"
+                  placeholderTextColor={colors.textFaint}
+                  style={{ color: colors.text, flex: 1, borderColor: colors.border, borderWidth: 1, borderRadius: 10, padding: spacing.sm }}
+                />
+                <TextInput
+                  value={s.autoSleepEnd}
+                  onChangeText={(v) => setSetting('autoSleepEnd', v)}
+                  placeholder="06:00"
+                  placeholderTextColor={colors.textFaint}
+                  style={{ color: colors.text, flex: 1, borderColor: colors.border, borderWidth: 1, borderRadius: 10, padding: spacing.sm }}
+                />
+              </View>
+            </SettingsRow>
+            <SettingsRow title="Auto duration" desc="Timer length auto sleep starts with." stacked last>
+              <ChipRow
+                value={s.autoSleepDur}
+                options={[20, 30, 45]}
+                onChange={(v) => setSetting('autoSleepDur', v)}
+                unit="m"
+              />
+              <SettingsSlider
+                value={s.autoSleepDur}
+                min={5}
+                max={180}
+                step={5}
+                onChange={(v) => setSetting('autoSleepDur', v)}
+                formatLabel={(v) => `${v}m`}
+              />
+            </SettingsRow>
+          </>
         )}
       </SettingsGroup>
     </SettingsPanel>
