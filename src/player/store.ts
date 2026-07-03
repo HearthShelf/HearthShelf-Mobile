@@ -117,7 +117,10 @@ export function loadTrack(track: NowPlaying): void {
     nowPlaying: track,
     isPlaying: true,
     position: track.startPosition,
-    seekTo: null,
+    // Seed an explicit seek to the resume point. The native load position isn't
+    // honored reliably, so without this playback starts at 0 and the first
+    // progress tick syncs 0 back over the real position (resetting progress).
+    seekTo: track.startPosition > 0 ? track.startPosition : null,
     rate: s.defaultSpeed,
     sleepBehavior: {
       rewindSec: s.sleepRewindSec,

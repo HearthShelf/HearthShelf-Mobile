@@ -40,6 +40,7 @@ import {
   currentChapter,
 } from '@/player/store'
 import { getQueueState, subscribeQueue } from '@/player/queue'
+import { getProgressState } from '@/store/progress'
 import { getImmersive, subscribeImmersive, setImmersive } from '@/player/immersive'
 import { getSettingsState, subscribeSettings, COVER_ASPECT_RATIO } from '@/store/settings'
 import { useBookmarks } from '@/player/useBookmarks'
@@ -557,7 +558,9 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
       <QueueSheet
         ref={queueRef}
         onJump={async (itemId) => {
+          const saved = getProgressState().byId.get(itemId)
           await playItemById(itemId)
+          if (!saved?.isFinished && (saved?.currentTime ?? 0) > 0) requestSeek(saved!.currentTime)
           router.replace('/player')
         }}
       />

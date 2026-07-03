@@ -17,7 +17,8 @@ import { AppText, Cover, PrimaryButton, Screen, icons } from '@/ui/primitives'
 import { DUR } from '@/ui/motion'
 import { radius, spacing } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
-import { getState, subscribe } from '@/player/store'
+import { getState, subscribe, requestSeek } from '@/player/store'
+import { getProgressState } from '@/store/progress'
 import { PlayerSurface } from '../player'
 
 const HEARTH = require('../../assets/images/sitting-in-the-hearth.webp')
@@ -61,7 +62,9 @@ function EmptyState() {
   const resume = async () => {
     if (!last) return
     try {
+      const saved = getProgressState().byId.get(last.id)
       await playItemById(last.id)
+      if (!saved?.isFinished && (saved?.currentTime ?? 0) > 0) requestSeek(saved!.currentTime)
       // Stay on this tab - it re-renders the inline <PlayerSurface embedded /> now
       // that nowPlaying is set. Pushing /player would stack a second (non-embedded)
       // player on top, which is where the stray "minimize" button came from.
