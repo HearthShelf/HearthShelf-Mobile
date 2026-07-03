@@ -4,6 +4,15 @@
  * same origin as ABS and use the same ABS bearer token as the rest of mobile.
  */
 import { getSession } from './session'
+import type {
+  HSMatchCandidate as MatchCandidate,
+  HSFinishedBookMatch as MatchRow,
+  HSFinishedBookImportRow as ImportRow,
+  HSHardcoverAccount as HardcoverAccountStatus,
+  HSHardcoverSyncResult as HardcoverSyncResult,
+} from '@hearthshelf/core'
+
+export type { MatchCandidate, MatchRow, ImportRow, HardcoverAccountStatus, HardcoverSyncResult }
 
 function requireSession() {
   const s = getSession()
@@ -28,44 +37,6 @@ async function fbFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   const text = await res.text()
   return (text ? JSON.parse(text) : undefined) as T
-}
-
-export interface MatchCandidate {
-  libraryItemId: string
-  title: string
-  author: string
-  score: number
-}
-
-export interface MatchRow {
-  title: string
-  author: string
-  isbn: string | null
-  status: 'auto' | 'ambiguous' | 'none'
-  candidates: MatchCandidate[]
-}
-
-export interface ImportRow {
-  title: string
-  author: string | null
-  isbn: string | null
-  dateFinished: string | null
-  rating: number | null
-  libraryItemId: string | null
-}
-
-export interface HardcoverAccountStatus {
-  connected: boolean
-  username: string | null
-  lastSyncAt: number | null
-  lastSyncStatus: 'ok' | 'error' | null
-  lastSyncError: string | null
-}
-
-export interface HardcoverSyncResult {
-  synced: number
-  notFound: string[]
-  errors: { title: string; error: string }[]
 }
 
 export function matchRows(

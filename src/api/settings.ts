@@ -10,32 +10,15 @@
  * PUT sends only the changed keys, each stamped with its updatedAt, and reports
  * which landed / were stale / failed validation.
  */
-import type { SettingScope, SettingValue } from '@hearthshelf/core'
+import type {
+  StoredSetting,
+  SettingChange,
+  SettingsPullResult as ServerSettings,
+  SettingsPushResult as PushResult,
+} from '@hearthshelf/core'
 import { getSession } from './session'
 
-export interface StoredSetting {
-  value: SettingValue
-  updatedAt: number
-}
-
-export interface ServerSettings {
-  account: Record<string, StoredSetting>
-  device: Record<string, StoredSetting>
-  connection: { absUrl: string; label: string | null; connected: boolean } | null
-}
-
-export interface SettingChange {
-  scope: SettingScope
-  key: string
-  value: SettingValue
-  updatedAt: number
-}
-
-export interface PushResult {
-  applied: string[]
-  rejected: Array<{ key: string; value: SettingValue; updatedAt: number }>
-  invalid: Array<{ key: string; value: SettingValue; reason: string }>
-}
+export type { StoredSetting, SettingChange, ServerSettings, PushResult }
 
 function requireSession() {
   const s = getSession()

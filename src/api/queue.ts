@@ -6,12 +6,9 @@
  * convention as getHSStats.
  */
 import { getSession } from './session'
-import type { QueueEntry } from '@hearthshelf/core'
+import type { QueueEntry, QueueState } from '@hearthshelf/core'
 
-export interface ServerQueue {
-  items: QueueEntry[]
-  playlistId: string | null
-  updatedAt: number
+export interface ServerQueue extends QueueState {
   // Present on PUT responses: false when the write was rejected as stale - the
   // caller should adopt the returned state instead of assuming its write landed.
   applied?: boolean
