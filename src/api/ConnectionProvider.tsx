@@ -130,6 +130,17 @@ class NoLinkedServersError extends Error {
   }
 }
 
+/** Clerk can't mint a template token yet (still loading, e.g. right after network
+ *  returns from an offline launch). We must NOT call the control plane with a null
+ *  bearer - it 401s, which fires the session-expired handler and signs the user
+ *  out. Instead we abort the connect and let the caller retry once Clerk loads. */
+class NoTokenError extends Error {
+  constructor() {
+    super('clerk_not_loaded')
+    this.name = 'NoTokenError'
+  }
+}
+
 /** Snapshot library metadata for any completed downloads missing a catalog row,
  *  so they browse offline. Bridges the downloads store to the offline catalog. */
 async function backfillDownloadedCatalog(): Promise<void> {
@@ -174,8 +185,11 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   }, [])
 
   const connectTo = useCallback(
-    async (server: LinkedServer | SplashServer) => {
-      setStatus({ phase: 'connecting' })
+    async (server: LinkedServer | SplashServer, opts?: { quiet?: boolean }) => {
+      // A retry from offline mode stays on the banner (quiet) rather than flipping
+      // to the covered connecting-splash: a failed retry must not yank the user out
+      // of their downloaded books and back to a loading screen.
+      if (!opts?.quiet) setStatus({ phase: 'connecting' })
       try {
         const { serverUrl, token } = await connectServer(tokenFn, server.id, server.url)
         await setSession({ serverUrl, token })
@@ -201,27 +215,44 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         setActiveRole('role' in server && server.role === 'admin' ? 'admin' : 'user')
         setStatus({ phase: 'ready', serverName: server.name })
       } catch (e) {
-        setStatus({ phase: 'error', message: (e as Error).message })
+        // A quiet (offline-origin) retry that fails should drop back to offline,
+        // not to a full-screen error that would cover the downloaded books.
+        if (opts?.quiet && hasOfflineContent()) setStatus({ phase: 'offline' })
+        else setStatus({ phase: 'error', message: (e as Error).message })
       }
     },
     [tokenFn],
   )
 
-  const runConnect = useCallback(async () => {
-    const servers = await fetchLinkedServers(tokenFn)
-    if (servers.length === 0) throw new NoLinkedServersError()
-    if (servers.length === 1) {
-      await connectTo(servers[0])
-      return
-    }
-    // Precedence: this device's last-used server, then the account default
-    // (set on another device), then show the picker.
-    const lastId = await getLastServerId()
-    const remembered = lastId ? servers.find((s) => s.id === lastId) : undefined
-    const preferred = remembered ?? servers.find((s) => s.isDefault)
-    if (preferred) await connectTo(preferred)
-    else setStatus({ phase: 'select-server', servers })
-  }, [connectTo, tokenFn])
+  const runConnect = useCallback(
+    async (opts?: { quiet?: boolean }) => {
+      // Guard the control plane against a null bearer: offline, or in the window
+      // right after network returns while Clerk is still re-hydrating, getToken
+      // yields null. Calling /servers with no token 401s -> session-expired ->
+      // sign-out. Bail here so the retry loop waits for Clerk instead.
+      if (!(await tokenFn())) throw new NoTokenError()
+      const servers = await fetchLinkedServers(tokenFn)
+      if (servers.length === 0) throw new NoLinkedServersError()
+      if (servers.length === 1) {
+        await connectTo(servers[0], opts)
+        return
+      }
+      // Precedence: this device's last-used server, then the account default
+      // (set on another device), then show the picker.
+      const lastId = await getLastServerId()
+      const remembered = lastId ? servers.find((s) => s.id === lastId) : undefined
+      const preferred = remembered ?? servers.find((s) => s.isDefault)
+      if (preferred) await connectTo(preferred, opts)
+      else setStatus({ phase: 'select-server', servers })
+    },
+    [connectTo, tokenFn],
+  )
+
+  // Latest status phase, readable inside the connect closure (which can't see
+  // React state directly). Lets a retry that starts from `offline` stay quiet -
+  // it keeps the offline banner up instead of flipping to the covered splash.
+  const statusRef = useRef(status)
+  statusRef.current = status
 
   const connectingRef = useRef(false)
   const connect = useCallback(async () => {
@@ -230,7 +261,10 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     // would race the first and could overwrite `ready` with `offline`.
     if (connectingRef.current) return
     connectingRef.current = true
-    setStatus({ phase: 'connecting' })
+    // Retrying from offline mode: don't uncover the splash. Stay on the offline
+    // banner and only leave it if the reconnect actually succeeds.
+    const quiet = statusRef.current.phase === 'offline'
+    if (!quiet) setStatus({ phase: 'connecting' })
     try {
       // Try the handshake, retrying a stall as long as the network is actually up -
       // a slow first connect on cellular shouldn't strand a connected user in
@@ -245,7 +279,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
             timer = setTimeout(() => reject(new ConnectTimeoutError()), CONNECT_TIMEOUT_MS)
           })
           try {
-            await Promise.race([runConnect(), timeout])
+            await Promise.race([runConnect({ quiet }), timeout])
           } finally {
             if (timer) clearTimeout(timer)
           }
@@ -261,7 +295,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
           // hiccup: the retry cap still bounds it.
           const reachable = await isCurrentlyReachable()
           if (reachable && attempt < CONNECT_RETRIES) {
-            setStatus({ phase: 'connecting' })
+            if (!quiet) setStatus({ phase: 'connecting' })
             continue
           }
           // Truly unreachable (or out of retries): play downloads offline rather
@@ -312,6 +346,17 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
       return cur
     })
   }, [])
+
+  // Re-attempt the connect the moment Clerk finishes loading a real session while
+  // we're not ready. Critical after an offline launch: the NetInfo online-edge can
+  // fire (and bail with NoTokenError) before Clerk has re-hydrated, so getToken was
+  // still null. When Clerk's own retry finally loads it, `isSignedIn` flips true -
+  // that's our cue to run the handshake again, now that a token can be minted.
+  // Without this, the app stays in offline mode until the next network edge (which
+  // may never come if the connection is stable), and only a force-close recovers.
+  useEffect(() => {
+    if (isLoaded && isSignedIn) reconnectIfNeeded()
+  }, [isLoaded, isSignedIn, reconnectIfNeeded])
 
   // Watch connectivity for the whole signed-in lifetime: when the network
   // returns (incl. a Wi-Fi<->cellular handoff) while we're not `ready`, retry the

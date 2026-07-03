@@ -8,7 +8,7 @@ import { BottomSheetModalProvider } from '@gorhom/bottom-sheet'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { useFonts } from 'expo-font'
 import * as SplashScreen from 'expo-splash-screen'
-import { tokenCache, hasCachedClerkSession } from '@/lib/tokenCache'
+import { tokenCache, hasCachedClerkSession, clerkResourceCache } from '@/lib/tokenCache'
 import { CLERK_PUBLISHABLE_KEY } from '@/lib/config'
 import { PlayerHost } from '@/player/PlayerHost'
 import { MiniPlayerDock } from '@/player/MiniPlayerDock'
@@ -223,7 +223,11 @@ export default function RootLayout() {
   if (!fontsReady) return null
 
   return (
-    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
+    <ClerkProvider
+      publishableKey={CLERK_PUBLISHABLE_KEY}
+      tokenCache={tokenCache}
+      __experimental_resourceCache={clerkResourceCache}
+    >
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <ThemeProvider>
