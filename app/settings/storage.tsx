@@ -5,7 +5,7 @@
  * (device-local; downloads aren't synced across devices).
  */
 import { useMemo, useSyncExternalStore } from 'react'
-import { Alert, StyleSheet, View } from 'react-native'
+import { Alert, StyleSheet, View, type DimensionValue } from 'react-native'
 import {
   getDownloadsState,
   subscribeDownloads,
@@ -14,6 +14,7 @@ import {
   cancelDownload,
   deleteDownload,
   totalBytes,
+  diskSpace,
   type DownloadEntry,
 } from '@/player/downloads'
 import {
@@ -48,6 +49,7 @@ export default function StorageScreen() {
   const done = entries.filter((e) => e.status === 'done')
   const used = totalBytes()
   const capGb = maxBytes > 0 ? Math.round((maxBytes / GB) * 10) / 10 : 0
+  const disk = diskSpace()
 
   const confirmDelete = (e: DownloadEntry) =>
     Alert.alert('Remove download', `Delete the downloaded copy of "${e.title}"?`, [
@@ -98,7 +100,9 @@ export default function StorageScreen() {
             ) : undefined
           }
         />
-        {maxBytes > 0 ? (
+        {disk.total > 0 ? (
+          <StorageMeter disk={disk} maxBytes={maxBytes} colors={colors} styles={styles} />
+        ) : maxBytes > 0 ? (
           <View style={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.sm }}>
             <ProgressBar progress={Math.min(1, used / maxBytes)} />
           </View>
@@ -186,6 +190,101 @@ export default function StorageScreen() {
   )
 }
 
+/**
+ * A device-wide storage meter: one bar spanning total internal storage, split
+ * into HearthShelf downloads (accent), other apps/system (muted fill), and free
+ * space (track). A dashed accent overlay on the free segment shows how much of
+ * that free space auto-download is still allowed to fill before hitting the cap.
+ */
+function StorageMeter({
+  disk,
+  maxBytes,
+  colors,
+  styles,
+}: {
+  disk: { total: number; free: number; used: number }
+  maxBytes: number
+  colors: Palette
+  styles: ReturnType<typeof makeStyles>
+}) {
+  const total = Math.max(1, disk.total)
+  const hs = Math.max(0, Math.min(disk.used, total))
+  const free = Math.max(0, Math.min(disk.free, total - hs))
+  const other = Math.max(0, total - hs - free)
+  // Headroom auto-download may still use: the cap minus what's already used,
+  // never more than the free space actually on the device. No cap = all of free.
+  const allowance =
+    maxBytes > 0 ? Math.max(0, Math.min(maxBytes - disk.used, free)) : free
+  const pct = (n: number): DimensionValue => `${(n / total) * 100}%`
+
+  // Distinct hues so the segments read apart at a glance: ember for our own
+  // downloads, warm gold for everything else on the device, green for free.
+  const hsColor = colors.accent
+  const otherColor = colors.brandHearth
+  const freeColor = colors.success
+
+  return (
+    <View style={styles.meter}>
+      <View style={styles.meterBar}>
+        {hs > 0 ? <View style={[styles.seg, { width: pct(hs), backgroundColor: hsColor }]} /> : null}
+        {other > 0 ? <View style={[styles.seg, { width: pct(other), backgroundColor: otherColor }]} /> : null}
+        {free > 0 ? (
+          <View style={[styles.segFree, { width: pct(free), backgroundColor: freeColor }]}>
+            {allowance > 0 ? (
+              <View
+                style={[
+                  styles.segAllowance,
+                  { width: `${(allowance / Math.max(1, free)) * 100}%` as DimensionValue, borderColor: colors.accent },
+                ]}
+              />
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+      <View style={styles.legend}>
+        <LegendItem swatch={hsColor} label="HearthShelf" value={formatBytes(hs)} colors={colors} styles={styles} />
+        <LegendItem swatch={otherColor} label="Other" value={formatBytes(other)} colors={colors} styles={styles} />
+        <LegendItem swatch={freeColor} label="Free" value={formatBytes(free)} colors={colors} styles={styles} />
+        {maxBytes > 0 ? (
+          <LegendItem dashed label="Allowed" value={formatBytes(allowance)} colors={colors} styles={styles} />
+        ) : null}
+      </View>
+    </View>
+  )
+}
+
+function LegendItem({
+  swatch,
+  dashed,
+  label,
+  value,
+  colors,
+  styles,
+}: {
+  swatch?: string
+  dashed?: boolean
+  label: string
+  value: string
+  colors: Palette
+  styles: ReturnType<typeof makeStyles>
+}) {
+  return (
+    <View style={styles.legendItem}>
+      <View
+        style={[
+          styles.legendSwatch,
+          dashed
+            ? { borderWidth: 1, borderStyle: 'dashed', borderColor: colors.accent }
+            : { backgroundColor: swatch },
+        ]}
+      />
+      <AppText variant="caption" color={colors.textMuted}>
+        {label} {value}
+      </AppText>
+    </View>
+  )
+}
+
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
     dlRow: {
@@ -202,5 +301,46 @@ const makeStyles = (colors: Palette) =>
       alignItems: 'center',
       gap: spacing.sm,
       marginTop: spacing.xs,
+    },
+    meter: {
+      paddingHorizontal: spacing.lg,
+      paddingBottom: spacing.md,
+      gap: spacing.sm,
+    },
+    meterBar: {
+      flexDirection: 'row',
+      height: 10,
+      borderRadius: 5,
+      overflow: 'hidden',
+      backgroundColor: colors.fill,
+    },
+    seg: {
+      height: '100%',
+    },
+    segFree: {
+      height: '100%',
+      justifyContent: 'center',
+    },
+    segAllowance: {
+      height: '100%',
+      borderRadius: 4,
+      borderWidth: 1,
+      borderStyle: 'dashed',
+      backgroundColor: colors.accentWash,
+    },
+    legend: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.md,
+    },
+    legendItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    legendSwatch: {
+      width: 10,
+      height: 10,
+      borderRadius: 3,
     },
   })

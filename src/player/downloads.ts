@@ -68,7 +68,7 @@ export interface DownloadsState {
 
 const STORE_KEY = 'hs.downloads.v1'
 const DEFAULT_MAX_BYTES = 0
-const DEFAULT_AUTO: AutoDownloadPrefs = { onStart: false, queueAhead: 0, continueListening: false }
+const DEFAULT_AUTO: AutoDownloadPrefs = { onStart: false, queueAhead: 0, continueListening: true }
 
 let state: DownloadsState = { byId: new Map(), maxBytes: DEFAULT_MAX_BYTES, auto: DEFAULT_AUTO }
 const listeners = new Set<() => void>()
@@ -303,6 +303,32 @@ export function totalBytes(): number {
   let sum = 0
   for (const e of state.byId.values()) sum += e.bytes
   return sum
+}
+
+export interface DiskSpace {
+  /** Total device internal storage, in bytes. */
+  total: number
+  /** Free device storage, in bytes. */
+  free: number
+  /** Bytes this app's downloads currently occupy. */
+  used: number
+}
+
+/**
+ * Device storage snapshot for the storage meter. Reads Paths.total/available
+ * DiskSpace (synchronous native getters). Returns zeroed totals if the native
+ * module can't report them (e.g. web), so callers can hide the meter.
+ */
+export function diskSpace(): DiskSpace {
+  let total = 0
+  let free = 0
+  try {
+    total = Paths.totalDiskSpace ?? 0
+    free = Paths.availableDiskSpace ?? 0
+  } catch {
+    // native getters unavailable; leave zeroed
+  }
+  return { total, free, used: totalBytes() }
 }
 
 export function setMaxBytes(maxBytes: number): void {

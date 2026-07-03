@@ -35,6 +35,10 @@ interface ConnectionValue {
   status: ConnectionStatus
   /** Server the active session is connected to, once ready. */
   serverName: string | null
+  /** The signed-in user's role on the connected server. Drives admin-only UI
+   *  (e.g. the Server Admin entry on the settings menu). Defaults to 'user'
+   *  until we've connected to a server that reports a role. */
+  activeRole: 'admin' | 'user'
   /** Re-run the whole connect flow from the top. */
   retry: () => void
   /** Connect to a specific linked server (from the picker). */
@@ -71,6 +75,7 @@ class NoLinkedServersError extends Error {
 export function ConnectionProvider({ children }: { children: React.ReactNode }) {
   const { getToken, isSignedIn } = useAuth()
   const [status, setStatus] = useState<ConnectionStatus>({ phase: 'connecting' })
+  const [activeRole, setActiveRole] = useState<'admin' | 'user'>('user')
 
   // getToken identity changes across renders; keep a stable wrapper.
   const getTokenRef = useRef(getToken)
@@ -103,6 +108,9 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         ensureNotePopsMirror()
         startQueueSync()
         startClubSync()
+        // The picker path (SplashServer) has no role; only linked-server objects
+        // carry it. Fall back to 'user' so admin UI stays hidden when unknown.
+        setActiveRole('role' in server && server.role === 'admin' ? 'admin' : 'user')
         setStatus({ phase: 'ready', serverName: server.name })
       } catch (e) {
         setStatus({ phase: 'error', message: (e as Error).message })
@@ -149,7 +157,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   const serverName = status.phase === 'ready' ? status.serverName : null
 
   return (
-    <Ctx.Provider value={{ status, serverName, retry: () => void connect(), connectTo }}>
+    <Ctx.Provider value={{ status, serverName, activeRole, retry: () => void connect(), connectTo }}>
       {children}
     </Ctx.Provider>
   )

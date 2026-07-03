@@ -1,42 +1,71 @@
-import { useAuth, useUser } from '@clerk/expo'
+/**
+ * The More tab IS the settings menu - no "More > Settings > section" double hop.
+ * One account hero card at the top, then the grouped drill-down (each row pushes
+ * a dedicated panel in app/settings/*), and finally a single admin-only door to
+ * Server Admin. Everyday users never see the admin section, so their menu stays
+ * short; admins get one entrance into the deeper server management UI.
+ *
+ * The old dedicated settings menu (app/settings/index.tsx) is gone; its groups
+ * live here now, and app/settings only holds the detail panels + native-header
+ * stack. Keeping the menu on the tab removes a whole navigation level.
+ */
+import { useUser } from '@clerk/expo'
 import { useMemo } from 'react'
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
-import { useRouter } from 'expo-router'
+import { useRouter, type Href } from 'expo-router'
 import Constants from 'expo-constants'
-import { clearSession, clearLastServerId } from '@/api/session'
-import { clearTrack } from '@/player/store'
-import { clearAutoSession } from '@/player/autoBridge'
-import { AppText, IconButton, Row, Screen, SectionHeader, icons } from '@/ui/primitives'
+import { useConnection } from '@/api/ConnectionProvider'
+import { AppText, Screen, SectionHeader } from '@/ui/primitives'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
-import { type IconName } from '@/ui/icons'
+import { Icon, type IconName } from '@/ui/icons'
+import { SettingsGroup, SettingsLabel, SettingsRow } from '@/ui/settingsControls'
 import { useContentInset } from '@/ui/useContentInset'
 
+interface MenuItem {
+  icon: IconName
+  title: string
+  desc: string
+  href: Href
+}
+
+const GROUPS: { label: string; items: MenuItem[] }[] = [
+  {
+    label: 'You',
+    items: [
+      { icon: 'palette', title: 'Appearance', desc: 'Theme, accent colour, covers.', href: '/settings/appearance' },
+    ],
+  },
+  {
+    label: 'Listening',
+    items: [
+      { icon: 'speed', title: 'Playback', desc: 'Speed, skip, queue, player buttons.', href: '/settings/playback' },
+      { icon: 'bedtime', title: 'Sleep timer', desc: 'Rewind, chapter, and fade behaviour.', href: '/settings/sleep' },
+      { icon: 'download', title: 'Downloads & storage', desc: 'Offline books, auto-download, space used.', href: '/settings/storage' },
+      { icon: 'vibration', title: 'Haptics', desc: 'Feedback and intensity on this device.', href: '/settings/haptics' },
+    ],
+  },
+  {
+    label: 'Reading',
+    items: [{ icon: 'menu-book', title: 'Reading', desc: 'Ebook reader preferences.', href: '/settings/reading' }],
+  },
+  {
+    label: 'HearthShelf',
+    items: [
+      { icon: 'person', title: 'Social', desc: 'Listening-now sharing and club note pops.', href: '/settings/social' },
+      { icon: 'hub', title: 'Connections', desc: 'Hardcover and external links.', href: '/settings/connections' },
+      { icon: 'dns', title: 'My servers', desc: 'Switch and manage linked servers.', href: '/settings/servers' },
+    ],
+  },
+]
+
 export default function MoreScreen() {
-  const { signOut } = useAuth()
-  const { user } = useUser()
   const router = useRouter()
+  const { user } = useUser()
+  const { activeRole } = useConnection()
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const contentInset = useContentInset()
-
-  async function handleSignOut() {
-    clearTrack()
-    clearAutoSession()
-    await clearSession()
-    await signOut()
-    router.replace('/sign-in')
-  }
-
-  async function switchServer() {
-    // Drop the active session + remembered server so the home connect flow shows
-    // the picker again, then bounce through the gate.
-    clearTrack()
-    clearAutoSession()
-    await clearSession()
-    await clearLastServerId()
-    router.replace('/(tabs)')
-  }
 
   const displayName = user?.fullName || user?.username || 'You'
   const email = user?.primaryEmailAddress?.emailAddress ?? ''
@@ -46,14 +75,14 @@ export default function MoreScreen() {
     <Screen>
       <SectionHeader title="More" />
       <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: contentInset, gap: spacing.sm }}
+        contentContainerStyle={{ padding: spacing.lg, paddingBottom: contentInset, gap: spacing.md }}
       >
         <Pressable
-          onPress={() => router.push('/settings')}
-          style={({ pressed }) => [styles.profileCard, pressed && styles.pressed]}
+          onPress={() => router.push('/settings/account')}
+          style={({ pressed }) => [styles.userCard, pressed && styles.pressed]}
         >
           <View style={styles.avatar}>
-            <AppText variant="mono" color={colors.brandHearth} style={{ fontSize: 18 }}>
+            <AppText variant="mono" color={colors.brandHearth} style={{ fontSize: 19 }}>
               {initial}
             </AppText>
           </View>
@@ -62,104 +91,91 @@ export default function MoreScreen() {
               {displayName}
             </AppText>
             {email ? (
-              <AppText
-                variant="caption"
-                color={colors.textMuted}
-                numberOfLines={1}
-                style={{ marginTop: 2 }}
-              >
+              <AppText variant="caption" color={colors.textMuted} numberOfLines={1} style={{ marginTop: 2 }}>
                 {email}
               </AppText>
-            ) : null}
+            ) : (
+              <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
+                Account & sign-out
+              </AppText>
+            )}
           </View>
-          <IconButton name={icons.chevronRight} color={colors.textMuted} />
+          <Icon name="chevron-right" size={22} color={colors.textMuted} />
         </Pressable>
 
-        <Group label="Server">
-          <SettingRow icon={icons.server} label="Switch server" onPress={switchServer} />
-        </Group>
-
-        <Group label="Account">
-          <SettingRow icon={icons.signOut} label="Sign out" danger onPress={handleSignOut} />
-        </Group>
-
-        <Group label="About">
-          <View style={styles.aboutRow}>
-            <AppText variant="meta" color={colors.textMuted}>
-              HearthShelf Mobile
-            </AppText>
-            <AppText variant="meta" color={colors.textFaint}>
-              v{Constants.expoConfig?.version ?? '0.0.1'}
-            </AppText>
+        {GROUPS.map((group) => (
+          <View key={group.label}>
+            <SettingsLabel>{group.label}</SettingsLabel>
+            <SettingsGroup>
+              {group.items.map((item, i) => (
+                <SettingsRow
+                  key={item.title}
+                  icon={item.icon}
+                  title={item.title}
+                  desc={item.desc}
+                  onPress={() => router.push(item.href)}
+                  last={i === group.items.length - 1}
+                />
+              ))}
+            </SettingsGroup>
           </View>
-        </Group>
+        ))}
+
+        {activeRole === 'admin' ? (
+          <View>
+            <SettingsLabel>Administration</SettingsLabel>
+            <SettingsGroup>
+              <SettingsRow
+                icon="admin-panel-settings"
+                title="Server Admin"
+                desc="Manage this server, its users, and libraries."
+                onPress={() => router.push('/settings/admin')}
+                last
+              />
+            </SettingsGroup>
+          </View>
+        ) : null}
+
+        <View style={styles.aboutRow}>
+          <AppText variant="meta" color={colors.textMuted}>
+            HearthShelf Mobile
+          </AppText>
+          <AppText variant="meta" color={colors.textFaint}>
+            v{Constants.expoConfig?.version ?? '0.0.1'}
+          </AppText>
+        </View>
       </ScrollView>
     </Screen>
   )
 }
 
-function Group({ label, children }: { label: string; children: React.ReactNode }) {
-  const colors = useColors()
-  return (
-    <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
-      <AppText variant="caption" color={colors.textMuted} style={{ marginLeft: spacing.xs }}>
-        {label.toUpperCase()}
-      </AppText>
-      {children}
-    </View>
-  )
-}
-
-function SettingRow({
-  icon,
-  label,
-  onPress,
-  danger,
-}: {
-  icon: IconName
-  label: string
-  onPress: () => void
-  danger?: boolean
-}) {
-  const colors = useColors()
-  const tint = danger ? colors.destructive : colors.text
-  return (
-    <Row onPress={onPress}>
-      <IconButton name={icon} size={22} color={tint} />
-      <AppText variant="label" color={tint} style={{ flex: 1 }}>
-        {label}
-      </AppText>
-      <IconButton name={icons.chevronRight} color={colors.textMuted} />
-    </Row>
-  )
-}
-
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
-  profileCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.md,
-    backgroundColor: colors.card,
-    borderRadius: radius.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-  },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: colors.accentTile,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pressed: { opacity: 0.7 },
-  aboutRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
+    userCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      padding: spacing.md,
+      backgroundColor: colors.card,
+      borderRadius: radius.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    pressed: { opacity: 0.7 },
+    avatar: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      backgroundColor: colors.accentTile,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    aboutRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      marginTop: spacing.xs,
+    },
   })
