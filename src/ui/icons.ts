@@ -76,6 +76,7 @@ export const icons = {
   onScreen: 'grid-view',
   inTray: 'more-horiz',
   expandLess: 'expand-less',
+  arrowUpward: 'arrow-upward',
   nothingQueued: 'do-not-disturb-on',
   // Nav / actions
   search: 'search',

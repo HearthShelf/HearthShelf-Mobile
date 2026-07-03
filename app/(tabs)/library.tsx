@@ -18,6 +18,8 @@ import {
   TextInput,
   View,
   useWindowDimensions,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native'
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
@@ -70,14 +72,17 @@ import { DUR } from '@/ui/motion'
 import { BookTile } from '@/ui/BookTile'
 import { BookSelectionToolbar } from '@/ui/BookSelectionToolbar'
 import { getProgressState, subscribeProgress, refreshProgress } from '@/store/progress'
-import { useContentInset } from '@/ui/useContentInset'
+import { useContentInset, useMiniPlayerInset } from '@/ui/useContentInset'
 import { useBookSelection } from '@/ui/useBookSelection'
 import { AzRail, AZ_RAIL_WIDTH } from '@/ui/AzRail'
+import { ScrollTopButton } from '@/ui/ScrollTopButton'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 
 const COLS = 3
 const GUTTER = spacing.lg
+// Reveal the scroll-to-top button once the list is roughly 1.5 screens deep.
+const SCROLL_TOP_THRESHOLD = 900
 
 type ViewMode = 'books' | 'series' | 'narrators' | 'authors'
 const VIEW_MODES: { key: ViewMode; label: string }[] = [
@@ -443,6 +448,15 @@ function BooksView({
   const [openGroup, setOpenGroup] = useState<string | null>(null)
 
   const listRef = useRef<FlatList<ABSLibraryItem>>(null)
+  const railInset = useMiniPlayerInset()
+  // Drives the scroll-to-top button: true once we've scrolled past ~1.5 screens.
+  const [scrolledDeep, setScrolledDeep] = useState(false)
+  const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    setScrolledDeep(e.nativeEvent.contentOffset.y > SCROLL_TOP_THRESHOLD)
+  }, [])
+  const scrollToTop = useCallback(() => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: true })
+  }, [])
 
   // Apply an incoming deep-link preset (from Home's shelf headers).
   useEffect(() => {
@@ -628,6 +642,8 @@ function BooksView({
               paddingBottom: contentInset,
               gap: spacing.xs,
             }}
+            onScroll={onScroll}
+            scrollEventThrottle={16}
             onScrollToIndexFailed={({ index }) => {
               listRef.current?.scrollToOffset({
                 offset: Math.floor(index / cols) * (tileWidth * 1.5 + spacing.md),
@@ -652,6 +668,8 @@ function BooksView({
           data={sorted}
           keyExtractor={(it) => it.id}
           contentContainerStyle={{ padding: GUTTER, paddingBottom: contentInset, gap: spacing.sm }}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
           renderItem={({ item }) => (
             <BookListRow
               item={item}
@@ -664,6 +682,14 @@ function BooksView({
         />
       )}
       {showAzRail && <AzRail available={available} onJump={onJump} reversed={desc} />}
+
+      {/* Scroll-to-top: only when the A-Z rail isn't already handling navigation,
+          and never over the selection toolbar. */}
+      <ScrollTopButton
+        visible={scrolledDeep && !showAzRail && !selection.selecting}
+        onPress={scrollToTop}
+        bottom={railInset}
+      />
 
       <Sheet ref={sheetRef} title="View options">
         <View style={styles.sheetTabs}>
