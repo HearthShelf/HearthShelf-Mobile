@@ -117,7 +117,15 @@ export default function HomeScreen() {
     const stillPresent = new Set(progress.map((it) => it.id))
     for (const id of justFinishedRef.current)
       if (!stillPresent.has(id)) justFinishedRef.current.delete(id)
-    const visibleProgress = progress.filter((it) => !justFinishedRef.current.has(it.id))
+    // Drop books that are finished (100%) - ABS keeps returning a naturally
+    // finished book in items-in-progress, which otherwise pins it as the hero
+    // with "Resume". The shared progress store is the source of truth for
+    // finished state; the render-time derivation below re-applies this against
+    // live progress so a book finishing while Home is open falls off too.
+    const finished = getProgressState().byId
+    const visibleProgress = progress.filter(
+      (it) => !justFinishedRef.current.has(it.id) && finished.get(it.id)?.isFinished !== true,
+    )
     setInProgress(visibleProgress)
     setAutoDownloadContinueListening(
       visibleProgress.map((it) => ({
@@ -181,10 +189,15 @@ export default function HomeScreen() {
         const personalized = await getPersonalized(firstBookLib.id)
         // Preserve ABS's own ordering of the continue rows (listening before
         // series, as ABS emits them).
+        const finished = getProgressState().byId
         for (const s of personalized) {
           if (s.type !== 'book' || s.entities.length === 0) continue
-          if (CONTINUE_IDS.includes(s.id)) continueShelves.push(s)
-          else if (s.id === 'recently-added') addedShelf = s
+          if (CONTINUE_IDS.includes(s.id)) {
+            // Same finished-book pin fix as the hero: keep 100%-complete books
+            // out of the Continue rows.
+            const entities = s.entities.filter((e) => finished.get(e.id)?.isFinished !== true)
+            if (entities.length) continueShelves.push({ ...s, entities })
+          } else if (s.id === 'recently-added') addedShelf = s
         }
       } catch {
         // Personalized is best-effort; the taste engine still carries Home.
@@ -316,7 +329,13 @@ export default function HomeScreen() {
     )
   }
 
-  const hero = inProgress[0]
+  // Re-apply the finished filter at render against the live progress store so a
+  // book that reaches 100% while Home is open drops out of the hero/Continue
+  // immediately, without waiting for the next items-in-progress fetch.
+  const visibleInProgress = inProgress.filter(
+    (it) => progressById.get(it.id)?.isFinished !== true,
+  )
+  const hero = visibleInProgress[0]
 
   return (
     <Screen>
