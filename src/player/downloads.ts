@@ -59,6 +59,12 @@ export interface AutoDownloadPrefs {
   continueListening: boolean
 }
 
+export interface AutoDownloadCandidate {
+  itemId: string
+  title: string
+  author: string
+}
+
 export interface DownloadsState {
   byId: ReadonlyMap<string, DownloadEntry>
   /** Cap on total download bytes; 0 = unlimited. */
@@ -74,6 +80,7 @@ let state: DownloadsState = { byId: new Map(), maxBytes: DEFAULT_MAX_BYTES, auto
 const listeners = new Set<() => void>()
 // Live resumables, so a download can be cancelled. Not persisted.
 const active = new Map<string, DownloadResumable>()
+let latestContinueListening: AutoDownloadCandidate[] = []
 
 function emit(next: Partial<DownloadsState>): void {
   state = { ...state, ...next }
@@ -345,8 +352,12 @@ export function setMaxBytes(maxBytes: number): void {
 }
 
 export function setAutoPrefs(patch: Partial<AutoDownloadPrefs>): void {
+  const wasContinueListening = state.auto.continueListening
   emit({ auto: { ...state.auto, ...patch } })
   persist()
+  if (!wasContinueListening && state.auto.continueListening) {
+    applyAutoDownloads({ continueListening: latestContinueListening })
+  }
 }
 
 /** Kick off a download only if the item isn't already downloaded/in flight and
@@ -366,7 +377,7 @@ export function autoDownload(itemId: string, title: string, author: string): voi
 export function applyAutoDownloads(input: {
   nowPlaying?: { itemId: string; title: string; author: string } | null
   queue?: { libraryItemId: string; title: string; author?: string }[]
-  continueListening?: { itemId: string; title: string; author: string }[]
+  continueListening?: AutoDownloadCandidate[]
 }): void {
   const { auto } = state
   if (auto.onStart && input.nowPlaying) {
@@ -380,6 +391,13 @@ export function applyAutoDownloads(input: {
   if (auto.continueListening && input.continueListening) {
     for (const e of input.continueListening) autoDownload(e.itemId, e.title, e.author)
   }
+}
+
+/** Update the latest Continue Listening shelf snapshot and apply it immediately
+ * when that auto-download preference is enabled. */
+export function setAutoDownloadContinueListening(items: AutoDownloadCandidate[]): void {
+  latestContinueListening = items
+  applyAutoDownloads({ continueListening: latestContinueListening })
 }
 
 /** Build a NowPlaying-shaped source from a completed download, or null if the

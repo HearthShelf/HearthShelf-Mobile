@@ -9,12 +9,13 @@
  * changes back so segment tracks / status update.
  */
 import { useMemo, useRef, useSyncExternalStore } from 'react'
-import { Linking, StyleSheet, View } from 'react-native'
+import { StyleSheet, View } from 'react-native'
 import type { ABSLibraryItem } from '@hearthshelf/core'
 import { addToQueue } from '@/player/queue'
+import { downloadItem } from '@/player/downloads'
 import { AddToListSheet } from '@/player/AddToListSheet'
 import type { SheetHandle } from '@/player/sheets'
-import { libraryDownloadUrl, itemAuthor, itemTitle } from '@/api/abs'
+import { itemAuthor, itemTitle } from '@/api/abs'
 import { getProgressState, subscribeProgress, markItemsFinished } from '@/store/progress'
 import { AppText, IconButton, icons } from '@/ui/primitives'
 import { spacing, type Palette } from '@/ui/theme'
@@ -77,8 +78,12 @@ export function BookSelectionToolbar({
   }
 
   const download = () => {
-    const url = libraryDownloadUrl(libraryId, ids)
-    if (url) void Linking.openURL(url)
+    const selectedBooks = books.filter((b) => selection.isSelected(b.id))
+    for (const b of selectedBooks) {
+      void downloadItem(b.id, itemTitle(b), itemAuthor(b))
+    }
+    haptics.success()
+    onToast?.(`Queued ${selectedBooks.length} for download`)
     selection.clear()
   }
 

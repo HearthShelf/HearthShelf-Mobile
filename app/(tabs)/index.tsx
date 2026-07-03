@@ -39,6 +39,7 @@ import {
 } from '@/api/abs'
 import { getProgressState, subscribeProgress, refreshProgress } from '@/store/progress'
 import { playItemById } from '@/player/playback'
+import { setAutoDownloadContinueListening } from '@/player/downloads'
 import {
   AppText,
   Cover,
@@ -114,7 +115,15 @@ export default function HomeScreen() {
     const stillPresent = new Set(progress.map((it) => it.id))
     for (const id of justFinishedRef.current)
       if (!stillPresent.has(id)) justFinishedRef.current.delete(id)
-    setInProgress(progress.filter((it) => !justFinishedRef.current.has(it.id)))
+    const visibleProgress = progress.filter((it) => !justFinishedRef.current.has(it.id))
+    setInProgress(visibleProgress)
+    setAutoDownloadContinueListening(
+      visibleProgress.map((it) => ({
+        itemId: it.id,
+        title: itemTitle(it),
+        author: itemAuthor(it),
+      })),
+    )
 
     // The hero's progress bar and the shelf tiles' finished marks read the
     // shared progress store; refresh it alongside the rest of Home. Awaited here

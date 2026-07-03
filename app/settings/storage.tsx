@@ -226,8 +226,8 @@ function StorageMeter({
   return (
     <View style={styles.meter}>
       <View style={styles.meterBar}>
-        {hs > 0 ? <View style={[styles.seg, { width: pct(hs), backgroundColor: hsColor }]} /> : null}
         {other > 0 ? <View style={[styles.seg, { width: pct(other), backgroundColor: otherColor }]} /> : null}
+        {hs > 0 ? <View style={[styles.seg, { width: pct(hs), backgroundColor: hsColor }]} /> : null}
         {free > 0 ? (
           <View style={[styles.segFree, { width: pct(free), backgroundColor: freeColor }]}>
             {allowance > 0 ? (
@@ -242,8 +242,8 @@ function StorageMeter({
         ) : null}
       </View>
       <View style={styles.legend}>
+        <LegendItem swatch={otherColor} label="Other Apps" value={formatBytes(other)} colors={colors} styles={styles} />
         <LegendItem swatch={hsColor} label="HearthShelf" value={formatBytes(hs)} colors={colors} styles={styles} />
-        <LegendItem swatch={otherColor} label="Other" value={formatBytes(other)} colors={colors} styles={styles} />
         <LegendItem swatch={freeColor} label="Free" value={formatBytes(free)} colors={colors} styles={styles} />
         {maxBytes > 0 ? (
           <LegendItem dashed label="Allowed" value={formatBytes(allowance)} colors={colors} styles={styles} />
