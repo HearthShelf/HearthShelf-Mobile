@@ -12,6 +12,7 @@
  * tab already inside the app - covers the connect + first-load moment.
  */
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { AppState } from 'react-native'
 import { useAuth } from '@clerk/expo'
 import { fetchLinkedServers, type LinkedServer } from './controlPlane'
 import { connectServer } from './connect'
@@ -23,7 +24,14 @@ import { startQueueSync } from '@/player/queueSync'
 import { startClubSync } from '@/player/clubSync'
 import { ensureDeviceId, getSettingsState, subscribeSettings } from '@/store/settings'
 import { hydrateDownloads, getDownloadsState } from '@/player/downloads'
-import { startConnectivityWatch, stopConnectivityWatch } from '@/player/connectivity'
+import { hydrateCatalog, backfillCatalog } from '@/player/offlineCatalog'
+import { getItemDetail } from './abs'
+import {
+  startConnectivityWatch,
+  stopConnectivityWatch,
+  isCurrentlyReachable,
+  pokeConnectivity,
+} from '@/player/connectivity'
 import { hydratePendingProgress, flushPendingProgress } from '@/player/pendingProgress'
 import type { SplashServer } from '@/ui/SplashScreen'
 
@@ -37,8 +45,16 @@ export type ConnectionStatus =
   | { phase: 'offline' }
   | { phase: 'ready'; serverName: string }
 
-/** How long to wait for the launch connect before falling back to offline. */
-const CONNECT_TIMEOUT_MS = 7000
+/** How long to wait for the launch connect before treating it as stalled. The
+ *  connect is a multi-hop handshake (two Clerk token mints + a control-plane
+ *  grant + the server exchange), which on real cellular is comfortably slower
+ *  than on the emulator's localhost - 7s tripped constantly on-device. A stall
+ *  only becomes offline mode when the network is actually unreachable; when it's
+ *  up (just slow), we retry instead (see connect()). */
+const CONNECT_TIMEOUT_MS = 20000
+/** Once, on a stall with the network still up, give the handshake a second try
+ *  before giving up. */
+const CONNECT_RETRIES = 1
 
 class ConnectTimeoutError extends Error {
   constructor() {
@@ -114,6 +130,19 @@ class NoLinkedServersError extends Error {
   }
 }
 
+/** Snapshot library metadata for any completed downloads missing a catalog row,
+ *  so they browse offline. Bridges the downloads store to the offline catalog. */
+async function backfillDownloadedCatalog(): Promise<void> {
+  const done = [...getDownloadsState().byId.values()].filter((e) => e.status === 'done')
+  if (!done.length) return
+  const durations = new Map(done.map((e) => [e.itemId, e.duration]))
+  await backfillCatalog(
+    done.map((e) => e.itemId),
+    (id) => getItemDetail(id),
+    (id) => durations.get(id) ?? 0,
+  )
+}
+
 export function ConnectionProvider({ children }: { children: React.ReactNode }) {
   const { getToken, isLoaded, isSignedIn } = useAuth()
   const [status, setStatus] = useState<ConnectionStatus>({ phase: 'connecting' })
@@ -159,6 +188,9 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         startClubSync()
         // Now that a session exists, push any progress banked while offline.
         void flushPendingProgress()
+        // Backfill offline browse metadata for any downloads missing it (books
+        // downloaded before the catalog existed). Online-only; best-effort.
+        void backfillDownloadedCatalog()
         // The picker path (SplashServer) has no role; only linked-server objects
         // carry it. Fall back to 'user' so admin UI stays hidden when unknown.
         setActiveRole('role' in server && server.role === 'admin' ? 'admin' : 'user')
@@ -188,24 +220,44 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
 
   const connect = useCallback(async () => {
     setStatus({ phase: 'connecting' })
-    try {
-      // Race the connect against a timeout: a dead network can leave the ABS
-      // fetch hanging well past when we should have fallen back to offline.
-      let timer: ReturnType<typeof setTimeout> | undefined
-      const timeout = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new ConnectTimeoutError()), CONNECT_TIMEOUT_MS)
-      })
+    // Try the handshake, retrying a stall as long as the network is actually up -
+    // a slow first connect on cellular shouldn't strand a connected user in
+    // offline mode. Only a genuinely unreachable network (or exhausted retries)
+    // falls back to offline.
+    for (let attempt = 0; ; attempt++) {
       try {
-        await Promise.race([runConnect(), timeout])
-      } finally {
-        if (timer) clearTimeout(timer)
+        // Race the connect against a timeout: a dead network can leave the ABS
+        // fetch hanging well past when we should stop waiting.
+        let timer: ReturnType<typeof setTimeout> | undefined
+        const timeout = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new ConnectTimeoutError()), CONNECT_TIMEOUT_MS)
+        })
+        try {
+          await Promise.race([runConnect(), timeout])
+        } finally {
+          if (timer) clearTimeout(timer)
+        }
+        return
+      } catch (e) {
+        if (e instanceof NoLinkedServersError) {
+          setStatus({ phase: 'no-servers' })
+          return
+        }
+        // If the network is up, this was slowness, not offline - retry (up to
+        // the cap) before giving up. isCurrentlyReachable is conservative
+        // (assumes online on any error), so we never loop forever on a NetInfo
+        // hiccup: the retry cap still bounds it.
+        const reachable = await isCurrentlyReachable()
+        if (reachable && attempt < CONNECT_RETRIES) {
+          setStatus({ phase: 'connecting' })
+          continue
+        }
+        // Truly unreachable (or out of retries): play downloads offline rather
+        // than stranding the user on an error.
+        if (hasOfflineContent()) setStatus({ phase: 'offline' })
+        else setStatus({ phase: 'error', message: (e as Error).message })
+        return
       }
-    } catch (e) {
-      if (e instanceof NoLinkedServersError) setStatus({ phase: 'no-servers' })
-      // Timed out or the network failed: if there are downloaded books, let the
-      // user in to play them offline instead of stranding them on an error.
-      else if (hasOfflineContent()) setStatus({ phase: 'offline' })
-      else setStatus({ phase: 'error', message: (e as Error).message })
     }
   }, [runConnect])
 
@@ -215,6 +267,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     void hydrateDownloads()
     void hydratePendingProgress()
+    void hydrateCatalog()
   }, [])
 
   // The provider is mounted for the whole app lifetime, signed in or not (screens
@@ -230,19 +283,41 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     void connect()
   }, [connect, effectiveSignedIn])
 
+  // Keep the latest connect in a ref so the connectivity watcher (subscribed
+  // once) and the AppState listener always call the current closure, not a stale
+  // one - startConnectivityWatch is idempotent and won't re-bind a new callback.
+  const connectRef = useRef(connect)
+  connectRef.current = connect
+
+  // Reconnect whenever we're not `ready` and the network looks available. The
+  // shared trigger is used by both the NetInfo watcher and the foreground probe.
+  const reconnectIfNeeded = useCallback(() => {
+    setStatus((cur) => {
+      if (cur.phase !== 'ready') void connectRef.current()
+      return cur
+    })
+  }, [])
+
   // Watch connectivity for the whole signed-in lifetime: when the network
-  // returns while we're offline, retry the connect and flush pending progress.
-  // Event-driven (no polling), so it costs nothing while offline.
+  // returns (incl. a Wi-Fi<->cellular handoff) while we're not `ready`, retry the
+  // connect and flush pending progress. Event-driven (no polling).
   useEffect(() => {
     if (!effectiveSignedIn) return
-    startConnectivityWatch(() => {
-      setStatus((cur) => {
-        if (cur.phase !== 'ready') void connect()
-        return cur
-      })
-    })
+    startConnectivityWatch(reconnectIfNeeded)
     return () => stopConnectivityWatch()
-  }, [connect, effectiveSignedIn])
+  }, [reconnectIfNeeded, effectiveSignedIn])
+
+  // Also re-probe on foreground: NetInfo can miss a network change that happened
+  // while backgrounded (or a handoff that never dipped offline), which otherwise
+  // strands the app in offline mode until a manual relaunch. Returning to the app
+  // always re-attempts the connect if we're not already `ready`.
+  useEffect(() => {
+    if (!effectiveSignedIn) return
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') void pokeConnectivity(reconnectIfNeeded)
+    })
+    return () => sub.remove()
+  }, [reconnectIfNeeded, effectiveSignedIn])
 
   const serverName = status.phase === 'ready' ? status.serverName : null
 

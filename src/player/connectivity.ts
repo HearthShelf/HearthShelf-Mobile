@@ -24,6 +24,7 @@ import { flushPendingProgress, BACKGROUND_FLUSH_TASK } from './pendingProgress'
 
 let unsub: (() => void) | null = null
 let lastOnline: boolean | null = null
+let lastType: string | null = null
 
 function isOnline(s: NetInfoState): boolean {
   // isInternetReachable is null until the first probe resolves; treat null as
@@ -32,29 +33,66 @@ function isOnline(s: NetInfoState): boolean {
 }
 
 /**
- * Start watching connectivity. `onOnline` is called on each offline->online
- * transition (and pending progress is flushed). Idempotent - a second call while
- * already watching is a no-op. Also ensures the background flush task is
- * registered so progress can sync while the app isn't foreground.
+ * One-shot: is the device currently on a network? Used to tell a slow connect
+ * (network up, handshake just slow -> retry) from a truly offline one (network
+ * down -> offline mode). Conservative: any error assumes online, so we never
+ * strand a connected user in offline mode on a NetInfo hiccup.
+ */
+export async function isCurrentlyReachable(): Promise<boolean> {
+  try {
+    return isOnline(await NetInfo.fetch())
+  } catch {
+    return true
+  }
+}
+
+/**
+ * Start watching connectivity. `onOnline` fires when the device is online and
+ * either it wasn't online on the previous event OR the network type changed
+ * (Wi-Fi<->cellular). That second condition matters: a handoff can stay
+ * "connected" the whole time and never emit a `false`, so a strict
+ * offline->online edge misses it and leaves the app stuck in offline mode until a
+ * manual relaunch. The caller decides whether a reconnect is actually needed
+ * (no-op when already `ready`), so a redundant fire is cheap. Pending progress
+ * flushes on the same edge.
+ *
+ * Idempotent - a second call while watching is a no-op. Also registers the
+ * background flush task so progress can sync while the app isn't foreground.
  */
 export function startConnectivityWatch(onOnline: () => void): void {
   void ensureBackgroundFlushRegistered()
   if (unsub) return
   unsub = NetInfo.addEventListener((s) => {
     const online = isOnline(s)
-    // Only act on the transition into online, not every event.
-    if (online && lastOnline === false) {
+    // Fire when we're online AND either we weren't online last event, or the
+    // network TYPE changed (a Wi-Fi<->cellular handoff can stay "connected" the
+    // whole time and never emit a `false`, so a strict offline->online edge would
+    // miss it and leave the app stuck offline). The caller no-ops when already
+    // `ready`, so a redundant fire on a type change is cheap.
+    if (online && (lastOnline !== true || (lastType !== null && s.type !== lastType))) {
       onOnline()
       void flushPendingProgress()
     }
     lastOnline = online
+    lastType = s.type
   })
+}
+
+/** Force a reconnect probe from outside the NetInfo edge - e.g. the user tapping
+ *  "Retry" in offline mode, or the app returning to the foreground. Runs the
+ *  caller's handler if the device currently looks online. */
+export async function pokeConnectivity(onOnline: () => void): Promise<void> {
+  if (await isCurrentlyReachable()) {
+    onOnline()
+    void flushPendingProgress()
+  }
 }
 
 export function stopConnectivityWatch(): void {
   unsub?.()
   unsub = null
   lastOnline = null
+  lastType = null
 }
 
 /**
