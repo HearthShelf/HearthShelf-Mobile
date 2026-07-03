@@ -17,16 +17,29 @@ import { loadTrack, getState, type NowPlaying } from './store'
 import { localSourceFor, applyAutoDownloads } from './downloads'
 import { recordLocalSession } from './pendingProgress'
 import { getQueueState } from './queue'
+import {
+  syncStateStartSession,
+  syncStateTick,
+  syncStateSynced,
+  syncStatePending,
+  syncStateFailed,
+  syncStateClear,
+} from './syncState'
 
 interface ActiveSession {
   sessionId: string
   itemId: string
   duration: number
+  /** ms epoch this session started (for the live Recent Listens row). */
+  startedAt: number
   /** Book position (seconds) at the last successful server sync. */
   lastSyncedTime: number
   /** Real listened-time (seconds) accrued since the last server sync. Grows
    *  from actual playback between ticks, so seeks/skips never count. */
   pendingListened: number
+  /** Total real listened-time (seconds) this session - synced + pending. Only
+   *  for display (the live "Now" row); ABS gets deltas via timeListened. */
+  totalListened: number
 }
 
 // A local-only session for a downloaded book playing while the server is
@@ -117,9 +130,12 @@ export async function playItemById(itemId: string): Promise<void> {
     sessionId: session.id,
     itemId,
     duration: session.duration,
+    startedAt: startedNow(),
     lastSyncedTime: startAt,
     pendingListened: 0,
+    totalListened: 0,
   }
+  syncStateStartSession(itemId, active.startedAt, startAt)
 
   // Auto-download the book you just started (and prefetch the queue), per prefs.
   applyAutoDownloads({
@@ -156,15 +172,19 @@ async function playFromDownloadOffline(itemId: string): Promise<void> {
   }
   loadTrack(np)
   active = null
+  const startedAt = startedNow()
   offline = {
-    localId: `play_local_${itemId}_${startedNow()}`,
+    localId: `play_local_${itemId}_${startedAt}`,
     itemId,
     title: local.title,
     duration: local.duration,
     currentTime: 0,
     timeListening: 0,
-    startedAt: startedNow(),
+    startedAt,
   }
+  syncStateStartSession(itemId, startedAt, 0)
+  // Offline downloaded book: it's banked locally, not on the server yet.
+  syncStateFailed()
 }
 
 /** Wall-clock ms; isolated so the one Date.now() call is easy to reason about. */
@@ -213,32 +233,61 @@ export async function syncProgress(currentTime: number, force = false): Promise<
 
   if (offline) {
     // Offline downloaded book: accrue locally; the record is flushed as a proper
-    // ABS session on reconnect.
+    // ABS session on reconnect. Stays red (banked, not on the server).
     offline.currentTime = currentTime
     offline.timeListening += listened
     recordLocalSession(offlineSnapshot(offline, currentTime))
+    syncStateTick(currentTime, offline.timeListening)
     return
   }
 
   if (!active) return
 
   active.pendingListened += listened
-  if (!force && active.pendingListened < SYNC_LISTENED_THRESHOLD) return
+  active.totalListened += listened
+  // Keep the live "Now" row current every tick (no status change).
+  syncStateTick(currentTime, active.totalListened)
 
-  const timeListened = Math.round(active.pendingListened)
-  active.pendingListened = 0
-  active.lastSyncedTime = currentTime
+  // Sync on `force` (pause/stop/book-switch) ALWAYS - even a few seconds of
+  // listening should land - or once enough real listened-time has accrued.
+  if (!force && active.pendingListened < SYNC_LISTENED_THRESHOLD) return
+  if (active.pendingListened <= 0) return
+
+  await pushListened(active, currentTime)
+}
+
+/** POST the active session's accrued listened-time + position. Marks pending only
+ *  if it fails (red on network loss), synced on success - a normal background push
+ *  doesn't visibly change the green icon. */
+async function pushListened(a: ActiveSession, currentTime: number): Promise<void> {
+  const timeListened = Math.round(a.pendingListened)
+  a.pendingListened = 0
+  a.lastSyncedTime = currentTime
   try {
-    await syncSession(active.sessionId, {
+    await syncSession(a.sessionId, {
       currentTime: Math.round(currentTime),
       timeListened,
-      duration: active.duration,
+      duration: a.duration,
     })
+    syncStateSynced(startedNow())
   } catch {
-    // Connectivity blips are expected; roll the unsynced time back so the next
-    // tick retries it instead of dropping it on the floor.
-    active.pendingListened += timeListened
+    // Connectivity blip: roll the unsynced time back so the next tick retries it,
+    // and show red - we couldn't reach the server.
+    a.pendingListened += timeListened
+    syncStateFailed()
   }
+}
+
+/** Push the current position (and any accrued listened-time) to the server right
+ *  now - the header sync icon's tap. Unlike a normal tick this ALWAYS sends,
+ *  even with zero new listened-time, so a seek-while-paused lands the new spot on
+ *  the server (handy for jumping to a chapter our app knows about from elsewhere).
+ *  No-op offline (banked locally already) or when idle. */
+export async function forceSyncNow(): Promise<void> {
+  if (!active) return
+  // Always send, even with zero new listened-time, so a seek-while-paused lands
+  // the new position on the server.
+  await pushListened(active, getState().position)
 }
 
 async function safeClose(): Promise<void> {
@@ -254,8 +303,9 @@ async function safeClose(): Promise<void> {
       timeListened: Math.round(pendingListened),
       duration,
     })
+    if (pendingListened > 0) syncStateSynced(startedNow())
   } catch {
-    // ignore
+    if (pendingListened > 0) syncStateFailed()
   }
 }
 
@@ -268,4 +318,5 @@ export async function stopPlayback(): Promise<void> {
     lastTickTime = null
   }
   await safeClose()
+  syncStateClear()
 }

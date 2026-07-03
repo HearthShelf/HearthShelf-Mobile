@@ -17,6 +17,7 @@
  */
 import { getSettingsState } from '@/store/settings'
 import { haptics } from '@/ui/haptics'
+import { syncStateSeeked } from './syncState'
 
 /** A chapter mark within the now-playing item (seconds, absolute in the book). */
 export interface ChapterMark {
@@ -149,6 +150,10 @@ export function requestSeek(seconds: number): void {
   // updates instantly - even while paused, where the native progress callback
   // won't fire to confirm the seek for a while. The host still applies seekTo.
   set({ seekTo: target, position: target })
+  // A seek (esp. while paused) makes the server's position stale with no new
+  // listened-time: mark sync dirty so the header icon goes orange and a tap can
+  // push this spot. syncState is a leaf store (no deps back into here).
+  syncStateSeeked(target)
 }
 
 export function jumpBy(delta: number): void {

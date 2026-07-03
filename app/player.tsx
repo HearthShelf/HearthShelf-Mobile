@@ -47,6 +47,9 @@ import { getSettingsState, subscribeSettings, COVER_ASPECT_RATIO } from '@/store
 import { useBookmarks } from '@/player/useBookmarks'
 import { coverUrl, getItemDetail, getRecentSessions } from '@/api/abs'
 import { playItemById } from '@/player/playback'
+import { SyncStatusIcon } from '@/player/SyncStatusIcon'
+import { getSyncState, subscribeSyncState } from '@/player/syncState'
+import { getPendingSessionState, subscribePendingSessions } from '@/player/pendingProgress'
 import {
   getDownloadsState,
   subscribeDownloads,
@@ -381,6 +384,8 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
               <IconButton name={icons.collapse} size={28} onPress={() => router.back()} />
             )}
             <View style={{ flex: 1 }} />
+            <SyncStatusIcon />
+            <View style={{ width: spacing.md }} />
             <IconButton name={icons.queue} size={23} onPress={() => queueRef.current?.present()} />
           </View>
 
@@ -904,6 +909,20 @@ interface RecentSession {
   startedAt: number
 }
 
+/** A unified Recent Listens row: the live "Now" session, a local unsynced
+ *  session, or a confirmed server session. `synced` drives the green/orange
+ *  accent so the list doubles as a sync dashboard. */
+interface RecentRow {
+  key: string
+  kind: 'live' | 'pending' | 'server'
+  synced: boolean
+  offline: boolean
+  startedAt: number
+  startTime: number
+  currentTime: number
+  timeListening: number
+}
+
 const RecentSheet = forwardRef<
   SheetHandle,
   {
@@ -916,6 +935,18 @@ const RecentSheet = forwardRef<
   const recentStyles = useMemo(() => makeRecentStyles(colors), [colors])
   const sheetRef = useRef<SheetRef>(null)
   const [sessions, setSessions] = useState<RecentSession[] | null>(null)
+  const [open, setOpen] = useState(false)
+
+  // Live sync state (drives the pinned "Now" row + which rows read as unsynced).
+  const sync = useSyncExternalStore(subscribeSyncState, getSyncState)
+  const pending = useSyncExternalStore(subscribePendingSessions, getPendingSessionState).byId
+  // Tick once a second while the sheet is open so the live row counts up.
+  const [, force] = useState(0)
+  useEffect(() => {
+    if (!open) return
+    const t = setInterval(() => force((n) => n + 1), 1000)
+    return () => clearInterval(t)
+  }, [open])
 
   const load = useCallback(() => {
     getRecentSessions()
@@ -929,6 +960,7 @@ const RecentSheet = forwardRef<
   useImperativeHandle(ref, () => ({
     present: () => {
       setSessions(null)
+      setOpen(true)
       load()
       sheetRef.current?.present()
     },
@@ -944,13 +976,59 @@ const RecentSheet = forwardRef<
     return c?.title ?? null
   }
 
+  // Unified, sync-aware row list: the live "Now" session (in progress), any local
+  // sessions not yet on the server (orange = unsynced), then the server's
+  // confirmed sessions (green = synced), newest first.
+  const rows: RecentRow[] = useMemo(() => {
+    const out: RecentRow[] = []
+    const live = sync.live
+    if (live && live.itemId === itemId) {
+      out.push({
+        key: 'live',
+        kind: 'live',
+        synced: sync.status === 'synced',
+        offline: sync.status === 'failed',
+        startedAt: live.startedAt,
+        startTime: live.startTime,
+        currentTime: live.currentTime,
+        timeListening: live.timeListening,
+      })
+    }
+    const localForItem = pending.get(itemId)
+    if (localForItem) {
+      out.push({
+        key: 'pending',
+        kind: 'pending',
+        synced: false,
+        offline: true,
+        startedAt: localForItem.startedAt,
+        startTime: Math.max(0, localForItem.currentTime - localForItem.timeListening),
+        currentTime: localForItem.currentTime,
+        timeListening: localForItem.timeListening,
+      })
+    }
+    for (const s of sessions ?? []) {
+      out.push({
+        key: s.id,
+        kind: 'server',
+        synced: true,
+        offline: false,
+        startedAt: s.startedAt,
+        startTime: s.startTime,
+        currentTime: s.currentTime,
+        timeListening: s.timeListening,
+      })
+    }
+    return out
+  }, [sync, pending, sessions, itemId])
+
   return (
     <Sheet ref={sheetRef} kicker="Recent listens" snapPoints={['60%']}>
-      {!sessions ? (
+      {!sessions && rows.length === 0 ? (
         <AppText variant="meta" color={colors.textMuted}>
           Loading...
         </AppText>
-      ) : sessions.length === 0 ? (
+      ) : rows.length === 0 ? (
         <AppText
           variant="meta"
           color={colors.textMuted}
@@ -960,30 +1038,42 @@ const RecentSheet = forwardRef<
         </AppText>
       ) : (
         <View>
-          {sessions.map((s) => {
-            const startCh = chapterAt(s.startTime)
-            const endCh = chapterAt(s.currentTime)
+          {rows.map((r) => {
+            const startCh = chapterAt(r.startTime)
+            const endCh = chapterAt(r.currentTime)
+            // Green once confirmed on the server; ember while unsynced/in-progress.
+            const accent = r.synced ? colors.success : colors.accent
+            const live = r.kind === 'live'
+            const started = new Date(r.startedAt)
             return (
               <Touchable
-                key={s.id}
-                style={recentStyles.row}
+                key={r.key}
+                style={[recentStyles.row, live && recentStyles.liveRow]}
                 onPress={() => {
-                  onSeek(s.startTime)
+                  onSeek(r.startTime)
                   sheetRef.current?.dismiss()
                 }}
               >
                 <View style={{ flex: 1, gap: 3 }}>
                   <View style={recentStyles.durationRow}>
-                    <Icon name={icons.schedule} size={15} color={colors.accent} />
-                    <AppText variant="label" color={colors.accent}>
-                      {formatTimestamp(s.timeListening)} listened
+                    <Icon
+                      name={r.offline ? icons.cloudOff : r.synced ? icons.cloudDone : icons.cloudQueue}
+                      size={15}
+                      color={accent}
+                    />
+                    <AppText variant="label" color={accent}>
+                      {formatTimestamp(r.timeListening)} listened
                     </AppText>
                     <AppText variant="caption" color={colors.textMuted}>
-                      {new Date(s.startedAt).toLocaleDateString()}
+                      {live
+                        ? `Now · started ${started.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+                        : r.kind === 'pending'
+                          ? 'Not synced yet'
+                          : started.toLocaleDateString()}
                     </AppText>
                   </View>
                   <AppText variant="mono" color={colors.textMuted}>
-                    {formatTimestamp(s.startTime)} → {formatTimestamp(s.currentTime)}
+                    {formatTimestamp(r.startTime)} → {formatTimestamp(r.currentTime)}
                   </AppText>
                   {(startCh || endCh) && (
                     <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
@@ -993,7 +1083,7 @@ const RecentSheet = forwardRef<
                     </AppText>
                   )}
                 </View>
-                <Icon name={icons.play} size={20} color={colors.textMuted} />
+                {!live && <Icon name={icons.play} size={20} color={colors.textMuted} />}
               </Touchable>
             )
           })}
@@ -1012,6 +1102,13 @@ const makeRecentStyles = (colors: Palette) =>
       paddingVertical: spacing.md,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.hairline,
+    },
+    liveRow: {
+      backgroundColor: colors.accentWash,
+      borderRadius: radius.card,
+      paddingHorizontal: spacing.md,
+      borderBottomWidth: 0,
+      marginBottom: spacing.xs,
     },
     durationRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   })

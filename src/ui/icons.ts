@@ -89,6 +89,9 @@ export const icons = {
   signOut: 'logout',
   retry: 'refresh',
   cloudOff: 'cloud-off',
+  cloudDone: 'cloud-done',
+  cloudSync: 'cloud-sync',
+  cloudQueue: 'cloud-queue',
   // Settings
   palette: 'palette',
   darkMode: 'dark-mode',
