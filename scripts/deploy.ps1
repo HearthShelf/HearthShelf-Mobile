@@ -53,6 +53,12 @@
 .PARAMETER NoLaunch
   Build and install but don't launch the app.
 
+.PARAMETER Ios
+  Let the background Metro server also serve iOS. Off by default: Metro bundles
+  per client request, so with only an Android device attached it never touches
+  iOS anyway, and dropping the --android launch flag is all -Ios does. Only useful
+  if you connect an iOS client to this same Metro.
+
 .PARAMETER Serial
   adb device serial to target. Defaults to emulator-5554. Pinned on purpose so a
   plugged-in physical phone is never touched.
@@ -89,7 +95,10 @@ param(
   # picked device (x86_64 for emulators, arm64-v8a for real phones).
   [string]$Serial,
   # Force a build ABI instead of auto-detecting from the device (e.g. arm64-v8a).
-  [string]$Abi
+  [string]$Abi,
+  # Also bundle iOS in the background Metro server. Off by default so cold boots
+  # don't pay to transform/serialize a platform we don't run here (Windows/Android).
+  [switch]$Ios
 )
 
 $ErrorActionPreference = 'Stop'
@@ -181,7 +190,11 @@ if (-not $Release -and -not $StandaloneDebug) {
     Write-Host 'Metro already running on :8081' -ForegroundColor DarkGray
   } else {
     Write-Step 'Starting Metro bundler in background window'
-    Start-Process powershell -ArgumentList "-NoProfile -Command `"Set-Location '$RepoRoot'; npx expo start --dev-client`"" -WindowStyle Normal
+    # Metro bundles per client request, so with only an Android device connected it
+    # never bundles iOS. --android also auto-opens the Android app. -Ios drops the
+    # flag if you ever want to drive an iOS client off the same Metro.
+    $metroCmd = if ($Ios) { 'npx expo start --dev-client' } else { 'npx expo start --dev-client --android' }
+    Start-Process powershell -ArgumentList "-NoProfile -Command `"Set-Location '$RepoRoot'; $metroCmd`"" -WindowStyle Normal
     # Give Metro a moment to bind the port before we run adb reverse.
     Write-Host 'Waiting for Metro to be ready...' -ForegroundColor DarkGray
     $deadline = [DateTime]::UtcNow.AddSeconds(60)

@@ -91,17 +91,21 @@ export function recordLocalSession(session: LocalSession): void {
  * Replay every pending session to ABS, clearing each on success and keeping it on
  * failure (so a partial network blip retries next time). No-op when there's no
  * session (still offline) or nothing pending. Safe to call repeatedly.
+ *
+ * Returns true when there was nothing to send OR everything sent, false when a
+ * send was attempted and failed - so a manual retry (the sync sheet) can tell the
+ * user whether their banked offline listens reached the server.
  */
-export async function flushPendingProgress(): Promise<void> {
-  if (!getSession()) return
+export async function flushPendingProgress(): Promise<boolean> {
+  if (!getSession()) return false
   const items = [...state.byId.values()]
-  if (!items.length) return
+  if (!items.length) return true
 
   try {
     await syncLocalSessions(items)
   } catch {
     // Leave everything pending; the next reconnect/background pass retries.
-    return
+    return false
   }
 
   // All ingested in one call - clear the ids we just sent (guarding against any
@@ -117,4 +121,5 @@ export async function flushPendingProgress(): Promise<void> {
   }
   emit(byId)
   persist()
+  return true
 }

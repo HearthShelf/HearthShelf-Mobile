@@ -259,7 +259,7 @@ export async function syncProgress(currentTime: number, force = false): Promise<
 /** POST the active session's accrued listened-time + position. Marks pending only
  *  if it fails (red on network loss), synced on success - a normal background push
  *  doesn't visibly change the green icon. */
-async function pushListened(a: ActiveSession, currentTime: number): Promise<void> {
+async function pushListened(a: ActiveSession, currentTime: number): Promise<boolean> {
   const timeListened = Math.round(a.pendingListened)
   a.pendingListened = 0
   a.lastSyncedTime = currentTime
@@ -270,11 +270,13 @@ async function pushListened(a: ActiveSession, currentTime: number): Promise<void
       duration: a.duration,
     })
     syncStateSynced(startedNow())
+    return true
   } catch {
     // Connectivity blip: roll the unsynced time back so the next tick retries it,
     // and show red - we couldn't reach the server.
     a.pendingListened += timeListened
     syncStateFailed()
+    return false
   }
 }
 
@@ -282,12 +284,17 @@ async function pushListened(a: ActiveSession, currentTime: number): Promise<void
  *  now - the header sync icon's tap. Unlike a normal tick this ALWAYS sends,
  *  even with zero new listened-time, so a seek-while-paused lands the new spot on
  *  the server (handy for jumping to a chapter our app knows about from elsewhere).
- *  No-op offline (banked locally already) or when idle. */
-export async function forceSyncNow(): Promise<void> {
-  if (!active) return
+ *  No-op offline (banked locally already) or when idle.
+ *
+ *  Returns true when the push reached the server, false when it couldn't (offline
+ *  / failed) or there was nothing playing to sync. The sync sheet uses this to
+ *  show the listener real feedback instead of a silent tap. */
+export async function forceSyncNow(): Promise<boolean> {
+  if (offline) return false
+  if (!active) return false
   // Always send, even with zero new listened-time, so a seek-while-paused lands
   // the new position on the server.
-  await pushListened(active, getState().position)
+  return pushListened(active, getState().position)
 }
 
 async function safeClose(): Promise<void> {
