@@ -49,6 +49,7 @@ export function CoverDownloadOverlay({
       <View style={styles.center}>
         <View style={{ width: ring, height: ring, alignItems: 'center', justifyContent: 'center' }}>
           <Svg width={ring} height={ring} style={StyleSheet.absoluteFill}>
+            <Circle cx={ring / 2} cy={ring / 2} r={r} fill="rgba(0,0,0,0.7)" />
             <Circle
               cx={ring / 2}
               cy={ring / 2}
@@ -73,7 +74,7 @@ export function CoverDownloadOverlay({
           </Svg>
           <Text
             allowFontScaling={false}
-            style={{ fontSize, fontWeight: '700', color: colors.text }}
+            style={{ fontSize, fontWeight: '700', color: '#fff' }}
           >
             {`${pct}%`}
           </Text>

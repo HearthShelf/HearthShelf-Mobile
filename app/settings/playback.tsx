@@ -149,6 +149,26 @@ export default function PlaybackPanel() {
           />
         </SettingsRow>
         <SettingsRow
+          title="Tap artwork to play"
+          desc="Tap the cover on the full-screen player to play or pause."
+          control={
+            <SettingsToggle
+              on={s.tapArtworkTogglesPlay}
+              onChange={(v) => setSetting('tapArtworkTogglesPlay', v)}
+            />
+          }
+        />
+        <SettingsRow
+          title="Skip hotspots"
+          desc="Double-tap the sides of the artwork to jump back or forward."
+          control={
+            <SettingsToggle
+              on={s.skipHotspots}
+              onChange={(v) => setSetting('skipHotspots', v)}
+            />
+          }
+        />
+        <SettingsRow
           title="Player buttons"
           desc="Choose which action buttons show on the player, tuck into More, or hide."
           onPress={() => router.push('/settings/player-buttons')}

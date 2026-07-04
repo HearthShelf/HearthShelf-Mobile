@@ -104,6 +104,8 @@ export interface SettingsState {
   skipBack: number
   skipBackCustom: number
   playerBg: PlayerBg
+  tapArtworkTogglesPlay: boolean
+  skipHotspots: boolean
   haptics: HapticLevel
   hapticIntensity: HapticIntensity
   carMode: CarMode
@@ -167,6 +169,8 @@ let state: SettingsState = {
   skipBack: 15,
   skipBackCustom: 20,
   playerBg: 'blurred',
+  tapArtworkTogglesPlay: false,
+  skipHotspots: true,
   haptics: 'minimal',
   hapticIntensity: 'light',
   carMode: 'auto',

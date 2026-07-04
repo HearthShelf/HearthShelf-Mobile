@@ -147,16 +147,54 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // committing a seek (seek fires once, on release - see Scrubber).
   const [previewRatio, setPreviewRatio] = useState<number | null>(null)
 
-  // Double-tap the cover to open the lightbox.
+  // Cover taps: double-tap always opens the lightbox. A single tap toggles
+  // play/pause only when the user opted into "Tap artwork to play" - otherwise a
+  // single tap does nothing (double-tap for the lightbox is the sole action).
   const [lightbox, setLightbox] = useState(false)
   const lastTap = useRef(0)
+  const singleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const tapTogglesPlay = settings.tapArtworkTogglesPlay
+  useEffect(
+    () => () => {
+      if (singleTapTimer.current) clearTimeout(singleTapTimer.current)
+    },
+    [],
+  )
   const onCoverTap = useCallback(() => {
     const now = Date.now()
     if (now - lastTap.current < 320) {
       lastTap.current = 0
+      if (singleTapTimer.current) {
+        clearTimeout(singleTapTimer.current)
+        singleTapTimer.current = null
+      }
       setLightbox(true)
     } else {
       lastTap.current = now
+      if (tapTogglesPlay) {
+        // Wait out the double-tap window so a double-tap opens the lightbox
+        // without also flipping play/pause.
+        if (singleTapTimer.current) clearTimeout(singleTapTimer.current)
+        singleTapTimer.current = setTimeout(() => {
+          singleTapTimer.current = null
+          togglePlay()
+        }, 320)
+      }
+    }
+  }, [tapTogglesPlay])
+
+  // Skip hotspots: double-tap the margin beside the artwork to jump by the
+  // configured skip amount (like Audible's edge taps). On by default.
+  const hotspotTap = useRef(0)
+  const onHotspotTap = useCallback((dir: -1 | 1) => {
+    const now = Date.now()
+    if (now - hotspotTap.current < 320) {
+      hotspotTap.current = 0
+      const amount = dir < 0 ? getSettingsState().skipBack : getSettingsState().skipForward
+      haptics.select()
+      jumpBy(dir * amount)
+    } else {
+      hotspotTap.current = now
     }
   }, [])
 
@@ -276,6 +314,8 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const coverMaxW = Math.min(width - spacing.xl * 2, immersive ? width - 48 : 360)
   const coverMaxH = height * (immersive ? 0.62 : 0.46)
   const coverWidth = Math.min(coverMaxW, coverMaxH * coverAspect)
+  // Width of each skip hotspot: the margin from the screen edge to the artwork.
+  const hotspotWidth = Math.max(0, (width - coverWidth) / 2)
 
   const goToTab = (name: string) => {
     // The player already IS the now-playing surface; tapping that tab is a no-op.
@@ -411,6 +451,20 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
       {/* Cover fills the space between header and the pinned controls. */}
       <GestureDetector gesture={swipe}>
         <View style={styles.coverArea}>
+          {settings.skipHotspots && !immersive && hotspotWidth > 24 && (
+            <>
+              <Pressable
+                onPress={() => onHotspotTap(-1)}
+                style={[styles.hotspotLeft, { width: hotspotWidth }]}
+                accessibilityLabel={`Skip back ${settings.skipBack} seconds`}
+              />
+              <Pressable
+                onPress={() => onHotspotTap(1)}
+                style={[styles.hotspotRight, { width: hotspotWidth }]}
+                accessibilityLabel={`Skip forward ${settings.skipForward} seconds`}
+              />
+            </>
+          )}
           <Pressable onPress={onCoverTap} style={styles.coverTap}>
             <Cover
               uri={nowPlaying.artworkUrl}
@@ -1144,6 +1198,10 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
     // Full-strength art, shown on its own with no scrim over it.
     hearthBg: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
     coverTap: { position: 'relative' },
+    // Skip hotspots fill the margins beside the artwork (edge to cover). Top/
+    // bottom are inset so they don't overlap the header or the controls.
+    hotspotLeft: { position: 'absolute', left: 0, top: 0, bottom: 0, zIndex: 1 },
+    hotspotRight: { position: 'absolute', right: 0, top: 0, bottom: 0, zIndex: 1 },
     cover: { backgroundColor: colors.high },
     bookmarkBtn: {
       position: 'absolute',
