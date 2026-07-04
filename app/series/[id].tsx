@@ -18,9 +18,15 @@ import type {
   ABSSeries,
   HSAudibleSeriesBook,
 } from '@hearthshelf/core'
-import { coverHue, missingSeriesBooks, ownedKeyOf, seriesCompletion } from '@hearthshelf/core'
+import {
+  coverHue,
+  missingSeriesBooks,
+  seriesSeqFromName,
+  seriesCompletion,
+  type OwnedSeriesBook,
+} from '@hearthshelf/core'
 import { coverUrl, getLibrarySeries, itemAuthor, itemNarrator, itemTitle } from '@/api/abs'
-import { fetchAudibleSeries, audibleStoreUrl } from '@/api/absAudible'
+import { fetchAudibleSeries, peekAudibleSeries, audibleStoreUrl } from '@/api/absAudible'
 import { getRmabEnabled, submitRequest, type RmabRequestResult } from '@/api/absRmab'
 import { catalogSeriesById } from '@/player/offlineCatalog'
 import {
@@ -112,9 +118,14 @@ export default function SeriesDetailScreen() {
   useEffect(() => {
     if (!seriesName || !series) return
     let cancelled = false
-    const ownedKeys = new Set(
-      (series.books ?? []).map((b) => ownedKeyOf(b.media.metadata.title, itemAuthor(b))),
-    )
+    const ownedBooks: OwnedSeriesBook[] = (series.books ?? []).map((b) => ({
+      title: b.media.metadata.title,
+      sequence: seriesSeqFromName(b.media.metadata.seriesName),
+    }))
+    // Paint immediately from the in-process cache so re-opening a series doesn't
+    // flash owned-only before the missing rows arrive. The fetch below refreshes.
+    const cached = peekAudibleSeries(seriesName)
+    if (cached?.seriesAsin) setMissing(missingSeriesBooks(cached.books, ownedBooks))
     void (async () => {
       const [audible, enabled] = await Promise.all([
         fetchAudibleSeries(seriesName),
@@ -122,7 +133,7 @@ export default function SeriesDetailScreen() {
       ])
       if (cancelled) return
       setRmabEnabled(enabled)
-      setMissing(audible.seriesAsin ? missingSeriesBooks(audible.books, ownedKeys) : [])
+      setMissing(audible.seriesAsin ? missingSeriesBooks(audible.books, ownedBooks) : [])
     })()
     return () => {
       cancelled = true
@@ -409,7 +420,9 @@ function SegmentTrack({
         )
       })}
       {Array.from({ length: missingCount }, (_, i) => (
-        <View key={`missing-${i}`} style={[styles.seg, styles.segMissing]} />
+        <View key={`missing-${i}`} style={[styles.seg, styles.segMissing]}>
+          <View style={styles.segMissingSlash} />
+        </View>
       ))}
     </View>
   )
@@ -842,12 +855,21 @@ const makeStyles = (colors: Palette) =>
       overflow: 'hidden',
     },
     segFill: { height: '100%', backgroundColor: colors.accent, borderRadius: 3 },
+    // Unowned book: a red-outlined, red-tinted segment - clearly distinct from a
+    // not-started (grey) or finished (accent) segment.
     segMissing: {
-      backgroundColor: 'transparent',
+      backgroundColor: 'rgba(216,68,58,0.22)',
       borderWidth: 1,
-      borderStyle: 'dashed',
-      borderColor: colors.elevated,
-      opacity: 0.7,
+      borderColor: 'rgba(216,68,58,0.6)',
+    },
+    segMissingSlash: {
+      position: 'absolute',
+      top: -1,
+      bottom: -1,
+      left: '50%',
+      width: 1,
+      backgroundColor: 'rgba(216,68,58,0.75)',
+      transform: [{ rotate: '22deg' }],
     },
     actions: {
       flexDirection: 'row',

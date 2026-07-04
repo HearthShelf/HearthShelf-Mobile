@@ -14,6 +14,7 @@ import {
 } from '@hearthshelf/core'
 import { setSessionExpiredHandler } from '@/api/controlPlane'
 import { clearSession } from '@/api/session'
+import { clearAudibleCache } from '@/api/absAudible'
 import { useConnection } from '@/api/ConnectionProvider'
 import {
   clearTrack,
@@ -102,6 +103,7 @@ export default function HomeScreen() {
       clearTrack()
       clearAutoSession()
       stopQueueSync()
+      clearAudibleCache()
       await clearSession()
       await signOut()
       router.replace(reason ? `/sign-in?reason=${reason}` : '/sign-in')
@@ -332,9 +334,7 @@ export default function HomeScreen() {
   // Re-apply the finished filter at render against the live progress store so a
   // book that reaches 100% while Home is open drops out of the hero/Continue
   // immediately, without waiting for the next items-in-progress fetch.
-  const visibleInProgress = inProgress.filter(
-    (it) => progressById.get(it.id)?.isFinished !== true,
-  )
+  const visibleInProgress = inProgress.filter((it) => progressById.get(it.id)?.isFinished !== true)
   const hero = visibleInProgress[0]
 
   return (

@@ -9,6 +9,7 @@ import { useAuth, useUser } from '@clerk/expo'
 import { useRouter } from 'expo-router'
 import { StyleSheet, View } from 'react-native'
 import { clearSession } from '@/api/session'
+import { clearAudibleCache } from '@/api/absAudible'
 import { clearTrack } from '@/player/store'
 import { clearAutoSession } from '@/player/autoBridge'
 import { stopQueueSync } from '@/player/queueSync'
@@ -43,7 +44,8 @@ export default function AccountScreen() {
     if (
       !(await confirm({
         title: 'Sign out',
-        message: 'Sign out of HearthShelf on this device? Your downloads stay, but you’ll need to sign in again.',
+        message:
+          'Sign out of HearthShelf on this device? Your downloads stay, but you’ll need to sign in again.',
         confirmLabel: 'Sign out',
       }))
     )
@@ -51,6 +53,7 @@ export default function AccountScreen() {
     clearTrack()
     clearAutoSession()
     stopQueueSync()
+    clearAudibleCache()
     await clearSession()
     await signOut()
     router.replace('/sign-in')
