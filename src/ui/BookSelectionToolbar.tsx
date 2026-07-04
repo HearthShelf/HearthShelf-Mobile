@@ -21,6 +21,7 @@ import { AppText, IconButton, icons } from '@/ui/primitives'
 import { spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { haptics } from './haptics'
+import { confirm } from './confirm'
 import type { BookSelection } from './useBookSelection'
 
 export function BookSelectionToolbar({
@@ -47,8 +48,15 @@ export function BookSelectionToolbar({
 
   const markFinished = async () => {
     if (!ids.length || busy.current) return
-    busy.current = true
     const next = !selectionAllFinished
+    const ok = await confirm({
+      title: next ? 'Mark finished' : 'Mark not finished',
+      message: `Mark ${ids.length} book${ids.length === 1 ? '' : 's'} as ${next ? 'finished' : 'not finished'}?`,
+      confirmLabel: next ? 'Mark finished' : 'Mark not finished',
+      destructive: false,
+    })
+    if (!ok) return
+    busy.current = true
     const idSet = new Set(ids)
     try {
       await markItemsFinished(
@@ -77,8 +85,16 @@ export function BookSelectionToolbar({
     selection.clear()
   }
 
-  const download = () => {
+  const download = async () => {
     const selectedBooks = books.filter((b) => selection.isSelected(b.id))
+    if (!selectedBooks.length) return
+    const ok = await confirm({
+      title: 'Download for offline',
+      message: `Download ${selectedBooks.length} book${selectedBooks.length === 1 ? '' : 's'} for offline listening? This can use a lot of storage and data.`,
+      confirmLabel: 'Download',
+      destructive: false,
+    })
+    if (!ok) return
     for (const b of selectedBooks) {
       void downloadItem(b.id, itemTitle(b), itemAuthor(b))
     }
@@ -133,7 +149,7 @@ export function BookSelectionToolbar({
           name={icons.download}
           size={20}
           color={colors.text}
-          onPress={download}
+          onPress={() => void download()}
           style={styles.action}
         />
       </View>

@@ -63,6 +63,7 @@ import { Icon } from '@/ui/icons'
 import { AppTabBar } from '@/ui/AppTabBar'
 import { Toast, useToast } from '@/ui/Toast'
 import { haptics } from '@/ui/haptics'
+import { confirm } from '@/ui/confirm'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 
@@ -219,6 +220,14 @@ export default function ClubRoomScreen() {
 
   const leave = async () => {
     if (!detail) return
+    if (
+      !(await confirm({
+        title: 'Leave club',
+        message: `Leave "${detail.club.name}"? You'll stop getting its updates and can rejoin later if it's open.`,
+        confirmLabel: 'Leave',
+      }))
+    )
+      return
     ownerSheetRef.current?.dismiss()
     const ok = await setClubMembership(detail.club.id, false)
     if (ok) {
@@ -231,6 +240,14 @@ export default function ClubRoomScreen() {
 
   const archive = async () => {
     if (!detail) return
+    if (
+      !(await confirm({
+        title: 'Archive club',
+        message: `Archive "${detail.club.name}"? Members lose access and this can't be undone.`,
+        confirmLabel: 'Archive',
+      }))
+    )
+      return
     ownerSheetRef.current?.dismiss()
     const ok = await archiveClub(detail.club.id)
     if (ok) {
@@ -243,6 +260,14 @@ export default function ClubRoomScreen() {
 
   const kick = async (member: HSClubMember) => {
     if (!detail) return
+    if (
+      !(await confirm({
+        title: 'Remove member',
+        message: `Remove ${member.username} from the club?`,
+        confirmLabel: 'Remove',
+      }))
+    )
+      return
     const ok = await kickClubMember(detail.club.id, member.userId)
     if (ok) await load()
     else show('Could not remove')

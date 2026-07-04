@@ -37,6 +37,7 @@ import { Icon, icons } from '@/ui/icons'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { haptics } from '@/ui/haptics'
+import { confirm } from '@/ui/confirm'
 
 export interface BookActionsHandle {
   /** Open the sheet targeting `item`, with its current finished state so the
@@ -91,9 +92,15 @@ export const BookActionsSheet = forwardRef<
     }
   }
 
-  const download = () => {
+  const download = async () => {
     if (!item) return
     if (dl?.status === 'done') {
+      const ok = await confirm({
+        title: 'Remove download',
+        message: `Delete the downloaded copy of "${itemTitle(item)}"? You can download it again later.`,
+        confirmLabel: 'Delete',
+      })
+      if (!ok) return
       void deleteDownload(item.id)
       onToast?.('Download removed')
     } else if (dl?.status === 'downloading' || dl?.status === 'queued') {
@@ -153,7 +160,7 @@ export const BookActionsSheet = forwardRef<
           onPress={() => void markFinished()}
         />
         <ActionRow icon={icons.addList} label="Add to list" onPress={addToList} />
-        <ActionRow icon={downloadIcon} label={downloadLabel} onPress={download} />
+        <ActionRow icon={downloadIcon} label={downloadLabel} onPress={() => void download()} />
       </Sheet>
 
       {item ? (
