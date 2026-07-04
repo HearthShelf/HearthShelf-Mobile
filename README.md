@@ -1,5 +1,10 @@
 # HearthShelf Mobile
 
+[![CI](https://github.com/HearthShelf/HearthShelf-Mobile/actions/workflows/ci.yml/badge.svg)](https://github.com/HearthShelf/HearthShelf-Mobile/actions/workflows/ci.yml)
+[![Android](https://github.com/HearthShelf/HearthShelf-Mobile/actions/workflows/build-android-release.yml/badge.svg)](https://github.com/HearthShelf/HearthShelf-Mobile/actions/workflows/build-android-release.yml)
+[![Website](https://img.shields.io/badge/site-hearthshelf.com-2c6e6b)](https://hearthshelf.com)
+[![Docs](https://img.shields.io/badge/docs-docs.hearthshelf.com-2c6e6b)](https://docs.hearthshelf.com)
+
 React Native (Expo) mobile app for HearthShelf - a browser-first, self-hosted
 UI/UX over AudiobookShelf (ABS). The phone app signs into the hosted front door
 (`app.hearthshelf.com`), connects to the user's linked server, and plays their
@@ -40,12 +45,14 @@ until you have a Mac or cloud release credentials.
 
 ## Relationship to the other repos
 
-- **HearthShelf** - self-hosted SPA + Node backend + Docker (the server users run)
-- **HearthShelf-WebApp** - hosted front door (`app.hearthshelf.com`) the mobile
+- [**HearthShelf**](https://github.com/HearthShelf/HearthShelf) - self-hosted SPA + Node backend + Docker (the server users run)
+- [**HearthShelf-WebApp**](https://github.com/HearthShelf/HearthShelf-WebApp) - hosted front door (`app.hearthshelf.com`) the mobile
   app signs into; the auth/connect flow here is ported from its `controlPlane` +
   `connectServer`
+- [**HearthShelf-Core**](https://github.com/HearthShelf/HearthShelf-Core) - shared ABS types + pure logic (`@hearthshelf/core`)
 - **HearthShelf-Mobile** (this repo) - the phone app
 
-Shared logic (ABS types, control-plane client, format/discover helpers) is
-currently duplicated by deliberate choice; it may be extracted into a small
-shared package if drift becomes a maintenance cost.
+Shared logic (ABS types, format/discover/stats helpers) lives in
+[`@hearthshelf/core`](https://github.com/HearthShelf/HearthShelf-Core), consumed
+here as a git submodule at `packages/core`. This app is the reference wiring for
+that package. Run `npm run sync-core` to pull the latest core.
