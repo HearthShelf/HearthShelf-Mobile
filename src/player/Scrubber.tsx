@@ -30,7 +30,7 @@ import { LinearGradient } from 'expo-linear-gradient'
 import { haptics } from '@/ui/haptics'
 import { DUR } from '@/ui/motion'
 import { mixHex, radius, type Palette } from '@/ui/theme'
-import { useColors } from '@/ui/ThemeProvider'
+import { useTheme } from '@/ui/ThemeProvider'
 
 const PILL_HEIGHT = 30
 // Two-tone fill toward the leading edge. Matches web `.scrub > i`'s
@@ -63,8 +63,8 @@ export function Scrubber({
   remain?: string
   chapter?: string
 }) {
-  const colors = useColors()
-  const styles = useMemo(() => makeStyles(colors), [colors])
+  const { colors, name } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, name === 'light'), [colors, name])
   const widthRef = useRef(0)
   const [dragRatio, setDragRatio] = useState<number | null>(null)
 
@@ -190,12 +190,16 @@ export function Scrubber({
   )
 }
 
-const makeStyles = (colors: Palette) =>
+const makeStyles = (colors: Palette, isLight: boolean) =>
   StyleSheet.create({
     pill: {
       height: PILL_HEIGHT,
       borderRadius: radius.pill,
-      backgroundColor: mixHex(colors.lowest, colors.text, 0.09), // web: color-mix(text 9%, c-lowest)
+      // The interior labels are cream/white to read over the ember fill. On a
+      // light theme the pale unfilled track would leave them invisible, so we
+      // darken the track (text mixed 42% into lowest) to keep the labels legible
+      // on both sides of the fill boundary. Dark themes keep the subtle web tint.
+      backgroundColor: mixHex(colors.lowest, colors.text, isLight ? 0.42 : 0.09),
       borderWidth: 1,
       borderColor: colors.hairline,
       overflow: 'hidden',
@@ -225,9 +229,9 @@ const makeStyles = (colors: Palette) =>
       fontSize: 10.5,
       fontWeight: '600',
       letterSpacing: 0.1,
-      textShadowColor: 'rgba(0,0,0,0.6)',
+      textShadowColor: isLight ? 'rgba(0,0,0,0.85)' : 'rgba(0,0,0,0.6)',
       textShadowOffset: { width: 0, height: 1 },
-      textShadowRadius: 2,
+      textShadowRadius: isLight ? 3 : 2,
     },
     labelChapter: {
       flex: 1,
