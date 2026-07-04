@@ -345,34 +345,33 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <Screen edges={immersive ? ['top', 'bottom'] : ['top']}>
-      {/* Player background, per the playerBg setting. Blurred cover and hearth
-          art are the background, with only a light scrim fading them into the
-          scaffold near the controls; gradient mode is the breathing cover-hue
-          glow on the bare scaffold. */}
+      {/* Player background, per the playerBg setting. Blurred cover gets a light
+          scrim fading it into the scaffold near the controls; gradient mode is the
+          breathing cover-hue glow on the bare scaffold; hearth art shows on its
+          own with no scrim so the picture stays fully visible. */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         {settings.playerBg === 'blurred' && nowPlaying.artworkUrl ? (
-          <Image
-            source={{ uri: nowPlaying.artworkUrl }}
-            style={StyleSheet.absoluteFill}
-            blurRadius={40}
-          />
+          <>
+            <Image
+              source={{ uri: nowPlaying.artworkUrl }}
+              style={StyleSheet.absoluteFill}
+              blurRadius={40}
+            />
+            <LinearGradient
+              colors={[
+                withAlpha(colors.scaffold, 0.18),
+                withAlpha(colors.scaffold, 0.5),
+                colors.scaffold,
+              ]}
+              locations={[0, 0.62, 1]}
+              style={StyleSheet.absoluteFill}
+            />
+          </>
         ) : null}
         {settings.playerBg === 'hearth' ? (
           <Image source={HEARTH_BG} style={styles.hearthBg} resizeMode="cover" />
         ) : null}
-        {settings.playerBg === 'gradient' ? (
-          <CoverGlow hue={hue} height={430} breathe />
-        ) : (
-          <LinearGradient
-            colors={[
-              withAlpha(colors.scaffold, 0.18),
-              withAlpha(colors.scaffold, 0.5),
-              colors.scaffold,
-            ]}
-            locations={[0, 0.62, 1]}
-            style={StyleSheet.absoluteFill}
-          />
-        )}
+        {settings.playerBg === 'gradient' ? <CoverGlow hue={hue} height={430} breathe /> : null}
       </View>
 
       {!immersive && (
@@ -1142,8 +1141,7 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       justifyContent: 'center',
       paddingHorizontal: spacing.xl,
     },
-    // Full-strength art; the gradient overlay above it does the dimming (same
-    // treatment as the Now Playing tab's empty state, which uses this artwork).
+    // Full-strength art, shown on its own with no scrim over it.
     hearthBg: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
     coverTap: { position: 'relative' },
     cover: { backgroundColor: colors.high },
