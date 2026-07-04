@@ -14,6 +14,7 @@
  * We only ever pass base64 sources (see the reader screen), so downloadFile is a
  * defensive stub - present to satisfy the interface, not exercised.
  */
+import { useMemo } from 'react'
 import {
   documentDirectory,
   cacheDirectory,
@@ -55,37 +56,45 @@ export interface ReaderFileSystem {
 }
 
 export function useReaderFileSystem(): ReaderFileSystem {
-  return {
-    file: null,
-    progress: 0,
-    downloading: false,
-    size: 0,
-    error: null,
-    success: false,
-    documentDirectory: documentDirectory ?? null,
-    cacheDirectory: cacheDirectory ?? null,
-    bundleDirectory: bundleDirectory ?? undefined,
-    readAsStringAsync: (fileUri, options) =>
-      readAsStringAsync(fileUri, options?.encoding === 'base64' ? { encoding: 'base64' } : {}),
-    writeAsStringAsync: (fileUri, contents, options) =>
-      writeAsStringAsync(
-        fileUri,
-        contents,
-        options?.encoding === 'base64' ? { encoding: 'base64' } : {},
-      ),
-    deleteAsync: (fileUri) => deleteAsync(fileUri, { idempotent: true }),
-    downloadFile: async (fromUrl, toFile) => {
-      const res = await downloadAsync(fromUrl, toFile)
-      return { uri: res.uri, mimeType: res.headers['content-type'] ?? null }
-    },
-    getFileInfo: async (fileUri) => {
-      const info = await getInfoAsync(fileUri)
-      return {
-        uri: fileUri,
-        exists: info.exists,
-        isDirectory: info.exists ? info.isDirectory : false,
-        size: info.exists ? (info as { size?: number }).size : undefined,
-      }
-    },
-  }
+  // MUST be referentially stable: the Reader stores this object and depends on
+  // it in effects. A fresh object each render loops it ("Maximum update depth
+  // exceeded"). The functions are module-level refs, so an empty-dep memo is
+  // safe. (The published provider is stateful for download progress; we never
+  // pass a URL source, so a constant zeroed progress block is fine.)
+  return useMemo<ReaderFileSystem>(
+    () => ({
+      file: null,
+      progress: 0,
+      downloading: false,
+      size: 0,
+      error: null,
+      success: false,
+      documentDirectory: documentDirectory ?? null,
+      cacheDirectory: cacheDirectory ?? null,
+      bundleDirectory: bundleDirectory ?? undefined,
+      readAsStringAsync: (fileUri, options) =>
+        readAsStringAsync(fileUri, options?.encoding === 'base64' ? { encoding: 'base64' } : {}),
+      writeAsStringAsync: (fileUri, contents, options) =>
+        writeAsStringAsync(
+          fileUri,
+          contents,
+          options?.encoding === 'base64' ? { encoding: 'base64' } : {},
+        ),
+      deleteAsync: (fileUri) => deleteAsync(fileUri, { idempotent: true }),
+      downloadFile: async (fromUrl, toFile) => {
+        const res = await downloadAsync(fromUrl, toFile)
+        return { uri: res.uri, mimeType: res.headers['content-type'] ?? null }
+      },
+      getFileInfo: async (fileUri) => {
+        const info = await getInfoAsync(fileUri)
+        return {
+          uri: fileUri,
+          exists: info.exists,
+          isDirectory: info.exists ? info.isDirectory : false,
+          size: info.exists ? (info as { size?: number }).size : undefined,
+        }
+      },
+    }),
+    [],
+  )
 }

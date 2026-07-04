@@ -9,13 +9,14 @@
  * in-memory book - no file-system download, no extra native module). Reading
  * position is saved per item as a CFI in AsyncStorage and restored on reopen.
  */
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { Reader, ReaderProvider, useReader } from '@epubjs-react-native/core'
 import type { Location, Section } from '@epubjs-react-native/core'
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import { cacheDirectory, documentDirectory, downloadAsync } from 'expo-file-system/legacy'
 import {
   ABS_ENDPOINTS,
   cfiStorageKey,
@@ -46,26 +47,24 @@ function useReaderPrefs(): ReaderPrefs {
   return useSyncExternalStore(subscribeReaderPrefs, getReaderPrefs, getReaderPrefs)
 }
 
-// Fetch the EPUB with the ABS token and return a base64 data source the reader
-// opens in-memory. Bearer header (not ?token=) since this is a plain fetch.
-async function fetchEbookBase64(itemId: string): Promise<string> {
+// Download the EPUB with the ABS token to a cache file and return its file://
+// URI. The reader detects a ".epub" file source and loads it with epub.js/jszip
+// straight from the file (WebView file access is enabled). We deliberately do
+// NOT base64-inline the book: that bloats index.html to the book's size and
+// crashes the WebView renderer on large books (DCC). We also can't use
+// fetch().blob() - RN can't build a Blob from the response ArrayBuffer.
+async function fetchEbookFileUri(itemId: string): Promise<string> {
   const session = getSession()
   if (!session) throw new Error('not_connected')
   const url = `${session.serverUrl}${ABS_ENDPOINTS.itemEbook(itemId)}`
-  const res = await fetch(url, {
+  const dir = cacheDirectory ?? documentDirectory
+  if (!dir) throw new Error('no_cache_dir')
+  const fileUri = `${dir}reader-${itemId}.epub`
+  const dl = await downloadAsync(url, fileUri, {
     headers: { Authorization: `Bearer ${session.token}`, Accept: 'application/epub+zip' },
   })
-  if (!res.ok) throw new Error(`ebook ${res.status}`)
-  const blob = await res.blob()
-  const dataUrl: string = await new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onloadend = () => resolve(reader.result as string)
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(blob)
-  })
-  // FileReader yields "data:...;base64,XXXX"; the reader wants a string that
-  // contains "base64," - the data URL qualifies as-is.
-  return dataUrl
+  if (dl.status !== 200) throw new Error(`ebook ${dl.status}`)
+  return dl.uri
 }
 
 export default function ReaderScreen() {
@@ -92,6 +91,13 @@ function ReaderInner() {
   const [chapterLabel, setChapterLabel] = useState('')
   const initialCfi = useRef<string | undefined>(undefined)
   const readerTheme = READER_THEMES[prefs.theme]
+  // Stable per pref-values so it isn't a new object every render (the Reader
+  // depends on defaultTheme; a fresh ref each render loops it).
+  const epubTheme = useMemo(
+    () => buildReaderTheme(prefs),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [prefs.theme, prefs.font, prefs.size, prefs.lh, prefs.width, prefs.align],
+  )
 
   // Load prefs + the book once.
   useEffect(() => {
@@ -108,8 +114,8 @@ function ReaderInner() {
             if (!cancelled) setTitle(d.media.metadata.title || 'Reading')
           })
           .catch(() => {})
-        const dataUrl = await fetchEbookBase64(id)
-        if (!cancelled) setSrc(dataUrl)
+        const fileUri = await fetchEbookFileUri(id)
+        if (!cancelled) setSrc(fileUri)
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'load_failed')
       }
@@ -119,12 +125,18 @@ function ReaderInner() {
     }
   }, [id])
 
-  // Re-apply the theme + size whenever prefs change (after the book renders).
+  // Re-apply the theme + size whenever the actual pref VALUES change (after the
+  // book renders). Depend on the primitive fields, not the prefs object or the
+  // changeTheme/changeFontSize identities - useReader() returns fresh function
+  // refs every render, so depending on them would loop this effect forever
+  // ("Maximum update depth exceeded").
+  const ready = Boolean(src)
   useEffect(() => {
-    if (!src) return
-    changeTheme(buildReaderTheme(prefs))
+    if (!ready) return
+    changeTheme(epubTheme)
     changeFontSize(`${prefs.size}px`)
-  }, [prefs, src, changeTheme, changeFontSize])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, epubTheme, prefs.size])
 
   const onLocationChange = useCallback(
     (_total: number, current: Location, progress: number, section: Section | null) => {
@@ -145,8 +157,11 @@ function ReaderInner() {
   if (error) {
     return (
       <View style={[styles.fill, styles.center, { backgroundColor: colors.scaffold }]}>
-        <AppText style={{ color: colors.textMuted, marginBottom: 16 }}>
+        <AppText style={{ color: colors.textMuted, marginBottom: 8 }}>
           Could not open this ebook.
+        </AppText>
+        <AppText style={{ color: colors.textMuted, marginBottom: 16, fontSize: 11, opacity: 0.7 }}>
+          {error}
         </AppText>
         <Pressable onPress={() => router.back()} style={[styles.btn, { borderColor: colors.border }]}>
           <AppText style={{ color: colors.text }}>Go back</AppText>
@@ -185,7 +200,7 @@ function ReaderInner() {
             width="100%"
             height="100%"
             initialLocation={initialCfi.current}
-            defaultTheme={buildReaderTheme(prefs)}
+            defaultTheme={epubTheme}
             flow={prefs.layout === 'paged' ? 'paginated' : 'scrolled-doc'}
             onLocationChange={onLocationChange}
             onDisplayError={(reason) => setError(reason)}
