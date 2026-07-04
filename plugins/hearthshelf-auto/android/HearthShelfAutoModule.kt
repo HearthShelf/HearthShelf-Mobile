@@ -156,20 +156,89 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     else ensureService()
   }
 
-  @ReactMethod fun play() { HearthShelfPlayerService.instance?.playPlayer() }
-  @ReactMethod fun pause() { HearthShelfPlayerService.instance?.pausePlayer() }
-  @ReactMethod fun seekTo(sec: Double) { HearthShelfPlayerService.instance?.seekToSec(sec) }
-  @ReactMethod fun setRate(rate: Double) { HearthShelfPlayerService.instance?.setRate(rate) }
-  @ReactMethod fun setVolume(volume: Double) { HearthShelfPlayerService.instance?.setVolume(volume) }
-  @ReactMethod fun stop() { HearthShelfPlayerService.instance?.stopPlayer() }
+  // When Android Auto owns playback (carPlayer != null), transport commands from
+  // JS (phone UI or lock screen) drive the CAR player, and load is suppressed -
+  // so the phone and car never both produce audio and the phone UI's controls
+  // operate the one player that's actually playing. Otherwise they drive the
+  // phone service as before.
+  @ReactMethod fun play() {
+    val car = carPlayer
+    if (car != null) car.play() else HearthShelfPlayerService.instance?.playPlayer()
+  }
+  @ReactMethod fun pause() {
+    val car = carPlayer
+    if (car != null) car.pause() else HearthShelfPlayerService.instance?.pausePlayer()
+  }
+  @ReactMethod fun seekTo(sec: Double) {
+    val car = carPlayer
+    if (car != null) car.seekTo(sec) else HearthShelfPlayerService.instance?.seekToSec(sec)
+  }
+  @ReactMethod fun setRate(rate: Double) {
+    val car = carPlayer
+    if (car != null) car.setRate(rate) else HearthShelfPlayerService.instance?.setRate(rate)
+  }
+  @ReactMethod fun setVolume(volume: Double) {
+    // Volume (the sleep-timer fade) only applies to the phone player; the car
+    // controls its own hardware volume.
+    if (carPlayer == null) HearthShelfPlayerService.instance?.setVolume(volume)
+  }
+  @ReactMethod fun stop() {
+    val car = carPlayer
+    if (car != null) car.stop() else HearthShelfPlayerService.instance?.stopPlayer()
+  }
 
   // RN NativeEventEmitter requires these no-op stubs on the module.
   @ReactMethod fun addListener(eventName: String) {}
   @ReactMethod fun removeListeners(count: Int) {}
 
+  /** The subset of car-player controls JS transport commands route to while
+   *  Android Auto owns playback. Implemented by HearthShelfAutoService. */
+  interface CarPlayer {
+    fun play()
+    fun pause()
+    fun seekTo(sec: Double)
+    fun setRate(rate: Double)
+    fun stop()
+  }
+
   companion object {
     /** Set by the module so the service can emit events back to JS. */
     @Volatile var emitter: ((String, WritableMap?) -> Unit)? = null
+
+    /** Non-null while the Android Auto service is the active player. Set by
+     *  HearthShelfAutoService when a book is loaded in the car, cleared when the
+     *  car session ends. Transport commands from JS route here when set. */
+    @Volatile var carPlayer: CarPlayer? = null
+
+    /** Tell JS whether the car is the active player, so PlayerHost stops driving
+     *  (and stands down) the phone service while the car owns playback. */
+    fun emitCarActive(active: Boolean) {
+      val map = Arguments.createMap().apply { putBoolean("active", active) }
+      emitter?.invoke("onCarActive", map)
+    }
+
+    /** Tell JS which book the car just loaded, so the phone UI can mirror it
+     *  (title/author/cover/chapters/duration + absolute start position). */
+    fun emitCarLoaded(
+      itemId: String,
+      title: String,
+      author: String,
+      artworkUri: String,
+      durationSec: Double,
+      positionSec: Double,
+      chaptersJson: String,
+    ) {
+      val map = Arguments.createMap().apply {
+        putString("itemId", itemId)
+        putString("title", title)
+        putString("author", author)
+        putString("artworkUri", artworkUri)
+        putDouble("duration", durationSec)
+        putDouble("position", positionSec)
+        putString("chapters", chaptersJson)
+      }
+      emitter?.invoke("onCarLoaded", map)
+    }
 
     fun emitProgress(positionSec: Double) {
       val map = Arguments.createMap().apply { putDouble("position", positionSec) }

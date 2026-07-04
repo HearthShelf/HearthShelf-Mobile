@@ -21,7 +21,10 @@ import {
   setPlaying,
   jumpBy,
   togglePlay,
+  setCarActive,
+  mirrorCarTrack,
 } from './store'
+import { coverUrl } from '@/api/abs'
 import { syncProgress } from './playback'
 import { advanceQueueOnEnd } from './advance'
 import { useShakeToExtend } from './shakeToExtend'
@@ -78,7 +81,10 @@ export function PlayerHost() {
     const subs = [
       emitter.addListener('onProgress', (e: { position: number }) => {
         reportPosition(e.position)
-        syncProgress(e.position)
+        // While the car owns playback it does its own ABS progress sync (with its
+        // own session). Running JS sync too would double-post to two sessions, so
+        // only drive the on-screen position here.
+        if (!getState().carActive) syncProgress(e.position)
       }),
       emitter.addListener('onState', (e: { isPlaying: boolean }) => {
         // Ignore the brief play/pause ExoPlayer emits while it re-buffers a
@@ -93,7 +99,8 @@ export function PlayerHost() {
         setPlaying(e.isPlaying)
         // On pause/stop (incl. the sleep timer stopping playback), flush a final
         // sync so the server has the real stop point and Recent listens is fresh.
-        if (!e.isPlaying) void syncProgress(getState().position, true)
+        // The car does its own final sync on pause, so skip it while car-active.
+        if (!e.isPlaying && !getState().carActive) void syncProgress(getState().position, true)
       }),
       // Native transport (lock screen / car) routes back through the store so it
       // stays the source of truth.
@@ -103,6 +110,44 @@ export function PlayerHost() {
       emitter.addListener('onEnded', () => {
         void advanceQueueOnEnd().catch(() => {})
       }),
+      // Android Auto took over (or handed back) playback. While active the phone
+      // player stands down and transport routes to the car (native side); the
+      // store still mirrors car position/state so the phone UI stays in sync.
+      emitter.addListener('onCarActive', (e: { active: boolean }) => {
+        setCarActive(e.active)
+      }),
+      // The car loaded a book: mirror it into the store so the phone UI shows the
+      // same cover/title/chapters and its scrubber tracks the car.
+      emitter.addListener(
+        'onCarLoaded',
+        (e: {
+          itemId: string
+          title: string
+          author: string
+          artworkUri: string
+          duration: number
+          position: number
+          chapters: string
+        }) => {
+          let chapters: { title: string; start: number; end: number }[] = []
+          try {
+            chapters = JSON.parse(e.chapters || '[]')
+          } catch {
+            chapters = []
+          }
+          mirrorCarTrack({
+            itemId: e.itemId,
+            sessionId: '',
+            title: e.title,
+            author: e.author,
+            artworkUrl: coverUrl(e.itemId),
+            url: '',
+            duration: e.duration,
+            startPosition: e.position,
+            chapters,
+          })
+        },
+      ),
     ]
     return () => subs.forEach((s) => s.remove())
   }, [])
@@ -114,6 +159,33 @@ export function PlayerHost() {
       const s = getState()
       const np = s.nowPlaying
 
+      // Car owns playback: the native module routes play/pause/seek/rate to the
+      // car player, so we must NOT also load/drive the phone service (that would
+      // double up the audio). The store is being mirrored from the car; just
+      // stand down. When the car hands back (carActive false), the block below
+      // (re)loads the phone player from the current store on the next tick.
+      if (s.carActive) {
+        if (loadedKey.current !== null) {
+          Native.stop()
+          loadedKey.current = null
+        }
+        // Still forward transport intent - the module dispatches it to the car.
+        if (s.seekTo !== null) {
+          Native.seekTo(s.seekTo)
+          clearSeek()
+        }
+        if (s.isPlaying !== lastPlaying.current) {
+          lastPlaying.current = s.isPlaying
+          if (s.isPlaying) Native.play()
+          else Native.pause()
+        }
+        if (s.rate !== lastRate.current) {
+          lastRate.current = s.rate
+          Native.setRate(s.rate)
+        }
+        return
+      }
+
       if (!np) {
         if (loadedKey.current !== null) {
           Native.stop()
@@ -121,6 +193,12 @@ export function PlayerHost() {
         }
         return
       }
+
+      // A car-mirrored track (no stream URL / session) can linger in the store
+      // after the car hands back. Don't try to load an empty URL into the phone
+      // player - leave it stood down until the user taps play (which re-opens a
+      // real session via playItemById).
+      if (!np.url) return
 
       // (Re)load when the track changes.
       const key = `${np.itemId}:${np.sessionId}`

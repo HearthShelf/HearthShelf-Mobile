@@ -70,6 +70,26 @@ class HearthShelfAutoService : MediaLibraryService() {
   @Volatile private var absDurationSec: Double = 0.0
   @Volatile private var lastSyncedSec: Double = 0.0
 
+  // Set of connected Android Auto (or other real head-unit) controller package
+  // names. While non-empty the car owns playback: we register carPlayer so JS
+  // transport routes here and tell JS the phone player should stand down.
+  private val carControllers = HashSet<String>()
+
+  // The JS-transport -> car-player bridge, registered on the module while a car
+  // controller is connected. ExoPlayer is main-thread-only, so hop first.
+  private val carPlayerImpl = object : HearthShelfAutoModule.CarPlayer {
+    override fun play() = runOnMain { rawPlayer?.playWhenReady = true }
+    override fun pause() = runOnMain { rawPlayer?.playWhenReady = false }
+    override fun seekTo(sec: Double) = runOnMain {
+      rawPlayer?.let { seekToAbsolute(it, (sec * 1000).toLong()) }
+    }
+    override fun setRate(rate: Double) = runOnMain {
+      rawPlayer?.setPlaybackSpeed(rate.toFloat())
+      session?.setMediaButtonPreferences(customLayout())
+    }
+    override fun stop() = runOnMain { rawPlayer?.pause() }
+  }
+
   private val prefs by lazy {
     getSharedPreferences("hearthshelf_auto", Context.MODE_PRIVATE)
   }
@@ -284,6 +304,9 @@ class HearthShelfAutoService : MediaLibraryService() {
         }
       }
       override fun onIsPlayingChanged(isPlaying: Boolean) {
+        // Mirror car play/pause into the JS store so the phone UI stays in sync.
+        HearthShelfAutoModule.emitState(isPlaying)
+        HearthShelfAutoModule.emitProgress(absolutePositionMs(player) / 1000.0)
         if (!isPlaying) syncProgress(absolutePositionMs(player), force = true)
       }
     })
@@ -309,12 +332,22 @@ class HearthShelfAutoService : MediaLibraryService() {
     override fun run() {
       rawPlayer?.let {
         if (it.isPlaying) {
+          // Mirror the car's absolute book position into the JS store every tick
+          // so the phone UI's scrubber advances in step with the car.
+          HearthShelfAutoModule.emitProgress(absolutePositionMs(it) / 1000.0)
           syncProgress(absolutePositionMs(it), force = false)
           checkNotes(it)
         }
       }
-      progressHandler.postDelayed(this, 5000)
+      progressHandler.postDelayed(this, 1000)
     }
+  }
+
+  /** ExoPlayer must be touched on its Looper (the main thread). JS transport
+   *  commands arrive on RN's native-modules thread, so hop first. */
+  private fun runOnMain(block: () -> Unit) {
+    if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) block()
+    else progressHandler.post(block)
   }
 
   /** Previous-chapter: restart the current chapter if we're >3s into it (matching
@@ -373,6 +406,13 @@ class HearthShelfAutoService : MediaLibraryService() {
 
   override fun onDestroy() {
     progressHandler.removeCallbacks(progressTick)
+    // Hand control back to the phone player and tell JS the car is gone, so the
+    // phone UI stops mirroring and resumes driving the phone service.
+    carControllers.clear()
+    if (HearthShelfAutoModule.carPlayer === carPlayerImpl) {
+      HearthShelfAutoModule.carPlayer = null
+      HearthShelfAutoModule.emitCarActive(false)
+    }
     // Persist the final ABSOLUTE position so closing the car app doesn't lose it.
     rawPlayer?.let { val abs = absolutePositionMs(it); if (abs > 0) syncProgress(abs, force = true) }
     session?.run {
@@ -438,11 +478,45 @@ class HearthShelfAutoService : MediaLibraryService() {
         .remove(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
         .remove(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
         .build()
+      if (isCarController(controller)) {
+        carControllers.add(controller.packageName)
+        // First car controller: the car now owns playback. Route JS transport
+        // here and tell the phone to stand down.
+        if (carControllers.size == 1) {
+          HearthShelfAutoModule.carPlayer = carPlayerImpl
+          HearthShelfAutoModule.emitCarActive(true)
+        }
+      }
       return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
         .setAvailableSessionCommands(available)
         .setAvailablePlayerCommands(playerCommands)
         .setMediaButtonPreferences(customLayout())
         .build()
+    }
+
+    override fun onDisconnected(
+      session: MediaSession,
+      controller: MediaSession.ControllerInfo
+    ) {
+      if (carControllers.remove(controller.packageName) && carControllers.isEmpty()) {
+        // Last car controller left (unplugged / Auto closed): hand playback back
+        // to the phone player and let the phone UI resume driving it.
+        if (HearthShelfAutoModule.carPlayer === carPlayerImpl) {
+          HearthShelfAutoModule.carPlayer = null
+          HearthShelfAutoModule.emitCarActive(false)
+        }
+      }
+    }
+
+    /** True when a controller is a car head unit (Android Auto projection or
+     *  Automotive OS), not our own in-app MediaController or the system UI. Those
+     *  are the controllers that mean "the car owns playback now". */
+    private fun isCarController(controller: MediaSession.ControllerInfo): Boolean {
+      val pkg = controller.packageName
+      if (pkg == packageName) return false // our own controller (notification keep-alive)
+      return pkg == "com.google.android.projection.gearhead" ||
+        pkg == "com.google.android.autosimulator" ||
+        pkg.startsWith("com.android.car")
     }
 
     override fun onCustomCommand(
@@ -667,6 +741,18 @@ class HearthShelfAutoService : MediaLibraryService() {
     // the queue still shows the book and playback works.
     chapters = if (parsed.isNotEmpty()) parsed
       else listOf(Chapter(bookTitle, 0.0, absDurationSec.coerceAtLeast(0.0)))
+
+    // Mirror the loaded book into the JS store so the phone UI shows the same
+    // cover/title/chapters and its scrubber tracks the car. The phone cover
+    // resolves from itemId, so hand JS the raw item id (not the tokened URL).
+    val chaptersJson = JSONArray().apply {
+      for (ch in chapters) {
+        put(JSONObject().put("title", ch.title).put("start", ch.start).put("end", ch.end))
+      }
+    }.toString()
+    HearthShelfAutoModule.emitCarLoaded(
+      itemId, bookTitle, author, art, absDurationSec, startSec, chaptersJson,
+    )
 
     // Resume into the window that holds the saved position; seek within it once
     // that window is ready (applied in onPlaybackStateChanged).

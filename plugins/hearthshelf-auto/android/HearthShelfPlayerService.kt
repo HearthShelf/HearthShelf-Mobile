@@ -68,7 +68,9 @@ class HearthShelfPlayerService : MediaSessionService() {
   private val progressTick = object : Runnable {
     override fun run() {
       exo?.let { p ->
-        if (p.isPlaying) {
+        // While the car owns playback its service drives the store; a stray phone
+        // emit here would fight the car's mirror, so stay quiet.
+        if (p.isPlaying && HearthShelfAutoModule.carPlayer == null) {
           HearthShelfAutoModule.emitProgress(p.currentPosition / 1000.0)
           refreshChapterSubtitle()
         }
@@ -104,10 +106,13 @@ class HearthShelfPlayerService : MediaSessionService() {
 
     player.addListener(object : Player.Listener {
       override fun onIsPlayingChanged(isPlaying: Boolean) {
-        HearthShelfAutoModule.emitState(isPlaying)
+        // Suppressed while the car owns playback (its service mirrors state); the
+        // phone player is stopped in that mode, and its stop emit would otherwise
+        // stomp the car's isPlaying in the store.
+        if (HearthShelfAutoModule.carPlayer == null) HearthShelfAutoModule.emitState(isPlaying)
       }
       override fun onPlaybackStateChanged(state: Int) {
-        if (state == Player.STATE_ENDED) {
+        if (state == Player.STATE_ENDED && HearthShelfAutoModule.carPlayer == null) {
           HearthShelfAutoModule.emitState(false)
           HearthShelfAutoModule.emitEnded()
         }

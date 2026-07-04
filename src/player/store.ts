@@ -81,6 +81,11 @@ export interface PlayerState {
   rate: number
   /** Output volume fed to <Video volume>, 0-1. Ramped down by the sleep fade. */
   volume: number
+  /** True while Android Auto owns playback: the car service is the active
+   *  player, the phone player stands down, and transport routes to the car.
+   *  The store still reflects position/isPlaying (mirrored from the car) so the
+   *  phone UI stays in sync. */
+  carActive: boolean
 }
 
 let state: PlayerState = {
@@ -92,6 +97,7 @@ let state: PlayerState = {
   sleepBehavior: { rewindSec: 30, chapterBarrier: true, fade: true, fadeLen: 20 },
   rate: 1,
   volume: 1,
+  carActive: false,
 }
 
 const listeners = new Set<() => void>()
@@ -134,6 +140,29 @@ export function loadTrack(track: NowPlaying): void {
 
 export function setPlaying(isPlaying: boolean): void {
   if (state.nowPlaying) set({ isPlaying })
+}
+
+/** Enter/leave car-owned playback. On enter, the phone player stands down (the
+ *  PlayerHost sync stops issuing load/play to the phone service); on leave, the
+ *  phone player resumes ownership of whatever's loaded. */
+export function setCarActive(active: boolean): void {
+  if (state.carActive !== active) set({ carActive: active })
+}
+
+/**
+ * Mirror the book the car just loaded into the store so the phone UI shows the
+ * same cover/title/chapters and its scrubber tracks the car. Unlike loadTrack,
+ * this does NOT seed a seek or open a session - the car owns playback and its
+ * own ABS session; the phone player stays stood down (carActive).
+ */
+export function mirrorCarTrack(track: NowPlaying): void {
+  set({
+    nowPlaying: track,
+    position: track.startPosition,
+    isPlaying: true,
+    carActive: true,
+    seekTo: null,
+  })
 }
 
 export function togglePlay(): void {
