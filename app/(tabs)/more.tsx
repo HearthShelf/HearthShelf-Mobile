@@ -48,8 +48,8 @@ const GROUPS: { label: string; items: MenuItem[] }[] = [
     items: [
       {
         icon: 'speed',
-        title: 'Playback',
-        desc: 'Speed, skip, queue, player buttons.',
+        title: 'Player',
+        desc: 'Background, speed, skip, buttons, queue.',
         href: '/settings/playback',
       },
       {
