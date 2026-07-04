@@ -85,6 +85,8 @@ export const icons = {
   archive: 'archive',
   delete: 'delete',
   chevronRight: 'chevron-right',
+  chevronLeft: 'chevron-left',
+  textFields: 'text-fields',
   expand: 'expand-less',
   collapse: 'expand-more',
   server: 'dns',

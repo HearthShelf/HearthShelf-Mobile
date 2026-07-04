@@ -258,6 +258,11 @@ export default function ItemDetailScreen() {
   const authorName = meta.authors?.map((a) => a.name).join(', ') || meta.authorName || ''
   const narratorName = meta.narrators?.join(', ') || meta.narratorName || ''
 
+  // The expanded detail carries the ebook as `ebookFile`; the minified list
+  // shape uses the flat `ebookFormat`. Either presence means the book is
+  // readable, so offer the reader alongside the audio CTA.
+  const hasEbook = Boolean(detail.media.ebookFile || detail.media.ebookFormat)
+
   const isFinished = progress?.isFinished ?? false
   const isInProgress = !isFinished && (progress?.progress ?? 0) > 0
   const currentTime = isInProgress ? (progress?.currentTime ?? 0) : 0
@@ -403,6 +408,16 @@ export default function ItemDetailScreen() {
           {/* Embers rise off the button when the book is marked finished. */}
           <EmberBurst burst={finishBurst} colors={[colors.accent, colors.brandHearth]} />
         </View>
+        {hasEbook && (
+          <ActionSquare
+            icon={icons.readAlong}
+            label="Read"
+            onPress={() => {
+              haptics.select()
+              router.push(`/item/${detail.id}/read`)
+            }}
+          />
+        )}
         <ActionSquare
           icon={download?.status === 'done' ? icons.downloadDone : icons.download}
           label={
