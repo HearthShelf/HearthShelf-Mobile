@@ -508,9 +508,9 @@ function BookRow({
   )
 }
 
-/** The unowned books in this series, folded into the list as dimmed rows. Each
- *  is requestable when the request backend is connected (opens a confirm sheet),
- *  otherwise it links out to Audible. */
+/** The unowned books in this series, folded into the list as dimmed rows. Tapping
+ *  one opens a "you don't own this book" sheet with Close / Open Audible / Request
+ *  (Request only when the request backend is connected). */
 function MissingBooks({
   books,
   startSeq,
@@ -521,15 +521,11 @@ function MissingBooks({
   rmabEnabled: boolean
 }) {
   const sheetRef = useRef<BottomSheetModal>(null)
-  const [confirm, setConfirm] = useState<HSAudibleSeriesBook | null>(null)
+  const [selected, setSelected] = useState<HSAudibleSeriesBook | null>(null)
 
   const onPressRow = (b: HSAudibleSeriesBook) => {
-    if (rmabEnabled) {
-      setConfirm(b)
-      sheetRef.current?.present()
-    } else {
-      void Linking.openURL(audibleStoreUrl(b))
-    }
+    setSelected(b)
+    sheetRef.current?.present()
   }
 
   return (
@@ -543,7 +539,12 @@ function MissingBooks({
           onPress={() => onPressRow(b)}
         />
       ))}
-      <RequestConfirmSheet ref={sheetRef} book={confirm} onDismiss={() => setConfirm(null)} />
+      <NotOwnedSheet
+        ref={sheetRef}
+        book={selected}
+        rmabEnabled={rmabEnabled}
+        onDismiss={() => setSelected(null)}
+      />
     </>
   )
 }
@@ -606,24 +607,40 @@ function MissingBookRow({
   )
 }
 
-/** Confirm sheet for requesting a missing book via the request backend. Mirrors
- *  the web app's RequestConfirmModal: confirm -> submit -> success/awaiting or an
- *  inline error. */
-const RequestConfirmSheet = forwardRef<
+/** "You don't own this book" sheet: opens on an intro step (Close / Open Audible
+ *  / Request), advances to a request confirm + success when the backend can
+ *  fulfill it. Mirrors the web app's RequestConfirmModal flow. */
+const NotOwnedSheet = forwardRef<
   BottomSheetModal,
-  { book: HSAudibleSeriesBook | null; onDismiss: () => void }
->(function RequestConfirmSheet({ book, onDismiss }, ref) {
+  { book: HSAudibleSeriesBook | null; rmabEnabled: boolean; onDismiss: () => void }
+>(function NotOwnedSheet({ book, rmabEnabled, onDismiss }, ref) {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
+  const [phase, setPhase] = useState<'intro' | 'confirm'>('intro')
   const [pending, setPending] = useState(false)
   const [result, setResult] = useState<RmabRequestResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Reset to the intro step whenever a new book opens the sheet.
+  useEffect(() => {
+    if (book) {
+      setPhase('intro')
+      setPending(false)
+      setResult(null)
+      setError(null)
+    }
+  }, [book])
+
   const reset = () => {
+    setPhase('intro')
     setPending(false)
     setResult(null)
     setError(null)
     onDismiss()
+  }
+
+  const openAudible = () => {
+    if (book) void Linking.openURL(audibleStoreUrl(book))
   }
 
   const confirm = async () => {
@@ -644,14 +661,11 @@ const RequestConfirmSheet = forwardRef<
   }
 
   const approved = result?.request?.status !== 'awaiting_approval'
+  const title = result ? 'Request sent' : phase === 'confirm' ? 'Request audiobook' : undefined
+  const kicker = result || phase === 'confirm' ? 'ReadMeABook' : undefined
 
   return (
-    <Sheet
-      ref={ref}
-      kicker="ReadMeABook"
-      title={result ? 'Request sent' : 'Request audiobook'}
-      onDismiss={reset}
-    >
+    <Sheet ref={ref} kicker={kicker} title={title ?? "You don't own this book"} onDismiss={reset}>
       {book ? (
         <View style={{ gap: spacing.lg, paddingBottom: spacing.md }}>
           <View style={{ flexDirection: 'row', gap: spacing.md }}>
@@ -678,30 +692,66 @@ const RequestConfirmSheet = forwardRef<
               </AppText>
             </View>
           </View>
+
           {result ? (
-            <AppText variant="meta" color={colors.textMuted}>
-              {approved
-                ? `We'll add ${book.title} to your library when it's ready.`
-                : `Your request was sent - an admin needs to approve it before it downloads.`}
-            </AppText>
+            <>
+              <AppText variant="meta" color={colors.textMuted}>
+                {approved
+                  ? `We'll add ${book.title} to your library when it's ready.`
+                  : `Your request was sent - an admin needs to approve it before it downloads.`}
+              </AppText>
+              <PrimaryButton label="Done" icon={icons.check} onPress={reset} />
+            </>
+          ) : phase === 'confirm' ? (
+            <>
+              <AppText variant="meta" color={colors.textMuted}>
+                ReadMeABook will search for it, download it, and add it to your library
+                automatically.
+              </AppText>
+              {error ? (
+                <AppText variant="meta" color={colors.destructive}>
+                  {error}
+                </AppText>
+              ) : null}
+              <PrimaryButton
+                label={pending ? 'Requesting...' : 'Request'}
+                icon={icons.add}
+                onPress={pending ? undefined : () => void confirm()}
+              />
+              <Touchable
+                onPress={pending ? undefined : () => setPhase('intro')}
+                style={styles.sheetGhostBtn}
+              >
+                <AppText variant="label" color={colors.textMuted}>
+                  Back
+                </AppText>
+              </Touchable>
+            </>
           ) : (
-            <AppText variant="meta" color={colors.textMuted}>
-              ReadMeABook will search for it, download it, and add it to your library automatically.
-            </AppText>
-          )}
-          {error ? (
-            <AppText variant="meta" color={colors.destructive}>
-              {error}
-            </AppText>
-          ) : null}
-          {result ? (
-            <PrimaryButton label="Done" icon={icons.check} onPress={reset} />
-          ) : (
-            <PrimaryButton
-              label={pending ? 'Requesting...' : 'Request'}
-              icon={icons.add}
-              onPress={pending ? undefined : () => void confirm()}
-            />
+            <>
+              <AppText variant="meta" color={colors.textMuted}>
+                {book.title} isn't in your library yet.
+                {rmabEnabled
+                  ? ' Request it through ReadMeABook, or open it on Audible.'
+                  : ' You can open it on Audible.'}
+              </AppText>
+              {rmabEnabled ? (
+                <PrimaryButton
+                  label="Request"
+                  icon={icons.bolt}
+                  onPress={() => setPhase('confirm')}
+                />
+              ) : null}
+              <Touchable onPress={openAudible} style={styles.sheetSecondaryBtn}>
+                <IconButton name={icons.openInNew} size={18} color={colors.text} />
+                <AppText variant="label">Open Audible</AppText>
+              </Touchable>
+              <Touchable onPress={reset} style={styles.sheetGhostBtn}>
+                <AppText variant="label" color={colors.textMuted}>
+                  Close
+                </AppText>
+              </Touchable>
+            </>
           )}
         </View>
       ) : null}
@@ -842,6 +892,18 @@ const makeStyles = (colors: Palette) =>
     rowMissing: { opacity: 0.82 },
     missingCover: { opacity: 0.6 },
     missingTag: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    sheetSecondaryBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      paddingVertical: spacing.md,
+      borderRadius: radius.card,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    sheetGhostBtn: { alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.sm },
     num: { width: 24, textAlign: 'center', fontWeight: '700' },
     check: {
       width: 24,
