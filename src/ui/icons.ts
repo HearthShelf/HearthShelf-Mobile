@@ -102,6 +102,13 @@ export const icons = {
   checkCircleFilled: 'check-circle',
   link: 'link',
   add: 'add',
+  // Requests / missing books
+  bolt: 'bolt',
+  shoppingCart: 'shopping-cart',
+  openInNew: 'open-in-new',
+  cloudDownload: 'cloud-download',
+  error: 'error',
+  receiptLong: 'receipt-long',
 } as const satisfies Record<string, IconName>
 
 /**

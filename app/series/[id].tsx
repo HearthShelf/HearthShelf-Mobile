@@ -8,12 +8,20 @@
  * left out - it's an admin surface with no mobile equivalent yet; selection here
  * drives mark-finished, the primary action people reach for on a series.
  */
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
+import { forwardRef, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import type { ABSLibraryItem, ABSMediaProgress, ABSSeries } from '@hearthshelf/core'
-import { coverHue } from '@hearthshelf/core'
+import type { BottomSheetModal } from '@gorhom/bottom-sheet'
+import type {
+  ABSLibraryItem,
+  ABSMediaProgress,
+  ABSSeries,
+  HSAudibleSeriesBook,
+} from '@hearthshelf/core'
+import { coverHue, missingSeriesBooks, ownedKeyOf, seriesCompletion } from '@hearthshelf/core'
 import { coverUrl, getLibrarySeries, itemAuthor, itemNarrator, itemTitle } from '@/api/abs'
+import { fetchAudibleSeries, audibleStoreUrl } from '@/api/absAudible'
+import { getRmabEnabled, submitRequest, type RmabRequestResult } from '@/api/absRmab'
 import { catalogSeriesById } from '@/player/offlineCatalog'
 import {
   getProgressState,
@@ -32,6 +40,7 @@ import {
   PrimaryButton,
   ProgressBar,
   Screen,
+  Sheet,
   Touchable,
   icons,
 } from '@/ui/primitives'
@@ -61,6 +70,11 @@ export default function SeriesDetailScreen() {
   const [series, setSeries] = useState<ABSSeries | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [marking, setMarking] = useState(false)
+  // The unowned books in this series (Audible roster minus what's owned), and
+  // whether the request backend can fulfill them. Both best-effort; unresolved
+  // or offline leaves missing empty and the screen behaves as before.
+  const [missing, setMissing] = useState<HSAudibleSeriesBook[]>([])
+  const [rmabEnabled, setRmabEnabled] = useState(false)
   const selection = useBookSelection()
   const miniInset = useMiniPlayerInset()
   // Shared per-item progress; mutations anywhere in the app update this page live.
@@ -90,6 +104,30 @@ export default function SeriesDetailScreen() {
       cancelled = true
     }
   }, [id, libraryId])
+
+  // Resolve the series' full Audible roster and the request-backend status once
+  // the series (and its owned books) are known. Best-effort: any failure leaves
+  // the missing list empty, so an offline or slim server just shows owned books.
+  const seriesName = series?.name
+  useEffect(() => {
+    if (!seriesName || !series) return
+    let cancelled = false
+    const ownedKeys = new Set(
+      (series.books ?? []).map((b) => ownedKeyOf(b.media.metadata.title, itemAuthor(b))),
+    )
+    void (async () => {
+      const [audible, enabled] = await Promise.all([
+        fetchAudibleSeries(seriesName),
+        getRmabEnabled(),
+      ])
+      if (cancelled) return
+      setRmabEnabled(enabled)
+      setMissing(audible.seriesAsin ? missingSeriesBooks(audible.books, ownedKeys) : [])
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [seriesName, series])
 
   if (error) {
     return (
@@ -127,8 +165,18 @@ export default function SeriesDetailScreen() {
     sum += p?.isFinished ? 1 : (p?.progress ?? 0)
     totalHours += (b.media.duration ?? 0) / 3600
   }
-  const pct = books.length ? sum / books.length : 0
-  const listenedHours = totalHours * pct
+  // Completion measures against the whole series (owned + unowned), so owning 3
+  // of 4 and finishing all 3 reads 75%. Degrades to owned-only when the Audible
+  // roster is unresolved (missing empty).
+  const completion = seriesCompletion({
+    ownedProgressSum: sum,
+    ownedCount: books.length,
+    missingCount: missing.length,
+  })
+  const pct = completion.pct
+  // Listened hours are an owned-books figure; scale by owned progress, not the
+  // full-series percentage.
+  const listenedHours = books.length ? totalHours * (sum / books.length) : 0
 
   // Next up = first unfinished in reading order, else the first book (to replay).
   const nextUpIdx = books.findIndex((b) => !progressById.get(b.id)?.isFinished)
@@ -204,7 +252,7 @@ export default function SeriesDetailScreen() {
             <View style={styles.statDivider} />
             <StatCell value={`${totalHours.toFixed(0)}h`} label="total" />
             <View style={styles.statDivider} />
-            <StatCell value={`${done}/${books.length}`} label="finished" />
+            <StatCell value={`${done}/${completion.totalCount}`} label="finished" />
           </View>
         </View>
 
@@ -215,11 +263,12 @@ export default function SeriesDetailScreen() {
               {Math.round(pct * 100)}%
             </AppText>
             <AppText variant="meta" color={colors.textMuted} style={{ flex: 1 }}>
-              {done} of {books.length} finished · {listenedHours.toFixed(0)}h of{' '}
+              {done} of {completion.totalCount} finished · {listenedHours.toFixed(0)}h of{' '}
               {totalHours.toFixed(0)}h
+              {completion.missingCount > 0 ? ` · ${completion.missingCount} not in library` : ''}
             </AppText>
           </View>
-          <SegmentTrack books={books} progressById={progressById} />
+          <SegmentTrack books={books} progressById={progressById} missingCount={missing.length} />
         </View>
 
         {/* Series actions */}
@@ -274,6 +323,9 @@ export default function SeriesDetailScreen() {
               onPlay={() => play(b.id)}
             />
           ))}
+          {!selection.selecting && missing.length > 0 ? (
+            <MissingBooks books={missing} startSeq={books.length} rmabEnabled={rmabEnabled} />
+          ) : null}
         </View>
       </ScrollView>
 
@@ -332,9 +384,13 @@ function HeroCovers({ books }: { books: ABSLibraryItem[] }) {
 function SegmentTrack({
   books,
   progressById,
+  missingCount = 0,
 }: {
   books: ABSLibraryItem[]
   progressById: ReadonlyMap<string, ABSMediaProgress>
+  // Trailing empty segments for unowned books, so the track matches the % that
+  // now measures against the full series.
+  missingCount?: number
 }) {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
@@ -352,6 +408,9 @@ function SegmentTrack({
           </View>
         )
       })}
+      {Array.from({ length: missingCount }, (_, i) => (
+        <View key={`missing-${i}`} style={[styles.seg, styles.segMissing]} />
+      ))}
     </View>
   )
 }
@@ -449,6 +508,207 @@ function BookRow({
   )
 }
 
+/** The unowned books in this series, folded into the list as dimmed rows. Each
+ *  is requestable when the request backend is connected (opens a confirm sheet),
+ *  otherwise it links out to Audible. */
+function MissingBooks({
+  books,
+  startSeq,
+  rmabEnabled,
+}: {
+  books: HSAudibleSeriesBook[]
+  startSeq: number
+  rmabEnabled: boolean
+}) {
+  const sheetRef = useRef<BottomSheetModal>(null)
+  const [confirm, setConfirm] = useState<HSAudibleSeriesBook | null>(null)
+
+  const onPressRow = (b: HSAudibleSeriesBook) => {
+    if (rmabEnabled) {
+      setConfirm(b)
+      sheetRef.current?.present()
+    } else {
+      void Linking.openURL(audibleStoreUrl(b))
+    }
+  }
+
+  return (
+    <>
+      {books.map((b, i) => (
+        <MissingBookRow
+          key={b.asin}
+          book={b}
+          index={startSeq + i}
+          rmabEnabled={rmabEnabled}
+          onPress={() => onPressRow(b)}
+        />
+      ))}
+      <RequestConfirmSheet ref={sheetRef} book={confirm} onDismiss={() => setConfirm(null)} />
+    </>
+  )
+}
+
+function MissingBookRow({
+  book,
+  index,
+  rmabEnabled,
+  onPress,
+}: {
+  book: HSAudibleSeriesBook
+  index: number
+  rmabEnabled: boolean
+  onPress: () => void
+}) {
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
+  const sub = [book.author, book.narrator].filter(Boolean).join(' · ')
+  return (
+    <Touchable onPress={onPress} style={[styles.row, styles.rowMissing]}>
+      <AppText variant="title" color={colors.textFaint} style={styles.num}>
+        {index + 1}
+      </AppText>
+      <Cover
+        uri={book.coverArtUrl}
+        size={56}
+        radius={radius.tile}
+        style={styles.missingCover}
+        fallback={{
+          hue: coverHue(book.asin),
+          initial: (book.title || '?').charAt(0).toUpperCase(),
+        }}
+      />
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <AppText variant="label" numberOfLines={1} color={colors.textMuted}>
+          {book.title}
+        </AppText>
+        {sub ? (
+          <AppText
+            variant="caption"
+            color={colors.textFaint}
+            numberOfLines={1}
+            style={{ marginTop: 2 }}
+          >
+            {sub}
+          </AppText>
+        ) : null}
+      </View>
+      <View style={styles.missingTag}>
+        <IconButton
+          name={rmabEnabled ? icons.bolt : icons.shoppingCart}
+          size={15}
+          color={colors.accent}
+        />
+        <AppText variant="caption" color={colors.accent} style={{ fontWeight: '600' }}>
+          {rmabEnabled ? 'Request' : 'Not in library'}
+        </AppText>
+      </View>
+    </Touchable>
+  )
+}
+
+/** Confirm sheet for requesting a missing book via the request backend. Mirrors
+ *  the web app's RequestConfirmModal: confirm -> submit -> success/awaiting or an
+ *  inline error. */
+const RequestConfirmSheet = forwardRef<
+  BottomSheetModal,
+  { book: HSAudibleSeriesBook | null; onDismiss: () => void }
+>(function RequestConfirmSheet({ book, onDismiss }, ref) {
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
+  const [pending, setPending] = useState(false)
+  const [result, setResult] = useState<RmabRequestResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const reset = () => {
+    setPending(false)
+    setResult(null)
+    setError(null)
+    onDismiss()
+  }
+
+  const confirm = async () => {
+    if (!book) return
+    setPending(true)
+    setError(null)
+    const res = await submitRequest({
+      asin: book.asin,
+      title: book.title,
+      author: book.author,
+      narrator: book.narrator,
+      description: book.description,
+      coverArtUrl: book.coverArtUrl,
+    })
+    setPending(false)
+    if (res.success && res.request) setResult(res)
+    else setError('Request failed. Please try again.')
+  }
+
+  const approved = result?.request?.status !== 'awaiting_approval'
+
+  return (
+    <Sheet
+      ref={ref}
+      kicker="ReadMeABook"
+      title={result ? 'Request sent' : 'Request audiobook'}
+      onDismiss={reset}
+    >
+      {book ? (
+        <View style={{ gap: spacing.lg, paddingBottom: spacing.md }}>
+          <View style={{ flexDirection: 'row', gap: spacing.md }}>
+            <Cover
+              uri={book.coverArtUrl}
+              size={64}
+              radius={radius.tile}
+              fallback={{
+                hue: coverHue(book.asin),
+                initial: (book.title || '?').charAt(0).toUpperCase(),
+              }}
+            />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <AppText variant="label" numberOfLines={2}>
+                {book.title}
+              </AppText>
+              <AppText
+                variant="caption"
+                color={colors.textMuted}
+                numberOfLines={1}
+                style={{ marginTop: 2 }}
+              >
+                {book.author}
+              </AppText>
+            </View>
+          </View>
+          {result ? (
+            <AppText variant="meta" color={colors.textMuted}>
+              {approved
+                ? `We'll add ${book.title} to your library when it's ready.`
+                : `Your request was sent - an admin needs to approve it before it downloads.`}
+            </AppText>
+          ) : (
+            <AppText variant="meta" color={colors.textMuted}>
+              ReadMeABook will search for it, download it, and add it to your library automatically.
+            </AppText>
+          )}
+          {error ? (
+            <AppText variant="meta" color={colors.destructive}>
+              {error}
+            </AppText>
+          ) : null}
+          {result ? (
+            <PrimaryButton label="Done" icon={icons.check} onPress={reset} />
+          ) : (
+            <PrimaryButton
+              label={pending ? 'Requesting...' : 'Request'}
+              icon={icons.add}
+              onPress={pending ? undefined : () => void confirm()}
+            />
+          )}
+        </View>
+      ) : null}
+    </Sheet>
+  )
+})
+
 function StatCell({ value, label }: { value: string; label: string }) {
   const colors = useColors()
   return (
@@ -532,6 +792,13 @@ const makeStyles = (colors: Palette) =>
       overflow: 'hidden',
     },
     segFill: { height: '100%', backgroundColor: colors.accent, borderRadius: 3 },
+    segMissing: {
+      backgroundColor: 'transparent',
+      borderWidth: 1,
+      borderStyle: 'dashed',
+      borderColor: colors.elevated,
+      opacity: 0.7,
+    },
     actions: {
       flexDirection: 'row',
       gap: spacing.md,
@@ -571,6 +838,10 @@ const makeStyles = (colors: Palette) =>
     },
     rowSelected: { backgroundColor: colors.accentWash },
     rowDimmed: { opacity: 0.45 },
+    // Unowned book row: dimmed but still legible/tappable (DS sl-row-missing).
+    rowMissing: { opacity: 0.82 },
+    missingCover: { opacity: 0.6 },
+    missingTag: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     num: { width: 24, textAlign: 'center', fontWeight: '700' },
     check: {
       width: 24,
