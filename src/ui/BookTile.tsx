@@ -52,6 +52,7 @@ export function BookTile({
           width={width}
           aspectRatio={COVER_ASPECT_RATIO[coverAspect]}
           fallback={{ hue: coverHue(item.id), initial: coverInitial(title), title }}
+          showDownloadBadge
         />
         {selecting ? (
           <View

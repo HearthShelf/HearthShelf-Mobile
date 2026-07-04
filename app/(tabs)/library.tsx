@@ -989,6 +989,7 @@ function BookListRow({
         size={46}
         radius={radius.tile}
         fallback={{ hue: coverHue(item.id), initial: itemTitle(item).charAt(0).toUpperCase() }}
+        showDownloadBadge
       />
       <View style={{ flex: 1, minWidth: 0 }}>
         <AppText variant="label" numberOfLines={1}>

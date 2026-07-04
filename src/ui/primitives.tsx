@@ -32,6 +32,7 @@ import {
 } from '@gorhom/bottom-sheet'
 import { localCoverFor, subscribeDownloads } from '@/player/downloads'
 import { CoverDownloadOverlay } from './CoverDownloadOverlay'
+import { CoverDownloadedBadge } from './CoverDownloadedBadge'
 import { Icon, icons, type IconName } from './icons'
 import { TypesetCover } from './TypesetCover'
 import { radius, spacing, type as typeScale, type Palette } from './theme'
@@ -308,6 +309,7 @@ export function Cover({
   fallback,
   style,
   itemId,
+  showDownloadBadge,
 }: {
   uri?: string
   size?: number
@@ -320,6 +322,9 @@ export function Cover({
   /** When set, an in-flight download of this item dims the cover and draws a
    *  progress ring on top. Pass it anywhere a book's own cover is shown. */
   itemId?: string
+  /** Show a small accent check in the corner when this item is downloaded.
+   *  Opt-in (Library + Home covers) so it doesn't clutter every cover. */
+  showDownloadBadge?: boolean
 }) {
   const styles = useStyles()
   const [failed, setFailed] = useState(false)
@@ -342,7 +347,15 @@ export function Cover({
   // that size the cover via flex/style rather than an explicit width).
   const coverSize = size ?? width ?? measured
   const overlay = itemId ? (
-    <CoverDownloadOverlay itemId={itemId} size={coverSize} radius={r} />
+    <>
+      <CoverDownloadOverlay itemId={itemId} size={coverSize} radius={r} />
+      {showDownloadBadge ? (
+        <CoverDownloadedBadge
+          itemId={itemId}
+          size={coverSize > 0 ? Math.max(14, Math.min(24, coverSize * 0.2)) : 20}
+        />
+      ) : null}
+    </>
   ) : null
   const onLayout = itemId
     ? (e: LayoutChangeEvent) => setMeasured(e.nativeEvent.layout.width)

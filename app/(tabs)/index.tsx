@@ -766,6 +766,7 @@ function Shelf({
                 itemId={item.id}
                 width={120}
                 aspectRatio={COVER_ASPECT_RATIO[coverAspect]}
+                showDownloadBadge
               />
               <AppText variant="meta" numberOfLines={1} style={{ marginTop: spacing.xs }}>
                 {itemTitle(item)}
@@ -804,6 +805,7 @@ function Shelf({
                   hue: coverHue(item.id),
                   initial: itemTitle(item).charAt(0).toUpperCase(),
                 }}
+                showDownloadBadge
               />
               <AppText variant="caption" numberOfLines={1} style={{ marginTop: spacing.xs }}>
                 {itemTitle(item)}
