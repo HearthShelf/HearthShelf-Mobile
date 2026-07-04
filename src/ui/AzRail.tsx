@@ -124,10 +124,11 @@ export function AzRail({
   return (
     <View style={styles.zone} pointerEvents="box-none">
       <Animated.View style={[styles.bubbleWrap, bubbleStyle]} pointerEvents="none">
-        {/* A map-marker pin rotated 90deg so its point aims at the rail, with
-            the current letter laid over its round head. */}
+        {/* A solid teardrop (water droplet - no hollow center) rotated so its
+            point aims right at the rail, with the current letter over its
+            round body. */}
         <MaterialCommunityIcons
-          name="map-marker"
+          name="water"
           size={BUBBLE}
           color={colors.accent}
           style={styles.bubblePin}
@@ -205,9 +206,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // The pin, rotated a quarter turn clockwise so its point aims left at the
-  // rail while the round head sits on the right. A drop shadow lifts it off the
-  // list underneath.
+  // The droplet, rotated a quarter turn clockwise so its point aims right at
+  // the rail while the round body sits on the left. A drop shadow lifts it off
+  // the list underneath.
   bubblePin: {
     position: 'absolute',
     transform: [{ rotate: '90deg' }],
@@ -215,11 +216,11 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 6 },
     textShadowRadius: 12,
   },
-  // The letter overlays the pin's round head. With the pin rotated 90deg
-  // clockwise, the head shifts to the right of center by roughly a quarter of
-  // the icon, so nudge the glyph to match.
+  // The letter overlays the droplet's round body. With the droplet rotated 90deg
+  // clockwise the body sits left of center by roughly a quarter of the icon, so
+  // nudge the glyph to match.
   bubbleText: {
-    marginLeft: BUBBLE * 0.16,
+    marginRight: BUBBLE * 0.16,
     fontSize: 24,
     fontWeight: '800',
     fontFamily: fonts.mono,
