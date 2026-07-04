@@ -15,6 +15,7 @@ import { stopQueueSync } from '@/player/queueSync'
 import { AppText } from '@/ui/primitives'
 import { spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
+import { confirm } from '@/ui/confirm'
 import { SettingsPanel, SettingsGroup, SettingsRow } from '@/ui/settingsControls'
 import { SettingsToggle } from '@/ui/settingsControls'
 import { getSettingsState, setSetting, subscribeSettings } from '@/store/settings'
@@ -39,6 +40,14 @@ export default function AccountScreen() {
   const initial = displayName.charAt(0).toUpperCase()
 
   async function handleSignOut() {
+    if (
+      !(await confirm({
+        title: 'Sign out',
+        message: 'Sign out of HearthShelf on this device? Your downloads stay, but you’ll need to sign in again.',
+        confirmLabel: 'Sign out',
+      }))
+    )
+      return
     clearTrack()
     clearAutoSession()
     stopQueueSync()

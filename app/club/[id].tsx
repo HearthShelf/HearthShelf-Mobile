@@ -212,7 +212,14 @@ export default function ClubRoomScreen() {
   }
 
   const removeNote = async (note: HSNote) => {
-    haptics.warn()
+    if (
+      !(await confirm({
+        title: 'Delete note',
+        message: 'Delete this note? This cannot be undone.',
+        confirmLabel: 'Delete',
+      }))
+    )
+      return
     const ok = await deleteNote(note.id)
     if (ok) await load()
     else show('Could not delete')
@@ -290,8 +297,15 @@ export default function ClubRoomScreen() {
 
   const dropQueued = async (book: HSClubBook) => {
     if (!detail || busy) return
+    if (
+      !(await confirm({
+        title: 'Remove from up next',
+        message: `Remove "${book.title || 'this book'}" from the club's up-next queue?`,
+        confirmLabel: 'Remove',
+      }))
+    )
+      return
     setBusy(true)
-    haptics.warn()
     const ok = await removeClubQueued(detail.club.id, book.libraryItemId)
     setBusy(false)
     if (ok) await load()
