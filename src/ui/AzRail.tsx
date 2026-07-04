@@ -14,6 +14,7 @@
  */
 import { useCallback, useRef, useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, {
   runOnJS,
@@ -30,10 +31,6 @@ const LETTERS = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')]
 // Reversed rail (Z on top, # at bottom) for descending name sorts.
 const LETTERS_DESC = [...LETTERS].reverse()
 const BUBBLE = 64
-const BUBBLE_RADIUS = BUBBLE / 2
-// Width of the rotated-square tail that pokes out the circle's right edge,
-// forming the teardrop's point toward the rail.
-const TAIL = 14
 
 export function AzRail({
   available,
@@ -58,8 +55,8 @@ export function AzRail({
 
   const pick = useCallback(
     (letter: string, y: number) => {
-      // bubbleY is the finger's Y; the tail (point) sits at the circle's
-      // vertical center, so centering the circle on bubbleY lands the point on
+      // bubbleY is the finger's Y; the pin's point sits at the wrapper's
+      // vertical center, so centering the wrapper on bubbleY lands the point on
       // the letter under the finger.
       bubbleY.value = y
       if (letter === lastLetter.current) return
@@ -72,11 +69,6 @@ export function AzRail({
     },
     [available, onJump, bubbleY],
   )
-
-  const begin = useCallback(() => {
-    lastLetter.current = null
-    bubbleScale.value = withSpring(1, { damping: 13, stiffness: 380, mass: 0.5 })
-  }, [bubbleScale])
 
   const end = useCallback(() => {
     lastLetter.current = null
@@ -101,11 +93,22 @@ export function AzRail({
     [pick, letters],
   )
 
+  // Scale the bubble in, then sample the touch point so a stationary press (no
+  // drag) still populates the letter - onUpdate never fires when the finger
+  // doesn't move, so the bubble stayed empty on a plain hold.
+  const begin = useCallback(
+    (y: number) => {
+      lastLetter.current = null
+      bubbleScale.value = withSpring(1, { damping: 13, stiffness: 380, mass: 0.5 })
+      sample(y)
+    },
+    [bubbleScale, sample],
+  )
+
   const pan = Gesture.Pan()
     .minDistance(0)
     .onBegin((e) => {
-      runOnJS(begin)()
-      runOnJS(sample)(e.y)
+      runOnJS(begin)(e.y)
     })
     .onUpdate((e) => runOnJS(sample)(e.y))
     .onEnd(() => runOnJS(end)())
@@ -121,12 +124,15 @@ export function AzRail({
   return (
     <View style={styles.zone} pointerEvents="box-none">
       <Animated.View style={[styles.bubbleWrap, bubbleStyle]} pointerEvents="none">
-        {/* Rotated square tucked behind the circle's right edge, pointing at
-            the rail - the classic map-pin teardrop, laid on its side. */}
-        <View style={styles.bubbleTail} />
-        <View style={styles.bubble}>
-          <Text style={styles.bubbleText}>{active}</Text>
-        </View>
+        {/* A map-marker pin rotated 90deg so its point aims at the rail, with
+            the current letter laid over its round head. */}
+        <MaterialCommunityIcons
+          name="map-marker"
+          size={BUBBLE}
+          color={colors.accent}
+          style={styles.bubblePin}
+        />
+        <Text style={styles.bubbleText}>{active}</Text>
       </Animated.View>
       <GestureDetector gesture={pan}>
         <View
@@ -199,41 +205,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Small rotated square centered on the circle's right edge, same color, so
-  // together they read as one sideways teardrop with its point toward the
-  // rail (the classic map-pin shape, laid on its side). Half tucked under the
-  // circle, half poking out - the circle is drawn after it, on top.
-  bubbleTail: {
+  // The pin, rotated a quarter turn clockwise so its point aims left at the
+  // rail while the round head sits on the right. A drop shadow lifts it off the
+  // list underneath.
+  bubblePin: {
     position: 'absolute',
-    top: '50%',
-    left: BUBBLE - TAIL / 2,
-    width: TAIL,
-    height: TAIL,
-    marginTop: -TAIL / 2,
-    borderRadius: 3,
-    backgroundColor: colors.accent,
-    transform: [{ rotate: '45deg' }],
-    shadowColor: '#000',
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 7,
+    transform: [{ rotate: '90deg' }],
+    textShadowColor: 'rgba(0,0,0,0.4)',
+    textShadowOffset: { width: 0, height: 6 },
+    textShadowRadius: 12,
   },
-  bubble: {
-    width: BUBBLE,
-    height: BUBBLE,
-    borderRadius: BUBBLE_RADIUS,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
-  },
+  // The letter overlays the pin's round head. With the pin rotated 90deg
+  // clockwise, the head shifts to the right of center by roughly a quarter of
+  // the icon, so nudge the glyph to match.
   bubbleText: {
-    fontSize: 30,
+    marginLeft: BUBBLE * 0.16,
+    fontSize: 24,
     fontWeight: '800',
     fontFamily: fonts.mono,
     color: colors.onAccent,

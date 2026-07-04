@@ -358,10 +358,10 @@ export default function ItemDetailScreen() {
         'status',
         'cta',
         'listeningNow',
+        'series',
         'chapters',
         'club',
         'notes',
-        'series',
         'about',
         'finishedBy',
       ]
@@ -377,7 +377,7 @@ export default function ItemDetailScreen() {
           'listeningNow',
           'chapters',
         ]
-      : ['cta', 'about', 'listeningNow', 'club', 'notes', 'finishedBy', 'series', 'chapters']
+      : ['cta', 'about', 'listeningNow', 'series', 'club', 'notes', 'finishedBy', 'chapters']
 
   const sections: Record<SectionKey, React.ReactNode> = {
     status: (
