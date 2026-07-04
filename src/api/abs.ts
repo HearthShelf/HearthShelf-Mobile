@@ -366,7 +366,7 @@ export async function addItemsToPlaylist(
 
 /**
  * The caller's listening stats (streak, this-week, active days, most-listened),
- * computed server-side by /hs/stats so mobile/web/absorb all agree. The server
+ * computed server-side by /hs/stats so mobile and web all agree. The server
  * lives on the same origin as ABS (it already fronts /hs/hosted/connect), so we
  * hit it with the same ABS bearer token and pass our local tz offset for
  * caller-local day bucketing.

@@ -361,7 +361,7 @@ shared popovers with sliders. Built to full parity with that, not just the DS mo
 
 **Decision:** anything that requires *compute* on top of raw ABS stats (day streak, this-week total,
 active days, heatmap buckets, most-listened sort) should be computed **once, server-side, in the HS
-self-hosted server**, exposed as a typed endpoint, so every surface — this app, the web app, absorb,
+self-hosted server**, exposed as a typed endpoint, so every surface — this app, the web app,
 home-screen widgets — reads the same pre-computed values instead of each reimplementing the walk (and
 drifting). The shared **response shape lives in `@hearthshelf/core`** so all TS clients consume one
 contract.
@@ -404,7 +404,7 @@ next to both.
 reads raw ABS can share it (single source of truth for the streak rule): add
 `src/lib/stats.ts` (pure, no Node/DOM — matches core's constraint) exporting e.g.
 `computeStreak(byDay, today)`, `weekSeconds(byDay, today)`, `dayKey(date)`. The server imports these to
-build the `/hs/stats` response; core `export *`s them. The **streak rule** is the absorb algorithm
+build the `/hs/stats` response; core `export *`s them. The **streak rule**
 (§6.5): backward walk from today, offset to yesterday when today is still zero, cap 365 — encode it
 once here.
 
@@ -429,7 +429,7 @@ server is older than this endpoint — so the app still works against a HS serve
 - [x] `HearthShelf-Mobile`: `getHSStats()` in `src/api/abs.ts` — hits `${serverUrl}/hs/stats?tz=...`
       with the ABS bearer token (same origin that already serves `/hs/hosted/connect`), falls back to
       raw ABS `/api/me/listening-stats` + the core compute on a 404 (older server).
-- [ ] `HearthShelf-WebApp` / absorb: not yet adopted; they keep working via their current raw reads
+- [ ] `HearthShelf-WebApp`: not yet adopted; it keeps working via its current raw reads
       until migrated (that's the whole point of centralizing — no coupled rollout required).
 
 ---
@@ -455,12 +455,11 @@ the fallback path. Reference for the raw shapes + week/heatmap drawing:
 | `items` → per-item `timeListeningSec` | **Most listened to** list (cover + title/author + hours, sorted desc) |
 
 **Day streak is real and computable** from the `days` map — computed server-side in `/hs/stats` (§6.4),
-with the pure rule living in core's `computeStreak`. Proven algorithm from the sibling Flutter client
-[C:\code\absorb](../../absorb/lib/services/home_widget_service.dart) (`_currentStreak`): walk backwards
+with the pure rule living in core's `computeStreak`. The algorithm: walk backwards
 day-by-day from today counting consecutive days with >0 seconds; if *today* has no listening yet, start
 from yesterday (offset 1) so an in-progress day doesn't reset the streak. Cap the walk at 365. Use a
 local-time `YYYY-MM-DD` key that matches ABS's `days` keys (the shared core `dayKey`, used by streak +
-week + heatmap alike). Note absorb also reads a `dayListeningMap` key as a fallback before `days`, and
+week + heatmap alike). ABS may also expose a `dayListeningMap` key as a fallback before `days`, and
 its per-day value may be a number or a `{ timeListening }` object — handle both in the extractor.
 
 **Local-time caveat:** the streak/week are computed in the *caller's* local time, but `/hs/stats` runs
@@ -474,7 +473,7 @@ the week bars + 26-week heatmap from `byDay` using core's `dayKey` (so keys line
 `mostListened` directly. Fallback (older server): read raw ABS `/api/me/listening-stats` and compute
 via the same core helpers. Map the prototype's visual sections onto the data:
 - Prototype "day streak" → **real** consecutive-day streak computed from `byDay` (see the algorithm
-  above, ported from absorb's `_currentStreak`). This is the primary hero-adjacent stat, matching the
+  above). This is the primary hero-adjacent stat, matching the
   prototype's flame + "Day streak" card. Not a stub.
 - Prototype "hours listened" → real `totalTimeSec`.
 - "This week" bars → real last-7-day series (bar height ∝ that day's hours; highlight the busiest).
@@ -629,7 +628,7 @@ Library, and reconcile the Sleep sheet against the richer prototype model (§6).
    single instances (synthetic bold).
 2. **Cross-repo stats slice (§6.4) — DONE.** Core `HSListeningStats` + `lib/stats.ts`; server
    `/hs/stats`; mobile `getHSStats()` with raw-ABS fallback. Unblocks both Home strip and Stats tab;
-   web app + absorb can adopt the same endpoint later.
+   the web app can adopt the same endpoint later.
 3. Stats tab **(DONE)** (§6.5): hero total, day-streak + total-time cards, this-week bar chart,
    most-listened list. Calm empty/error states.
 4. Home stats strip **(DONE)** (§3, partial): real day-streak + this-week cards wired via the same

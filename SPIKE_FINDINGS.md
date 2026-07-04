@@ -2,7 +2,7 @@
 
 Branch: `spike/android-auto-rn`. Goal: a sideloadable Android app, built from the
 HearthShelf web codebase via React Native, to evaluate **Android Auto** (browse +
-playback controls) modeled on ABSORB's car UX. CarPlay comes along for free.
+playback controls) modeled on a typical audiobook car UX. CarPlay comes along for free.
 
 ## OUTCOME: TRUCK-VERIFIED SUCCESS (2026-06-29)
 
@@ -45,7 +45,7 @@ landscape took real digging. Summary of what was verified against each package's
 | **`@rntp/player`** (the renamed successor, 5.6.0) | DOES ship real Android Auto (`setBrowseTree` + native `MediaLibraryService`). **But it's commercial: free only for personal/academic use, else EUR99/mo.** A self-hostable product doesn't qualify. **Rejected.** |
 | `@weights-ai/react-native-track-player` | Dead fork - no commits in a year, issues disabled. Rejected. |
 | `@g4rb4g3/react-native-carplay` | Archived 2026-02 in favor of `@iternio/...`. |
-| **`@iternio/react-native-auto-play`** | **CHOSEN.** MIT, active (Jun 2026), company-backed (Iternio), Nitro-based. Built on the `androidx.car.app` **template** model (List/Grid/Search/SignIn), full CarPlay too. The richer car model - we compose the screens, ABSORB-style. |
+| **`@iternio/react-native-auto-play`** | **CHOSEN.** MIT, active (Jun 2026), company-backed (Iternio), Nitro-based. Built on the `androidx.car.app` **template** model (List/Grid/Search/SignIn), full CarPlay too. The richer car model - we compose the screens ourselves. |
 
 `@iternio` does car integration ONLY (no audio), so it's paired with an engine:
 
@@ -76,7 +76,7 @@ come down to one (paid) dependency.
 - **Phone UI** - Clerk sign-in + a home screen that connects to the first linked
   server, lists books (tap to play), and a NowPlayingBar (play/pause, +-skip) so
   transport is testable without a car. (`app/`)
-- **Car experience** (`src/player/autoplay.tsx`) - ABSORB-style:
+- **Car experience** (`src/player/autoplay.tsx`):
   root `ListTemplate` with **Continue Listening** + one row per **library**;
   drilling in pushes a `ListTemplate` of that library's books (cover art +
   author); tapping a book starts playback through the same store the phone uses.
