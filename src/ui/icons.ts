@@ -82,6 +82,8 @@ export const icons = {
   search: 'search',
   back: 'arrow-back',
   close: 'close',
+  archive: 'archive',
+  delete: 'delete',
   chevronRight: 'chevron-right',
   expand: 'expand-less',
   collapse: 'expand-more',

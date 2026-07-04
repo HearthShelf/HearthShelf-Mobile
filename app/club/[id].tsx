@@ -34,6 +34,7 @@ import {
   setClubMembership,
   markClubRead,
   archiveClub,
+  deleteClub,
   kickClubMember,
   setClubCurrentBook,
   removeClubQueued,
@@ -250,7 +251,7 @@ export default function ClubRoomScreen() {
     if (
       !(await confirm({
         title: 'Archive club',
-        message: `Archive "${detail.club.name}"? Members lose access and this can't be undone.`,
+        message: `Archive "${detail.club.name}"? It will be hidden from active club lists, but its history can still be restored from the server later.`,
         confirmLabel: 'Archive',
       }))
     )
@@ -262,6 +263,26 @@ export default function ClubRoomScreen() {
       router.back()
     } else {
       show('Could not archive')
+    }
+  }
+
+  const removeClub = async () => {
+    if (!detail) return
+    if (
+      !(await confirm({
+        title: 'Delete club',
+        message: `Permanently delete "${detail.club.name}"? This removes members, book history, and club notes. This cannot be undone.`,
+        confirmLabel: 'Delete',
+      }))
+    )
+      return
+    ownerSheetRef.current?.dismiss()
+    const ok = await deleteClub(detail.club.id)
+    if (ok) {
+      show('Club deleted')
+      router.back()
+    } else {
+      show('Could not delete')
     }
   }
 
@@ -683,15 +704,23 @@ export default function ClubRoomScreen() {
         )}
       </Sheet>
 
-      {/* Overflow: leave (member) / archive (owner). */}
+      {/* Overflow: leave (member) / archive or delete (owner). */}
       <Sheet ref={ownerSheetRef} title={detail.club.name}>
         {isOwner ? (
-          <Touchable style={styles.sheetAction} onPress={() => void archive()}>
-            <Icon name={icons.close} size={20} color={colors.destructive} />
-            <AppText variant="body" color={colors.destructive}>
-              Archive this club
-            </AppText>
-          </Touchable>
+          <>
+            <Touchable style={styles.sheetAction} onPress={() => void archive()}>
+              <Icon name={icons.archive} size={20} color={colors.destructive} />
+              <AppText variant="body" color={colors.destructive}>
+                Archive this club
+              </AppText>
+            </Touchable>
+            <Touchable style={styles.sheetAction} onPress={() => void removeClub()}>
+              <Icon name={icons.delete} size={20} color={colors.destructive} />
+              <AppText variant="body" color={colors.destructive}>
+                Delete this club
+              </AppText>
+            </Touchable>
+          </>
         ) : (
           <Touchable style={styles.sheetAction} onPress={() => void leave()}>
             <Icon name={icons.signOut} size={20} color={colors.destructive} />

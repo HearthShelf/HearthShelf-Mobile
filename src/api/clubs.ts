@@ -10,6 +10,15 @@ import { getSession } from './session'
 
 const DISABLED_CLUBS: HSClubsResponse = { enabled: false, mine: [], joinable: [] }
 
+function visibleClubs(res: HSClubsResponse): HSClubsResponse {
+  if (!res.enabled) return DISABLED_CLUBS
+  return {
+    enabled: true,
+    mine: res.mine.filter((club) => !club.archived),
+    joinable: res.joinable.filter((club) => !club.archived),
+  }
+}
+
 /** The caller's clubs and (with libraryItemId) open clubs joinable for that item
  *  - open clubs whose current book is the item. Without the id, `mine` only. */
 export async function getClubs(libraryItemId?: string): Promise<HSClubsResponse> {
@@ -22,7 +31,7 @@ export async function getClubs(libraryItemId?: string): Promise<HSClubsResponse>
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!res.ok) return DISABLED_CLUBS
-    return (await res.json()) as HSClubsResponse
+    return visibleClubs((await res.json()) as HSClubsResponse)
   } catch {
     return DISABLED_CLUBS
   }
@@ -189,6 +198,22 @@ export async function archiveClub(id: string): Promise<boolean> {
   const { serverUrl, token } = session
   try {
     const res = await fetch(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+/** Owner or admin: permanently delete the club. Returns true on success. */
+export async function deleteClub(id: string): Promise<boolean> {
+  const session = getSession()
+  if (!session) return false
+  const { serverUrl, token } = session
+  try {
+    const res = await fetch(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}/hard`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     })
