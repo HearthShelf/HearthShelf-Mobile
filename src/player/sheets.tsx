@@ -13,7 +13,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react'
-import { StyleSheet, View } from 'react-native'
+import { StyleSheet, Text, View } from 'react-native'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import { formatTimestamp } from '@hearthshelf/core'
 import {
@@ -218,7 +218,11 @@ export const SpeedSheet = forwardRef<SheetHandle>(function SpeedSheet(_props, re
 
 type SleepTab = 'duration' | 'chapter' | 'time'
 
-const SLEEP_DURATIONS = [5, 15, 30, 45, 60, 90]
+// Preset durations (minutes) for the setup grid. Match the auto-duration presets
+// in app/settings/sleep.tsx.
+const SLEEP_DURATIONS = [10, 15, 20, 30, 40, 60]
+// Add-time buttons shown while a timer is running.
+const ADD_MINUTES = [5, 10, 15, 30]
 
 function fmtRewind(sec: number): string {
   if (sec < 60) return `${sec}s`
@@ -227,320 +231,413 @@ function fmtRewind(sec: number): string {
   return s ? `${m}m ${s}s` : `${m}m`
 }
 
-export const SleepSheet = forwardRef<SheetHandle, { onEditBehavior: () => void }>(
-  function SleepSheet({ onEditBehavior }, ref) {
-    const sheetRef = useSheetHandle(ref)
-    const { colors, shadow } = useTheme()
-    const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
-    const { sleepTimer, sleepBehavior, nowPlaying, position } = useSyncExternalStore(
-      subscribe,
-      getState,
-    )
-    const [tab, setTab] = useState<SleepTab>(
-      sleepTimer?.kind === 'endOfChapter' ? 'chapter' : 'duration',
-    )
-    // Clock picker state, seeded to ~30 min from now on the 5-minute grid.
-    const [clock, setClock] = useState(() => {
-      const d = new Date(Date.now() + 30 * 60000)
-      d.setMinutes(Math.round(d.getMinutes() / 5) * 5, 0, 0)
-      return { h: d.getHours(), m: d.getMinutes() }
-    })
+const clockLabel = (ms: number) =>
+  new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 
-    const chapters = nowPlaying?.chapters ?? []
-    // Current chapter; when scrubbed past the last boundary, clamp to the last
-    // chapter (not 0, which would offer already-finished chapters as targets).
-    const foundIdx = chapters.findIndex((c) => position >= c.start && position < c.end)
-    const curIdx = foundIdx >= 0 ? foundIdx : Math.max(0, chapters.length - 1)
-    const targetIdx = sleepTimer?.kind === 'endOfChapter' ? sleepTimer.chapterIndex : curIdx
-    const targetAt = sleepTimer?.kind === 'endOfChapter' ? sleepTimer.at : 'end'
+/**
+ * The running-timer takeover. When a sleep timer is armed the sheet drops the
+ * setup UI entirely and shows this: the remaining time large and prominent, the
+ * clock time it ends at beneath, quick add-time buttons, and cancel.
+ */
+function ActiveSleep({
+  onDismiss,
+  onEditBehavior,
+}: {
+  onDismiss: () => void
+  onEditBehavior: () => void
+}) {
+  const { colors, shadow } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
+  const { sleepTimer, sleepBehavior, nowPlaying, position } = useSyncExternalStore(
+    subscribe,
+    getState,
+  )
+  const chapters = nowPlaying?.chapters ?? []
 
-    const active = sleepTimer !== null
-    const sleeping = sleepTimer?.kind === 'duration' || sleepTimer?.kind === 'clock'
+  // Seconds left + the wall-clock time it ends, resolved for every kind.
+  const eocSecondsLeft = (() => {
+    if (sleepTimer?.kind !== 'endOfChapter') return null
+    const target = chapters[sleepTimer.chapterIndex]
+    if (!target) return null
+    const boundary = sleepTimer.at === 'start' ? target.start : target.end
+    return Math.max(0, Math.round(boundary - position))
+  })()
+  const secondsLeft =
+    sleepTimer?.kind === 'duration' || sleepTimer?.kind === 'clock'
+      ? sleepTimer.remainingSec
+      : (eocSecondsLeft ?? 0)
+  const endsAtMs = sleepTimer?.kind === 'clock' ? sleepTimer.atMs : Date.now() + secondsLeft * 1000
+  const canAdd = sleepTimer?.kind === 'duration' || sleepTimer?.kind === 'clock'
 
-    // Seconds until an end-of-chapter timer fires (its boundary minus where we are).
-    const eocSecondsLeft = (() => {
-      if (sleepTimer?.kind !== 'endOfChapter') return null
-      const target = chapters[sleepTimer.chapterIndex]
-      if (!target) return null
-      const boundary = sleepTimer.at === 'start' ? target.start : target.end
-      return Math.max(0, Math.round(boundary - position))
-    })()
+  const kindLabel =
+    sleepTimer?.kind === 'endOfChapter'
+      ? `Stops at the ${sleepTimer.at} of this chapter`
+      : sleepTimer?.kind === 'clock'
+        ? 'Stops at the set time'
+        : 'Counting down'
 
-    const clockLabel = (ms: number) =>
-      new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  return (
+    <View style={styles.activeWrap}>
+      <View style={styles.activeHead}>
+        <Icon name={icons.sleep} size={16} color={colors.accent} />
+        <AppText variant="caption" color={colors.textMuted}>
+          {kindLabel}
+        </AppText>
+      </View>
 
-    // "Stops at <clock time>" for every kind - end-of-chapter now resolves to a
-    // real wall-clock time instead of the opaque "EOC" / "ch N end".
-    const endsAtLabel =
-      sleepTimer?.kind === 'clock'
-        ? clockLabel(sleepTimer.atMs)
-        : sleepTimer?.kind === 'endOfChapter'
-          ? eocSecondsLeft != null
-            ? clockLabel(Date.now() + eocSecondsLeft * 1000)
-            : `ch ${sleepTimer.chapterIndex + 1} ${sleepTimer.at}`
-          : sleeping
-            ? clockLabel(Date.now() + (sleepTimer?.remainingSec ?? 0) * 1000)
-            : ''
-    // Remaining countdown shown next to it, for any active timer.
-    const remainingLabel =
-      sleepTimer?.kind === 'duration' || sleepTimer?.kind === 'clock'
-        ? formatTimestamp(sleepTimer.remainingSec)
-        : eocSecondsLeft != null
-          ? formatTimestamp(eocSecondsLeft)
-          : null
+      <Text style={styles.bigRemaining} allowFontScaling={false}>
+        {formatTimestamp(Math.max(0, Math.round(secondsLeft)))}
+      </Text>
+      <View style={styles.endsAtRow}>
+        <Icon name={icons.schedule} size={15} color={colors.textMuted} />
+        <AppText variant="meta" color={colors.textMuted}>
+          Ends at{' '}
+          <AppText variant="meta" color={colors.text} style={{ fontWeight: '700' }}>
+            {clockLabel(endsAtMs)}
+          </AppText>
+        </AppText>
+      </View>
 
-    const pickDuration = (mins: number) => {
-      setSleepTimer({ kind: 'duration', remainingSec: mins * 60, totalSec: mins * 60 })
-    }
-    // A stop point at or behind the current position would fire the instant the
-    // timer is set (store checks position >= boundary), killing playback. Only
-    // boundaries ahead of us are valid targets.
-    const boundaryFor = (idx: number, at: 'start' | 'end') => {
-      const c = chapters[idx]
-      return c ? (at === 'start' ? c.start : c.end) : null
-    }
-    const isFuture = (idx: number, at: 'start' | 'end') => {
-      const b = boundaryFor(idx, at)
-      return b !== null && b > position
-    }
-    const pickChapter = (idx: number, at: 'start' | 'end') => {
-      let i = idx
-      while (i < chapters.length && !isFuture(i, at)) i++
-      if (i >= chapters.length) return
-      setSleepTimer({ kind: 'endOfChapter', chapterIndex: i, at })
-    }
-    const pickClock = (h: number, m: number) => {
-      const now = new Date()
-      const target = new Date()
-      target.setHours(h, m, 0, 0)
-      if (target.getTime() <= now.getTime()) target.setDate(target.getDate() + 1)
-      const remainingSec = Math.round((target.getTime() - now.getTime()) / 1000)
-      setSleepTimer({ kind: 'clock', remainingSec, totalSec: remainingSec, atMs: target.getTime() })
-    }
-
-    return (
-      <Sheet ref={sheetRef} kicker="Sleep timer">
-        <View style={{ paddingBottom: spacing.md }}>
-          <View style={styles.segFull}>
-            {(['duration', 'chapter', 'time'] as SleepTab[]).map((t) => (
-              <Touchable
-                key={t}
-                style={[styles.seg, tab === t && styles.segOn]}
-                onPress={() => setTab(t)}
-              >
-                <AppText
-                  variant="label"
-                  color={tab === t ? colors.text : colors.textMuted}
-                  style={{ textTransform: 'capitalize' }}
-                >
-                  {t}
+      {canAdd && (
+        <>
+          <AppText
+            variant="caption"
+            color={colors.textMuted}
+            style={{ marginTop: spacing.xl, marginBottom: spacing.sm }}
+          >
+            Add more time
+          </AppText>
+          <View style={[styles.grid, { alignSelf: 'stretch' }]}>
+            {ADD_MINUTES.map((m) => (
+              <Touchable key={m} style={styles.addBtn} onPress={() => addSleepMinutes(m)}>
+                <AppText variant="label" color={colors.text}>
+                  +{m}m
                 </AppText>
               </Touchable>
             ))}
           </View>
+        </>
+      )}
 
-          {tab === 'duration' && (
-            <View style={styles.grid}>
-              {SLEEP_DURATIONS.map((m) => {
-                // Match on the picked total, not remainingSec (which ticks down and
-                // would drift the highlight off the chosen preset).
-                const on = sleepTimer?.kind === 'duration' && sleepTimer.totalSec === m * 60
-                return (
-                  <Touchable
-                    key={m}
-                    style={[styles.speed, on && styles.speedOn]}
-                    onPress={() => pickDuration(m)}
-                  >
-                    <AppText variant="label" color={on ? colors.onAccent : colors.text}>
-                      {m}m
-                    </AppText>
-                  </Touchable>
-                )
-              })}
-            </View>
-          )}
+      <Touchable style={[styles.behaviorNote, { alignSelf: 'stretch' }]} onPress={onEditBehavior}>
+        <Icon name={icons.tune} size={16} color={colors.textMuted} />
+        <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
+          {sleepBehavior.rewindSec > 0
+            ? `Rewinds ${fmtRewind(sleepBehavior.rewindSec)}`
+            : 'No rewind'}
+          {sleepBehavior.fade ? ` · fades over ${sleepBehavior.fadeLen}s` : ' · no fade'}
+        </AppText>
+        <AppText variant="caption" color={colors.accent}>
+          Edit
+        </AppText>
+      </Touchable>
 
-          {tab === 'chapter' && chapters.length > 0 && (
-            <View>
-              <View style={styles.segFull}>
-                <Touchable
-                  style={[styles.seg, targetAt === 'start' && styles.segOn]}
-                  onPress={() => pickChapter(targetIdx, 'start')}
-                >
-                  <AppText
-                    variant="label"
-                    color={targetAt === 'start' ? colors.text : colors.textMuted}
-                  >
-                    Chapter start
-                  </AppText>
-                </Touchable>
-                <Touchable
-                  style={[styles.seg, targetAt === 'end' && styles.segOn]}
-                  onPress={() => pickChapter(targetIdx, 'end')}
-                >
-                  <AppText
-                    variant="label"
-                    color={targetAt === 'end' ? colors.text : colors.textMuted}
-                  >
-                    Chapter end
-                  </AppText>
-                </Touchable>
-              </View>
-              <AppText
-                variant="caption"
-                color={colors.textMuted}
-                style={{ marginBottom: spacing.sm }}
-              >
-                Stop at the {targetAt} of
-              </AppText>
-              <BottomSheetScrollView style={styles.chapterList}>
-                {chapters.map((c, i) =>
-                  isFuture(i, targetAt) ? (
-                    <Touchable
-                      key={i}
-                      style={styles.chapterRow}
-                      onPress={() => pickChapter(i, targetAt)}
-                    >
-                      <Icon
-                        name={targetIdx === i ? icons.checkCircle : icons.sleep}
-                        size={18}
-                        color={targetIdx === i ? colors.accent : colors.textFaint}
-                      />
-                      <AppText
-                        variant="meta"
-                        color={targetIdx === i ? colors.accent : colors.text}
-                        numberOfLines={1}
-                        style={{ flex: 1 }}
-                      >
-                        {c.title}
-                      </AppText>
-                      <AppText variant="caption" color={colors.textMuted}>
-                        {formatTimestamp(targetAt === 'start' ? c.start : c.end)}
-                      </AppText>
-                    </Touchable>
-                  ) : null,
-                )}
-              </BottomSheetScrollView>
-            </View>
-          )}
+      <Touchable
+        style={styles.cancelSleep}
+        onPress={() => {
+          cancelSleepTimer()
+          onDismiss()
+        }}
+      >
+        <Icon name={icons.close} size={18} color={colors.text} />
+        <AppText variant="label" color={colors.text}>
+          Cancel timer
+        </AppText>
+      </Touchable>
+    </View>
+  )
+}
 
-          {tab === 'time' && (
-            <View>
-              <View style={styles.clockRow}>
-                <View style={styles.clockCol}>
-                  <Touchable
-                    style={styles.clockBtn}
-                    hitSlop={6}
-                    onPress={() => setClock((c) => ({ ...c, h: (c.h + 1) % 24 }))}
-                  >
-                    <Icon name={icons.expandLess} size={26} color={colors.textMuted} />
-                  </Touchable>
-                  <AppText variant="hero" style={styles.clockDigits}>
-                    {String(((clock.h + 11) % 12) + 1)}
-                  </AppText>
-                  <Touchable
-                    style={styles.clockBtn}
-                    hitSlop={6}
-                    onPress={() => setClock((c) => ({ ...c, h: (c.h + 23) % 24 }))}
-                  >
-                    <Icon name={icons.chevronDown} size={26} color={colors.textMuted} />
-                  </Touchable>
-                </View>
-                <AppText variant="hero" style={styles.clockColon}>
-                  :
-                </AppText>
-                <View style={styles.clockCol}>
-                  <Touchable
-                    style={styles.clockBtn}
-                    hitSlop={6}
-                    onPress={() => setClock((c) => ({ ...c, m: (c.m + 5) % 60 }))}
-                  >
-                    <Icon name={icons.expandLess} size={26} color={colors.textMuted} />
-                  </Touchable>
-                  <AppText variant="hero" style={styles.clockDigits}>
-                    {String(clock.m).padStart(2, '0')}
-                  </AppText>
-                  <Touchable
-                    style={styles.clockBtn}
-                    hitSlop={6}
-                    onPress={() => setClock((c) => ({ ...c, m: (c.m + 55) % 60 }))}
-                  >
-                    <Icon name={icons.chevronDown} size={26} color={colors.textMuted} />
-                  </Touchable>
-                </View>
-                <Touchable
-                  style={styles.ampm}
-                  onPress={() => setClock((c) => ({ ...c, h: (c.h + 12) % 24 }))}
-                >
-                  <AppText variant="label" color={colors.text}>
-                    {clock.h < 12 ? 'AM' : 'PM'}
-                  </AppText>
-                </Touchable>
-              </View>
-              <Touchable style={styles.clockSet} onPress={() => pickClock(clock.h, clock.m)}>
-                <Icon name={icons.sleep} size={18} color={colors.onAccent} />
-                <AppText variant="label" color={colors.onAccent}>
-                  Start timer
-                </AppText>
-              </Touchable>
-              <AppText variant="caption" color={colors.textMuted} style={{ marginTop: spacing.sm }}>
-                Playback stops at the clock time you pick.
-              </AppText>
-            </View>
-          )}
+/** The setup UI shown when no timer is armed: pick a duration / chapter / clock
+ *  time, then press Start. Nothing arms until Start is pressed. */
+function SleepSetup({
+  onDismiss,
+  onEditBehavior,
+}: {
+  onDismiss: () => void
+  onEditBehavior: () => void
+}) {
+  const { colors, shadow } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
+  const { sleepBehavior, nowPlaying, position } = useSyncExternalStore(subscribe, getState)
+  const chapters = nowPlaying?.chapters ?? []
+  const hasChapters = chapters.length > 0
 
-          <Touchable style={styles.behaviorNote} onPress={onEditBehavior}>
-            <Icon name={icons.tune} size={16} color={colors.textMuted} />
-            <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
-              {sleepBehavior.rewindSec > 0
-                ? `Rewinds ${fmtRewind(sleepBehavior.rewindSec)}`
-                : 'No rewind'}
-              {sleepBehavior.fade ? ` · fades over ${sleepBehavior.fadeLen}s` : ' · no fade'}
-            </AppText>
-            <AppText variant="caption" color={colors.accent}>
-              Edit
+  const [tab, setTab] = useState<SleepTab>('duration')
+  // Staged (not yet armed) selections per tab.
+  const [durationMin, setDurationMin] = useState(30)
+  const [chapAt, setChapAt] = useState<'start' | 'end'>('end')
+  const [chapIdx, setChapIdx] = useState<number | null>(null)
+  const [clock, setClock] = useState(() => {
+    const d = new Date(Date.now() + 30 * 60000)
+    d.setMinutes(Math.round(d.getMinutes() / 5) * 5, 0, 0)
+    return { h: d.getHours(), m: d.getMinutes() }
+  })
+
+  // Only chapter boundaries ahead of the current position are valid stop points;
+  // arming one already behind us would fire instantly.
+  const isFuture = (idx: number, at: 'start' | 'end') => {
+    const c = chapters[idx]
+    if (!c) return false
+    return (at === 'start' ? c.start : c.end) > position
+  }
+  const effectiveChapIdx =
+    chapIdx != null && isFuture(chapIdx, chapAt)
+      ? chapIdx
+      : chapters.findIndex((_, i) => isFuture(i, chapAt))
+
+  const start = () => {
+    if (tab === 'duration') {
+      setSleepTimer({
+        kind: 'duration',
+        remainingSec: durationMin * 60,
+        totalSec: durationMin * 60,
+      })
+    } else if (tab === 'chapter') {
+      if (effectiveChapIdx < 0) return
+      setSleepTimer({ kind: 'endOfChapter', chapterIndex: effectiveChapIdx, at: chapAt })
+    } else {
+      const now = new Date()
+      const target = new Date()
+      target.setHours(clock.h, clock.m, 0, 0)
+      if (target.getTime() <= now.getTime()) target.setDate(target.getDate() + 1)
+      const remainingSec = Math.round((target.getTime() - now.getTime()) / 1000)
+      setSleepTimer({
+        kind: 'clock',
+        remainingSec,
+        totalSec: remainingSec,
+        atMs: target.getTime(),
+      })
+    }
+    onDismiss()
+  }
+
+  const startDisabled = tab === 'chapter' && effectiveChapIdx < 0
+  const startLabel =
+    tab === 'duration'
+      ? `Start ${durationMin} min timer`
+      : tab === 'time'
+        ? `Stop at ${clockLabel(clockPreviewMs(clock))}`
+        : effectiveChapIdx >= 0
+          ? `Stop at chapter ${chapAt}`
+          : 'No chapter ahead'
+
+  const tabs: SleepTab[] = hasChapters ? ['duration', 'chapter', 'time'] : ['duration', 'time']
+
+  return (
+    <View style={{ paddingBottom: spacing.md }}>
+      <View style={styles.segFull}>
+        {tabs.map((t) => (
+          <Touchable
+            key={t}
+            style={[styles.seg, tab === t && styles.segOn]}
+            onPress={() => setTab(t)}
+          >
+            <AppText
+              variant="label"
+              color={tab === t ? colors.text : colors.textMuted}
+              style={{ textTransform: 'capitalize' }}
+            >
+              {t}
             </AppText>
           </Touchable>
+        ))}
+      </View>
 
-          {active && (
-            <>
-              <View style={styles.divider} />
-              <View style={[styles.row, { borderBottomWidth: 0 }]}>
-                <Icon name={icons.schedule} size={17} color={colors.accent} />
-                <AppText variant="meta" style={{ flex: 1, marginLeft: spacing.sm }}>
-                  Stops at{' '}
-                  <AppText variant="meta" color={colors.text}>
-                    {endsAtLabel}
+      {tab === 'duration' && (
+        <View>
+          <View style={{ alignItems: 'center', marginBottom: spacing.md }}>
+            <Text style={styles.bigDuration} allowFontScaling={false}>
+              {durationMin} min
+            </Text>
+          </View>
+          <AppSlider
+            min={1}
+            max={120}
+            step={1}
+            value={durationMin}
+            onChange={setDurationMin}
+            ticks={[1, 30, 60, 90, 120]}
+            formatTick={(v) => `${v}m`}
+          />
+          <View style={[styles.grid, { marginTop: spacing.lg }]}>
+            {SLEEP_DURATIONS.map((m) => {
+              const on = durationMin === m
+              return (
+                <Touchable
+                  key={m}
+                  style={[styles.speed, on && styles.speedOn]}
+                  onPress={() => setDurationMin(m)}
+                >
+                  <AppText variant="label" color={on ? colors.onAccent : colors.text}>
+                    {m}m
                   </AppText>
-                  {remainingLabel ? (
-                    <AppText variant="meta" color={colors.textMuted}>
-                      {' '}
-                      · in {remainingLabel}
-                    </AppText>
-                  ) : null}
-                </AppText>
-                {sleeping && (
-                  <Touchable style={styles.ghostBtn} onPress={() => addSleepMinutes(5)}>
-                    <Icon name={icons.add} size={16} color={colors.text} />
-                    <AppText variant="caption">5 min</AppText>
-                  </Touchable>
-                )}
-              </View>
+                </Touchable>
+              )
+            })}
+          </View>
+        </View>
+      )}
+
+      {tab === 'chapter' && hasChapters && (
+        <View>
+          <View style={styles.segFull}>
+            {(['start', 'end'] as const).map((at) => (
               <Touchable
-                style={styles.cancelSleep}
+                key={at}
+                style={[styles.seg, chapAt === at && styles.segOn]}
                 onPress={() => {
-                  cancelSleepTimer()
-                  sheetRef.current?.dismiss()
+                  setChapAt(at)
+                  setChapIdx(null)
                 }}
               >
-                <Icon name={icons.close} size={18} color={colors.onAccent} />
-                <AppText variant="label" color={colors.onAccent}>
-                  Cancel sleep timer
+                <AppText variant="label" color={chapAt === at ? colors.text : colors.textMuted}>
+                  Chapter {at}
                 </AppText>
               </Touchable>
-            </>
-          )}
+            ))}
+          </View>
+          <AppText variant="caption" color={colors.textMuted} style={{ marginBottom: spacing.sm }}>
+            Stop at the {chapAt} of
+          </AppText>
+          <BottomSheetScrollView style={styles.chapterList}>
+            {chapters.map((c, i) =>
+              isFuture(i, chapAt) ? (
+                <Touchable key={i} style={styles.chapterRow} onPress={() => setChapIdx(i)}>
+                  <Icon
+                    name={effectiveChapIdx === i ? icons.checkCircle : icons.sleep}
+                    size={18}
+                    color={effectiveChapIdx === i ? colors.accent : colors.textFaint}
+                  />
+                  <AppText
+                    variant="meta"
+                    color={effectiveChapIdx === i ? colors.accent : colors.text}
+                    numberOfLines={1}
+                    style={{ flex: 1 }}
+                  >
+                    {c.title}
+                  </AppText>
+                  <AppText variant="caption" color={colors.textMuted}>
+                    {formatTimestamp(chapAt === 'start' ? c.start : c.end)}
+                  </AppText>
+                </Touchable>
+              ) : null,
+            )}
+          </BottomSheetScrollView>
         </View>
+      )}
+
+      {tab === 'time' && (
+        <View>
+          <View style={styles.clockRow}>
+            <View style={styles.clockCol}>
+              <Touchable
+                style={styles.clockBtn}
+                hitSlop={6}
+                onPress={() => setClock((c) => ({ ...c, h: (c.h + 1) % 24 }))}
+              >
+                <Icon name={icons.expandLess} size={26} color={colors.textMuted} />
+              </Touchable>
+              <AppText variant="hero" style={styles.clockDigits}>
+                {String(((clock.h + 11) % 12) + 1)}
+              </AppText>
+              <Touchable
+                style={styles.clockBtn}
+                hitSlop={6}
+                onPress={() => setClock((c) => ({ ...c, h: (c.h + 23) % 24 }))}
+              >
+                <Icon name={icons.chevronDown} size={26} color={colors.textMuted} />
+              </Touchable>
+            </View>
+            <AppText variant="hero" style={styles.clockColon}>
+              :
+            </AppText>
+            <View style={styles.clockCol}>
+              <Touchable
+                style={styles.clockBtn}
+                hitSlop={6}
+                onPress={() => setClock((c) => ({ ...c, m: (c.m + 5) % 60 }))}
+              >
+                <Icon name={icons.expandLess} size={26} color={colors.textMuted} />
+              </Touchable>
+              <AppText variant="hero" style={styles.clockDigits}>
+                {String(clock.m).padStart(2, '0')}
+              </AppText>
+              <Touchable
+                style={styles.clockBtn}
+                hitSlop={6}
+                onPress={() => setClock((c) => ({ ...c, m: (c.m + 55) % 60 }))}
+              >
+                <Icon name={icons.chevronDown} size={26} color={colors.textMuted} />
+              </Touchable>
+            </View>
+            <Touchable
+              style={styles.ampm}
+              onPress={() => setClock((c) => ({ ...c, h: (c.h + 12) % 24 }))}
+            >
+              <AppText variant="label" color={colors.text}>
+                {clock.h < 12 ? 'AM' : 'PM'}
+              </AppText>
+            </Touchable>
+          </View>
+        </View>
+      )}
+
+      <Touchable style={styles.behaviorNote} onPress={onEditBehavior}>
+        <Icon name={icons.tune} size={16} color={colors.textMuted} />
+        <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
+          {sleepBehavior.rewindSec > 0
+            ? `Rewinds ${fmtRewind(sleepBehavior.rewindSec)}`
+            : 'No rewind'}
+          {sleepBehavior.fade ? ` · fades over ${sleepBehavior.fadeLen}s` : ' · no fade'}
+        </AppText>
+        <AppText variant="caption" color={colors.accent}>
+          Edit
+        </AppText>
+      </Touchable>
+
+      <Touchable
+        style={[styles.startBtn, startDisabled && { opacity: 0.4 }]}
+        onPress={startDisabled ? undefined : start}
+        disabled={startDisabled}
+      >
+        <Icon name={icons.sleep} size={18} color={colors.onAccent} />
+        <AppText variant="label" color={colors.onAccent}>
+          {startLabel}
+        </AppText>
+      </Touchable>
+    </View>
+  )
+}
+
+// Preview the wall-clock ms for a picked {h, m}, rolling to tomorrow if past.
+function clockPreviewMs(clock: { h: number; m: number }): number {
+  const now = new Date()
+  const target = new Date()
+  target.setHours(clock.h, clock.m, 0, 0)
+  if (target.getTime() <= now.getTime()) target.setDate(target.getDate() + 1)
+  return target.getTime()
+}
+
+export const SleepSheet = forwardRef<SheetHandle, { onEditBehavior: () => void }>(
+  function SleepSheet({ onEditBehavior }, ref) {
+    const sheetRef = useSheetHandle(ref)
+    const { sleepTimer } = useSyncExternalStore(subscribe, getState)
+    const active = sleepTimer !== null
+
+    return (
+      <Sheet ref={sheetRef} kicker={active ? 'Sleep timer' : 'Set a sleep timer'}>
+        {active ? (
+          <ActiveSleep
+            onDismiss={() => sheetRef.current?.dismiss()}
+            onEditBehavior={onEditBehavior}
+          />
+        ) : (
+          <SleepSetup
+            onDismiss={() => sheetRef.current?.dismiss()}
+            onEditBehavior={onEditBehavior}
+          />
+        )}
       </Sheet>
     )
   },
@@ -548,122 +645,154 @@ export const SleepSheet = forwardRef<SheetHandle, { onEditBehavior: () => void }
 
 const makeStyles = (colors: Palette, shadow: ReturnType<typeof buildShadow>) =>
   StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.hairline,
-  },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  speed: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: radius.pill,
-    backgroundColor: colors.fill,
-    minWidth: 64,
-    alignItems: 'center',
-  },
-  speedOn: { backgroundColor: colors.accent },
-  segFull: {
-    flexDirection: 'row',
-    gap: 4,
-    backgroundColor: colors.fill,
-    borderRadius: radius.card,
-    padding: 4,
-    marginBottom: spacing.lg,
-  },
-  seg: { flex: 1, alignItems: 'center', paddingVertical: spacing.sm + 2, borderRadius: radius.row },
-  segOn: { backgroundColor: colors.card },
-  chapterList: { maxHeight: 220 },
-  chapterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.hairline,
-  },
-  bookmarkRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.hairline,
-  },
-  behaviorNote: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.row,
-    backgroundColor: colors.fill,
-  },
-  clockRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-  },
-  clockCol: {
-    alignItems: 'center',
-    borderRadius: radius.card,
-    backgroundColor: colors.fill,
-    paddingVertical: spacing.xs,
-    minWidth: 76,
-  },
-  clockBtn: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-  },
-  clockDigits: { fontVariant: ['tabular-nums'] },
-  clockColon: { marginHorizontal: spacing.xs },
-  ampm: {
-    marginLeft: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: radius.pill,
-    backgroundColor: colors.fill,
-  },
-  clockSet: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: radius.card,
-    backgroundColor: colors.accent,
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.hairline,
-    marginVertical: spacing.lg,
-  },
-  ghostBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.pill,
-    backgroundColor: colors.fill,
-  },
-  // Full-width destructive-ish cancel across the bottom when a timer is running.
-  cancelSleep: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.lg,
-    paddingVertical: spacing.md + 2,
-    borderRadius: radius.card,
-    backgroundColor: colors.accent,
-    ...shadow.accentGlow,
-  },
-})
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.md,
+      paddingVertical: spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
+    },
+    grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+    speed: {
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+      minWidth: 64,
+      alignItems: 'center',
+    },
+    speedOn: { backgroundColor: colors.accent },
+    segFull: {
+      flexDirection: 'row',
+      gap: 4,
+      backgroundColor: colors.fill,
+      borderRadius: radius.card,
+      padding: 4,
+      marginBottom: spacing.lg,
+    },
+    seg: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: spacing.sm + 2,
+      borderRadius: radius.row,
+    },
+    segOn: { backgroundColor: colors.card },
+    chapterList: { maxHeight: 220 },
+    chapterRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
+    },
+    bookmarkRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
+    },
+    behaviorNote: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      marginTop: spacing.md,
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.row,
+      backgroundColor: colors.fill,
+    },
+    clockRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+    },
+    clockCol: {
+      alignItems: 'center',
+      borderRadius: radius.card,
+      backgroundColor: colors.fill,
+      paddingVertical: spacing.xs,
+      minWidth: 76,
+    },
+    clockBtn: {
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.lg,
+    },
+    clockDigits: { fontVariant: ['tabular-nums'] },
+    clockColon: { marginHorizontal: spacing.xs },
+    ampm: {
+      marginLeft: spacing.md,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+    },
+    // The accent Start button that arms a staged timer (idle setup).
+    startBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      marginTop: spacing.lg,
+      paddingVertical: spacing.md + 2,
+      borderRadius: radius.card,
+      backgroundColor: colors.accent,
+      ...shadow.accentGlow,
+    },
+    // The staged duration, shown large above the slider in the setup UI.
+    bigDuration: {
+      fontSize: 40,
+      fontWeight: '800',
+      color: colors.accent,
+      fontVariant: ['tabular-nums'],
+    },
+    // ---- Running-timer takeover ----
+    activeWrap: { paddingBottom: spacing.md, alignItems: 'center' },
+    activeHead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      marginBottom: spacing.md,
+    },
+    bigRemaining: {
+      fontSize: 68,
+      fontWeight: '800',
+      color: colors.accent,
+      fontVariant: ['tabular-nums'],
+      letterSpacing: -1,
+    },
+    endsAtRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      marginTop: spacing.xs,
+    },
+    addBtn: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: spacing.md,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    // Full-width subtle cancel across the bottom when a timer is running.
+    cancelSleep: {
+      flexDirection: 'row',
+      alignSelf: 'stretch',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      marginTop: spacing.lg,
+      paddingVertical: spacing.md + 2,
+      borderRadius: radius.card,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+  })

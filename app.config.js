@@ -81,6 +81,7 @@ module.exports = {
       },
     ],
     '@clerk/expo',
+    '@react-native-community/datetimepicker',
     'expo-secure-store',
     'expo-router',
     'expo-background-task',
