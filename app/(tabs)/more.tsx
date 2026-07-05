@@ -60,6 +60,12 @@ const GROUPS: { label: string; items: MenuItem[] }[] = [
         href: '/settings/sleep',
       },
       {
+        icon: 'notifications',
+        title: 'Notifications',
+        desc: 'Release alerts and the books you follow.',
+        href: '/settings/notifications',
+      },
+      {
         icon: 'download',
         title: 'Downloads & storage',
         desc: 'Offline books, auto-download, space used.',

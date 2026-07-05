@@ -24,6 +24,8 @@ import {
 import { setSessionExpiredHandler } from '@/api/controlPlane'
 import { clearSession } from '@/api/session'
 import { clearAudibleCache } from '@/api/absAudible'
+import { clearSubscriptions } from '@/player/subscriptions'
+import { resetPushRegistration } from '@/player/pushRegister'
 import { useConnection } from '@/api/ConnectionProvider'
 import {
   clearTrack,
@@ -143,6 +145,8 @@ export default function HomeScreen() {
       clearAutoSession()
       stopQueueSync()
       clearAudibleCache()
+      clearSubscriptions()
+      resetPushRegistration()
       await clearSession()
       await signOut()
       router.replace(reason ? `/sign-in?reason=${reason}` : '/sign-in')

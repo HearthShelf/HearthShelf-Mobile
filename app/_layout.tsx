@@ -22,6 +22,8 @@ import { clearMeId } from '@/api/me'
 import { clearTrack } from '@/player/store'
 import { clearAutoSession } from '@/player/autoBridge'
 import { stopQueueSync } from '@/player/queueSync'
+import { clearSubscriptions } from '@/player/subscriptions'
+import { resetPushRegistration } from '@/player/pushRegister'
 import { stopClubSync } from '@/player/clubSync'
 import { unregisterBackgroundFlush } from '@/player/connectivity'
 import { ensureNotificationChannels } from '@/lib/notifications'
@@ -127,6 +129,8 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
     clearAutoSession()
     stopQueueSync()
     stopClubSync()
+    clearSubscriptions()
+    resetPushRegistration()
     void unregisterBackgroundFlush()
     clearMeId()
     await clearSession()

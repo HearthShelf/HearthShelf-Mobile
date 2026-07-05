@@ -40,6 +40,11 @@ export const icons = {
   // Brand / stats
   flame: 'local-fire-department',
   schedule: 'schedule',
+  bell: 'notifications',
+  bellActive: 'notifications-active',
+  bellOff: 'notifications-off',
+  newRelease: 'new-releases',
+  calendar: 'event',
   car: 'directions-car',
   check: 'check',
   checkCircle: 'check-circle',

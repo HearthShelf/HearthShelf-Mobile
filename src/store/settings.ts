@@ -138,6 +138,14 @@ export interface SettingsState {
   clubsEnabled: boolean
   clubPlayerButton: boolean
 
+  // Release notifications (account). Follow an upcoming book/series and get a
+  // push when it's available; countdownWindowDays drives the Home banner.
+  notifyEnabled: boolean
+  notifyAvailableInLibrary: boolean
+  notifyOnReleaseDate: boolean
+  notifyReminderDaysBefore: number
+  notifyCountdownWindowDays: number
+
   // Social pops (device). Show a toast when playback crosses a club note; can be
   // silenced on one device without leaving the club.
   notePops: boolean
@@ -194,6 +202,11 @@ let state: SettingsState = {
   shareCurrentlyListening: null,
   clubsEnabled: true,
   clubPlayerButton: true,
+  notifyEnabled: true,
+  notifyAvailableInLibrary: true,
+  notifyOnReleaseDate: true,
+  notifyReminderDaysBefore: 3,
+  notifyCountdownWindowDays: 14,
   notePops: true,
   noteDefaultVisibility: 'public',
 

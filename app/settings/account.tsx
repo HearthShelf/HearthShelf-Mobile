@@ -13,6 +13,8 @@ import { clearAudibleCache } from '@/api/absAudible'
 import { clearTrack } from '@/player/store'
 import { clearAutoSession } from '@/player/autoBridge'
 import { stopQueueSync } from '@/player/queueSync'
+import { clearSubscriptions } from '@/player/subscriptions'
+import { resetPushRegistration } from '@/player/pushRegister'
 import { AppText } from '@/ui/primitives'
 import { spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
@@ -54,6 +56,8 @@ export default function AccountScreen() {
     clearAutoSession()
     stopQueueSync()
     clearAudibleCache()
+    clearSubscriptions()
+    resetPushRegistration()
     await clearSession()
     await signOut()
     router.replace('/sign-in')

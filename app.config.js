@@ -20,6 +20,10 @@ const extra = {
     process.env.EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID,
   EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID: process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID,
   EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME: process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME,
+  // Expo push (release notifications). Optional: without a project id + FCM
+  // credentials, getExpoPushTokenAsync no-ops and remote pushes are simply off;
+  // the rest of the notifications feature (Home countdown banner) still works.
+  EXPO_PUBLIC_EAS_PROJECT_ID: process.env.EXPO_PUBLIC_EAS_PROJECT_ID,
 }
 
 // CI stamps the run number as the Android versionCode (EXPO_ANDROID_VERSION_CODE)
@@ -82,6 +86,7 @@ module.exports = {
     ],
     '@clerk/expo',
     '@react-native-community/datetimepicker',
+    'expo-notifications',
     'expo-secure-store',
     'expo-router',
     'expo-background-task',

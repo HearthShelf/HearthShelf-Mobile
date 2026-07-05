@@ -51,6 +51,11 @@ export const GOOGLE_ANDROID_CLIENT_ID = cfg('EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CL
 export const GOOGLE_IOS_CLIENT_ID = cfg('EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID', '')
 export const GOOGLE_IOS_URL_SCHEME = cfg('EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME', '')
 
+// Expo push project id (release notifications). Empty when not provisioned, in
+// which case push registration no-ops and only in-app signals (the Home
+// countdown banner) work. A real token also needs FCM credentials on the build.
+export const EAS_PROJECT_ID = cfg('EXPO_PUBLIC_EAS_PROJECT_ID', '')
+
 /**
  * Whether to offer the native Google account-picker. Clerk's native flow needs
  * the dashboard credentials configured; until the platform credentials are

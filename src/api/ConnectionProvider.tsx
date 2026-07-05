@@ -21,6 +21,8 @@ import { CLERK_JWT_TEMPLATE } from '@/lib/config'
 import { hasCachedClerkSession } from '@/lib/tokenCache'
 import { clearAutoSession, setAutoSession, setAutoNotePops } from '@/player/autoBridge'
 import { startQueueSync } from '@/player/queueSync'
+import { refreshSubscriptions } from '@/player/subscriptions'
+import { ensurePushRegistered } from '@/player/pushRegister'
 import { startClubSync } from '@/player/clubSync'
 import { ensureDeviceId, getSettingsState, subscribeSettings } from '@/store/settings'
 import { hydrateDownloads, getDownloadsState } from '@/player/downloads'
@@ -205,6 +207,10 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         ensureNotePopsMirror()
         startQueueSync()
         startClubSync()
+        // Release subscriptions + push: pull the follow list and register this
+        // device for release notifications (both best-effort / self-guarding).
+        void refreshSubscriptions()
+        void ensurePushRegistered()
         // Now that a session exists, push any progress banked while offline.
         void flushPendingProgress()
         // Backfill offline browse metadata for any downloads missing it (books
