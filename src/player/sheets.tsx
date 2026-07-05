@@ -425,12 +425,11 @@ function SleepSetup({
   const tabs: SleepTab[] = hasChapters ? ['duration', 'chapter', 'time'] : ['duration', 'time']
 
   return (
-    // The whole setup scrolls so a tall tab (duration grid, a long chapter list)
-    // can't push the Start button off a fixed-height sheet.
-    <BottomSheetScrollView
-      contentContainerStyle={{ paddingBottom: spacing.md }}
-      showsVerticalScrollIndicator={false}
-    >
+    // Keyed by tab so switching modes remounts the body: gorhom's dynamic sizing
+    // grows to fit new content but won't shrink on its own, so a fresh onLayout
+    // (from the remount) is what lets the sheet shrink back to a shorter tab's
+    // natural height (Duration/Time after Chapter).
+    <View key={tab} style={{ paddingBottom: spacing.md }}>
       <View style={styles.segFull}>
         {tabs.map((t) => (
           <Touchable
@@ -505,7 +504,9 @@ function SleepSetup({
           <AppText variant="caption" color={colors.textMuted} style={{ marginBottom: spacing.sm }}>
             Stop at the {chapAt} of
           </AppText>
-          <View>
+          {/* Capped internal scroll: bounds the dynamic-sizing measurement so a
+              long chapter list scrolls here instead of stretching the sheet. */}
+          <BottomSheetScrollView style={styles.chapterList} showsVerticalScrollIndicator={false}>
             {chapters.map((c, i) =>
               isFuture(i, chapAt) ? (
                 <Touchable key={i} style={styles.chapterRow} onPress={() => setChapIdx(i)}>
@@ -528,7 +529,7 @@ function SleepSetup({
                 </Touchable>
               ) : null,
             )}
-          </View>
+          </BottomSheetScrollView>
         </View>
       )}
 
@@ -611,7 +612,7 @@ function SleepSetup({
           {startLabel}
         </AppText>
       </Touchable>
-    </BottomSheetScrollView>
+    </View>
   )
 }
 
@@ -631,16 +632,12 @@ export const SleepSheet = forwardRef<SheetHandle, { onEditBehavior: () => void }
     const active = sleepTimer !== null
 
     return (
-      // Fixed snapPoints (not dynamic sizing): the chapter tab nests a
-      // BottomSheetScrollView, and a scroll view inside a dynamically-measured
-      // sheet expands to its full content height - blowing the tray to full
-      // screen with no reachable backdrop to close it. A fixed height keeps the
-      // tray closable and lets the chapter list scroll within it.
-      <Sheet
-        ref={sheetRef}
-        kicker={active ? 'Sleep timer' : 'Set a sleep timer'}
-        snapPoints={['80%']}
-      >
+      // Dynamic sizing so each mode gets its own natural height (Duration and
+      // Time are compact; Chapter is taller). The chapter list is the one thing
+      // that could grow unbounded, so it lives in a maxHeight-capped internal
+      // scroll (see SleepSetup) - that keeps the dynamic measurement bounded and
+      // the tray closable without stretching Duration/Time into a huge sheet.
+      <Sheet ref={sheetRef} kicker={active ? 'Sleep timer' : 'Set a sleep timer'}>
         {active ? (
           <ActiveSleep
             onDismiss={() => sheetRef.current?.dismiss()}
@@ -693,6 +690,9 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof buildShadow>) =>
       borderRadius: radius.row,
     },
     segOn: { backgroundColor: colors.accentWash },
+    // Caps the chapter list so it scrolls internally rather than stretching the
+    // dynamically-sized sheet to fit all chapters.
+    chapterList: { maxHeight: 280 },
     chapterRow: {
       flexDirection: 'row',
       alignItems: 'center',
