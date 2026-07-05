@@ -4,7 +4,7 @@
  * nothing is playing it shows a calm hearth empty state that offers to resume the
  * last book (the "resume last book" affordance the web app's home hero has).
  */
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { ImageBackground, StyleSheet, View } from 'react-native'
 import Animated, { FadeIn } from 'react-native-reanimated'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -17,6 +17,7 @@ import { AppText, Cover, PrimaryButton, Screen, icons } from '@/ui/primitives'
 import { DUR } from '@/ui/motion'
 import { radius, spacing } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
+import { useBackHandler } from '@/ui/useBackHandler'
 import { getState, subscribe, requestSeek } from '@/player/store'
 import { getProgressState } from '@/store/progress'
 import { PlayerSurface } from '../player'
@@ -41,6 +42,14 @@ function EmptyState() {
   const colors = useColors()
   const [last, setLast] = useState<ABSLibraryItem | null>(null)
   const [loading, setLoading] = useState(true)
+
+  // Non-home tab: hardware back returns to Home rather than exiting the app.
+  useBackHandler(
+    useCallback(() => {
+      router.replace('/(tabs)')
+      return true
+    }, [router]),
+  )
 
   useEffect(() => {
     let cancelled = false

@@ -15,10 +15,11 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react'
-import { Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native'
+import { Image, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
+import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Animated, {
   Easing,
@@ -71,6 +72,8 @@ import {
 } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
 import { CoverGlow } from '@/ui/CoverGlow'
+import { CoverLightbox } from '@/ui/CoverLightbox'
+import { useBackHandler } from '@/ui/useBackHandler'
 import { AppTabBar } from '@/ui/AppTabBar'
 import { haptics } from '@/ui/haptics'
 import { DUR, SpringPressable } from '@/ui/motion'
@@ -216,6 +219,25 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
     setImmersive(false)
   }, [])
   useEffect(() => () => setImmersive(false), [])
+
+  // Hardware back: the open lightbox handles its own back (it takes precedence);
+  // otherwise immersive mode exits first. When embedded (the Now Playing tab
+  // root) a further back goes Home; the pushed /player route falls through to a
+  // normal pop.
+  useBackHandler(
+    useCallback(() => {
+      if (immersive) {
+        exit()
+        return true
+      }
+      if (embedded) {
+        router.replace('/(tabs)')
+        return true
+      }
+      return false
+    }, [immersive, embedded, exit, router]),
+    !lightbox,
+  )
 
   const swipe = Gesture.Pan().onEnd((e) => {
     if (e.velocityY < -400) runOnJS(enter)()
@@ -606,15 +628,14 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         </Animated.View>
       )}
 
-      {lightbox && (
-        <Lightbox
-          uri={nowPlaying.artworkUrl}
-          title={nowPlaying.title}
-          author={nowPlaying.author}
-          hue={hue}
-          onClose={() => setLightbox(false)}
-        />
-      )}
+      <CoverLightbox
+        visible={lightbox}
+        uri={nowPlaying.artworkUrl}
+        title={nowPlaying.title}
+        author={nowPlaying.author}
+        hue={hue}
+        onClose={() => setLightbox(false)}
+      />
 
       <Toast message={toast.message} />
 
@@ -748,111 +769,6 @@ function ActionBtn({
         </AppText>
       )}
     </SpringPressable>
-  )
-}
-
-// ---- Lightbox (full, pinch-zoomable artwork) ----
-
-function Lightbox({
-  uri,
-  title,
-  author,
-  hue,
-  onClose,
-}: {
-  uri?: string
-  title: string
-  author: string
-  hue: string
-  onClose: () => void
-}) {
-  const { colors, shadow } = useTheme()
-  const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
-  const { width, height } = useWindowDimensions()
-  const insets = useSafeAreaInsets()
-  const scale = useSharedValue(1)
-  const savedScale = useSharedValue(1)
-  const tx = useSharedValue(0)
-  const ty = useSharedValue(0)
-  const savedTx = useSharedValue(0)
-  const savedTy = useSharedValue(0)
-
-  const pinch = Gesture.Pinch()
-    .onUpdate((e) => {
-      scale.value = Math.max(1, Math.min(4, savedScale.value * e.scale))
-    })
-    .onEnd(() => {
-      savedScale.value = scale.value
-      if (scale.value <= 1) {
-        scale.value = withTiming(1)
-        tx.value = withTiming(0)
-        ty.value = withTiming(0)
-        savedTx.value = 0
-        savedTy.value = 0
-      }
-    })
-  const pan = Gesture.Pan()
-    .onUpdate((e) => {
-      if (scale.value <= 1) return
-      tx.value = savedTx.value + e.translationX
-      ty.value = savedTy.value + e.translationY
-    })
-    .onEnd(() => {
-      savedTx.value = tx.value
-      savedTy.value = ty.value
-    })
-  const doubleTap = Gesture.Tap()
-    .numberOfTaps(2)
-    .onEnd(() => {
-      const next = scale.value > 1 ? 1 : 2
-      scale.value = withTiming(next)
-      savedScale.value = next
-      if (next === 1) {
-        tx.value = withTiming(0)
-        ty.value = withTiming(0)
-        savedTx.value = 0
-        savedTy.value = 0
-      }
-    })
-  const gesture = Gesture.Simultaneous(pinch, pan, doubleTap)
-
-  const imgStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: scale.value }],
-  }))
-
-  return (
-    <View style={styles.lightbox}>
-      <IconButton
-        name={icons.close}
-        size={24}
-        color="#fff"
-        onPress={onClose}
-        style={[styles.lightboxClose, { top: insets.top + 12 }]}
-      />
-      <GestureDetector gesture={gesture}>
-        <Animated.View style={[styles.lightboxImgWrap, imgStyle]}>
-          {uri ? (
-            // Full uncropped artwork (contain) so nothing is cut off.
-            <Image
-              source={{ uri }}
-              style={{ width: width, height: height * 0.7 }}
-              resizeMode="contain"
-            />
-          ) : (
-            <Cover
-              width={Math.min(320, width * 0.84)}
-              aspectRatio={1}
-              radius={16}
-              fallback={{ hue, initial: title.charAt(0).toUpperCase(), title }}
-            />
-          )}
-        </Animated.View>
-      </GestureDetector>
-      <View style={styles.lightboxMeta} pointerEvents="none">
-        <Text style={styles.lightboxTitle}>{title}</Text>
-        <Text style={styles.lightboxAuthor}>{author}</Text>
-      </View>
-    </View>
   )
 }
 
@@ -1029,8 +945,7 @@ const RecentSheet = forwardRef<
   const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
   const chapterMode = settings.scrubber === 'chapter' && chapters.length > 0
 
-  const chapterAt = (sec: number) =>
-    chapters.find((ch) => sec >= ch.start && sec < ch.end) ?? null
+  const chapterAt = (sec: number) => chapters.find((ch) => sec >= ch.start && sec < ch.end) ?? null
 
   // Position to show for a book-overall second: chapter-relative in chapter mode
   // (offset from that second's chapter start), otherwise the raw book position.
@@ -1101,7 +1016,7 @@ const RecentSheet = forwardRef<
           You haven't listened to this book yet.
         </AppText>
       ) : (
-        <View>
+        <BottomSheetScrollView showsVerticalScrollIndicator={false}>
           {rows.map((r) => {
             const startCh = chapterAt(r.startTime)?.title ?? null
             const endCh = chapterAt(r.currentTime)?.title ?? null
@@ -1121,7 +1036,9 @@ const RecentSheet = forwardRef<
                 <View style={{ flex: 1, gap: 3 }}>
                   <View style={recentStyles.durationRow}>
                     <Icon
-                      name={r.offline ? icons.cloudOff : r.synced ? icons.cloudDone : icons.cloudQueue}
+                      name={
+                        r.offline ? icons.cloudOff : r.synced ? icons.cloudDone : icons.cloudQueue
+                      }
                       size={15}
                       color={accent}
                     />
@@ -1137,7 +1054,8 @@ const RecentSheet = forwardRef<
                     </AppText>
                   </View>
                   <AppText variant="mono" color={colors.textMuted}>
-                    {formatTimestamp(shownPos(r.startTime))} → {formatTimestamp(shownPos(r.currentTime))}
+                    {formatTimestamp(shownPos(r.startTime))} →{' '}
+                    {formatTimestamp(shownPos(r.currentTime))}
                   </AppText>
                   {(startCh || endCh) && (
                     <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
@@ -1151,7 +1069,7 @@ const RecentSheet = forwardRef<
               </Touchable>
             )
           })}
-        </View>
+        </BottomSheetScrollView>
       )}
     </Sheet>
   )
@@ -1313,27 +1231,4 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       backgroundColor: withAlpha(colors.accent, 0.15),
     },
     actionBtnCountdown: { fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
-    lightbox: {
-      position: 'absolute',
-      inset: 0,
-      zIndex: 30,
-      backgroundColor: 'rgba(8,7,6,0.96)',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    lightboxImgWrap: { alignItems: 'center', justifyContent: 'center' },
-    lightboxClose: {
-      position: 'absolute',
-      right: 20,
-      zIndex: 2,
-      width: 42,
-      height: 42,
-      borderRadius: 21,
-      backgroundColor: 'rgba(255,255,255,0.12)',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    lightboxMeta: { position: 'absolute', bottom: 60, alignItems: 'center' },
-    lightboxTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
-    lightboxAuthor: { color: colors.textMuted, fontSize: 12.5, marginTop: 4 },
   })

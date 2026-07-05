@@ -35,6 +35,7 @@ import { useTheme } from '@/ui/ThemeProvider'
 import { Icon, icons } from '@/ui/icons'
 import { DUR } from '@/ui/motion'
 import { useContentInset } from '@/ui/useContentInset'
+import { useBackHandler } from '@/ui/useBackHandler'
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
@@ -49,6 +50,14 @@ export default function StatsTab() {
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   const [status, setStatus] = useState<Status>({ phase: 'loading' })
   const contentInset = useContentInset()
+
+  // Non-home tab: hardware back returns to Home rather than exiting the app.
+  useBackHandler(
+    useCallback(() => {
+      router.replace('/(tabs)')
+      return true
+    }, [router]),
+  )
 
   const load = useCallback(async () => {
     setStatus({ phase: 'loading' })

@@ -13,6 +13,7 @@ import { CLERK_PUBLISHABLE_KEY } from '@/lib/config'
 import { PlayerHost } from '@/player/PlayerHost'
 import { MiniPlayerDock } from '@/player/MiniPlayerDock'
 import { PopToast } from '@/social/PopToast'
+import { ToastHost } from '@/ui/Toast'
 import { SplashScreen as HearthSplash, type SplashPhase } from '@/ui/SplashScreen'
 import { OfflineBanner } from '@/ui/OfflineBanner'
 import { ConnectionProvider, useConnection } from '@/api/ConnectionProvider'
@@ -241,6 +242,9 @@ export default function RootLayout() {
                 <MiniPlayerDock />
                 {/* Note-pop toasts fired by the club watcher (notePops.ts). */}
                 <PopToast />
+                {/* Single app-wide confirmation toast, positioned in the
+                    mini-player band above all screens. */}
+                <ToastHost />
               </AuthGate>
               {/* Persistent audio engine - mounted once, never unmounted. */}
               <PlayerHost />
