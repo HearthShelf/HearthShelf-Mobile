@@ -7,7 +7,7 @@
  * any failure so the series screen quietly omits the "missing books" surface.
  */
 import { getSession } from './session'
-import type { HSAudibleSeriesResponse } from '@hearthshelf/core'
+import type { HSAudibleSearchResult, HSAudibleSeriesResponse } from '@hearthshelf/core'
 
 // Module-level cache of resolved series rosters, keyed by lowercased name. The
 // backend already caches these ~10min, but the mobile screen re-fetches on every
@@ -53,6 +53,22 @@ export async function fetchAudibleSeries(name: string): Promise<HSAudibleSeriesR
     return value
   } catch {
     return empty
+  }
+}
+
+/** Fetch a single Audible product by ASIN (for the upcoming-book page reached
+ *  fresh, e.g. from a push deep-link). null on any failure. */
+export async function fetchAudibleProduct(asin: string): Promise<HSAudibleSearchResult | null> {
+  const s = getSession()
+  if (!s || !asin) return null
+  try {
+    const res = await fetch(`${s.serverUrl}/hs/audible/product?asin=${encodeURIComponent(asin)}`, {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${s.token}` },
+    })
+    if (!res.ok) return null
+    return (await res.json()) as HSAudibleSearchResult
+  } catch {
+    return null
   }
 }
 

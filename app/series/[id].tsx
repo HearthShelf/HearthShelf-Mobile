@@ -23,6 +23,8 @@ import {
   missingSeriesBooks,
   seriesSeqFromName,
   seriesCompletion,
+  countdownLabel,
+  isUpcoming,
   type OwnedSeriesBook,
 } from '@hearthshelf/core'
 import { coverUrl, getLibrarySeries, itemAuthor, itemNarrator, itemTitle } from '@/api/abs'
@@ -533,10 +535,17 @@ function MissingBooks({
   startSeq: number
   rmabEnabled: boolean
 }) {
+  const router = useRouter()
   const sheetRef = useRef<BottomSheetModal>(null)
   const [selected, setSelected] = useState<HSAudibleSeriesBook | null>(null)
 
   const onPressRow = (b: HSAudibleSeriesBook) => {
+    // Upcoming (unreleased) book -> the follow/countdown page; already-released
+    // but unowned -> the request/buy sheet as before.
+    if ((b.upcoming ?? isUpcoming(b, Date.now())) && b.asin) {
+      router.push(`/upcoming/${encodeURIComponent(b.asin)}`)
+      return
+    }
     setSelected(b)
     sheetRef.current?.present()
   }
@@ -576,6 +585,9 @@ function MissingBookRow({
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const sub = [book.author, book.narrator].filter(Boolean).join(' · ')
+  // Upcoming books show a release countdown + bell instead of Request/Buy.
+  const upcoming = (book.upcoming ?? isUpcoming(book, Date.now())) && !!book.asin
+  const countdown = upcoming ? countdownLabel(book, Date.now()) : null
   return (
     <Touchable onPress={onPress} style={[styles.row, styles.rowMissing]}>
       <AppText variant="title" color={colors.textFaint} style={styles.num}>
@@ -608,12 +620,12 @@ function MissingBookRow({
       </View>
       <View style={styles.missingTag}>
         <IconButton
-          name={rmabEnabled ? icons.bolt : icons.shoppingCart}
+          name={upcoming ? icons.newRelease : rmabEnabled ? icons.bolt : icons.shoppingCart}
           size={15}
           color={colors.accent}
         />
         <AppText variant="caption" color={colors.accent} style={{ fontWeight: '600' }}>
-          {rmabEnabled ? 'Request' : 'Not in library'}
+          {upcoming ? (countdown ?? 'Coming soon') : rmabEnabled ? 'Request' : 'Not in library'}
         </AppText>
       </View>
     </Touchable>

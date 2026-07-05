@@ -72,6 +72,7 @@ import { DUR } from '@/ui/motion'
 import { Scrubber } from '@/player/Scrubber'
 import { BookActionsSheet, type BookActionsHandle } from '@/ui/BookActionsSheet'
 import { HomeClubShelf } from '@/social/HomeClubShelf'
+import { ReleaseCountdownBanner } from '@/ui/ReleaseCountdownBanner'
 import { Toast, useToast } from '@/ui/Toast'
 import { useBackHandler } from '@/ui/useBackHandler'
 import { haptics } from '@/ui/haptics'
@@ -445,6 +446,7 @@ export default function HomeScreen() {
           </View>
         )}
         {stats ? <HomeStatsStrip stats={stats} /> : null}
+        <ReleaseCountdownBanner />
         <HomeClubShelf />
         {shelves.map((shelf) => (
           <Shelf key={shelf.id} shelf={shelf} onLongPressItem={openActions} />
