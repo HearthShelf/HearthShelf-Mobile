@@ -61,16 +61,32 @@ export function AppSlider({
   const [dragValue, setDragValue] = useState<number | null>(null)
   const lastSent = useRef(value)
 
+  // Read live geometry/value through refs so the gesture callbacks (and the
+  // gesture object itself) never need to be rebuilt when `value` or `trackW`
+  // change. Rebuilding them mid-drag re-attached the GestureDetector every frame
+  // and, together with the onChange->store->re-render feedback, spun React into
+  // a "maximum update depth exceeded" loop and made dragging crawl.
+  const trackWRef = useRef(trackW)
+  trackWRef.current = trackW
+  const valueRef = useRef(value)
+  valueRef.current = value
+  // Consumers often pass inline arrows for onChange/onComplete; route them
+  // through refs so our gesture callbacks stay stable regardless.
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+  const onCompleteRef = useRef(onComplete)
+  onCompleteRef.current = onComplete
+
   const onLayout = (e: LayoutChangeEvent) => setTrackW(e.nativeEvent.layout.width)
 
   const valueFromX = useCallback(
     (x: number) => {
-      const usable = trackW - THUMB_R * 2
-      if (usable <= 0) return value
+      const usable = trackWRef.current - THUMB_R * 2
+      if (usable <= 0) return valueRef.current
       const ratio = Math.max(0, Math.min(1, (x - THUMB_R) / usable))
       return snap(min + ratio * (max - min), min, max, step)
     },
-    [trackW, min, max, step, value],
+    [min, max, step],
   )
 
   const update = useCallback(
@@ -80,10 +96,10 @@ export function AppSlider({
       if (v !== lastSent.current) {
         lastSent.current = v
         haptics.select()
-        onChange(v)
+        onChangeRef.current(v)
       }
     },
-    [valueFromX, onChange],
+    [valueFromX],
   )
   const finish = useCallback(
     (x: number) => {
@@ -91,24 +107,29 @@ export function AppSlider({
       setDragValue(null)
       if (v !== lastSent.current) {
         lastSent.current = v
-        onChange(v)
+        onChangeRef.current(v)
       }
-      onComplete?.(v)
+      onCompleteRef.current?.(v)
     },
-    [valueFromX, onChange, onComplete],
+    [valueFromX],
   )
   const cancel = useCallback(() => setDragValue(null), [])
 
   // Zero min distance: activates on touch-down, so taps seat the thumb and the
-  // parent sheet never steals the drag.
-  const pan = Gesture.Pan()
-    .minDistance(0)
-    .onBegin((e) => runOnJS(update)(e.x))
-    .onUpdate((e) => runOnJS(update)(e.x))
-    .onEnd((e) => runOnJS(finish)(e.x))
-    .onFinalize((_e, success) => {
-      if (!success) runOnJS(cancel)()
-    })
+  // parent sheet never steals the drag. Memoized so GestureDetector isn't handed
+  // a fresh gesture object on every render (which re-attaches mid-drag).
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        .minDistance(0)
+        .onBegin((e) => runOnJS(update)(e.x))
+        .onUpdate((e) => runOnJS(update)(e.x))
+        .onEnd((e) => runOnJS(finish)(e.x))
+        .onFinalize((_e, success) => {
+          if (!success) runOnJS(cancel)()
+        }),
+    [update, finish, cancel],
+  )
 
   const shown = dragValue ?? value
   const ratio = max > min ? (Math.max(min, Math.min(max, shown)) - min) / (max - min) : 0
