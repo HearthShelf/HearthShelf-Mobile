@@ -13,7 +13,8 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react'
-import { StyleSheet, Text, View } from 'react-native'
+import { Platform, StyleSheet, Text, View } from 'react-native'
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import { formatTimestamp } from '@hearthshelf/core'
 import {
@@ -33,6 +34,7 @@ import { AppSlider } from '@/ui/AppSlider'
 import { Icon, icons } from '@/ui/icons'
 import { radius, spacing, type Palette, type buildShadow } from '@/ui/theme'
 import { useTheme } from '@/ui/ThemeProvider'
+import { uses12HourClock, formatClock } from '@/lib/timeFormat'
 
 export interface SheetHandle {
   present: () => void
@@ -533,61 +535,7 @@ function SleepSetup({
         </View>
       )}
 
-      {tab === 'time' && (
-        <View>
-          <View style={styles.clockRow}>
-            <View style={styles.clockCol}>
-              <Touchable
-                style={styles.clockBtn}
-                hitSlop={6}
-                onPress={() => setClock((c) => ({ ...c, h: (c.h + 1) % 24 }))}
-              >
-                <Icon name={icons.expandLess} size={26} color={colors.textMuted} />
-              </Touchable>
-              <AppText variant="hero" style={styles.clockDigits}>
-                {String(((clock.h + 11) % 12) + 1)}
-              </AppText>
-              <Touchable
-                style={styles.clockBtn}
-                hitSlop={6}
-                onPress={() => setClock((c) => ({ ...c, h: (c.h + 23) % 24 }))}
-              >
-                <Icon name={icons.chevronDown} size={26} color={colors.textMuted} />
-              </Touchable>
-            </View>
-            <AppText variant="hero" style={styles.clockColon}>
-              :
-            </AppText>
-            <View style={styles.clockCol}>
-              <Touchable
-                style={styles.clockBtn}
-                hitSlop={6}
-                onPress={() => setClock((c) => ({ ...c, m: (c.m + 5) % 60 }))}
-              >
-                <Icon name={icons.expandLess} size={26} color={colors.textMuted} />
-              </Touchable>
-              <AppText variant="hero" style={styles.clockDigits}>
-                {String(clock.m).padStart(2, '0')}
-              </AppText>
-              <Touchable
-                style={styles.clockBtn}
-                hitSlop={6}
-                onPress={() => setClock((c) => ({ ...c, m: (c.m + 55) % 60 }))}
-              >
-                <Icon name={icons.chevronDown} size={26} color={colors.textMuted} />
-              </Touchable>
-            </View>
-            <Touchable
-              style={styles.ampm}
-              onPress={() => setClock((c) => ({ ...c, h: (c.h + 12) % 24 }))}
-            >
-              <AppText variant="label" color={colors.text}>
-                {clock.h < 12 ? 'AM' : 'PM'}
-              </AppText>
-            </Touchable>
-          </View>
-        </View>
-      )}
+      {tab === 'time' && <ClockPicker clock={clock} onChange={setClock} />}
 
       <Touchable style={styles.behaviorNote} onPress={onEditBehavior}>
         <Icon name={icons.tune} size={16} color={colors.textMuted} />
@@ -612,6 +560,60 @@ function SleepSetup({
           {startLabel}
         </AppText>
       </Touchable>
+    </View>
+  )
+}
+
+/** The "time" tab's clock control: a tappable pill showing the staged stop time
+ *  that opens the OS time picker, matching the settings sleep panel. */
+function ClockPicker({
+  clock,
+  onChange,
+}: {
+  clock: { h: number; m: number }
+  onChange: (c: { h: number; m: number }) => void
+}) {
+  const { colors } = useTheme()
+  const [open, setOpen] = useState(false)
+  const date = new Date()
+  date.setHours(clock.h, clock.m, 0, 0)
+
+  const onPicked = (e: DateTimePickerEvent, picked?: Date) => {
+    // Android fires 'dismissed' on cancel; only commit a real 'set'.
+    setOpen(false)
+    if (e.type === 'set' && picked) onChange({ h: picked.getHours(), m: picked.getMinutes() })
+  }
+
+  return (
+    <View style={{ alignItems: 'center' }}>
+      <Touchable
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.sm,
+          paddingVertical: spacing.md,
+          paddingHorizontal: spacing.xl,
+          borderRadius: radius.card,
+          backgroundColor: colors.fill,
+          borderWidth: 1,
+          borderColor: colors.border,
+        }}
+        onPress={() => setOpen(true)}
+      >
+        <Icon name={icons.schedule} size={20} color={colors.textMuted} />
+        <Text style={{ fontSize: 32, fontWeight: '800', color: colors.accent }}>
+          {formatClock(clock.h, clock.m)}
+        </Text>
+      </Touchable>
+      {open && (
+        <DateTimePicker
+          value={date}
+          mode="time"
+          is24Hour={!uses12HourClock()}
+          display={Platform.OS === 'ios' ? 'spinner' : 'clock'}
+          onChange={onPicked}
+        />
+      )}
     </View>
   )
 }
@@ -717,32 +719,6 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof buildShadow>) =>
       paddingVertical: spacing.md,
       paddingHorizontal: spacing.md,
       borderRadius: radius.row,
-      backgroundColor: colors.fill,
-    },
-    clockRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: spacing.sm,
-    },
-    clockCol: {
-      alignItems: 'center',
-      borderRadius: radius.card,
-      backgroundColor: colors.fill,
-      paddingVertical: spacing.xs,
-      minWidth: 76,
-    },
-    clockBtn: {
-      paddingVertical: spacing.sm,
-      paddingHorizontal: spacing.lg,
-    },
-    clockDigits: { fontVariant: ['tabular-nums'] },
-    clockColon: { marginHorizontal: spacing.xs },
-    ampm: {
-      marginLeft: spacing.md,
-      paddingHorizontal: spacing.lg,
-      paddingVertical: spacing.md,
-      borderRadius: radius.pill,
       backgroundColor: colors.fill,
     },
     // The accent Start button that arms a staged timer (idle setup).
