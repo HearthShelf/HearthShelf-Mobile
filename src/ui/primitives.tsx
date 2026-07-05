@@ -567,7 +567,10 @@ export const Sheet = forwardRef<
           {children}
         </BottomSheetView>
       ) : (
-        <View style={styles.sheetBody}>
+        // Fixed-height sheet: fill it so a flex child (e.g. a queue FlatList)
+        // gets a bounded height and can actually lay out / scroll. The dynamic
+        // branch above must NOT flex - it measures its content instead.
+        <View style={[styles.sheetBody, { flex: 1 }]}>
           {header}
           {children}
         </View>

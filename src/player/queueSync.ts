@@ -50,7 +50,15 @@ function hasActiveSession(): boolean {
 async function pullQueue(): Promise<void> {
   try {
     const server = await getServerQueue()
-    if (hasActiveSession()) return
+    // The active-session guard only protects a MANUAL queue: manual is the one
+    // mode this device hand-edits, so a remote pull mustn't stomp its own
+    // in-flight order mid-session. Auto/playlist/off are server-authoritative
+    // and read-only here, so always adopt the server's list - otherwise a device
+    // that's actively listening (which is the normal case for an auto queue)
+    // never picks up the queue the server just computed, and the sheet reads
+    // "Nothing queued" despite a full server-side queue.
+    const mode = getSettingsState().queueMode
+    if (mode === 'manual' && hasActiveSession()) return
     hydratingQueue = true
     // bump=false: adopting the server's state shouldn't immediately look like
     // a new local write and re-push what we just pulled.
@@ -120,6 +128,12 @@ function pushSettings(): void {
       changes.push({ scope: def.scope, key, value: v.value, updatedAt: row.updatedAt })
     }
     if (!changes.length) return
+    // If the queue mode or auto-rules changed, the server recomputes the auto
+    // queue on the next GET - re-pull once the new settings have landed so the
+    // sheet reflects the change immediately (not just on the next foreground).
+    const queueSettingsChanged = changes.some(
+      (c) => c.key === 'queueMode' || c.key === 'queueAutoRules',
+    )
     putServerSettings(getDeviceId(), changes)
       .then((res) => {
         // Adopt any value the server rejected as stale (another device newer).
@@ -131,6 +145,7 @@ function pushSettings(): void {
           hydratingSettings = false
         }
         lastSettingsMeta = { ...getSettingsMeta() }
+        if (queueSettingsChanged) void pullQueue()
       })
       .catch(() => {
         // Best-effort; the local store already holds the change.
