@@ -28,6 +28,7 @@ import { stopClubSync } from '@/player/clubSync'
 import { unregisterBackgroundFlush } from '@/player/connectivity'
 import { ensureNotificationChannels } from '@/lib/notifications'
 import { mountNoteForegroundHandler } from '@/social/noteEvents'
+import { mountPushHandlers } from '@/player/pushHandlers'
 import { fonts } from '@/ui/theme'
 import { ThemeProvider, useColors, useTheme } from '@/ui/ThemeProvider'
 
@@ -218,6 +219,10 @@ export default function RootLayout() {
   // Handle a warm tap / reply on a club-note notification while the app is
   // foreground (the cold-start + background paths are wired in index.js).
   useEffect(() => mountNoteForegroundHandler(), [])
+
+  // Release-notification foreground presentation + tap routing (opens the
+  // upcoming-book page). Self-guards when the native module is absent.
+  useEffect(() => mountPushHandlers(), [])
 
   // Keep the native OS splash up until fonts are ready AND the hearth splash has
   // painted its first frame (it calls SplashScreen.hideAsync itself). Hiding on

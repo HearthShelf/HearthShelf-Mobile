@@ -24,6 +24,11 @@ const extra = {
   // credentials, getExpoPushTokenAsync no-ops and remote pushes are simply off;
   // the rest of the notifications feature (Home countdown banner) still works.
   EXPO_PUBLIC_EAS_PROJECT_ID: process.env.EXPO_PUBLIC_EAS_PROJECT_ID,
+  // Also expose it in the EAS-conventional slot so expo-notifications and EAS
+  // tooling can resolve the project id without the explicit arg.
+  ...(process.env.EXPO_PUBLIC_EAS_PROJECT_ID
+    ? { eas: { projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID } }
+    : {}),
 }
 
 // CI stamps the run number as the Android versionCode (EXPO_ANDROID_VERSION_CODE)
@@ -59,6 +64,13 @@ module.exports = {
   android: {
     package: 'com.hearthshelf.mobile',
     versionCode,
+    // FCM credentials for Expo push (release notifications). Optional: point
+    // GOOGLE_SERVICES_JSON at a Firebase google-services.json to enable Android
+    // push. Without it the build has no FCM sender and push tokens won't mint;
+    // the in-app countdown still works. See docs/push-setup.md.
+    ...(process.env.GOOGLE_SERVICES_JSON
+      ? { googleServicesFile: process.env.GOOGLE_SERVICES_JSON }
+      : {}),
     adaptiveIcon: {
       backgroundColor: '#1B1A18',
       foregroundImage: './assets/android-icon-foreground.png',
