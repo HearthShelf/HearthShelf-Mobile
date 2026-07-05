@@ -34,6 +34,13 @@ yarn-error.*
 .env
 .env*.local
 
+# Firebase / FCM. google-services.json holds a public app API key (safe-ish) but
+# is kept local; the service-account *private* key is a real secret - never commit.
+google-services.json
+google-services*.json
+*-firebase-adminsdk-*.json
+service-account*.json
+
 # typescript
 *.tsbuildinfo
 

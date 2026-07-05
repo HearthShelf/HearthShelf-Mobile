@@ -12,6 +12,11 @@
 
 // All values here are PUBLIC by design (see .env.example). The Google client
 // SECRET is never here - it lives only in the Clerk dashboard.
+// EAS project id for @wutname1/hearthshelf-mobile. Public identifier (safe to
+// commit); an env var overrides it if you ever point at a different project.
+const EAS_PROJECT_ID =
+  process.env.EXPO_PUBLIC_EAS_PROJECT_ID || 'ef3733f9-5ef2-4666-988b-a32c64463ba4'
+
 const extra = {
   EXPO_PUBLIC_CONTROL_PLANE_URL: process.env.EXPO_PUBLIC_CONTROL_PLANE_URL,
   EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY,
@@ -20,15 +25,15 @@ const extra = {
     process.env.EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID,
   EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID: process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID,
   EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME: process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME,
-  // Expo push (release notifications). Optional: without a project id + FCM
-  // credentials, getExpoPushTokenAsync no-ops and remote pushes are simply off;
-  // the rest of the notifications feature (Home countdown banner) still works.
-  EXPO_PUBLIC_EAS_PROJECT_ID: process.env.EXPO_PUBLIC_EAS_PROJECT_ID,
-  // Also expose it in the EAS-conventional slot so expo-notifications and EAS
-  // tooling can resolve the project id without the explicit arg.
-  ...(process.env.EXPO_PUBLIC_EAS_PROJECT_ID
-    ? { eas: { projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID } }
-    : {}),
+  // Expo push (release notifications). The EAS project id is PUBLIC (not a
+  // secret), so it's hardcoded here per Expo's dynamic-config guidance - that
+  // also lets the `eas` CLI resolve it without trying (and failing) to write to
+  // this dynamic config. An env var can still override it for a different
+  // project. Delivery additionally needs FCM credentials on the build (see
+  // docs/PUSH_SETUP.md); without them push just stays off and the in-app
+  // countdown still works.
+  EXPO_PUBLIC_EAS_PROJECT_ID: EAS_PROJECT_ID,
+  eas: { projectId: EAS_PROJECT_ID },
 }
 
 // CI stamps the run number as the Android versionCode (EXPO_ANDROID_VERSION_CODE)
