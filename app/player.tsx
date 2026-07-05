@@ -96,7 +96,7 @@ import { TimelineMarkers } from '@/social/TimelineMarkers'
 import { useTimelineMarkers } from '@/social/useTimelineMarkers'
 import type { PlayerActionKey } from '@/store/settings'
 
-const HEARTH_BG = require('../assets/images/sitting-in-the-hearth.webp')
+const HEARTH_BG = require('../assets/images/hearth-centered.webp')
 
 /**
  * The full player UI. Rendered as the pushed `/player` route (with a collapse

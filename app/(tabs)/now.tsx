@@ -22,7 +22,7 @@ import { getState, subscribe, requestSeek } from '@/player/store'
 import { getProgressState } from '@/store/progress'
 import { PlayerSurface } from '../player'
 
-const HEARTH = require('../../assets/images/sitting-in-the-hearth.webp')
+const HEARTH = require('../../assets/images/hearth-centered.webp')
 
 export default function NowPlayingTab() {
   const { nowPlaying } = useSyncExternalStore(subscribe, getState)
