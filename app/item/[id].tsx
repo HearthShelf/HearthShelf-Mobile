@@ -14,21 +14,8 @@
  * has one.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import {
-  Modal,
-  Pressable,
-  ScrollView,
-  Share,
-  StyleSheet,
-  View,
-  useWindowDimensions,
-} from 'react-native'
-import Animated, {
-  FadeIn,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated'
+import { Pressable, ScrollView, Share, StyleSheet, View } from 'react-native'
+import Animated, { FadeIn } from 'react-native-reanimated'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type {
@@ -89,8 +76,9 @@ import {
 import { Icon } from '@/ui/icons'
 import { AppTabBar } from '@/ui/AppTabBar'
 import { CoverGlow } from '@/ui/CoverGlow'
+import { CoverLightbox } from '@/ui/CoverLightbox'
 import { EmberBurst } from '@/ui/EmberBurst'
-import { DUR, POP_SPRING } from '@/ui/motion'
+import { DUR } from '@/ui/motion'
 import { Toast, useToast } from '@/ui/Toast'
 import { haptics } from '@/ui/haptics'
 import { radius, spacing, type Palette } from '@/ui/theme'
@@ -593,10 +581,11 @@ export default function ItemDetailScreen() {
         onToast={show}
       />
 
-      <CoverZoom
+      <CoverLightbox
         visible={zoomed}
-        itemId={detail.id}
+        uri={coverUrl(detail.id)}
         title={title}
+        author={authorName}
         hue={hue}
         onClose={() => setZoomed(false)}
       />
@@ -1161,48 +1150,6 @@ function FileInfoLine({ detail }: { detail: ABSLibraryItemDetail }) {
   )
 }
 
-// ---- Cover zoom ----
-
-function CoverZoom({
-  visible,
-  itemId,
-  title,
-  hue,
-  onClose,
-}: {
-  visible: boolean
-  itemId: string
-  title: string
-  hue: string
-  onClose: () => void
-}) {
-  const styles = useStyles()
-  const { width } = useWindowDimensions()
-
-  // Scale up from the hero cover's neighborhood with the app's standard spring,
-  // instead of the modal's flat fade.
-  const scale = useSharedValue(0.7)
-  useEffect(() => {
-    scale.value = visible ? withSpring(1, POP_SPRING) : 0.7
-  }, [visible, scale])
-  const zoomStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }))
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.zoomScrim} onPress={onClose}>
-        <Animated.View style={zoomStyle}>
-          <Cover
-            uri={coverUrl(itemId)}
-            size={width - spacing.xl * 2}
-            radius={radius.sheet}
-            fallback={{ hue, initial: title.charAt(0).toUpperCase(), title }}
-          />
-        </Animated.View>
-      </Pressable>
-    </Modal>
-  )
-}
-
 // ---- Header ----
 
 function Header({
@@ -1409,12 +1356,6 @@ const makeStyles = (colors: Palette) =>
       alignItems: 'center',
       gap: spacing.lg,
       paddingVertical: spacing.md + 2,
-    },
-    zoomScrim: {
-      flex: 1,
-      backgroundColor: 'rgba(10,9,8,0.92)',
-      alignItems: 'center',
-      justifyContent: 'center',
     },
   })
 
