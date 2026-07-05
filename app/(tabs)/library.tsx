@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   FlatList,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -82,6 +83,7 @@ import {
   getCatalogState,
 } from '@/player/offlineCatalog'
 import { useContentInset, useMiniPlayerInset } from '@/ui/useContentInset'
+import { useBackHandler } from '@/ui/useBackHandler'
 import { useBookSelection } from '@/ui/useBookSelection'
 import { AzRail, AZ_RAIL_WIDTH } from '@/ui/AzRail'
 import { ScrollTopButton } from '@/ui/ScrollTopButton'
@@ -202,6 +204,24 @@ export default function LibraryScreen() {
   useEffect(() => {
     if (preset) setViewMode('books')
   }, [preset])
+
+  // Hardware back: an active search clears back to the plain library first; a
+  // non-default view (Series/Authors/Narrators) steps back to Books; only from
+  // the plain Books view does back fall through to Home.
+  useBackHandler(
+    useCallback(() => {
+      if (hasQuery) {
+        setQuery('')
+        return true
+      }
+      if (viewMode !== 'books') {
+        setViewMode('books')
+        return true
+      }
+      router.replace('/(tabs)')
+      return true
+    }, [hasQuery, viewMode, router]),
+  )
 
   const tileWidth = (width - GUTTER * 2 - GUTTER * (COLS - 1)) / COLS
 
@@ -454,6 +474,7 @@ function BooksView({
   // downloading), so an offline library picks up new downloads live.
   const catalogVersion = useSyncExternalStore(subscribeCatalog, getCatalogState)
   const [error, setError] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
   const selection = useBookSelection()
 
   const [filter, setFilter] = useState<string>('all')
@@ -488,31 +509,49 @@ function BooksView({
     if (preset.filter) setFilter(preset.filter)
   }, [preset])
 
-  useEffect(() => {
-    let cancelled = false
-    setItems(null)
-    setError(null)
-    void (async () => {
+  // Fetch the whole library + refresh progress. `blank` clears the grid first
+  // (initial load / library switch); a pull-to-refresh leaves the current books
+  // in place and just refetches under the pull spinner.
+  const load = useCallback(
+    async (opts?: { blank?: boolean; signal?: () => boolean }) => {
+      const cancelled = opts?.signal ?? (() => false)
+      if (opts?.blank) setItems(null)
+      setError(null)
       try {
         const [page] = await Promise.all([
           getLibraryItemsPage(libraryId, 0, 0),
           refreshProgress().catch(() => null),
         ])
-        if (cancelled) return
+        if (cancelled()) return
         setItems(page.results)
       } catch (e) {
-        if (cancelled) return
+        if (cancelled()) return
         // Offline (or the server is unreachable): show downloaded books from the
         // local catalog instead of a bare error, so the library stays browseable.
         const offline = catalogAsLibraryItems()
         if (offline.length > 0) setItems(offline)
         else setError((e as Error).message)
       }
-    })()
+    },
+    [libraryId],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    void load({ blank: true, signal: () => cancelled })
     return () => {
       cancelled = true
     }
-  }, [libraryId, catalogVersion])
+  }, [load, catalogVersion])
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      await load()
+    } finally {
+      setRefreshing(false)
+    }
+  }, [load])
 
   const progressOf = useCallback<ProgressOf>(
     (id) => {
@@ -619,6 +658,15 @@ function BooksView({
 
   const gridPadRight = showAzRail ? GUTTER + AZ_RAIL_WIDTH : GUTTER
 
+  const refreshControl = (
+    <RefreshControl
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+      tintColor={colors.accent}
+      colors={[colors.accent]}
+    />
+  )
+
   return (
     <Animated.View entering={FadeIn.duration(DUR.base)} style={{ flex: 1 }}>
       {selection.selecting ? (
@@ -671,6 +719,7 @@ function BooksView({
             }}
             onScroll={onScroll}
             scrollEventThrottle={16}
+            refreshControl={refreshControl}
             onScrollToIndexFailed={({ index }) => {
               listRef.current?.scrollToOffset({
                 offset: Math.floor(index / cols) * (tileWidth * 1.5 + spacing.md),
@@ -697,6 +746,7 @@ function BooksView({
           contentContainerStyle={{ padding: GUTTER, paddingBottom: contentInset, gap: spacing.sm }}
           onScroll={onScroll}
           scrollEventThrottle={16}
+          refreshControl={refreshControl}
           renderItem={({ item }) => (
             <BookListRow
               item={item}
@@ -1024,6 +1074,7 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
   const contentInset = useContentInset()
   const [groups, setGroups] = useState<GroupRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
   // Re-run the load when the offline catalog changes (hydrate finishing, a new
   // download), so offline groups appear once the catalog is populated.
   const catalogVersion = useSyncExternalStore(subscribeCatalog, getCatalogState)
@@ -1071,37 +1122,54 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
     [letterIndex],
   )
 
-  useEffect(() => {
-    let cancelled = false
-    setGroups(null)
-    setError(null)
-    void (async () => {
+  // `blank` clears the list first (initial load / mode switch); a pull-to-refresh
+  // leaves the current rows in place and just refetches under the pull spinner.
+  const load = useCallback(
+    async (opts?: { blank?: boolean; signal?: () => boolean }) => {
+      const cancelled = opts?.signal ?? (() => false)
+      if (opts?.blank) setGroups(null)
+      setError(null)
       try {
         if (mode === 'series') {
           const series = await getLibrarySeries(libraryId)
-          if (cancelled) return
+          if (cancelled()) return
           setGroups(series.map((s: ABSSeries) => seriesToRow(s)))
         } else if (mode === 'authors') {
           const authors = await getLibraryAuthors(libraryId)
-          if (cancelled) return
+          if (cancelled()) return
           setGroups(authors.map((a: ABSLibraryAuthor) => authorToRow(a)))
         } else {
           const narrators = await getLibraryNarrators(libraryId)
-          if (cancelled) return
+          if (cancelled()) return
           setGroups(narrators.map((n: ABSNarrator) => narratorToRow(n)))
         }
       } catch (e) {
-        if (cancelled) return
+        if (cancelled()) return
         // Offline: build the groups from downloaded books instead of erroring.
         const offline = offlineGroups(mode)
         if (offline.length > 0) setGroups(offline)
         else setError((e as Error).message)
       }
-    })()
+    },
+    [libraryId, mode],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    void load({ blank: true, signal: () => cancelled })
     return () => {
       cancelled = true
     }
-  }, [libraryId, mode, catalogVersion])
+  }, [load, catalogVersion])
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      await load()
+    } finally {
+      setRefreshing(false)
+    }
+  }, [load])
 
   if (error) {
     return (
@@ -1158,6 +1226,14 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
         onScrollToIndexFailed={({ index, averageItemLength }) => {
           listRef.current?.scrollToOffset({ offset: index * averageItemLength, animated: true })
         }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.accent}
+            colors={[colors.accent]}
+          />
+        }
         renderItem={({ item }) => (
           <Touchable
             style={styles.groupRow}

@@ -1,6 +1,15 @@
 import { useAuth, useUser } from '@clerk/expo'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { FlatList, ImageBackground, Pressable, ScrollView, StyleSheet, View } from 'react-native'
+import {
+  BackHandler,
+  FlatList,
+  ImageBackground,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native'
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
@@ -62,6 +71,7 @@ import { Scrubber } from '@/player/Scrubber'
 import { BookActionsSheet, type BookActionsHandle } from '@/ui/BookActionsSheet'
 import { HomeClubShelf } from '@/social/HomeClubShelf'
 import { Toast, useToast } from '@/ui/Toast'
+import { useBackHandler } from '@/ui/useBackHandler'
 import { haptics } from '@/ui/haptics'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useContentInset } from '@/ui/useContentInset'
@@ -69,6 +79,7 @@ import { useColors, useTheme } from '@/ui/ThemeProvider'
 
 export default function HomeScreen() {
   const styles = useStyles()
+  const colors = useColors()
   const { signOut } = useAuth()
   const { user } = useUser()
   const firstName = user?.firstName ?? null
@@ -82,6 +93,7 @@ export default function HomeScreen() {
   const connected = status.phase === 'ready'
   const contentInset = useContentInset()
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [inProgress, setInProgress] = useState<ABSLibraryItem[]>([])
   const [shelves, setShelves] = useState<ABSShelf[]>([])
   const [stats, setStats] = useState<HSListeningStats | null>(null)
@@ -97,6 +109,33 @@ export default function HomeScreen() {
   // until a later fetch legitimately drops them. Held in a ref so loadHome's
   // identity stays stable.
   const justFinishedRef = useRef<Set<string>>(new Set())
+
+  // Home is the back-stack root: the first hardware back arms a 2s window and
+  // shows a hint; a second back within it exits the app. Prevents an accidental
+  // single press from dropping the user out.
+  const exitArmedRef = useRef(false)
+  const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useBackHandler(
+    useCallback(() => {
+      if (exitArmedRef.current) {
+        if (exitTimerRef.current) clearTimeout(exitTimerRef.current)
+        BackHandler.exitApp()
+        return true
+      }
+      exitArmedRef.current = true
+      showToast('Press back again to exit')
+      exitTimerRef.current = setTimeout(() => {
+        exitArmedRef.current = false
+      }, 2000)
+      return true
+    }, [showToast]),
+  )
+  useEffect(
+    () => () => {
+      if (exitTimerRef.current) clearTimeout(exitTimerRef.current)
+    },
+    [],
+  )
 
   const handleSignOut = useCallback(
     async (reason?: 'expired') => {
@@ -246,6 +285,19 @@ export default function HomeScreen() {
     setLoading(false)
   }, [])
 
+  // Pull-to-refresh: reload Home without the full-screen spinner takeover
+  // (loadHome's silent mode), showing only the pull spinner. Offline, refresh
+  // just rebuilds from the downloaded catalog.
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      if (connected) await loadHome({ silent: true })
+      else loadHomeOffline()
+    } finally {
+      setRefreshing(false)
+    }
+  }, [connected, loadHome, loadHomeOffline])
+
   useEffect(() => {
     // Load once the session exists (reconnects re-fire this too, e.g. after
     // switching servers from the splash's "Manage servers").
@@ -345,6 +397,14 @@ export default function HomeScreen() {
         entering={FadeIn.duration(DUR.base)}
         contentContainerStyle={{ paddingBottom: contentInset }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.accent}
+            colors={[colors.accent]}
+          />
+        }
       >
         {nowPlaying ? (
           <PlayerHero
