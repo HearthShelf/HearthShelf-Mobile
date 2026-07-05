@@ -66,6 +66,10 @@ module.exports = {
       monochromeImage: './assets/android-icon-monochrome.png',
     },
     permissions: ['FOREGROUND_SERVICE', 'FOREGROUND_SERVICE_MEDIA_PLAYBACK', 'WAKE_LOCK'],
+    // expo-sensors ships ACTIVITY_RECOGNITION for its Pedometer module, which we
+    // don't use (only DeviceMotion for shake-to-extend). Play flags it under the
+    // Health apps policy, so strip it from the merged manifest.
+    blockedPermissions: ['android.permission.ACTIVITY_RECOGNITION'],
     predictiveBackGestureEnabled: false,
   },
   web: {
