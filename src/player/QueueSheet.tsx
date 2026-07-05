@@ -67,7 +67,7 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
               >
                 <AppText
                   variant="label"
-                  color={settings.queueMode === m.v ? colors.text : colors.textMuted}
+                  color={settings.queueMode === m.v ? colors.accent : colors.textMuted}
                 >
                   {m.label}
                 </AppText>
@@ -257,7 +257,7 @@ const makeStyles = (colors: Palette) =>
       paddingVertical: spacing.sm + 2,
       borderRadius: radius.row,
     },
-    segOn: { backgroundColor: colors.card },
+    segOn: { backgroundColor: colors.accentWash },
     subRow: {
       flexDirection: 'row',
       alignItems: 'center',

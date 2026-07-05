@@ -425,7 +425,12 @@ function SleepSetup({
   const tabs: SleepTab[] = hasChapters ? ['duration', 'chapter', 'time'] : ['duration', 'time']
 
   return (
-    <View style={{ paddingBottom: spacing.md }}>
+    // The whole setup scrolls so a tall tab (duration grid, a long chapter list)
+    // can't push the Start button off a fixed-height sheet.
+    <BottomSheetScrollView
+      contentContainerStyle={{ paddingBottom: spacing.md }}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={styles.segFull}>
         {tabs.map((t) => (
           <Touchable
@@ -435,7 +440,7 @@ function SleepSetup({
           >
             <AppText
               variant="label"
-              color={tab === t ? colors.text : colors.textMuted}
+              color={tab === t ? colors.accent : colors.textMuted}
               style={{ textTransform: 'capitalize' }}
             >
               {t}
@@ -491,7 +496,7 @@ function SleepSetup({
                   setChapIdx(null)
                 }}
               >
-                <AppText variant="label" color={chapAt === at ? colors.text : colors.textMuted}>
+                <AppText variant="label" color={chapAt === at ? colors.accent : colors.textMuted}>
                   Chapter {at}
                 </AppText>
               </Touchable>
@@ -500,7 +505,7 @@ function SleepSetup({
           <AppText variant="caption" color={colors.textMuted} style={{ marginBottom: spacing.sm }}>
             Stop at the {chapAt} of
           </AppText>
-          <BottomSheetScrollView style={styles.chapterList}>
+          <View>
             {chapters.map((c, i) =>
               isFuture(i, chapAt) ? (
                 <Touchable key={i} style={styles.chapterRow} onPress={() => setChapIdx(i)}>
@@ -523,7 +528,7 @@ function SleepSetup({
                 </Touchable>
               ) : null,
             )}
-          </BottomSheetScrollView>
+          </View>
         </View>
       )}
 
@@ -606,7 +611,7 @@ function SleepSetup({
           {startLabel}
         </AppText>
       </Touchable>
-    </View>
+    </BottomSheetScrollView>
   )
 }
 
@@ -626,7 +631,16 @@ export const SleepSheet = forwardRef<SheetHandle, { onEditBehavior: () => void }
     const active = sleepTimer !== null
 
     return (
-      <Sheet ref={sheetRef} kicker={active ? 'Sleep timer' : 'Set a sleep timer'}>
+      // Fixed snapPoints (not dynamic sizing): the chapter tab nests a
+      // BottomSheetScrollView, and a scroll view inside a dynamically-measured
+      // sheet expands to its full content height - blowing the tray to full
+      // screen with no reachable backdrop to close it. A fixed height keeps the
+      // tray closable and lets the chapter list scroll within it.
+      <Sheet
+        ref={sheetRef}
+        kicker={active ? 'Sleep timer' : 'Set a sleep timer'}
+        snapPoints={['80%']}
+      >
         {active ? (
           <ActiveSleep
             onDismiss={() => sheetRef.current?.dismiss()}
@@ -678,8 +692,7 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof buildShadow>) =>
       paddingVertical: spacing.sm + 2,
       borderRadius: radius.row,
     },
-    segOn: { backgroundColor: colors.card },
-    chapterList: { maxHeight: 220 },
+    segOn: { backgroundColor: colors.accentWash },
     chapterRow: {
       flexDirection: 'row',
       alignItems: 'center',
