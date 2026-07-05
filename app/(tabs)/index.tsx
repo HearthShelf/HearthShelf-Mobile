@@ -768,12 +768,18 @@ function Shelf({
                 aspectRatio={COVER_ASPECT_RATIO[coverAspect]}
                 showDownloadBadge
               />
-              <AppText variant="meta" numberOfLines={1} style={{ marginTop: spacing.xs }}>
-                {itemTitle(item)}
-              </AppText>
-              <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
-                {itemAuthor(item)}
-              </AppText>
+              {/* Title + author in a fixed-height column. The minHeight reserves
+                  both lines up front so the index-0 tile's FadeInDown (delay 0)
+                  can't snapshot the frame before the author line has laid out and
+                  clip it - the bug that dropped the first author in every row. */}
+              <View style={styles.tileMeta}>
+                <AppText variant="meta" numberOfLines={1}>
+                  {itemTitle(item)}
+                </AppText>
+                <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
+                  {itemAuthor(item)}
+                </AppText>
+              </View>
             </Touchable>
           </Animated.View>
         )}
@@ -891,6 +897,9 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
     },
     seeAll: { flexDirection: 'row', alignItems: 'center', gap: 1 },
     tile: { width: 120 },
+    // Reserve space for both text lines so the entrance animation can't clip the
+    // author off the first tile (see the renderItem comment).
+    tileMeta: { width: 120, minHeight: 38, marginTop: spacing.xs },
     sheetTile: { flex: 1, maxWidth: '31%' },
     statsStrip: {
       flexDirection: 'row',
