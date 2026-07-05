@@ -25,18 +25,13 @@ export async function ensurePushRegistered(): Promise<void> {
   if (!EAS_PROJECT_ID) return
   registered = true
   try {
-    // Lazy-load: importing these pulls in native modules that may be absent in
+    // Lazy-load: importing this pulls in a native module that may be absent in
     // the current binary. A failure here is caught below and just disables push.
-    const [Notifications, Device] = await Promise.all([
-      import('expo-notifications'),
-      import('expo-device'),
-    ])
+    const Notifications = await import('expo-notifications')
 
-    // Push tokens only come from real devices.
-    if (!Device.isDevice) {
-      registered = false
-      return
-    }
+    // Note: we don't hard-gate on expo-device's isDevice - an emulator WITH
+    // Google Play services can mint a token, and getExpoPushTokenAsync below is
+    // the real gate (it throws on a device that genuinely can't, caught here).
 
     const { status: existing } = await Notifications.getPermissionsAsync()
     let status = existing
@@ -56,8 +51,9 @@ export async function ensurePushRegistered(): Promise<void> {
     }
     await registerPushToken(token, Platform.OS === 'ios' ? 'ios' : 'android')
   } catch {
-    // Missing native module / permission failure / network - push is simply off
-    // this launch; the app keeps working.
+    // Missing native module / permission failure / network, or the server not
+    // yet deployed with /hs/push/register - push is simply off this launch; the
+    // app keeps working.
     registered = false
   }
 }
