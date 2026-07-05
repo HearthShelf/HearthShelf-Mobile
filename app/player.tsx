@@ -1024,9 +1024,20 @@ const RecentSheet = forwardRef<
     load()
   }, [load])
 
-  const chapterAt = (sec: number): string | null => {
-    const c = chapters.find((ch) => sec >= ch.start && sec < ch.end)
-    return c?.title ?? null
+  // Match the main player's time display: in chapter mode the Recent Listens
+  // timecodes read chapter-relative (e.g. 3:12 into Chapter 8), not book-overall.
+  const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
+  const chapterMode = settings.scrubber === 'chapter' && chapters.length > 0
+
+  const chapterAt = (sec: number) =>
+    chapters.find((ch) => sec >= ch.start && sec < ch.end) ?? null
+
+  // Position to show for a book-overall second: chapter-relative in chapter mode
+  // (offset from that second's chapter start), otherwise the raw book position.
+  const shownPos = (sec: number) => {
+    if (!chapterMode) return sec
+    const c = chapterAt(sec)
+    return c ? sec - c.start : sec
   }
 
   // Unified, sync-aware row list: the live "Now" session (in progress), any local
@@ -1092,8 +1103,8 @@ const RecentSheet = forwardRef<
       ) : (
         <View>
           {rows.map((r) => {
-            const startCh = chapterAt(r.startTime)
-            const endCh = chapterAt(r.currentTime)
+            const startCh = chapterAt(r.startTime)?.title ?? null
+            const endCh = chapterAt(r.currentTime)?.title ?? null
             // Green once confirmed on the server; ember while unsynced/in-progress.
             const accent = r.synced ? colors.success : colors.accent
             const live = r.kind === 'live'
@@ -1126,7 +1137,7 @@ const RecentSheet = forwardRef<
                     </AppText>
                   </View>
                   <AppText variant="mono" color={colors.textMuted}>
-                    {formatTimestamp(r.startTime)} → {formatTimestamp(r.currentTime)}
+                    {formatTimestamp(shownPos(r.startTime))} → {formatTimestamp(shownPos(r.currentTime))}
                   </AppText>
                   {(startCh || endCh) && (
                     <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
