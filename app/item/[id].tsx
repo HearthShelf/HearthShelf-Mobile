@@ -987,7 +987,7 @@ function ChapterRow({
       <AppText variant="mono" color={current ? colors.text : colors.textMuted}>
         {current
           ? `${formatDuration(Math.max(0, chapter.end - currentTime))} left`
-          : formatTimestamp(chapter.start)}
+          : formatTimestamp(Math.max(0, chapter.end - chapter.start))}
       </AppText>
     </Touchable>
   )
