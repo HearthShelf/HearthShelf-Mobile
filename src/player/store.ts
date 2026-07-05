@@ -16,6 +16,7 @@
  * Settings and the player popovers read the same store.
  */
 import { getSettingsState } from '@/store/settings'
+import { parseHHMM } from '@/lib/timeFormat'
 import { haptics } from '@/ui/haptics'
 import { syncStateSeeked } from './syncState'
 
@@ -136,10 +137,13 @@ export function loadTrack(track: NowPlaying): void {
       fadeLen: s.sleepFadeLen,
     },
   })
+  maybeAutoArmSleep()
 }
 
 export function setPlaying(isPlaying: boolean): void {
-  if (state.nowPlaying) set({ isPlaying })
+  if (!state.nowPlaying) return
+  set({ isPlaying })
+  if (isPlaying) maybeAutoArmSleep()
 }
 
 /** Enter/leave car-owned playback. On enter, the phone player stands down (the
@@ -168,7 +172,9 @@ export function mirrorCarTrack(track: NowPlaying): void {
 export function togglePlay(): void {
   if (state.nowPlaying) {
     haptics.transport()
-    set({ isPlaying: !state.isPlaying })
+    const nowPlaying = !state.isPlaying
+    set({ isPlaying: nowPlaying })
+    if (nowPlaying) maybeAutoArmSleep()
   }
 }
 
@@ -234,6 +240,33 @@ export function setRate(rate: number): void {
 }
 
 // ---- sleep timer ----
+
+/** True when `now` falls inside the [start, end) quiet-hours window. Handles the
+ *  usual overnight case where end (e.g. 06:00) is earlier in the day than start
+ *  (e.g. 22:00): the window then wraps past midnight. */
+function inQuietHours(now: Date, startHHMM: string, endHHMM: string): boolean {
+  const cur = now.getHours() * 60 + now.getMinutes()
+  const s = parseHHMM(startHHMM)
+  const e = parseHHMM(endHHMM)
+  const start = s.h * 60 + s.m
+  const end = e.h * 60 + e.m
+  if (start === end) return false
+  return start < end ? cur >= start && cur < end : cur >= start || cur < end
+}
+
+/**
+ * When "Auto sleep timer" is on and playback starts during the configured quiet
+ * hours, arm a duration timer of `autoSleepDur` minutes - unless one is already
+ * running (manual or a prior auto-arm). Called from the play entry points.
+ */
+function maybeAutoArmSleep(): void {
+  if (state.sleepTimer) return
+  const s = getSettingsState()
+  if (!s.autoSleep) return
+  if (!inQuietHours(new Date(), s.autoSleepStart, s.autoSleepEnd)) return
+  const totalSec = s.autoSleepDur * 60
+  set({ sleepTimer: { kind: 'duration', remainingSec: totalSec, totalSec } })
+}
 
 export function setSleepTimer(timer: SleepTimer): void {
   if (timer) haptics.mode()
