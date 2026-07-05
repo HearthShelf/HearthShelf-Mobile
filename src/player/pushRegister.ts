@@ -1,17 +1,18 @@
 /**
  * Expo push-token registration for release notifications. Called once after a
  * session is established. Best-effort and fully self-contained: if permission is
- * denied, the device is an emulator, or no EAS project id / FCM credentials are
- * provisioned, it quietly no-ops - the rest of the notifications feature (the
- * Home countdown banner) still works; only the remote push is off.
+ * denied, the device is an emulator, no EAS project id / FCM credentials are
+ * provisioned, OR the native module isn't in this build yet, it quietly no-ops -
+ * the rest of the notifications feature (the Home countdown banner) still works;
+ * only the remote push is off.
  *
- * Uses expo-notifications (Expo push service) so the server can deliver via
- * Expo's HTTP push API. Distinct from the Notifee club-notes channel in
- * src/lib/notifications.ts (local notifications for Android Auto).
+ * expo-notifications / expo-device are loaded LAZILY via dynamic import so that a
+ * build without the native module linked (e.g. a JS-only reload before a native
+ * rebuild) doesn't throw "Cannot find native module ExpoPushTokenManager" at
+ * module-load time and take the whole app down. Distinct from the Notifee
+ * club-notes channel in src/lib/notifications.ts.
  */
 import { Platform } from 'react-native'
-import * as Notifications from 'expo-notifications'
-import * as Device from 'expo-device'
 import { EAS_PROJECT_ID } from '@/lib/config'
 import { registerPushToken } from '@/api/subscriptions'
 
@@ -20,10 +21,23 @@ let registered = false
 /** Register this device for release push notifications. Idempotent per launch. */
 export async function ensurePushRegistered(): Promise<void> {
   if (registered) return
-  // Push tokens only come from real devices, and only when a project id is set.
-  if (!Device.isDevice || !EAS_PROJECT_ID) return
+  // Only bother when a project id is configured (no id -> no Expo push service).
+  if (!EAS_PROJECT_ID) return
   registered = true
   try {
+    // Lazy-load: importing these pulls in native modules that may be absent in
+    // the current binary. A failure here is caught below and just disables push.
+    const [Notifications, Device] = await Promise.all([
+      import('expo-notifications'),
+      import('expo-device'),
+    ])
+
+    // Push tokens only come from real devices.
+    if (!Device.isDevice) {
+      registered = false
+      return
+    }
+
     const { status: existing } = await Notifications.getPermissionsAsync()
     let status = existing
     if (status !== 'granted') {
@@ -42,7 +56,8 @@ export async function ensurePushRegistered(): Promise<void> {
     }
     await registerPushToken(token, Platform.OS === 'ios' ? 'ios' : 'android')
   } catch {
-    // Best-effort: a failure here just means no remote push this launch.
+    // Missing native module / permission failure / network - push is simply off
+    // this launch; the app keeps working.
     registered = false
   }
 }
