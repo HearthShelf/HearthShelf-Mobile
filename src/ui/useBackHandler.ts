@@ -13,6 +13,7 @@
 import { useCallback } from 'react'
 import { BackHandler, Platform } from 'react-native'
 import { useFocusEffect } from 'expo-router'
+import { useBottomSheetModal } from '@gorhom/bottom-sheet'
 
 export function useBackHandler(handler: () => boolean, enabled = true): void {
   useFocusEffect(
@@ -21,5 +22,31 @@ export function useBackHandler(handler: () => boolean, enabled = true): void {
       const sub = BackHandler.addEventListener('hardwareBackPress', handler)
       return () => sub.remove()
     }, [handler, enabled]),
+  )
+}
+
+/**
+ * Closes the topmost open bottom sheet on hardware back, one per press, in
+ * reverse-open order (LIFO) - so a chain like Queue -> Auto rules closes the
+ * sub-sheet first, then the Queue, then falls through to the screen's own back
+ * logic once no sheets remain.
+ *
+ * The bottom-sheet library ships no Android back handling of its own, and a back
+ * press would otherwise pop the whole route (dropping out of the player) while a
+ * sheet sat open on top of it.
+ *
+ * Call this AFTER a screen's other `useBackHandler` registrations: BackHandler
+ * fires listeners last-registered-first, so registering the sheet handler later
+ * makes it run first, ahead of immersive/route-pop logic.
+ */
+export function useSheetBackHandler(): void {
+  const { dismiss } = useBottomSheetModal()
+  useBackHandler(
+    useCallback(
+      // dismiss() returns true when a sheet was open (and closes it), false when
+      // none were - which is exactly our swallow/fall-through signal.
+      () => dismiss(),
+      [dismiss],
+    ),
   )
 }

@@ -41,6 +41,7 @@ import {
 } from '@/api/clubs'
 import { holdClubPolling } from '@/player/clubSync'
 import { useMiniPlayerInset } from '@/ui/useContentInset'
+import { useSheetBackHandler } from '@/ui/useBackHandler'
 import { postNote, deleteNote } from '@/api/notes'
 import { getMeId } from '@/api/me'
 import { coverUrl, avatarUrl } from '@/api/abs'
@@ -74,6 +75,9 @@ const ROOM_POLL_MS = 15_000
 
 export default function ClubRoomScreen() {
   const router = useRouter()
+  // Hardware back closes an open sheet first; only with none open does it pop
+  // the route (dismiss() returns false, letting the default back proceed).
+  useSheetBackHandler()
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   // `note` is an optional deep-link param (hearthshelf://club/:id?note=:noteId),

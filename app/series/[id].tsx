@@ -10,6 +10,7 @@
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
+import { useSheetBackHandler } from '@/ui/useBackHandler'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type { BottomSheetModal } from '@gorhom/bottom-sheet'
 import type {
@@ -73,6 +74,9 @@ function orderBooks(books: ABSLibraryItem[]): ABSLibraryItem[] {
 
 export default function SeriesDetailScreen() {
   const router = useRouter()
+  // Hardware back closes an open sheet first; only with none open does it pop
+  // the route (dismiss() returns false, letting the default back proceed).
+  useSheetBackHandler()
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const { id, libraryId } = useLocalSearchParams<{ id: string; libraryId: string }>()

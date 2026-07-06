@@ -74,7 +74,7 @@ import {
 import { Icon } from '@/ui/icons'
 import { CoverGlow } from '@/ui/CoverGlow'
 import { CoverLightbox } from '@/ui/CoverLightbox'
-import { useBackHandler } from '@/ui/useBackHandler'
+import { useBackHandler, useSheetBackHandler } from '@/ui/useBackHandler'
 import { AppTabBar } from '@/ui/AppTabBar'
 import { haptics } from '@/ui/haptics'
 import { DUR, SpringPressable } from '@/ui/motion'
@@ -247,6 +247,11 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
     }, [immersive, embedded, exit, router]),
     !lightbox,
   )
+
+  // Close any open sheet (Queue, More, Auto rules, ...) before the above runs.
+  // Registered after it so it fires first (BackHandler is last-registered-first),
+  // and it swallows the press only when a sheet was actually open.
+  useSheetBackHandler()
 
   const swipe = Gesture.Pan().onEnd((e) => {
     if (e.velocityY < -400) runOnJS(enter)()

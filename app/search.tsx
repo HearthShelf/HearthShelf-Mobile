@@ -21,6 +21,7 @@ import {
 } from '@/ui/primitives'
 import { BookTile } from '@/ui/BookTile'
 import { NotOwnedSheet } from '@/ui/NotOwnedSheet'
+import { useSheetBackHandler } from '@/ui/useBackHandler'
 import { AppTabBar } from '@/ui/AppTabBar'
 import { DUR } from '@/ui/motion'
 import { radius, spacing, type Palette } from '@/ui/theme'
@@ -32,6 +33,9 @@ const GUTTER = spacing.lg
 
 export default function SearchScreen() {
   const router = useRouter()
+  // Hardware back closes an open sheet first; only with none open does it pop
+  // the route (dismiss() returns false, letting the default back proceed).
+  useSheetBackHandler()
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const { width } = useWindowDimensions()

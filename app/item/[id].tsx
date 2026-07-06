@@ -74,6 +74,7 @@ import {
   icons,
 } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
+import { useSheetBackHandler } from '@/ui/useBackHandler'
 import { AppTabBar } from '@/ui/AppTabBar'
 import { CoverGlow } from '@/ui/CoverGlow'
 import { CoverLightbox } from '@/ui/CoverLightbox'
@@ -107,6 +108,9 @@ type SectionKey =
 
 export default function ItemDetailScreen() {
   const router = useRouter()
+  // Hardware back closes an open sheet first; only with none open does it pop
+  // the route (dismiss() returns false, letting the default back proceed).
+  useSheetBackHandler()
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const { id } = useLocalSearchParams<{ id: string }>()

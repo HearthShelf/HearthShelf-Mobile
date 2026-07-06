@@ -83,7 +83,7 @@ import {
   getCatalogState,
 } from '@/player/offlineCatalog'
 import { useContentInset, useMiniPlayerInset } from '@/ui/useContentInset'
-import { useBackHandler } from '@/ui/useBackHandler'
+import { useBackHandler, useSheetBackHandler } from '@/ui/useBackHandler'
 import { useBookSelection } from '@/ui/useBookSelection'
 import { AzRail, AZ_RAIL_WIDTH } from '@/ui/AzRail'
 import { ScrollTopButton } from '@/ui/ScrollTopButton'
@@ -222,6 +222,9 @@ export default function LibraryScreen() {
       return true
     }, [hasQuery, viewMode, router]),
   )
+  // Close any open sheet (book actions, view options) before the search/view/home
+  // back logic above. Registered after it so it fires first.
+  useSheetBackHandler()
 
   const tileWidth = (width - GUTTER * 2 - GUTTER * (COLS - 1)) / COLS
 

@@ -74,7 +74,7 @@ import { BookActionsSheet, type BookActionsHandle } from '@/ui/BookActionsSheet'
 import { HomeClubShelf } from '@/social/HomeClubShelf'
 import { ReleaseCountdownBanner } from '@/ui/ReleaseCountdownBanner'
 import { Toast, useToast } from '@/ui/Toast'
-import { useBackHandler } from '@/ui/useBackHandler'
+import { useBackHandler, useSheetBackHandler } from '@/ui/useBackHandler'
 import { haptics } from '@/ui/haptics'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useContentInset } from '@/ui/useContentInset'
@@ -133,6 +133,9 @@ export default function HomeScreen() {
       return true
     }, [showToast]),
   )
+  // Close any open sheet before the exit-arm logic above (registered after it so
+  // it fires first; swallows the press only when a sheet was open).
+  useSheetBackHandler()
   useEffect(
     () => () => {
       if (exitTimerRef.current) clearTimeout(exitTimerRef.current)
