@@ -82,6 +82,7 @@ import { useToast, Toast } from '@/ui/Toast'
 import { radius, spacing, withAlpha, type Palette } from '@/ui/theme'
 import { useColors, useTheme, type ActiveTheme } from '@/ui/ThemeProvider'
 import { Scrubber } from '@/player/Scrubber'
+import { PlayerCoverCarousel } from '@/player/PlayerCoverCarousel'
 import { SkipFeedbackOverlay, type SkipFeedbackHandle } from '@/player/SkipFeedbackOverlay'
 import { SkipButton } from '@/player/SkipButton'
 import {
@@ -199,16 +200,19 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // Skip hotspots: double-tap the margin beside the artwork to jump by the
   // configured skip amount (like Audible's edge taps). On by default.
   const hotspotTap = useRef(0)
-  const onHotspotTap = useCallback((dir: -1 | 1) => {
-    const now = Date.now()
-    if (now - hotspotTap.current < 320) {
-      hotspotTap.current = 0
-      const amount = dir < 0 ? getSettingsState().skipBack : getSettingsState().skipForward
-      skipBy(dir, amount)
-    } else {
-      hotspotTap.current = now
-    }
-  }, [skipBy])
+  const onHotspotTap = useCallback(
+    (dir: -1 | 1) => {
+      const now = Date.now()
+      if (now - hotspotTap.current < 320) {
+        hotspotTap.current = 0
+        const amount = dir < 0 ? getSettingsState().skipBack : getSettingsState().skipForward
+        skipBy(dir, amount)
+      } else {
+        hotspotTap.current = now
+      }
+    },
+    [skipBy],
+  )
 
   // Immersive mode: swipe up on the cover enlarges it and hides the chrome + nav.
   // Kept in a shared store (not local state) so the bottom-tab navigator - which
@@ -253,10 +257,16 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // and it swallows the press only when a sheet was actually open.
   useSheetBackHandler()
 
-  const swipe = Gesture.Pan().onEnd((e) => {
-    if (e.velocityY < -400) runOnJS(enter)()
-    else if (e.velocityY > 400) runOnJS(exit)()
-  })
+  // Vertical-only so it never steals the horizontal swipe when the cover is a
+  // carousel (activeOffsetY makes it wait for clear vertical motion before
+  // claiming the gesture; the FlatList keeps horizontal drags).
+  const swipe = Gesture.Pan()
+    .activeOffsetY([-14, 14])
+    .failOffsetX([-16, 16])
+    .onEnd((e) => {
+      if (e.velocityY < -400) runOnJS(enter)()
+      else if (e.velocityY > 400) runOnJS(exit)()
+    })
 
   // The thin whole-book bar eases toward each new position instead of ticking,
   // so progress reads as flowing time. Computed before the no-track early return
@@ -484,38 +494,13 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         </Animated.View>
       )}
 
-      {/* Cover fills the space between header and the pinned controls. */}
-      <GestureDetector gesture={swipe}>
-        <View style={styles.coverArea}>
-          {settings.skipHotspots && !immersive && hotspotWidth > 24 && (
-            <>
-              <Pressable
-                onPress={() => onHotspotTap(-1)}
-                style={[styles.hotspotLeft, { width: hotspotWidth }]}
-                accessibilityLabel={`Skip back ${settings.skipBack} seconds`}
-              />
-              <Pressable
-                onPress={() => onHotspotTap(1)}
-                style={[styles.hotspotRight, { width: hotspotWidth }]}
-                accessibilityLabel={`Skip forward ${settings.skipForward} seconds`}
-              />
-            </>
-          )}
-          <Pressable onPress={onCoverTap} style={styles.coverTap}>
-            <Cover
-              uri={nowPlaying.artworkUrl}
-              itemId={nowPlaying.itemId}
-              width={coverWidth}
-              aspectRatio={coverAspect}
-              radius={radius.card}
-              fallback={{
-                hue,
-                initial: nowPlaying.title.charAt(0).toUpperCase(),
-                title: nowPlaying.title,
-              }}
-              style={styles.cover}
-            />
-            <SkipFeedbackOverlay ref={skipFeedbackRef} />
+      {/* Cover fills the space between header and the pinned controls. The
+          cover-tap overlays (bookmark/club) are shared between the plain cover
+          and the carousel; skip-hotspots are suppressed in carousel mode since
+          the horizontal swipe owns that gesture. */}
+      {(() => {
+        const coverOverlays = (
+          <>
             {!immersive && (
               <IconButton
                 name={isBookmarked ? icons.bookmarkFilled : icons.bookmark}
@@ -534,9 +519,65 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                 style={styles.clubBtn}
               />
             )}
-          </Pressable>
-        </View>
-      </GestureDetector>
+          </>
+        )
+        const carouselOn = settings.carouselPlayer && !immersive
+        return (
+          <GestureDetector gesture={swipe}>
+            <View style={styles.coverArea}>
+              {carouselOn ? (
+                <PlayerCoverCarousel
+                  liveItemId={nowPlaying.itemId}
+                  liveTitle={nowPlaying.title}
+                  liveAuthor={nowPlaying.author}
+                  liveArtworkUrl={nowPlaying.artworkUrl}
+                  queue={queue.items}
+                  coverWidth={coverWidth}
+                  coverAspect={coverAspect}
+                  pageWidth={width - spacing.xl * 2}
+                  overlay={coverOverlays}
+                  skipFeedback={<SkipFeedbackOverlay ref={skipFeedbackRef} />}
+                  onLivePress={onCoverTap}
+                />
+              ) : (
+                <>
+                  {settings.skipHotspots && !immersive && hotspotWidth > 24 && (
+                    <>
+                      <Pressable
+                        onPress={() => onHotspotTap(-1)}
+                        style={[styles.hotspotLeft, { width: hotspotWidth }]}
+                        accessibilityLabel={`Skip back ${settings.skipBack} seconds`}
+                      />
+                      <Pressable
+                        onPress={() => onHotspotTap(1)}
+                        style={[styles.hotspotRight, { width: hotspotWidth }]}
+                        accessibilityLabel={`Skip forward ${settings.skipForward} seconds`}
+                      />
+                    </>
+                  )}
+                  <Pressable onPress={onCoverTap} style={styles.coverTap}>
+                    <Cover
+                      uri={nowPlaying.artworkUrl}
+                      itemId={nowPlaying.itemId}
+                      width={coverWidth}
+                      aspectRatio={coverAspect}
+                      radius={radius.card}
+                      fallback={{
+                        hue,
+                        initial: nowPlaying.title.charAt(0).toUpperCase(),
+                        title: nowPlaying.title,
+                      }}
+                      style={styles.cover}
+                    />
+                    <SkipFeedbackOverlay ref={skipFeedbackRef} />
+                    {coverOverlays}
+                  </Pressable>
+                </>
+              )}
+            </View>
+          </GestureDetector>
+        )
+      })()}
 
       {/* Controls pinned to the bottom. */}
       <View style={styles.controls}>
@@ -575,7 +616,12 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
           {hasChapters && !immersive ? (
             <>
               <TransportBtn icon={icons.skipPrev} onPress={() => skipChapter(-1)} />
-              <SkipButton dir={-1} seconds={settings.skipBack} color={colors.text} onPress={() => skipBy(-1, settings.skipBack)} />
+              <SkipButton
+                dir={-1}
+                seconds={settings.skipBack}
+                color={colors.text}
+                onPress={() => skipBy(-1, settings.skipBack)}
+              />
             </>
           ) : null}
           <SpringPressable onPress={togglePlay} style={styles.play} scaleTo={0.9}>
@@ -586,7 +632,12 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
           </SpringPressable>
           {hasChapters && !immersive ? (
             <>
-              <SkipButton dir={1} seconds={settings.skipForward} color={colors.text} onPress={() => skipBy(1, settings.skipForward)} />
+              <SkipButton
+                dir={1}
+                seconds={settings.skipForward}
+                color={colors.text}
+                onPress={() => skipBy(1, settings.skipForward)}
+              />
               <TransportBtn icon={icons.skipNext} onPress={() => skipChapter(1)} />
             </>
           ) : null}
@@ -595,8 +646,18 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         {immersive && hasChapters && (
           <Animated.View entering={FadeIn.duration(DUR.base)} style={styles.chapterSkipRow}>
             <TransportBtn icon={icons.skipPrev} onPress={() => skipChapter(-1)} />
-            <SkipButton dir={-1} seconds={settings.skipBack} color={colors.text} onPress={() => skipBy(-1, settings.skipBack)} />
-            <SkipButton dir={1} seconds={settings.skipForward} color={colors.text} onPress={() => skipBy(1, settings.skipForward)} />
+            <SkipButton
+              dir={-1}
+              seconds={settings.skipBack}
+              color={colors.text}
+              onPress={() => skipBy(-1, settings.skipBack)}
+            />
+            <SkipButton
+              dir={1}
+              seconds={settings.skipForward}
+              color={colors.text}
+              onPress={() => skipBy(1, settings.skipForward)}
+            />
             <TransportBtn icon={icons.skipNext} onPress={() => skipChapter(1)} />
           </Animated.View>
         )}
@@ -1194,10 +1255,21 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
     },
     controls: {
       paddingHorizontal: spacing.xl,
-      paddingBottom: spacing.md,
+      paddingBottom: spacing.lg,
     },
-    title: { textAlign: 'center' },
-    author: { textAlign: 'center', marginTop: 2 },
+    title: {
+      textAlign: 'center',
+      textShadowColor: 'rgba(0,0,0,0.85)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 4,
+    },
+    author: {
+      textAlign: 'center',
+      marginTop: 2,
+      textShadowColor: 'rgba(0,0,0,0.85)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 4,
+    },
     scrub: { width: '100%', marginTop: spacing.md },
     transport: {
       flexDirection: 'row',

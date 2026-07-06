@@ -110,6 +110,10 @@ export interface SettingsState {
   playerBg: PlayerBg
   tapArtworkTogglesPlay: boolean
   skipHotspots: boolean
+  // When on, the player's cover becomes a swipeable deck of the live book +
+  // the up-next queue. Swiping browses (audio keeps playing the live book);
+  // tapping play on a card switches to it. Off = the classic single cover.
+  carouselPlayer: boolean
   haptics: HapticLevel
   hapticIntensity: HapticIntensity
   carMode: CarMode
@@ -185,6 +189,7 @@ let state: SettingsState = {
   playerBg: 'blurred',
   tapArtworkTogglesPlay: false,
   skipHotspots: true,
+  carouselPlayer: true,
   haptics: 'minimal',
   hapticIntensity: 'light',
   carMode: 'auto',

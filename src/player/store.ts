@@ -119,11 +119,16 @@ function set(patch: Partial<PlayerState>): void {
 
 // ---- commands (called from phone UI and car callbacks) ----
 
-export function loadTrack(track: NowPlaying): void {
+/**
+ * Load a track into the player. Starts playing by default; pass
+ * `autoPlay = false` to load it paused (used when the Now Playing tab lands you
+ * in the player on your last book without starting audio unbidden).
+ */
+export function loadTrack(track: NowPlaying, autoPlay = true): void {
   const s = getSettingsState()
   set({
     nowPlaying: track,
-    isPlaying: true,
+    isPlaying: autoPlay,
     position: track.startPosition,
     // Seed an explicit seek to the resume point. The native load position isn't
     // honored reliably, so without this playback starts at 0 and the first
@@ -137,7 +142,8 @@ export function loadTrack(track: NowPlaying): void {
       fadeLen: s.sleepFadeLen,
     },
   })
-  maybeAutoArmSleep()
+  // Only arm the sleep timer when actually starting playback.
+  if (autoPlay) maybeAutoArmSleep()
 }
 
 export function setPlaying(isPlaying: boolean): void {

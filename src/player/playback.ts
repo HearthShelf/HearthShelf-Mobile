@@ -72,14 +72,19 @@ const SYNC_LISTENED_THRESHOLD = 15
  *  play-session's display fields, so the car can play an item with only its id.
  *  Downloaded books play from local files (data-saving), and still report
  *  listening: online via a real ABS session, offline via a replayed local one. */
-export async function playItemById(itemId: string): Promise<void> {
+/**
+ * Load a book and start playing it. Pass `autoPlay = false` to load it paused
+ * (the Now Playing tab uses this to drop you into the real player on your last
+ * book without starting audio on tab open).
+ */
+export async function playItemById(itemId: string, autoPlay = true): Promise<void> {
   const local = localSourceFor(itemId)
   const online = !!getSession()
 
   // Downloaded + offline: no server reachable, so play locally and accrue a
   // local session to replay on reconnect.
   if (local && !online) {
-    await playFromDownloadOffline(itemId)
+    await playFromDownloadOffline(itemId, autoPlay)
     return
   }
 
@@ -92,7 +97,7 @@ export async function playItemById(itemId: string): Promise<void> {
     // Server unreachable mid-attempt: fall back to a local-only session if the
     // book is downloaded, otherwise surface the error.
     if (local) {
-      await playFromDownloadOffline(itemId)
+      await playFromDownloadOffline(itemId, autoPlay)
       return
     }
     throw e
@@ -124,7 +129,7 @@ export async function playItemById(itemId: string): Promise<void> {
       end: c.end,
     })),
   }
-  loadTrack(np)
+  loadTrack(np, autoPlay)
 
   active = {
     sessionId: session.id,
@@ -150,7 +155,7 @@ export async function playItemById(itemId: string): Promise<void> {
  * replays to ABS via /api/session/local once we reconnect, so a fully-offline
  * listen still lands in recent listens and stats with the right listened-time.
  */
-async function playFromDownloadOffline(itemId: string): Promise<void> {
+async function playFromDownloadOffline(itemId: string, autoPlay = true): Promise<void> {
   const local = localSourceFor(itemId)
   if (!local) throw new Error('not_downloaded')
   const first = local.tracks[0]
@@ -170,7 +175,7 @@ async function playFromDownloadOffline(itemId: string): Promise<void> {
     startPosition: 0,
     chapters: local.chapters.map((c) => ({ title: c.title, start: c.start, end: c.end })),
   }
-  loadTrack(np)
+  loadTrack(np, autoPlay)
   active = null
   const startedAt = startedNow()
   offline = {

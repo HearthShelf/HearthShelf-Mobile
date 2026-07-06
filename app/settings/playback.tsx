@@ -169,6 +169,16 @@ export default function PlaybackPanel() {
           }
         />
         <SettingsRow
+          title="Swipe between books"
+          desc="Turn the player cover into a swipeable deck of your up-next queue. Swipe to browse, tap play on a book to switch. (Turns off skip hotspots while on.)"
+          control={
+            <SettingsToggle
+              on={s.carouselPlayer}
+              onChange={(v) => setSetting('carouselPlayer', v)}
+            />
+          }
+        />
+        <SettingsRow
           title="Player buttons"
           desc="Choose which action buttons show on the player, tuck into More, or hide."
           onPress={() => router.push('/settings/player-buttons')}
