@@ -29,7 +29,9 @@ const DIGIT = {
   '6': 'M6.2,0 C8.2,0 9.8,0.9 10.6,2.6 L8.2,3.8 C7.8,3 7.1,2.5 6.2,2.5 C4.6,2.5 3.6,4 3.6,6.6 L3.6,7.2 C4.3,6.2 5.4,5.6 6.7,5.6 C9.2,5.6 11,7.7 11,10.6 C11,13.7 8.9,16 6,16 C2.9,16 1,13.5 1,9 C1,3.4 3,0 6.2,0 Z M6,7.9 C4.6,7.9 3.6,9 3.6,10.7 C3.6,12.4 4.6,13.6 6,13.6 C7.4,13.6 8.4,12.4 8.4,10.7 C8.4,9 7.4,7.9 6,7.9 Z',
   '9': 'M5.8,16 C3.8,16 2.2,15.1 1.4,13.4 L3.8,12.2 C4.2,13 4.9,13.5 5.8,13.5 C7.4,13.5 8.4,12 8.4,9.4 L8.4,8.8 C7.7,9.8 6.6,10.4 5.3,10.4 C2.8,10.4 1,8.3 1,5.4 C1,2.3 3.1,0 6,0 C9.1,0 11,2.5 11,7 C11,12.6 9,16 5.8,16 Z M6,2.4 C4.6,2.4 3.6,3.6 3.6,5.3 C3.6,7 4.6,8.1 6,8.1 C7.4,8.1 8.4,7 8.4,5.3 C8.4,3.6 7.4,2.4 6,2.4 Z',
   '2': 'M1.3,4.3 C1.7,1.7 3.6,0 6.1,0 C8.8,0 10.7,1.8 10.7,4.4 C10.7,6.2 9.8,7.7 7.7,9.6 L4.8,12.3 L4.8,13.4 L10.9,13.4 L10.9,16 L1.1,16 L1.1,13.7 L5.9,9.3 C7.6,7.7 8.1,6.6 8.1,4.5 C8.1,3.2 7.3,2.5 6.1,2.5 C4.9,2.5 4.1,3.2 3.9,4.7 Z',
+  '4': 'M7.3,0 L10,0 L10,10.2 L11.6,10.2 L11.6,12.6 L10,12.6 L10,16 L7.4,16 L7.4,12.6 L0.6,12.6 L0.6,10.4 Z M7.4,10.2 L7.4,3.8 L3.3,10.2 Z',
   '7': 'M1.2,0 L10.8,0 L10.8,2.2 L5.9,16 L3,16 L7.8,2.6 L1.2,2.6 Z',
+  '8': 'M6,0 C8.7,0 10.6,1.6 10.6,4 C10.6,5.6 9.7,6.8 8.2,7.4 C10,8 11,9.3 11,11.2 C11,13.8 8.9,16 6,16 C3.1,16 1,13.8 1,11.2 C1,9.3 2,8 3.8,7.4 C2.3,6.8 1.4,5.6 1.4,4 C1.4,1.6 3.3,0 6,0 Z M6,2.3 C4.8,2.3 4,3.1 4,4.3 C4,5.5 4.8,6.3 6,6.3 C7.2,6.3 8,5.5 8,4.3 C8,3.1 7.2,2.3 6,2.3 Z M6,8.5 C4.6,8.5 3.6,9.4 3.6,10.8 C3.6,12.2 4.6,13.2 6,13.2 C7.4,13.2 8.4,12.2 8.4,10.8 C8.4,9.4 7.4,8.5 6,8.5 Z',
   '.': 'M1.4,12.8 L4.4,12.8 L4.4,16 L1.4,16 Z',
   'x': 'M0.6,6 L3.6,6 L5.8,9.1 L8,6 L11,6 L7.4,10.9 L11.2,16 L8.2,16 L5.8,12.7 L3.4,16 L0.4,16 L4.2,10.9 Z',
 }
@@ -107,13 +109,19 @@ function speedIcon(rate) {
 `
 }
 
-const BACK = [5, 10, 15, 30, 60]
-const FWD = [10, 15, 30, 60, 90]
+// Cover every value the skip settings slider can produce (5..300 step 5) so the
+// car's resId-backed buttons always find an exact-numeral icon. Vector XML is
+// tiny, so the full set costs almost nothing in the APK. (The phone notification
+// draws its numeral at runtime instead - see SkipIconRenderer.kt.)
+const SKIP_SECS = []
+for (let n = 5; n <= 300; n += 5) SKIP_SECS.push(n)
 // Base names (no suffix) are the in-app defaults: 15 back, 30 forward.
 fs.writeFileSync(path.join(OUT, 'ic_hs_rewind.xml'), icon(RING_BACK, 15))
 fs.writeFileSync(path.join(OUT, 'ic_hs_forward.xml'), icon(RING_FWD, 30))
-for (const n of BACK) fs.writeFileSync(path.join(OUT, `ic_hs_rewind_${n}.xml`), icon(RING_BACK, n))
-for (const n of FWD) fs.writeFileSync(path.join(OUT, `ic_hs_forward_${n}.xml`), icon(RING_FWD, n))
+for (const n of SKIP_SECS) {
+  fs.writeFileSync(path.join(OUT, `ic_hs_rewind_${n}.xml`), icon(RING_BACK, n))
+  fs.writeFileSync(path.join(OUT, `ic_hs_forward_${n}.xml`), icon(RING_FWD, n))
+}
 
 // Speed presets (must cover HearthShelfAutoService.SPEED_PRESETS). File name
 // encodes the rate with '.' -> '_' ("1.25" -> ic_hs_speed_1_25x).
@@ -122,7 +130,6 @@ for (const r of SPEEDS) {
   fs.writeFileSync(path.join(OUT, `ic_hs_speed_${r.replace('.', '_')}x.xml`), speedIcon(r))
 }
 console.log(
-  'generated back:', [15, ...BACK].join(','),
-  ' fwd:', [30, ...FWD].join(','),
+  'generated skip icons:', SKIP_SECS.length, 'x2 (5..300 step 5)',
   ' speed:', SPEEDS.join(','),
 )

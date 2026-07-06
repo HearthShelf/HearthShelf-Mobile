@@ -71,6 +71,8 @@ class HearthShelfPlayerService : MediaSessionService() {
     get() = skipPrefs.getInt("skipForwardSec", 30).toLong()
   private val CMD_REWIND = "com.hearthshelf.REWIND"
   private val CMD_FORWARD = "com.hearthshelf.FORWARD"
+  // Pixel size for the runtime-rendered 48dp skip icon bitmaps.
+  private val SKIP_ICON_PX = 96
 
   private val progressHandler = android.os.Handler(android.os.Looper.getMainLooper())
   private val progressTick = object : Runnable {
@@ -326,19 +328,40 @@ class HearthShelfPlayerService : MediaSessionService() {
 
   // ---- custom command buttons (circular skip icons) ----
 
-  private fun rewindButton(): CommandButton =
-    CommandButton.Builder(CommandButton.ICON_SKIP_BACK)
-      .setDisplayName("Back ${REWIND_SEC}s")
-      .setCustomIconResId(resources.getIdentifier("ic_hs_rewind", "drawable", packageName))
+  // Runtime-rendered skip icons keyed by direction+seconds, so a numeral matching
+  // ANY chosen amount is drawn (the baked drawables only covered a few presets).
+  // Cached so the notification refresh doesn't redraw the bitmap each tick.
+  private val skipIconCache = HashMap<Int, androidx.core.graphics.drawable.IconCompat>()
+  private fun skipIcon(direction: Int, seconds: Long): androidx.core.graphics.drawable.IconCompat {
+    val key = direction * 1000 + seconds.toInt()
+    return skipIconCache.getOrPut(key) {
+      SkipIconRenderer.icon(direction, seconds.toInt(), SKIP_ICON_PX)
+    }
+  }
+
+  private fun rewindButton(): CommandButton {
+    val sec = REWIND_SEC
+    return CommandButton.Builder(CommandButton.ICON_SKIP_BACK)
+      .setDisplayName("Back ${sec}s")
+      .setCustomIcon(skipIcon(-1, sec))
       .setSessionCommand(SessionCommand(CMD_REWIND, Bundle.EMPTY))
       .build()
+  }
 
-  private fun forwardButton(): CommandButton =
-    CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD)
-      .setDisplayName("Forward ${FORWARD_SEC}s")
-      .setCustomIconResId(resources.getIdentifier("ic_hs_forward", "drawable", packageName))
+  private fun forwardButton(): CommandButton {
+    val sec = FORWARD_SEC
+    return CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD)
+      .setDisplayName("Forward ${sec}s")
+      .setCustomIcon(skipIcon(1, sec))
       .setSessionCommand(SessionCommand(CMD_FORWARD, Bundle.EMPTY))
       .build()
+  }
+
+  /** Rebuild the notification's skip buttons so a changed skipBack/skipForward
+   *  (and its matching numeral icon) takes effect without restarting playback. */
+  fun refreshSkipButtons() = runOnMain {
+    session?.setCustomLayout(ImmutableList.of(rewindButton(), forwardButton()))
+  }
 
   private inner class SessionCallback : MediaSession.Callback {
     override fun onConnect(
