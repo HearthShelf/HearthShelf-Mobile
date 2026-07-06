@@ -88,6 +88,10 @@ export interface SettingsState {
   queueMode: QueueMode
   queueAutoRules: AutoRulePref[]
 
+  // Search (account). When on, Search also looks up titles you don't own via the
+  // Audible catalog and shows them in a "Not in your library" section.
+  searchExternalSources: boolean
+
   // Appearance
   theme: ThemePref
   accentMode: AccentMode
@@ -162,6 +166,8 @@ export interface SettingsState {
 let state: SettingsState = {
   queueMode: 'off',
   queueAutoRules: DEFAULT_AUTO_RULES,
+
+  searchExternalSources: true,
 
   theme: 'dark',
   accentMode: 'manual',

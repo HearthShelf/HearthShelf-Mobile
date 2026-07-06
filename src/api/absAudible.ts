@@ -7,7 +7,11 @@
  * any failure so the series screen quietly omits the "missing books" surface.
  */
 import { getSession } from './session'
-import type { HSAudibleSearchResult, HSAudibleSeriesResponse } from '@hearthshelf/core'
+import type {
+  HSAudibleSearchResponse,
+  HSAudibleSearchResult,
+  HSAudibleSeriesResponse,
+} from '@hearthshelf/core'
 
 // Module-level cache of resolved series rosters, keyed by lowercased name. The
 // backend already caches these ~10min, but the mobile screen re-fetches on every
@@ -51,6 +55,35 @@ export async function fetchAudibleSeries(name: string): Promise<HSAudibleSeriesR
     const value = (await res.json()) as HSAudibleSeriesResponse
     if (value.seriesAsin) cache.set(key, { at: Date.now(), value })
     return value
+  } catch {
+    return empty
+  }
+}
+
+/**
+ * Search the Audible catalog by keyword through the connected server's
+ * HearthShelf backend. Works whether or not the request backend is connected -
+ * discovery is HearthShelf's own. Returns an empty result on any failure
+ * (disconnected, slim deploy without /hs/audible) so the search screen's "Not in
+ * your library" section quietly hides.
+ */
+export async function searchAudible(query: string, page = 1): Promise<HSAudibleSearchResponse> {
+  const empty: HSAudibleSearchResponse = {
+    query,
+    results: [],
+    totalResults: 0,
+    page,
+    hasMore: false,
+  }
+  const s = getSession()
+  if (!s || query.trim().length < 2) return empty
+  try {
+    const res = await fetch(
+      `${s.serverUrl}/hs/audible/search?q=${encodeURIComponent(query)}&page=${page}`,
+      { headers: { Accept: 'application/json', Authorization: `Bearer ${s.token}` } },
+    )
+    if (!res.ok) return empty
+    return (await res.json()) as HSAudibleSearchResponse
   } catch {
     return empty
   }
