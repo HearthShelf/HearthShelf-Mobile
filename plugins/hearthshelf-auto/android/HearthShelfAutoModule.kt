@@ -74,9 +74,6 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
       .putInt("skipBackSec", skipBackSec)
       .putInt("skipForwardSec", skipForwardSec)
       .apply()
-    // Redraw the notification's skip buttons so the new amount + numeral icon
-    // take effect immediately (the service reads the prefs live otherwise).
-    HearthShelfPlayerService.instance?.refreshSkipButtons()
   }
 
   /** Publish the phone's computed Discover feed for the car to browse. The car

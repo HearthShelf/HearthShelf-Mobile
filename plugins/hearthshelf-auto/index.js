@@ -41,8 +41,6 @@ function copyKotlin(config) {
         'HearthShelfAutoService.kt',
         'HearthShelfAutoModule.kt',
         'HearthShelfPlayerService.kt',
-        // Renders skip-button numeral icons at runtime (any skip amount).
-        'SkipIconRenderer.kt',
         // Handles club note-pop voice/text replies (Phase 7).
         'NoteReplyReceiver.kt',
       ]) {
