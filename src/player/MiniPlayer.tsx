@@ -8,9 +8,10 @@ import { Image, Pressable, StyleSheet, View } from 'react-native'
 import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated'
 import { useRouter } from 'expo-router'
 import { formatTimestamp } from '@hearthshelf/core'
-import { AppText, IconButton, ProgressBar, icons } from '@/ui/primitives'
+import { AppText, ProgressBar, icons } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
 import { CoverDownloadOverlay } from '@/ui/CoverDownloadOverlay'
+import { SkipButton } from '@/player/SkipButton'
 import { DUR, SpringPressable } from '@/ui/motion'
 import { spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
@@ -72,8 +73,9 @@ export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
             </AppText>
           </View>
         </Pressable>
-        <IconButton
-          name={icons.rewind}
+        <SkipButton
+          dir={-1}
+          seconds={settings.skipBack}
           size={24}
           color={colors.textMuted}
           onPress={() => jumpBy(-settings.skipBack)}
@@ -83,8 +85,9 @@ export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
             <Icon name={isPlaying ? icons.pause : icons.play} size={30} color={colors.onAccent} />
           </Animated.View>
         </SpringPressable>
-        <IconButton
-          name={icons.forward}
+        <SkipButton
+          dir={1}
+          seconds={settings.skipForward}
           size={24}
           color={colors.textMuted}
           onPress={() => jumpBy(settings.skipForward)}

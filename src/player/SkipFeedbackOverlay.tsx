@@ -114,7 +114,12 @@ export const SkipFeedbackOverlay = forwardRef<SkipFeedbackHandle, unknown>((_pro
     <View pointerEvents="none" style={styles.fill}>
       <Animated.View style={[styles.scrim, scrimStyle]} />
       <Animated.View style={[styles.badge, numStyle]}>
-        <Icon name={dir < 0 ? icons.rewind : icons.forward} size={40} color="#fff" />
+        <Icon
+          name={icons.replay}
+          size={40}
+          color="#fff"
+          style={dir > 0 ? styles.mirror : undefined}
+        />
         <Text allowFontScaling={false} style={styles.number}>
           {formatDelta(total)}
         </Text>
@@ -148,6 +153,9 @@ const styles = StyleSheet.create({
   badge: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  mirror: {
+    transform: [{ scaleX: -1 }],
   },
   number: {
     color: '#fff',

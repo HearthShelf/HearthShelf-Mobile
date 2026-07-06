@@ -56,7 +56,6 @@ import { catalogHomeShelves } from '@/player/offlineCatalog'
 import {
   AppText,
   Cover,
-  IconButton,
   Loading,
   ProgressBar,
   Screen,
@@ -70,6 +69,7 @@ import { BottomSheetFlatList } from '@gorhom/bottom-sheet'
 import { Icon, type IconName } from '@/ui/icons'
 import { DUR } from '@/ui/motion'
 import { Scrubber } from '@/player/Scrubber'
+import { SkipButton } from '@/player/SkipButton'
 import { BookActionsSheet, type BookActionsHandle } from '@/ui/BookActionsSheet'
 import { HomeClubShelf } from '@/social/HomeClubShelf'
 import { ReleaseCountdownBanner } from '@/ui/ReleaseCountdownBanner'
@@ -701,14 +701,16 @@ function PlayerHero({
                 <Icon name={icons.pause} size={28} color={colors.onAccent} />
               </Touchable>
               <View style={{ flex: 1 }} />
-              <IconButton
-                name={icons.rewind}
+              <SkipButton
+                dir={-1}
+                seconds={skipBack}
                 size={30}
                 color={colors.text}
                 onPress={() => jumpBy(-skipBack)}
               />
-              <IconButton
-                name={icons.forward}
+              <SkipButton
+                dir={1}
+                seconds={skipForward}
                 size={30}
                 color={colors.text}
                 onPress={() => jumpBy(skipForward)}

@@ -28,8 +28,7 @@ export const icons = {
   // Transport
   play: 'play-arrow',
   pause: 'pause',
-  rewind: 'replay-10',
-  forward: 'forward-30',
+  replay: 'replay',
   skipPrev: 'skip-previous',
   skipNext: 'skip-next',
   // Player toolbar

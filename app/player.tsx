@@ -83,6 +83,7 @@ import { radius, spacing, withAlpha, type Palette } from '@/ui/theme'
 import { useColors, useTheme, type ActiveTheme } from '@/ui/ThemeProvider'
 import { Scrubber } from '@/player/Scrubber'
 import { SkipFeedbackOverlay, type SkipFeedbackHandle } from '@/player/SkipFeedbackOverlay'
+import { SkipButton } from '@/player/SkipButton'
 import {
   ChaptersSheet,
   SpeedSheet,
@@ -569,7 +570,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
           {hasChapters && !immersive ? (
             <>
               <TransportBtn icon={icons.skipPrev} onPress={() => skipChapter(-1)} />
-              <TransportBtn icon={icons.rewind} onPress={() => skipBy(-1, settings.skipBack)} />
+              <SkipButton dir={-1} seconds={settings.skipBack} color={colors.text} onPress={() => skipBy(-1, settings.skipBack)} />
             </>
           ) : null}
           <SpringPressable onPress={togglePlay} style={styles.play} scaleTo={0.9}>
@@ -580,7 +581,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
           </SpringPressable>
           {hasChapters && !immersive ? (
             <>
-              <TransportBtn icon={icons.forward} onPress={() => skipBy(1, settings.skipForward)} />
+              <SkipButton dir={1} seconds={settings.skipForward} color={colors.text} onPress={() => skipBy(1, settings.skipForward)} />
               <TransportBtn icon={icons.skipNext} onPress={() => skipChapter(1)} />
             </>
           ) : null}
@@ -589,8 +590,8 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         {immersive && hasChapters && (
           <Animated.View entering={FadeIn.duration(DUR.base)} style={styles.chapterSkipRow}>
             <TransportBtn icon={icons.skipPrev} onPress={() => skipChapter(-1)} />
-            <TransportBtn icon={icons.rewind} onPress={() => skipBy(-1, settings.skipBack)} />
-            <TransportBtn icon={icons.forward} onPress={() => skipBy(1, settings.skipForward)} />
+            <SkipButton dir={-1} seconds={settings.skipBack} color={colors.text} onPress={() => skipBy(-1, settings.skipBack)} />
+            <SkipButton dir={1} seconds={settings.skipForward} color={colors.text} onPress={() => skipBy(1, settings.skipForward)} />
             <TransportBtn icon={icons.skipNext} onPress={() => skipChapter(1)} />
           </Animated.View>
         )}
