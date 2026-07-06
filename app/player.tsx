@@ -81,6 +81,7 @@ import { useToast, Toast } from '@/ui/Toast'
 import { radius, spacing, withAlpha, type Palette } from '@/ui/theme'
 import { useColors, useTheme, type ActiveTheme } from '@/ui/ThemeProvider'
 import { Scrubber } from '@/player/Scrubber'
+import { SkipFeedbackOverlay, type SkipFeedbackHandle } from '@/player/SkipFeedbackOverlay'
 import {
   ChaptersSheet,
   SpeedSheet,
@@ -126,6 +127,13 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const addToListRef = useRef<SheetHandle>(null)
   const queueRef = useRef<SheetHandle>(null)
   const notesRef = useRef<PlayerNotesSheetHandle>(null)
+  const skipFeedbackRef = useRef<SkipFeedbackHandle>(null)
+
+  // Fire a relative skip and flash the accumulating overlay over the cover.
+  const skipBy = useCallback((dir: -1 | 1, seconds: number) => {
+    skipFeedbackRef.current?.bump(dir, seconds)
+    jumpBy(dir * seconds)
+  }, [])
 
   const duration = nowPlaying?.duration ?? 0
   const { bookmarks, addBookmark } = useBookmarks(nowPlaying?.itemId ?? null)
@@ -194,12 +202,11 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
     if (now - hotspotTap.current < 320) {
       hotspotTap.current = 0
       const amount = dir < 0 ? getSettingsState().skipBack : getSettingsState().skipForward
-      haptics.select()
-      jumpBy(dir * amount)
+      skipBy(dir, amount)
     } else {
       hotspotTap.current = now
     }
-  }, [])
+  }, [skipBy])
 
   // Immersive mode: swipe up on the cover enlarges it and hides the chrome + nav.
   // Kept in a shared store (not local state) so the bottom-tab navigator - which
@@ -501,6 +508,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
               }}
               style={styles.cover}
             />
+            <SkipFeedbackOverlay ref={skipFeedbackRef} />
             {!immersive && (
               <IconButton
                 name={isBookmarked ? icons.bookmarkFilled : icons.bookmark}
@@ -560,7 +568,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
           {hasChapters && !immersive ? (
             <>
               <TransportBtn icon={icons.skipPrev} onPress={() => skipChapter(-1)} />
-              <TransportBtn icon={icons.rewind} onPress={() => jumpBy(-15)} />
+              <TransportBtn icon={icons.rewind} onPress={() => skipBy(-1, settings.skipBack)} />
             </>
           ) : null}
           <SpringPressable onPress={togglePlay} style={styles.play} scaleTo={0.9}>
@@ -571,7 +579,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
           </SpringPressable>
           {hasChapters && !immersive ? (
             <>
-              <TransportBtn icon={icons.forward} onPress={() => jumpBy(30)} />
+              <TransportBtn icon={icons.forward} onPress={() => skipBy(1, settings.skipForward)} />
               <TransportBtn icon={icons.skipNext} onPress={() => skipChapter(1)} />
             </>
           ) : null}
@@ -580,8 +588,8 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         {immersive && hasChapters && (
           <Animated.View entering={FadeIn.duration(DUR.base)} style={styles.chapterSkipRow}>
             <TransportBtn icon={icons.skipPrev} onPress={() => skipChapter(-1)} />
-            <TransportBtn icon={icons.rewind} onPress={() => jumpBy(-15)} />
-            <TransportBtn icon={icons.forward} onPress={() => jumpBy(30)} />
+            <TransportBtn icon={icons.rewind} onPress={() => skipBy(-1, settings.skipBack)} />
+            <TransportBtn icon={icons.forward} onPress={() => skipBy(1, settings.skipForward)} />
             <TransportBtn icon={icons.skipNext} onPress={() => skipChapter(1)} />
           </Animated.View>
         )}
