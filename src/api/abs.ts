@@ -53,6 +53,22 @@ function requireSession() {
   return s
 }
 
+/** An ABS request that reached the server but got a non-2xx status. Carries the
+ *  HTTP status so callers can branch on it - notably a 404 on a session sync
+ *  means the session is gone from ABS's memory (server restarted / it expired),
+ *  which needs reopening rather than a blind retry. A network failure throws a
+ *  plain Error instead (no `status`), so `err instanceof ABSRequestError` cleanly
+ *  separates "server said no" from "couldn't reach server." */
+export class ABSRequestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly path: string,
+  ) {
+    super(`abs_request_failed ${status} ${path}`)
+    this.name = 'ABSRequestError'
+  }
+}
+
 async function absRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const { serverUrl, token } = requireSession()
   const headers = new Headers(init?.headers)
@@ -61,7 +77,7 @@ async function absRequest<T>(path: string, init?: RequestInit): Promise<T> {
 
   const res = await fetch(`${serverUrl}${path}`, { ...init, headers })
   if (!res.ok) {
-    throw new Error(`abs_request_failed ${res.status} ${path}`)
+    throw new ABSRequestError(res.status, path)
   }
   // Some endpoints (sync/close, progress PATCH) return empty or plain-text
   // bodies on success; a 2xx must never surface as a failure just because the

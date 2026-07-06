@@ -11,7 +11,7 @@
  * is unreachable do we fall back to a local-only session that's replayed to ABS
  * (via /api/session/local) once we reconnect.
  */
-import { startPlay, mediaUrl, coverUrl, closeSession, syncSession } from '@/api/abs'
+import { startPlay, mediaUrl, coverUrl, closeSession, syncSession, ABSRequestError } from '@/api/abs'
 import { getSession } from '@/api/session'
 import { loadTrack, getState, type NowPlaying } from './store'
 import { localSourceFor, applyAutoDownloads } from './downloads'
@@ -271,9 +271,53 @@ async function pushListened(a: ActiveSession, currentTime: number): Promise<bool
     })
     syncStateSynced(startedNow())
     return true
-  } catch {
+  } catch (e) {
+    // A 404 means the session is gone from ABS's in-memory store (server
+    // restarted or it expired) - retrying the same id can never succeed, so
+    // reopen a fresh session and re-push against it instead of looping forever.
+    if (e instanceof ABSRequestError && e.status === 404) {
+      return reopenAndResync(a, currentTime, timeListened)
+    }
     // Connectivity blip: roll the unsynced time back so the next tick retries it,
     // and show red - we couldn't reach the server.
+    a.pendingListened += timeListened
+    syncStateFailed()
+    return false
+  }
+}
+
+/** The active session died server-side (404). Open a new ABS session for the same
+ *  book and sync the delta we were mid-flight with onto it, so no listened-time is
+ *  lost. If reopening fails (server truly unreachable), re-bank the delta and go
+ *  red so a later tick retries. Guards against a stale close: only adopt the new
+ *  session if `a` is still the active one. */
+async function reopenAndResync(
+  a: ActiveSession,
+  currentTime: number,
+  timeListened: number,
+): Promise<boolean> {
+  try {
+    const session = await startPlay(a.itemId)
+    // Playback moved on (book switched / stopped) while we were reopening: don't
+    // clobber the newer session. Bank onto the fresh id via a fire-and-forget
+    // sync so the time still lands.
+    if (a !== active) {
+      await syncSession(session.id, {
+        currentTime: Math.round(currentTime),
+        timeListened,
+        duration: a.duration,
+      })
+      return true
+    }
+    a.sessionId = session.id
+    await syncSession(session.id, {
+      currentTime: Math.round(currentTime),
+      timeListened,
+      duration: a.duration,
+    })
+    syncStateSynced(startedNow())
+    return true
+  } catch {
     a.pendingListened += timeListened
     syncStateFailed()
     return false
