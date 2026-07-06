@@ -293,7 +293,7 @@ class HearthShelfPlayerService : MediaSessionService() {
       pendingLoad = null
     }
     pending?.let { pl ->
-      load(pl.url, pl.startSec, pl.title, pl.author, pl.artworkUri, pl.chaptersJson)
+      load(pl.url, pl.startSec, pl.title, pl.author, pl.artworkUri, pl.chaptersJson, pl.autoPlay)
     }
 
     progressHandler.postDelayed(progressTick, 1000)
@@ -353,7 +353,7 @@ class HearthShelfPlayerService : MediaSessionService() {
     else progressHandler.post(block)
   }
 
-  fun load(url: String, startSec: Double, title: String, author: String, artworkUri: String, chaptersJson: String) = runOnMain {
+  fun load(url: String, startSec: Double, title: String, author: String, artworkUri: String, chaptersJson: String, autoPlay: Boolean) = runOnMain {
     val p = exo ?: return@runOnMain
     chapters = parseChapters(chaptersJson)
     bookTitle = title
@@ -364,7 +364,7 @@ class HearthShelfPlayerService : MediaSessionService() {
     val item = MediaItem.Builder().setUri(url).setMediaMetadata(buildMeta(startIdx)).build()
     p.setMediaItem(item, (startSec * 1000).toLong())
     p.prepare()
-    p.playWhenReady = true
+    p.playWhenReady = autoPlay
   }
 
   /** MediaItem metadata with an "author · chapter" subtitle for the given chapter. */
@@ -523,7 +523,8 @@ class HearthShelfPlayerService : MediaSessionService() {
     val title: String,
     val author: String,
     val artworkUri: String,
-    val chaptersJson: String
+    val chaptersJson: String,
+    val autoPlay: Boolean
   )
 
   companion object {

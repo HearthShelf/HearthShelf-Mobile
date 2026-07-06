@@ -40,6 +40,7 @@ interface HSPlayer {
     author: string,
     artworkUri: string,
     chaptersJson: string,
+    autoPlay: boolean,
   ): void
   play(): void
   pause(): void
@@ -214,6 +215,7 @@ export function PlayerHost() {
           np.author,
           np.artworkUrl ?? '',
           JSON.stringify(np.chapters ?? []),
+          s.isPlaying,
         )
       }
 

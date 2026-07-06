@@ -167,7 +167,8 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     title: String,
     author: String,
     artworkUri: String,
-    chaptersJson: String
+    chaptersJson: String,
+    autoPlay: Boolean
   ) {
     // Under the same lock the service's onCreate/onDestroy use, so we either hand
     // the load to a live service or stash it for onCreate to drain - never both,
@@ -177,11 +178,11 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
       svc = HearthShelfPlayerService.instance
       if (svc == null) {
         HearthShelfPlayerService.pendingLoad =
-          HearthShelfPlayerService.PendingLoad(url, startSec, title, author, artworkUri, chaptersJson)
+          HearthShelfPlayerService.PendingLoad(url, startSec, title, author, artworkUri, chaptersJson, autoPlay)
       }
     }
     val live = svc
-    if (live != null) live.load(url, startSec, title, author, artworkUri, chaptersJson)
+    if (live != null) live.load(url, startSec, title, author, artworkUri, chaptersJson, autoPlay)
     else ensureService()
   }
 
