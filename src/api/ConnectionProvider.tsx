@@ -19,7 +19,12 @@ import { connectServer } from './connect'
 import { setSession, setLastServerId, getLastServerId } from './session'
 import { CLERK_JWT_TEMPLATE } from '@/lib/config'
 import { hasCachedClerkSession } from '@/lib/tokenCache'
-import { clearAutoSession, setAutoSession, setAutoNotePops } from '@/player/autoBridge'
+import {
+  clearAutoSession,
+  setAutoSession,
+  setAutoNotePops,
+  setAutoSkipSeconds,
+} from '@/player/autoBridge'
 import { startQueueSync } from '@/player/queueSync'
 import { refreshSubscriptions } from '@/player/subscriptions'
 import { ensurePushRegistered } from '@/player/pushRegister'
@@ -95,6 +100,8 @@ const Ctx = createContext<ConnectionValue | null>(null)
 let notePopsMirrorArmed = false
 let lastMirroredNotePops: boolean | null = null
 let carModeMirrorArmed = false
+let skipMirrorArmed = false
+let lastMirroredSkip: { back: number; forward: number } | null = null
 let lastAutoSession: { serverUrl: string; token: string } | null = null
 function ensureNotePopsMirror(): void {
   if (notePopsMirrorArmed) return
@@ -107,6 +114,22 @@ function ensureNotePopsMirror(): void {
       setAutoNotePops(next)
     }
   })
+}
+
+// Keep the native skip-second prefs in sync so the phone notification's
+// rewind/forward buttons honor skipBack/skipForward. Independent of car mode -
+// the notification is live during playback whether or not a car is connected.
+function ensureSkipMirror(): void {
+  const push = () => {
+    const { skipBack, skipForward } = getSettingsState()
+    if (lastMirroredSkip?.back === skipBack && lastMirroredSkip?.forward === skipForward) return
+    lastMirroredSkip = { back: skipBack, forward: skipForward }
+    setAutoSkipSeconds(skipBack, skipForward)
+  }
+  push()
+  if (skipMirrorArmed) return
+  skipMirrorArmed = true
+  subscribeSettings(push)
 }
 
 function pushAutoSession(serverUrl: string, token: string): void {
@@ -201,6 +224,9 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         await ensureDeviceId()
         pushAutoSession(serverUrl, token)
         ensureCarModeMirror()
+        // Push skip-second settings to native (phone notification honors these),
+        // independent of car mode, and keep them in sync as the user changes them.
+        ensureSkipMirror()
         // Mirror notePops into the car service (it can't read the settings store)
         // and keep it in sync as the user toggles it.
         setAutoNotePops(getSettingsState().notePops)

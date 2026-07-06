@@ -17,6 +17,7 @@ export interface AutoDiscoverShelf {
 
 interface HearthShelfAutoNative {
   setSession(serverUrl: string, token: string, skipBackSec: number, skipForwardSec: number): void
+  setSkipSeconds(skipBackSec: number, skipForwardSec: number): void
   setDiscover(json: string): void
   setNotePopsEnabled(enabled: boolean): void
   clearSession(): void
@@ -33,6 +34,17 @@ export function setAutoSession(
   if (Platform.OS === 'android' || Platform.OS === 'ios') {
     native?.setSession(serverUrl, token, skipBackSec, skipForwardSec)
   }
+}
+
+/**
+ * Push the user's skip-second settings to native so the phone notification's
+ * rewind/forward buttons honor them (the car session also carries these, but only
+ * while a car session is active - the notification is always live during playback).
+ * Android only: iOS shares one player + MPRemoteCommandCenter, which already picks
+ * up the intervals from setSession.
+ */
+export function setAutoSkipSeconds(skipBackSec: number, skipForwardSec: number): void {
+  if (Platform.OS === 'android') native?.setSkipSeconds(skipBackSec, skipForwardSec)
 }
 
 /** Publish the current Discover shelves so the car's Discover tab can browse them. */

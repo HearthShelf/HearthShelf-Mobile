@@ -63,6 +63,19 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
       .apply()
   }
 
+  /** Mirror the user's skipBack/skipForward settings into prefs so BOTH the phone
+   *  notification service (HearthShelfPlayerService) and the car service honor them.
+   *  setSession also writes these, but only while a car session is active; the phone
+   *  notification is always live during playback, so JS pushes them here on change
+   *  regardless of car mode. */
+  @ReactMethod
+  fun setSkipSeconds(skipBackSec: Int, skipForwardSec: Int) {
+    prefs().edit()
+      .putInt("skipBackSec", skipBackSec)
+      .putInt("skipForwardSec", skipForwardSec)
+      .apply()
+  }
+
   /** Publish the phone's computed Discover feed for the car to browse. The car
    *  service can't run the TS taste engine, so JS hands it a ready snapshot:
    *  { shelves: [{ id, label, items: [{ id, title, author }] }] }. */

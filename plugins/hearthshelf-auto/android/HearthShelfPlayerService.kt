@@ -1,6 +1,7 @@
 package com.hearthshelf.mobile
 
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
@@ -59,8 +60,15 @@ class HearthShelfPlayerService : MediaSessionService() {
   @Volatile private var artUri = ""
   @Volatile private var shownChapterIdx = -1
 
-  private val REWIND_SEC = 15L
-  private val FORWARD_SEC = 30L
+  // Skip amounts mirror the user's skipBack/skipForward settings, which JS pushes
+  // into the shared "hearthshelf_auto" prefs (same store the car service reads).
+  // Read live so a settings change takes effect on the next skip.
+  private val skipPrefs
+    get() = getSharedPreferences("hearthshelf_auto", Context.MODE_PRIVATE)
+  private val REWIND_SEC: Long
+    get() = skipPrefs.getInt("skipBackSec", 15).toLong()
+  private val FORWARD_SEC: Long
+    get() = skipPrefs.getInt("skipForwardSec", 30).toLong()
   private val CMD_REWIND = "com.hearthshelf.REWIND"
   private val CMD_FORWARD = "com.hearthshelf.FORWARD"
 

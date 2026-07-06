@@ -76,7 +76,7 @@ export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
           name={icons.rewind}
           size={24}
           color={colors.textMuted}
-          onPress={() => jumpBy(-15)}
+          onPress={() => jumpBy(-settings.skipBack)}
         />
         <SpringPressable onPress={togglePlay} style={styles.play} scaleTo={0.88}>
           <Animated.View key={isPlaying ? 'pause' : 'play'} entering={FadeIn.duration(DUR.fast)}>
@@ -87,7 +87,7 @@ export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
           name={icons.forward}
           size={24}
           color={colors.textMuted}
-          onPress={() => jumpBy(30)}
+          onPress={() => jumpBy(settings.skipForward)}
         />
       </View>
     </Animated.View>
