@@ -20,6 +20,7 @@ interface HearthShelfAutoNative {
   setSkipSeconds(skipBackSec: number, skipForwardSec: number): void
   setDiscover(json: string): void
   setNotePopsEnabled(enabled: boolean): void
+  setSleepShake(enabled: boolean, minutes: number, timerActive: boolean): void
   clearSession(): void
 }
 
@@ -61,6 +62,22 @@ export function setAutoDiscover(shelves: AutoDiscoverShelf[]): void {
  */
 export function setAutoNotePops(enabled: boolean): void {
   if (Platform.OS === 'android' || Platform.OS === 'ios') native?.setNotePopsEnabled(enabled)
+}
+
+/**
+ * Push the shake-to-extend sleep-timer state to native. Shake detection lives in
+ * the phone media service (not JS) so it fires with the screen off / app
+ * backgrounded - a JS accelerometer listener is suspended by Android then.
+ * `timerActive` is true only while a duration/clock sleep timer is live, so the
+ * service subscribes the accelerometer only when a shake could actually add time.
+ * Android only: iOS shake-to-extend is unchanged (foreground JS listener).
+ */
+export function setAutoSleepShake(
+  enabled: boolean,
+  minutes: number,
+  timerActive: boolean,
+): void {
+  if (Platform.OS === 'android') native?.setSleepShake(enabled, minutes, timerActive)
 }
 
 export function clearAutoSession(): void {

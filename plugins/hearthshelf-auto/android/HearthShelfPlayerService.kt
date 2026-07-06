@@ -3,7 +3,12 @@ package com.hearthshelf.mobile
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -72,6 +77,90 @@ class HearthShelfPlayerService : MediaSessionService() {
   private val CMD_REWIND = "com.hearthshelf.REWIND"
   private val CMD_FORWARD = "com.hearthshelf.FORWARD"
 
+  // ---- shake-to-extend the sleep timer ----
+  //
+  // Runs in the always-alive foreground service (not JS) so a shake registers even
+  // with the screen off and the app backgrounded - the accelerometer keeps
+  // delivering because active audio playback holds the CPU awake. JS pushes the
+  // user's settings (on/off + minutes) and whether a duration/clock sleep timer is
+  // live into the shared prefs; we only subscribe the sensor while all conditions
+  // hold, matching the old JS listener's battery gating. On a detected shake we
+  // emit onShakeExtend and let the JS store add the minutes (store stays the source
+  // of truth), same as every other native -> JS transport here.
+  private val sensorManager by lazy {
+    getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+  }
+  @Volatile private var shakeRegistered = false
+  private var lastShakeAt = 0L
+  // True when we fell back to the raw accelerometer (no fused linear-accel sensor);
+  // that stream includes gravity, so we high-pass it out per-axis before measuring.
+  private var shakeUsesRawAccel = false
+  private val gravity = floatArrayOf(0f, 0f, 0f)
+
+  /** Shake magnitude (m/s^2, gravity removed) that counts as an intentional shake. */
+  private val SHAKE_THRESHOLD = 18f
+  /** Minimum gap between two accepted shakes (ms), so one shake adds time once. */
+  private val SHAKE_COOLDOWN_MS = 3000L
+
+  private val shakeListener = object : SensorEventListener {
+    override fun onSensorChanged(e: SensorEvent) {
+      var x = e.values[0]; var y = e.values[1]; var z = e.values[2]
+      if (shakeUsesRawAccel) {
+        // Low-pass to estimate gravity, then subtract it to isolate movement, so a
+        // still phone reads ~0 like the fused linear-acceleration sensor does.
+        val alpha = 0.8f
+        gravity[0] = alpha * gravity[0] + (1 - alpha) * x
+        gravity[1] = alpha * gravity[1] + (1 - alpha) * y
+        gravity[2] = alpha * gravity[2] + (1 - alpha) * z
+        x -= gravity[0]; y -= gravity[1]; z -= gravity[2]
+      }
+      val mag = kotlin.math.sqrt(x * x + y * y + z * z)
+      if (mag < SHAKE_THRESHOLD) return
+      val now = SystemClock.elapsedRealtime()
+      if (now - lastShakeAt < SHAKE_COOLDOWN_MS) return
+      // Re-check the gate at fire time (playback/timer can flip between ticks).
+      if (!shakeConditionsMet()) return
+      lastShakeAt = now
+      val mins = skipPrefs.getInt("sleepShakeMinutes", 5)
+      HearthShelfAutoModule.emitShakeExtend(mins)
+    }
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+  }
+
+  /** True when a shake should currently add time: setting on, a duration/clock
+   *  sleep timer live (pushed from JS), and audio actually playing. */
+  private fun shakeConditionsMet(): Boolean {
+    if (!skipPrefs.getBoolean("sleepShakeExtend", false)) return false
+    if (!skipPrefs.getBoolean("sleepTimerActive", false)) return false
+    // Not while the car owns playback - the phone player is stood down then.
+    if (HearthShelfAutoModule.carPlayer != null) return false
+    return exo?.isPlaying == true
+  }
+
+  /** (Un)subscribe the accelerometer to match the current gate. Cheap to call on
+   *  every state change; only touches the sensor when the state actually flips. */
+  fun evaluateShake() = runOnMain {
+    val want = shakeConditionsMet()
+    if (want && !shakeRegistered) {
+      // Prefer the fused gravity-removed sensor; fall back to the raw accelerometer
+      // (always present) with a per-axis high-pass filter when it's absent.
+      val sm = sensorManager ?: return@runOnMain
+      var sensor = sm.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
+      shakeUsesRawAccel = sensor == null
+      if (sensor == null) {
+        sensor = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        gravity[0] = 0f; gravity[1] = 0f; gravity[2] = 0f
+      }
+      if (sensor != null) {
+        sm.registerListener(shakeListener, sensor, SensorManager.SENSOR_DELAY_UI)
+        shakeRegistered = true
+      }
+    } else if (!want && shakeRegistered) {
+      sensorManager?.unregisterListener(shakeListener)
+      shakeRegistered = false
+    }
+  }
+
   private val progressHandler = android.os.Handler(android.os.Looper.getMainLooper())
   private val progressTick = object : Runnable {
     override fun run() {
@@ -83,6 +172,9 @@ class HearthShelfPlayerService : MediaSessionService() {
           refreshChapterSubtitle()
         }
       }
+      // Heartbeat re-check so a missed state edge (e.g. car handoff) can't strand
+      // the sensor registered/unregistered against the real gate.
+      evaluateShake()
       progressHandler.postDelayed(this, 1000)
     }
   }
@@ -118,6 +210,8 @@ class HearthShelfPlayerService : MediaSessionService() {
         // phone player is stopped in that mode, and its stop emit would otherwise
         // stomp the car's isPlaying in the store.
         if (HearthShelfAutoModule.carPlayer == null) HearthShelfAutoModule.emitState(isPlaying)
+        // Pausing/resuming flips the shake gate (only listen while playing).
+        evaluateShake()
       }
       override fun onPlaybackStateChanged(state: Int) {
         if (state == Player.STATE_ENDED && HearthShelfAutoModule.carPlayer == null) {
@@ -184,6 +278,10 @@ class HearthShelfPlayerService : MediaSessionService() {
 
   override fun onDestroy() {
     progressHandler.removeCallbacks(progressTick)
+    if (shakeRegistered) {
+      sensorManager?.unregisterListener(shakeListener)
+      shakeRegistered = false
+    }
     session?.run { release() }
     exo?.release()
     session = null

@@ -93,6 +93,21 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     prefs().edit().putBoolean("notePopsEnabled", enabled).apply()
   }
 
+  /** Push the shake-to-extend sleep-timer state into prefs so the phone media
+   *  service can run shake detection natively (works with the screen off / app
+   *  backgrounded, which a JS accelerometer listener cannot). `timerActive` is
+   *  true only while a duration/clock sleep timer is live. The service reads these
+   *  live to gate the accelerometer; re-evaluate so a change takes effect now. */
+  @ReactMethod
+  fun setSleepShake(enabled: Boolean, minutes: Int, timerActive: Boolean) {
+    prefs().edit()
+      .putBoolean("sleepShakeExtend", enabled)
+      .putInt("sleepShakeMinutes", minutes)
+      .putBoolean("sleepTimerActive", timerActive)
+      .apply()
+    HearthShelfPlayerService.instance?.evaluateShake()
+  }
+
   @ReactMethod
   fun clearSession() {
     prefs().edit()
@@ -267,6 +282,12 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     fun emitJump(deltaSec: Double) {
       val map = Arguments.createMap().apply { putDouble("delta", deltaSec) }
       emitter?.invoke("onJump", map)
+    }
+    /** A shake was detected while a sleep timer is winding down. JS adds the
+     *  minutes to the live timer and shows the confirmation toast. */
+    fun emitShakeExtend(minutes: Int) {
+      val map = Arguments.createMap().apply { putInt("minutes", minutes) }
+      emitter?.invoke("onShakeExtend", map)
     }
     // The current book reached its end. JS advances the up-next queue (server
     // owns the queue; JS plays its head) rather than the service picking a next
