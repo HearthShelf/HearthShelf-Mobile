@@ -30,7 +30,8 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated'
-import { coverHue, formatTimestamp } from '@hearthshelf/core'
+import { classifyDevice, coverHue, formatTimestamp } from '@hearthshelf/core'
+import type { ABSDeviceInfo, DeviceKind } from '@hearthshelf/core'
 import {
   getState,
   subscribe,
@@ -884,6 +885,17 @@ interface RecentSession {
   currentTime: number
   timeListening: number
   startedAt: number
+  deviceInfo?: ABSDeviceInfo
+}
+
+// Core's classifyDevice returns Material Symbols glyph names; map its DeviceKind
+// to our MaterialIcons set so the same web-app device classification renders here.
+const DEVICE_ICON: Record<DeviceKind, keyof typeof icons> = {
+  car: 'car',
+  phone: 'smartphone',
+  tablet: 'tablet',
+  browser: 'language',
+  desktop: 'computer',
 }
 
 /** A unified Recent Listens row: the live "Now" session, a local unsynced
@@ -898,6 +910,7 @@ interface RecentRow {
   startTime: number
   currentTime: number
   timeListening: number
+  deviceInfo?: ABSDeviceInfo
 }
 
 const RecentSheet = forwardRef<
@@ -1004,6 +1017,7 @@ const RecentSheet = forwardRef<
         startTime: s.startTime,
         currentTime: s.currentTime,
         timeListening: s.timeListening,
+        deviceInfo: s.deviceInfo,
       })
     }
     return out
@@ -1045,7 +1059,17 @@ const RecentSheet = forwardRef<
                   <View style={recentStyles.durationRow}>
                     <Icon
                       name={
-                        r.offline ? icons.cloudOff : r.synced ? icons.cloudDone : icons.cloudQueue
+                        // Confirmed server rows show which device recorded them
+                        // (car/phone/etc); the accent tint doubles as sync status.
+                        // Live/pending rows stay on the cloud glyph so the row
+                        // reads as an in-flight sync rather than a device.
+                        r.kind === 'server'
+                          ? icons[DEVICE_ICON[classifyDevice(r.deviceInfo).kind]]
+                          : r.offline
+                            ? icons.cloudOff
+                            : r.synced
+                              ? icons.cloudDone
+                              : icons.cloudQueue
                       }
                       size={15}
                       color={accent}

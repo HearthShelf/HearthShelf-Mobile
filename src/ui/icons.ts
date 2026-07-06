@@ -46,6 +46,11 @@ export const icons = {
   newRelease: 'new-releases',
   calendar: 'event',
   car: 'directions-car',
+  // Recent-session device kinds (mirror core's classifyDevice)
+  smartphone: 'smartphone',
+  tablet: 'tablet',
+  language: 'language',
+  computer: 'computer',
   check: 'check',
   checkCircle: 'check-circle',
   doneAll: 'done-all',
