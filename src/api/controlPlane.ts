@@ -107,3 +107,40 @@ export async function mintGrant(getToken: GetToken, serverId: string): Promise<G
     method: 'POST',
   })
 }
+
+/** A crash/breadcrumb report POSTed to the control plane's /logs/mobile. The
+ *  server tags source='mobile', stamps the verified Clerk user id, and relays it
+ *  to the log collector. `detail` carries device/OS/app fields + breadcrumbs. */
+export interface MobileCrashReport {
+  event: string
+  message?: string
+  detail?: Record<string, unknown>
+}
+
+/**
+ * Fire a crash report to the control plane. DELIBERATELY does not go through
+ * request(): crash reporting is fully best-effort and must never throw, retry
+ * the session-expired handler, or surface an error to the user. If the token is
+ * missing or the POST fails, we silently give up - the report is already safe on
+ * disk and will be retried on a later launch.
+ */
+export async function reportMobileCrash(
+  getToken: GetToken,
+  report: MobileCrashReport,
+): Promise<boolean> {
+  try {
+    const token = await getToken()
+    if (!token) return false
+    const res = await fetchWithTimeout(`${CONTROL_PLANE_URL}/logs/mobile`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(report),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}

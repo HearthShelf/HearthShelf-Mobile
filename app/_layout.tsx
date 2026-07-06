@@ -1,15 +1,15 @@
 import { ClerkProvider, useAuth } from '@clerk/expo'
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
-import { useCallback, useEffect, useState } from 'react'
-import { StyleSheet, View } from 'react-native'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { AppState, StyleSheet, View } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { useFonts } from 'expo-font'
 import * as SplashScreen from 'expo-splash-screen'
 import { tokenCache, hasCachedClerkSession, clerkResourceCache } from '@/lib/tokenCache'
-import { CLERK_PUBLISHABLE_KEY } from '@/lib/config'
+import { CLERK_PUBLISHABLE_KEY, CLERK_JWT_TEMPLATE } from '@/lib/config'
 import { PlayerHost } from '@/player/PlayerHost'
 import { MiniPlayerDock } from '@/player/MiniPlayerDock'
 import { PopToast } from '@/social/PopToast'
@@ -31,6 +31,7 @@ import { mountNoteForegroundHandler } from '@/social/noteEvents'
 import { mountPushHandlers } from '@/player/pushHandlers'
 import { fonts } from '@/ui/theme'
 import { ThemeProvider, useColors, useTheme } from '@/ui/ThemeProvider'
+import { flushPriorCrash, mountCrashLifecycle } from '@/lib/crashReporter'
 
 // Hold the OS splash until the hearth splash has painted (see hideOsSplash).
 void SplashScreen.preventAutoHideAsync()
@@ -68,9 +69,12 @@ function hideOsSplash() {
 const CLERK_LOAD_TIMEOUT_MS = 4000
 
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const { isLoaded, isSignedIn } = useAuth()
+  const { isLoaded, isSignedIn, getToken } = useAuth()
   const segments = useSegments()
   const router = useRouter()
+  // Flush a prior-run crash report exactly once, the first time we have a
+  // confirmed signed-in Clerk session (its token authenticates the upload).
+  const crashFlushed = useRef(false)
   // Set when Clerk hasn't loaded in time AND we have a cached session, so a
   // signed-in user launching offline reaches offline mode instead of hanging.
   const [offlineFallback, setOfflineFallback] = useState(false)
@@ -96,6 +100,14 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     if (!effectiveSignedIn && !onSignIn) router.replace('/sign-in')
     else if (effectiveSignedIn && onSignIn) router.replace('/(tabs)')
   }, [ready, effectiveSignedIn, segments, router])
+
+  // Upload a prior crash once genuinely signed in (need a real token; the
+  // offline-fallback path can't authenticate an upload, so gate on isSignedIn).
+  useEffect(() => {
+    if (crashFlushed.current || !isLoaded || !isSignedIn) return
+    crashFlushed.current = true
+    void flushPriorCrash(() => getToken({ template: CLERK_JWT_TEMPLATE }))
+  }, [isLoaded, isSignedIn, getToken])
 
   if (!ready) return <HearthSplash phase={{ kind: 'connecting' }} onReady={hideOsSplash} />
 
@@ -223,6 +235,10 @@ export default function RootLayout() {
   // Release-notification foreground presentation + tap routing (opens the
   // upcoming-book page). Self-guards when the native module is absent.
   useEffect(() => mountPushHandlers(), [])
+
+  // Drive the crash-log clean-shutdown sentinel off app foreground/background.
+  // Auth-independent, so it lives here rather than in the Clerk-scoped AuthGate.
+  useEffect(() => mountCrashLifecycle(), [])
 
   // Keep the native OS splash up until fonts are ready AND the hearth splash has
   // painted its first frame (it calls SplashScreen.hideAsync itself). Hiding on
