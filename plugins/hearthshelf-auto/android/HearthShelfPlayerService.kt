@@ -7,8 +7,12 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -90,6 +94,45 @@ class HearthShelfPlayerService : MediaSessionService() {
   private val sensorManager by lazy {
     getSystemService(Context.SENSOR_SERVICE) as? SensorManager
   }
+  private val vibrator by lazy {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      (getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
+    } else {
+      @Suppress("DEPRECATION")
+      getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+    }
+  }
+
+  /** A strong, unmistakable buzz the instant a shake is accepted. Fired natively
+   *  (not via the JS haptics module) so it lands immediately even with the screen
+   *  off / app backgrounded - the whole point of shake-to-extend. Gated by the
+   *  user's Haptics setting, which JS pushes into prefs alongside the shake gate;
+   *  silent only when Haptics is Off. */
+  private fun buzzConfirm() {
+    if (skipPrefs.getString("hapticLevel", "minimal") == "off") return
+    val v = vibrator ?: return
+    if (!v.hasVibrator()) return
+    try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        // A firm double-pulse at full amplitude: unmistakable half-asleep, in the
+        // dark, phone face-down - stronger and harder to miss than a single tick.
+        // timings/amplitudes: buzz 45ms @ max, gap 60ms, buzz 90ms @ max.
+        val timings = longArrayOf(0, 45, 60, 90)
+        val amps = intArrayOf(0, 255, 0, 255)
+        val effect = if (v.hasAmplitudeControl()) {
+          VibrationEffect.createWaveform(timings, amps, -1)
+        } else {
+          VibrationEffect.createWaveform(longArrayOf(0, 45, 60, 90), -1)
+        }
+        v.vibrate(effect)
+      } else {
+        @Suppress("DEPRECATION")
+        v.vibrate(longArrayOf(0, 45, 60, 90), -1)
+      }
+    } catch (e: Exception) {
+      // Haptics are decoration - never let a vibration failure break the extend.
+    }
+  }
   @Volatile private var shakeRegistered = false
   private var lastShakeAt = 0L
   // True when we fell back to the raw accelerometer (no fused linear-accel sensor);
@@ -121,6 +164,9 @@ class HearthShelfPlayerService : MediaSessionService() {
       // Re-check the gate at fire time (playback/timer can flip between ticks).
       if (!shakeConditionsMet()) return
       lastShakeAt = now
+      // Strong native buzz first, so the confirmation is felt instantly even
+      // backgrounded - before the JS bridge round-trip adds the minutes.
+      buzzConfirm()
       val mins = skipPrefs.getInt("sleepShakeMinutes", 5)
       HearthShelfAutoModule.emitShakeExtend(mins)
     }

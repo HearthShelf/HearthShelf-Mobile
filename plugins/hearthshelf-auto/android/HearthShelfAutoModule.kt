@@ -99,11 +99,12 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
    *  true only while a duration/clock sleep timer is live. The service reads these
    *  live to gate the accelerometer; re-evaluate so a change takes effect now. */
   @ReactMethod
-  fun setSleepShake(enabled: Boolean, minutes: Int, timerActive: Boolean) {
+  fun setSleepShake(enabled: Boolean, minutes: Int, timerActive: Boolean, hapticLevel: String) {
     prefs().edit()
       .putBoolean("sleepShakeExtend", enabled)
       .putInt("sleepShakeMinutes", minutes)
       .putBoolean("sleepTimerActive", timerActive)
+      .putString("hapticLevel", hapticLevel)
       .apply()
     HearthShelfPlayerService.instance?.evaluateShake()
   }

@@ -20,7 +20,12 @@ interface HearthShelfAutoNative {
   setSkipSeconds(skipBackSec: number, skipForwardSec: number): void
   setDiscover(json: string): void
   setNotePopsEnabled(enabled: boolean): void
-  setSleepShake(enabled: boolean, minutes: number, timerActive: boolean): void
+  setSleepShake(
+    enabled: boolean,
+    minutes: number,
+    timerActive: boolean,
+    hapticLevel: string,
+  ): void
   clearSession(): void
 }
 
@@ -76,8 +81,11 @@ export function setAutoSleepShake(
   enabled: boolean,
   minutes: number,
   timerActive: boolean,
+  hapticLevel: string,
 ): void {
-  if (Platform.OS === 'android') native?.setSleepShake(enabled, minutes, timerActive)
+  if (Platform.OS === 'android') {
+    native?.setSleepShake(enabled, minutes, timerActive, hapticLevel)
+  }
 }
 
 export function clearAutoSession(): void {

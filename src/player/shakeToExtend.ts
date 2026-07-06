@@ -80,8 +80,9 @@ function mountNative(onExtendRef: React.MutableRefObject<(mins: number) => void>
     const s = getSettingsState()
     // Push whether a timer is live (not the full shouldListen): native ANDs it
     // with its own live isPlaying/car check, so play/pause flips are handled
-    // natively without a JS round-trip.
-    setAutoSleepShake(s.sleepShakeExtend, s.sleepShakeMinutes, timerLive())
+    // natively without a JS round-trip. The haptic level rides along so the
+    // service can fire the strong confirm buzz itself (instant, works locked).
+    setAutoSleepShake(s.sleepShakeExtend, s.sleepShakeMinutes, timerLive(), s.haptics)
   }
   push()
   const unsubPlayer = subscribe(push)
@@ -94,7 +95,8 @@ function mountNative(onExtendRef: React.MutableRefObject<(mins: number) => void>
       // Guard against a stale event arriving after the timer ended.
       if (!shouldListen()) return
       addSleepMinutes(e.minutes)
-      haptics.mode()
+      // No JS haptic here - the service already fired the strong confirm buzz
+      // natively at shake time (instant, and works while locked/backgrounded).
       onExtendRef.current(e.minutes)
     })
   }
@@ -104,7 +106,7 @@ function mountNative(onExtendRef: React.MutableRefObject<(mins: number) => void>
     unsubSettings()
     sub?.remove()
     // Stop the native sensor when the host unmounts.
-    setAutoSleepShake(false, getSettingsState().sleepShakeMinutes, false)
+    setAutoSleepShake(false, getSettingsState().sleepShakeMinutes, false, getSettingsState().haptics)
   }
 }
 
@@ -130,7 +132,7 @@ function mountDeviceMotion(
     lastShakeAt = now
     const mins = getSettingsState().sleepShakeMinutes
     addSleepMinutes(mins)
-    haptics.mode()
+    haptics.confirm()
     onExtendRef.current(mins)
   }
 

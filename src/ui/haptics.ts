@@ -77,4 +77,13 @@ function warn(): void {
   fire(Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning))
 }
 
-export const haptics = { transport, select, success, mode, longPress, warn }
+/** A strong, unmistakable confirmation for an eyes-closed action taken without
+ *  looking (shake-to-extend the sleep timer). Fires at minimal + all with the
+ *  firmest cue we have - the point is to feel it half-asleep in the dark, so it
+ *  ignores the Light/Medium intensity knob and always hits Heavy. */
+function confirm(): void {
+  if (level() === 'off') return
+  fire(Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy))
+}
+
+export const haptics = { transport, select, success, mode, longPress, warn, confirm }
