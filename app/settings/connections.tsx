@@ -1,10 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { Pressable, TextInput, View } from 'react-native'
 import { useRouter } from 'expo-router'
-import { SettingsPanel, SettingsGroup, SettingsRow } from '@/ui/settingsControls'
+import {
+  SettingsPanel,
+  SettingsGroup,
+  SettingsLabel,
+  SettingsRow,
+  SettingsToggle,
+} from '@/ui/settingsControls'
 import { AppText } from '@/ui/primitives'
 import { spacing } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
+import { getSettingsState, subscribeSettings, setSetting } from '@/store/settings'
 import {
   connectHardcover,
   disconnectHardcover,
@@ -49,7 +56,13 @@ export default function ConnectionsPanel() {
     setMessage(null)
     try {
       await disconnectHardcover()
-      setStatus({ connected: false, username: null, lastSyncAt: null, lastSyncStatus: null, lastSyncError: null })
+      setStatus({
+        connected: false,
+        username: null,
+        lastSyncAt: null,
+        lastSyncStatus: null,
+        lastSyncError: null,
+      })
       setMessage('Hardcover disconnected')
     } catch {
       setMessage('Could not disconnect Hardcover')
@@ -73,9 +86,28 @@ export default function ConnectionsPanel() {
   }
 
   const connected = status?.connected === true
+  const searchExternalSources = useSyncExternalStore(
+    subscribeSettings,
+    () => getSettingsState().searchExternalSources,
+  )
 
   return (
     <SettingsPanel>
+      <SettingsLabel>Search</SettingsLabel>
+      <SettingsGroup>
+        <SettingsRow
+          icon="travel-explore"
+          title="Search outside your library"
+          desc="Also find audiobooks you don't own yet. Search shows them in a 'Not in your library' section so you can request them."
+          control={
+            <SettingsToggle
+              on={searchExternalSources}
+              onChange={(v) => setSetting('searchExternalSources', v)}
+            />
+          }
+          last
+        />
+      </SettingsGroup>
       <SettingsGroup>
         <SettingsRow
           icon="link"
@@ -87,7 +119,9 @@ export default function ConnectionsPanel() {
           }
         />
         {!connected ? (
-          <View style={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.sm }}>
+          <View
+            style={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.sm }}
+          >
             <TextInput
               value={token}
               onChangeText={setToken}
@@ -95,7 +129,13 @@ export default function ConnectionsPanel() {
               placeholderTextColor={colors.textFaint}
               secureTextEntry
               autoCapitalize="none"
-              style={{ color: colors.text, borderColor: colors.border, borderWidth: 1, borderRadius: 10, padding: spacing.sm }}
+              style={{
+                color: colors.text,
+                borderColor: colors.border,
+                borderWidth: 1,
+                borderRadius: 10,
+                padding: spacing.sm,
+              }}
             />
             <Pressable onPress={() => void connect()} disabled={busy || !token.trim()}>
               <AppText variant="label" color={colors.accent}>
@@ -104,7 +144,9 @@ export default function ConnectionsPanel() {
             </Pressable>
           </View>
         ) : (
-          <View style={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.sm }}>
+          <View
+            style={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.sm }}
+          >
             {status?.lastSyncAt ? (
               <AppText variant="caption" color={colors.textMuted}>
                 Last synced {new Date(status.lastSyncAt).toLocaleString()}
@@ -141,7 +183,11 @@ export default function ConnectionsPanel() {
         />
       </SettingsGroup>
       {message ? (
-        <AppText variant="caption" color={colors.textMuted} style={{ paddingHorizontal: spacing.xs }}>
+        <AppText
+          variant="caption"
+          color={colors.textMuted}
+          style={{ paddingHorizontal: spacing.xs }}
+        >
           {message}
         </AppText>
       ) : null}
