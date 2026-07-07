@@ -124,6 +124,50 @@ module.exports = {
       {
         android: {
           minSdkVersion: 26,
+          // R8/ProGuard: shrinks + obfuscates the release build so Play Console
+          // gets a real mapping.txt (crashReporter stack traces stay readable)
+          // instead of "no deobfuscation file" on every upload. Shrink resources
+          // rides along with it (requires minify, see expo-build-properties docs).
+          enableMinifyInReleaseBuilds: true,
+          enableShrinkResourcesInReleaseBuilds: true,
+          // Everything else here (RN/Expo/Clerk native SDK/media3-exoplayer/etc.)
+          // ships its own consumer proguard rules, auto-applied by AGP - these
+          // three are the only gaps found in a full dependency audit:
+          //  - media3-session 1.10.1 ships NO proguard.txt at all (unlike
+          //    media3-exoplayer/common, which do). Defensive keep for the
+          //    documented R8/MediaSessionStub interaction, androidx/media#1407.
+          //  - expo-secure-store ships no consumer rules either; an unconfirmed
+          //    but plausible community report (expo/expo discussion #43567) ties
+          //    R8 to a "cannot be cast to SecureStoreOptions" crash. Auth-critical
+          //    (stores the Clerk JWT), so keep it defensively - cheap insurance.
+          //  - reanimated's own bundled rules (already auto-applied) additionally
+          //    keep com.facebook.react.fabric.**; duplicated here so this app's
+          //    own file is self-documenting for New Architecture/Fabric.
+          extraProguardRules: [
+            '-keep class androidx.media3.session.** { *; }',
+            '-keep class expo.modules.securestore.** { *; }',
+            '-keep class com.facebook.react.fabric.** { *; }',
+            // Confirmed on-device: AndroidManifest.xml carries the headless-JS
+            // app loader as a <meta-data> STRING
+            // ("expo.modules.adapters.react.apploader.RNHeadlessAppLoader"),
+            // resolved via Class.forName() at runtime by expo-modules-core. R8
+            // has no static reference to trace, so it stripped the whole
+            // apploader package and every headless task (expo-background-task /
+            // expo-notifications background handling) threw
+            // ClassNotFoundException on launch. Neither expo-modules-core's nor
+            // expo's own bundled proguard rules cover this package - real gap,
+            // not a defensive guess.
+            '-keep class expo.modules.adapters.react.apploader.** { *; }',
+            '-keep class expo.modules.apploader.** { *; }',
+            // Dependency-version skew: kotlinx-io 0.9.0 (pulled in transitively)
+            // is compiled against Kotlin 2.2's stdlib, which added the
+            // @MustUseReturnValues annotation class. Other transitive deps still
+            // pull older kotlin-stdlib (down to 1.9.0), so R8 sees a reference to
+            // an annotation class that isn't on this build's classpath. It's a
+            // compile-time-only marker (never read at runtime) - safe to silence
+            // rather than keep.
+            '-dontwarn kotlin.MustUseReturnValues',
+          ].join('\n'),
         },
       },
     ],

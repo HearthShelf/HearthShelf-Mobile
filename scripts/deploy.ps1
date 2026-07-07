@@ -241,6 +241,16 @@ if ($Prebuild) {
     Write-Step 'Re-adding JDK 21 pin to android/gradle.properties'
     Add-Content -Path $gp -Value ("`n" + ($pin -join "`n"))
   }
+
+  # Expo's template jvmargs (2 GiB heap / 512 MiB metaspace) OOMs the Gradle
+  # daemon during :app:minifyReleaseWithR8 on -Release builds - bump it. Same
+  # wiped-by-prebuild problem as the JDK pin above, same fix.
+  $content = if (Test-Path $gp) { Get-Content $gp -Raw } else { '' }
+  if ($content -match '(?m)^org\.gradle\.jvmargs=.*$') {
+    Write-Step 'Raising Gradle daemon heap for R8 (org.gradle.jvmargs)'
+    $content = $content -replace '(?m)^org\.gradle\.jvmargs=.*$', 'org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m'
+    Set-Content -Path $gp -Value $content -NoNewline
+  }
 }
 
 # --- 2. clear stale native caches (the libworklets.so ninja fix) ---

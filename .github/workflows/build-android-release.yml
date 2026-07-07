@@ -78,6 +78,11 @@ jobs:
           ORG_GRADLE_PROJECT_HEARTHSHELF_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_HEARTHSHELF_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ORG_GRADLE_PROJECT_HEARTHSHELF_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          # Expo's template jvmargs (2 GiB heap/512 MiB metaspace, in the
+          # gitignored android/gradle.properties) OOMs the Gradle daemon during
+          # :app:minifyReleaseWithR8 now that minification is on. GRADLE_OPTS
+          # overrides it without depending on that file surviving prebuild.
+          GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
         run: |
           # --stacktrace surfaces the real exception (packageRelease wraps the
           # cause in IncrementalSplitterRunnable and hides it otherwise).
