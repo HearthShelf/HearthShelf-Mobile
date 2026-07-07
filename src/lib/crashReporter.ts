@@ -41,9 +41,11 @@ export async function flushPriorCrash(getToken: GetToken): Promise<void> {
   if (!prior) return
   try {
     const uptimeMs = Date.now() - prior.startedAt
+    const last = prior.lastCrumb
+    const repeatSuffix = last?.repeats ? ` (x${last.repeats})` : ''
     await reportMobileCrash(getToken, {
       event: 'mobile_crash',
-      message: prior.lastCrumb ? `${prior.lastCrumb.tag}: ${prior.lastCrumb.msg}` : 'unclean exit',
+      message: last ? `${last.tag}: ${last.msg}${repeatSuffix}` : 'unclean exit',
       detail: {
         ...deviceContext(),
         startedAt: prior.startedAt,

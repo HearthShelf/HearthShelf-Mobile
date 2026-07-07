@@ -13,9 +13,10 @@
  */
 import { startPlay, mediaUrl, coverUrl, closeSession, syncSession, ABSRequestError } from '@/api/abs'
 import { getSession } from '@/api/session'
-import { loadTrack, getState, type NowPlaying } from './store'
+import { loadTrack, getState, type NowPlaying, type ChapterMark } from './store'
 import { localSourceFor, applyAutoDownloads } from './downloads'
 import { recordLocalSession } from './pendingProgress'
+import { breadcrumb } from '@/lib/crashLog'
 import { getQueueState } from './queue'
 import {
   syncStateStartSession,
@@ -67,6 +68,22 @@ let lastTickTime: number | null = null
 const MAX_TICK_GAP = 10
 /** Sync to the server once this much real listened-time has accrued. */
 const SYNC_LISTENED_THRESHOLD = 15
+
+/**
+ * Coerce raw chapter data from the server (or a local download) into well-typed
+ * ChapterMark[]. ABS's response is only type-asserted, not validated, so a
+ * mid-restart/stale response with a null/missing title would otherwise flow
+ * straight into <Text> children and trip "Text strings must be rendered within
+ * a <Text> component". Logs a breadcrumb when a title needed coercing, so a
+ * future occurrence is a clean signal instead of a wall of duplicate RN warnings.
+ */
+function sanitizeChapters(raw: { title?: unknown; start: number; end: number }[]): ChapterMark[] {
+  return raw.map((c, i) => {
+    if (typeof c.title === 'string') return { title: c.title, start: c.start, end: c.end }
+    breadcrumb('chapters', `bad title at index ${i}: ${JSON.stringify(c.title)}`)
+    return { title: '', start: c.start, end: c.end }
+  })
+}
 
 /** Start playback for an ABS library item id. Title/author fall back to the
  *  play-session's display fields, so the car can play an item with only its id.
@@ -123,11 +140,7 @@ export async function playItemById(itemId: string, autoPlay = true): Promise<voi
     duration: session.duration,
     startPosition: startAt,
     // The play-session already carries chapters - no extra detail fetch needed.
-    chapters: (session.chapters ?? []).map((c) => ({
-      title: c.title,
-      start: c.start,
-      end: c.end,
-    })),
+    chapters: sanitizeChapters(session.chapters ?? []),
   }
   loadTrack(np, autoPlay)
 
@@ -173,7 +186,7 @@ async function playFromDownloadOffline(itemId: string, autoPlay = true): Promise
     url: first.uri,
     duration: local.duration,
     startPosition: 0,
-    chapters: local.chapters.map((c) => ({ title: c.title, start: c.start, end: c.end })),
+    chapters: sanitizeChapters(local.chapters),
   }
   loadTrack(np, autoPlay)
   active = null

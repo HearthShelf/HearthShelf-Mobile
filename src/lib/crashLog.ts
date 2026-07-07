@@ -35,6 +35,10 @@ interface Crumb {
   /** 'log' | 'warn' | 'error' | free-form tag */
   tag: string
   msg: string
+  /** Set when this crumb collapsed 2+ consecutive identical (tag, msg) calls -
+   *  the total count, so a warning storm reads as one line instead of drowning
+   *  out everything before it and becoming a misleading `lastCrumb`. */
+  repeats?: number
 }
 
 /** The persisted run state: breadcrumbs plus whether the run is still open. */
@@ -178,14 +182,25 @@ function capCrumbs(crumbs: Crumb[]): Crumb[] {
 /**
  * Record a breadcrumb. Cheap and synchronous; the disk write is coalesced.
  * `tag` groups the crumb (e.g. 'nav', 'player', 'error'); `msg` is free text.
+ *
+ * Collapses immediate repeats: a warning storm (the same console.error firing
+ * 20x in one render pass) would otherwise fill the whole ring buffer with
+ * copies of one line and make it the reported `lastCrumb`, burying whatever
+ * actually led up to a crash. A repeat instead bumps a counter on the existing
+ * last crumb and refreshes its timestamp.
  */
 export function breadcrumb(tag: string, msg: string): void {
   if (!state) return
-  const crumb: Crumb = {
-    t: Date.now(),
-    tag: tag.slice(0, 32),
-    msg: (msg ?? '').slice(0, CRUMB_MAX),
+  const trimmedTag = tag.slice(0, 32)
+  const trimmedMsg = (msg ?? '').slice(0, CRUMB_MAX)
+  const last = state.crumbs[state.crumbs.length - 1]
+  if (last && last.tag === trimmedTag && last.msg === trimmedMsg) {
+    last.t = Date.now()
+    last.repeats = (last.repeats ?? 1) + 1
+    scheduleFlush()
+    return
   }
+  const crumb: Crumb = { t: Date.now(), tag: trimmedTag, msg: trimmedMsg }
   state.crumbs.push(crumb)
   if (state.crumbs.length > MAX_CRUMBS) state.crumbs.shift()
   scheduleFlush()
