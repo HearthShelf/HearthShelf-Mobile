@@ -90,6 +90,18 @@ export default function ConnectionsPanel() {
     subscribeSettings,
     () => getSettingsState().searchExternalSources,
   )
+  const externalLinkGoodreads = useSyncExternalStore(
+    subscribeSettings,
+    () => getSettingsState().externalLinkGoodreads,
+  )
+  const externalLinkAudible = useSyncExternalStore(
+    subscribeSettings,
+    () => getSettingsState().externalLinkAudible,
+  )
+  const externalLinkHardcover = useSyncExternalStore(
+    subscribeSettings,
+    () => getSettingsState().externalLinkHardcover,
+  )
 
   return (
     <SettingsPanel>
@@ -175,10 +187,41 @@ export default function ConnectionsPanel() {
           desc="Paste a Goodreads CSV export and review matches before importing."
           onPress={() => router.push('/settings/import-goodreads')}
         />
+      </SettingsGroup>
+      <SettingsLabel>External book links</SettingsLabel>
+      <SettingsGroup>
         <SettingsRow
-          icon="hub"
-          title="External book links"
-          desc="Goodreads, Audible, and Hardcover search links are managed by your server admin."
+          icon="menu-book"
+          title="Goodreads"
+          desc="Show a Goodreads search link on each book's detail page."
+          control={
+            <SettingsToggle
+              on={externalLinkGoodreads}
+              onChange={(v) => setSetting('externalLinkGoodreads', v)}
+            />
+          }
+        />
+        <SettingsRow
+          icon="headphones"
+          title="Audible"
+          desc="Show an Audible search link on each book's detail page."
+          control={
+            <SettingsToggle
+              on={externalLinkAudible}
+              onChange={(v) => setSetting('externalLinkAudible', v)}
+            />
+          }
+        />
+        <SettingsRow
+          icon="auto-stories"
+          title="Hardcover"
+          desc="Show a Hardcover search link on each book's detail page."
+          control={
+            <SettingsToggle
+              on={externalLinkHardcover}
+              onChange={(v) => setSetting('externalLinkHardcover', v)}
+            />
+          }
           last
         />
       </SettingsGroup>

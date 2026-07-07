@@ -91,6 +91,10 @@ export interface SettingsState {
   // Search (account). When on, Search also looks up titles you don't own via the
   // Audible catalog and shows them in a "Not in your library" section.
   searchExternalSources: boolean
+  // Per-provider toggles for the search-link icons on a book's detail page.
+  externalLinkGoodreads: boolean
+  externalLinkAudible: boolean
+  externalLinkHardcover: boolean
 
   // Appearance
   theme: ThemePref
@@ -172,6 +176,9 @@ let state: SettingsState = {
   queueAutoRules: DEFAULT_AUTO_RULES,
 
   searchExternalSources: true,
+  externalLinkGoodreads: true,
+  externalLinkAudible: true,
+  externalLinkHardcover: true,
 
   theme: 'dark',
   accentMode: 'manual',
