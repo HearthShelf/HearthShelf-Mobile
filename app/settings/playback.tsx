@@ -18,16 +18,10 @@ import {
   ChipRow,
   SettingsSlider,
 } from '@/ui/settingsControls'
-import {
-  getSettingsState,
-  subscribeSettings,
-  setSetting,
-  setQueueMode,
-  toggleAutoRule,
-} from '@/store/settings'
+import { getSettingsState, subscribeSettings, setSetting, setQueueMode } from '@/store/settings'
 import { getLibraries, getLibraryPlaylists } from '@/api/abs'
 import type { ABSPlaylist } from '@hearthshelf/core'
-import { QUEUE_MODES, QUEUE_MODE_SUB, AUTO_RULE_COPY } from '@/player/queue'
+import { QUEUE_MODES, QUEUE_MODE_SUB } from '@/player/queue'
 import { getQueueState, setQueuePlaylistId, subscribeQueue } from '@/player/queue'
 
 const SPEED_OPTIONS = [0.75, 1, 1.5, 2] as const
@@ -162,10 +156,7 @@ export default function PlaybackPanel() {
           title="Skip hotspots"
           desc="Double-tap the sides of the artwork to jump back or forward."
           control={
-            <SettingsToggle
-              on={s.skipHotspots}
-              onChange={(v) => setSetting('skipHotspots', v)}
-            />
+            <SettingsToggle on={s.skipHotspots} onChange={(v) => setSetting('skipHotspots', v)} />
           }
         />
         <SettingsRow
@@ -208,7 +199,7 @@ export default function PlaybackPanel() {
           title="When a book ends"
           desc={QUEUE_MODE_SUB[s.queueMode]}
           stacked
-          last={s.queueMode !== 'auto' && s.queueMode !== 'playlist'}
+          last={s.queueMode === 'off'}
         >
           <Seg
             value={s.queueMode}
@@ -217,31 +208,21 @@ export default function PlaybackPanel() {
             options={QUEUE_MODES.map((m) => ({ value: m.v, label: m.label }))}
           />
         </SettingsRow>
-        {s.queueMode === 'auto' && (
-          <View style={{ paddingTop: spacing.sm }}>
-            <AppText
-              variant="caption"
-              color={colors.textMuted}
-              style={{ marginBottom: spacing.sm, paddingHorizontal: spacing.lg }}
-            >
-              Auto-queue rules
-            </AppText>
-            {s.queueAutoRules.map((r, i) => {
-              const copy = AUTO_RULE_COPY[r.id]
-              return (
-                <SettingsRow
-                  key={r.id}
-                  title={copy.label}
-                  desc={copy.desc}
-                  last={i === s.queueAutoRules.length - 1}
-                  control={<SettingsToggle on={r.on} onChange={() => toggleAutoRule(r.id)} />}
-                />
-              )
-            })}
-          </View>
+        {(s.queueMode === 'manual' || s.queueMode === 'auto') && (
+          <SettingsRow
+            title={s.queueMode === 'auto' ? 'Auto rules & your queue' : 'Manage your queue'}
+            desc={
+              s.queueMode === 'auto'
+                ? 'Order the auto rules and edit the books you queued by hand.'
+                : 'Reorder or remove the books in your queue.'
+            }
+            onPress={() => router.push('/settings/queue')}
+          />
         )}
         {s.queueMode === 'playlist' && (
-          <View style={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.sm }}>
+          <View
+            style={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.sm }}
+          >
             <AppText variant="caption" color={colors.textMuted}>
               Playlist to follow
             </AppText>
