@@ -8,6 +8,7 @@
  * src/store/settings.ts / /hs/settings, same as the WebApp.
  */
 import type { QueueEntry, QueueMode, AutoRuleId } from '@hearthshelf/core'
+import { getSettingsState } from '@/store/settings'
 
 export type { QueueEntry } from '@hearthshelf/core'
 
@@ -42,18 +43,29 @@ export const AUTO_RULE_COPY: Record<AutoRuleId, { label: string; desc: string }>
     label: 'Books your clubs are reading',
     desc: 'Queue the current pick from each of your book clubs.',
   },
+  manual: {
+    label: 'Books you queued by hand',
+    desc: 'Play the books you added to your queue, after your Auto picks.',
+  },
 }
 
 export interface QueueState {
+  // The ACTIVE up-next list the player pops from. Rebuilt server-side in
+  // Auto/Playlist mode; mirrors `manual` in Manual mode.
   items: QueueEntry[]
+  // The DURABLE hand-queued list. add/remove/reorder edit this; it drives Manual
+  // mode and, in Auto mode, feeds the server-side 'manual' rule so a hand-picked
+  // queue survives every Auto rebuild. Synced via /hs/queue alongside items.
+  manual: QueueEntry[]
   playlistId: string | null
-  // Bumped on every items/playlistId mutation; the conflict key /hs/queue uses
-  // to decide whether a write is newer than what's stored. See queueSync.ts.
+  // Bumped on every items/manual/playlistId mutation; the conflict key /hs/queue
+  // uses to decide whether a write is newer than what's stored. See queueSync.ts.
   updatedAt: number
 }
 
 let state: QueueState = {
   items: [],
+  manual: [],
   playlistId: null,
   updatedAt: 0,
 }
@@ -74,41 +86,57 @@ function set(patch: Partial<QueueState>): void {
   listeners.forEach((l) => l())
 }
 
+// True when Manual mode is active - the active `items` list then mirrors the
+// durable `manual` list so an edit shows up in the player immediately.
+function manualMode(): boolean {
+  return getSettingsState().queueMode === 'manual'
+}
+
 export function addToQueue(entry: QueueEntry): void {
-  if (state.items.some((i) => i.libraryItemId === entry.libraryItemId)) return
-  set({ items: [...state.items, entry], updatedAt: Date.now() })
+  if (state.manual.some((i) => i.libraryItemId === entry.libraryItemId)) return
+  const manual = [...state.manual, entry]
+  set({ manual, items: manualMode() ? manual : state.items, updatedAt: Date.now() })
 }
 
 export function removeFromQueue(libraryItemId: string): void {
-  set({
-    items: state.items.filter((i) => i.libraryItemId !== libraryItemId),
-    updatedAt: Date.now(),
-  })
+  const manual = state.manual.filter((i) => i.libraryItemId !== libraryItemId)
+  const items = manualMode() ? manual : state.items.filter((i) => i.libraryItemId !== libraryItemId)
+  set({ manual, items, updatedAt: Date.now() })
 }
 
 export function reorderQueue(from: number, to: number): void {
-  const next = state.items.slice()
-  const [moved] = next.splice(from, 1)
-  next.splice(to, 0, moved)
-  set({ items: next, updatedAt: Date.now() })
+  const manual = state.manual.slice()
+  const [moved] = manual.splice(from, 1)
+  manual.splice(to, 0, moved)
+  set({ manual, items: manualMode() ? manual : state.items, updatedAt: Date.now() })
 }
 
 export function clearQueue(): void {
-  set({ items: [], updatedAt: Date.now() })
+  set({ manual: [], items: manualMode() ? [] : state.items, updatedAt: Date.now() })
 }
 
-// Replace the whole queue (used when Auto rebuilds it, or a server sync pull
-// adopts a remote queue). bump=false skips the updatedAt stamp, for pulls
-// that shouldn't be echoed straight back to the server as a write.
+// Replace the durable manual list (bulk set / whole-list reorder).
+export function setManual(manual: QueueEntry[]): void {
+  set({ manual, items: manualMode() ? manual : state.items, updatedAt: Date.now() })
+}
+
+// Replace the whole active items list (used when Auto rebuilds it, or a server
+// sync pull adopts a remote queue). bump=false skips the updatedAt stamp, for
+// pulls that shouldn't be echoed straight back to the server as a write.
 export function setQueueItems(items: QueueEntry[], bump = true): void {
   set({ items, updatedAt: bump ? Date.now() : state.updatedAt })
+}
+
+// Replace the durable manual list from a server pull. bump=false as above.
+export function setQueueManual(manual: QueueEntry[], bump = true): void {
+  set({ manual, updatedAt: bump ? Date.now() : state.updatedAt })
 }
 
 /** Pop and return the next queued entry, or null when empty. */
 export function nextInQueue(): QueueEntry | null {
   const [head, ...rest] = state.items
   if (!head) return null
-  set({ items: rest, updatedAt: Date.now() })
+  set({ items: rest, manual: manualMode() ? rest : state.manual, updatedAt: Date.now() })
   return head
 }
 

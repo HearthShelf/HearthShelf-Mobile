@@ -31,6 +31,7 @@ export async function getServerQueue(): Promise<ServerQueue> {
 
 export async function putServerQueue(
   items: QueueEntry[],
+  manual: QueueEntry[],
   playlistId: string | null,
   updatedAt: number,
 ): Promise<ServerQueue> {
@@ -38,7 +39,7 @@ export async function putServerQueue(
   const res = await fetch(`${serverUrl}/hs/queue`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ items, playlistId, updatedAt }),
+    body: JSON.stringify({ items, manual, playlistId, updatedAt }),
   })
   if (!res.ok) throw new Error(`queue ${res.status}`)
   return (await res.json()) as ServerQueue

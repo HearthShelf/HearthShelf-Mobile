@@ -125,6 +125,68 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
                 Playback stops when this book ends. Switch to Manual or Auto to keep going.
               </AppText>
             </View>
+          ) : settings.queueMode === 'auto' ? (
+            // Auto: the merged up-next (server-computed) is read-only, but the
+            // user can still edit their durable hand-queued list, which the
+            // 'manual' rule splices into Auto. That editable list is the one
+            // DraggableFlatList here.
+            <GestureHandlerRootView style={{ flex: 1 }}>
+              {queue.items.map((item) => (
+                <QueueRow
+                  key={item.libraryItemId}
+                  item={item}
+                  drag={() => {}}
+                  getIndex={() => undefined}
+                  isActive={false}
+                  editable={false}
+                  dragActive={false}
+                  onJump={() => {
+                    sheetRef.current?.dismiss()
+                    onJump(item.libraryItemId)
+                  }}
+                  onRemove={() => {}}
+                />
+              ))}
+              <AppText
+                variant="meta"
+                color={colors.textMuted}
+                style={{
+                  marginTop: spacing.md,
+                  marginBottom: spacing.xs,
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.4,
+                }}
+              >
+                Books you queued by hand
+              </AppText>
+              {queue.manual.length === 0 ? (
+                <AppText variant="caption" color={colors.textMuted}>
+                  Nothing queued by hand. Books you add play after your Auto picks.
+                </AppText>
+              ) : (
+                <DraggableFlatList
+                  data={queue.manual}
+                  keyExtractor={(item) => item.libraryItemId}
+                  onDragBegin={() => setDragActive(true)}
+                  onDragEnd={({ from, to }) => {
+                    setDragActive(false)
+                    if (from !== to) reorderQueue(from, to)
+                  }}
+                  renderItem={(params: RenderItemParams<QueueEntry>) => (
+                    <QueueRow
+                      {...params}
+                      editable
+                      dragActive={dragActive}
+                      onJump={() => {
+                        sheetRef.current?.dismiss()
+                        onJump(params.item.libraryItemId)
+                      }}
+                      onRemove={() => removeFromQueue(params.item.libraryItemId)}
+                    />
+                  )}
+                />
+              )}
+            </GestureHandlerRootView>
           ) : queue.items.length === 0 ? (
             <AppText
               variant="meta"
@@ -146,7 +208,7 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
                 renderItem={(params: RenderItemParams<QueueEntry>) => (
                   <QueueRow
                     {...params}
-                    // Manual is the only hand-edited mode; Auto/Playlist are
+                    // Manual is the only hand-edited mode; Playlist is
                     // server-owned, so reorder + remove are read-only there.
                     editable={settings.queueMode === 'manual'}
                     dragActive={dragActive}

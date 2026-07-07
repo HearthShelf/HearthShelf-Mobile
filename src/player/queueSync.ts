@@ -13,7 +13,13 @@
  */
 import { AppState, type AppStateStatus } from 'react-native'
 import { validateSetting, SETTINGS_CATALOG } from '@hearthshelf/core'
-import { getQueueState, setQueueItems, setQueuePlaylistId, subscribeQueue } from './queue'
+import {
+  getQueueState,
+  setQueueItems,
+  setQueueManual,
+  setQueuePlaylistId,
+  subscribeQueue,
+} from './queue'
 import { getState as getPlayerState } from './store'
 import { getServerQueue, putServerQueue } from '@/api/queue'
 import { getServerSettings, putServerSettings, type SettingChange } from '@/api/settings'
@@ -63,6 +69,7 @@ async function pullQueue(): Promise<void> {
     // bump=false: adopting the server's state shouldn't immediately look like
     // a new local write and re-push what we just pulled.
     setQueueItems(server.items, false)
+    setQueueManual(server.manual, false)
     setQueuePlaylistId(server.playlistId, false)
     hydratingQueue = false
   } catch {
@@ -94,12 +101,13 @@ function pushQueue(): void {
   if (!hydratedQueue || hydratingQueue) return
   if (queueTimer) clearTimeout(queueTimer)
   queueTimer = setTimeout(() => {
-    const { items, playlistId, updatedAt } = getQueueState()
-    putServerQueue(items, playlistId, updatedAt)
+    const { items, manual, playlistId, updatedAt } = getQueueState()
+    putServerQueue(items, manual, playlistId, updatedAt)
       .then((res) => {
         if (res.applied === false && !hasActiveSession()) {
           hydratingQueue = true
           setQueueItems(res.items, false)
+          setQueueManual(res.manual, false)
           setQueuePlaylistId(res.playlistId, false)
           hydratingQueue = false
         }

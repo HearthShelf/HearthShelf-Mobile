@@ -9,7 +9,7 @@
 import { getSettingsState } from '@/store/settings'
 import { getServerQueue } from '@/api/queue'
 import { getSession } from '@/api/session'
-import { setQueueItems, nextInQueue, getQueueState } from './queue'
+import { setQueueItems, setQueueManual, nextInQueue, getQueueState } from './queue'
 import { playItemById } from './playback'
 
 let advancing = false
@@ -27,6 +27,7 @@ export async function advanceQueueOnEnd(): Promise<void> {
       try {
         const server = await getServerQueue()
         setQueueItems(server.items, false)
+        setQueueManual(server.manual, false)
       } catch {
         // keep local queue
       }
