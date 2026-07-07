@@ -43,10 +43,10 @@ export default function SettingsLayout() {
           <Stack.Screen name="storage" options={{ title: 'Downloads & storage' }} />
           <Stack.Screen name="haptics" options={{ title: 'Haptics' }} />
           <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
-          <Stack.Screen name="social" options={{ title: 'Social' }} />
+          <Stack.Screen name="community" options={{ title: 'Community' }} />
           <Stack.Screen name="reading" options={{ title: 'Reading' }} />
-          <Stack.Screen name="connections" options={{ title: 'Connections' }} />
-          <Stack.Screen name="import-goodreads" options={{ title: 'Import from Goodreads' }} />
+          <Stack.Screen name="integrations" options={{ title: 'Integrations' }} />
+          <Stack.Screen name="search" options={{ title: 'Search' }} />
           <Stack.Screen name="account" options={{ title: 'Account' }} />
           <Stack.Screen name="servers" options={{ title: 'My servers' }} />
           <Stack.Screen name="admin" options={{ title: 'Server Admin' }} />

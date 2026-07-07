@@ -16,12 +16,12 @@ import { useFocusEffect, useRouter, type Href } from 'expo-router'
 import Constants from 'expo-constants'
 import { useConnection } from '@/api/ConnectionProvider'
 import { getClubs } from '@/api/clubs'
-import { getSettingsState, subscribeSettings } from '@/store/settings'
+import { getSettingsState, setSetting, subscribeSettings } from '@/store/settings'
 import { AppText, Screen, SectionHeader } from '@/ui/primitives'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { Icon, type IconName } from '@/ui/icons'
-import { SettingsGroup, SettingsLabel, SettingsRow } from '@/ui/settingsControls'
+import { SettingsGroup, SettingsLabel, SettingsRow, SettingsToggle } from '@/ui/settingsControls'
 import { useContentInset } from '@/ui/useContentInset'
 import { useBackHandler } from '@/ui/useBackHandler'
 
@@ -42,10 +42,16 @@ const GROUPS: { label: string; items: MenuItem[] }[] = [
         desc: 'Theme, accent colour, covers.',
         href: '/settings/appearance',
       },
+      {
+        icon: 'notifications',
+        title: 'Notifications',
+        desc: 'Release alerts and the books you follow.',
+        href: '/settings/notifications',
+      },
     ],
   },
   {
-    label: 'Listening',
+    label: 'Playback',
     items: [
       {
         icon: 'speed',
@@ -58,12 +64,6 @@ const GROUPS: { label: string; items: MenuItem[] }[] = [
         title: 'Sleep timer',
         desc: 'Rewind, chapter, and fade behaviour.',
         href: '/settings/sleep',
-      },
-      {
-        icon: 'notifications',
-        title: 'Notifications',
-        desc: 'Release alerts and the books you follow.',
-        href: '/settings/notifications',
       },
       {
         icon: 'download',
@@ -91,20 +91,31 @@ const GROUPS: { label: string; items: MenuItem[] }[] = [
     ],
   },
   {
-    label: 'HearthShelf',
+    label: 'Sharing & services',
     items: [
       {
-        icon: 'person',
-        title: 'Social',
-        desc: 'Listening-now sharing and club note pops.',
-        href: '/settings/social',
+        icon: 'groups',
+        title: 'Community',
+        desc: 'Sharing, book clubs, and note pops.',
+        href: '/settings/community',
       },
       {
         icon: 'hub',
-        title: 'Connections',
-        desc: 'Hardcover and external links.',
-        href: '/settings/connections',
+        title: 'Integrations',
+        desc: 'Hardcover, Goodreads import, external links.',
+        href: '/settings/integrations',
       },
+      {
+        icon: 'search',
+        title: 'Search',
+        desc: 'How far search reaches beyond your library.',
+        href: '/settings/search',
+      },
+    ],
+  },
+  {
+    label: 'Account',
+    items: [
       {
         icon: 'dns',
         title: 'My servers',
@@ -122,6 +133,7 @@ export default function MoreScreen() {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const contentInset = useContentInset()
+  const s = useSyncExternalStore(subscribeSettings, getSettingsState)
 
   // Non-home tab: hardware back returns to Home rather than exiting the app.
   useBackHandler(
@@ -130,14 +142,13 @@ export default function MoreScreen() {
       return true
     }, [router]),
   )
-  const { clubsEnabled } = useSyncExternalStore(subscribeSettings, getSettingsState)
 
   // Show the "Book Clubs" shortcut only when the reader is actually in a club
   // (and hasn't turned the feature off). Refetched each time More regains focus.
   const [clubCount, setClubCount] = useState(0)
   useFocusEffect(
     useCallback(() => {
-      if (!clubsEnabled) {
+      if (!s.clubsEnabled) {
         setClubCount(0)
         return
       }
@@ -148,7 +159,7 @@ export default function MoreScreen() {
       return () => {
         cancelled = true
       }
-    }, [clubsEnabled]),
+    }, [s.clubsEnabled]),
   )
 
   const displayName = user?.fullName || user?.username || 'You'
@@ -196,7 +207,7 @@ export default function MoreScreen() {
           <Icon name="chevron-right" size={22} color={colors.textMuted} />
         </Pressable>
 
-        {clubsEnabled && clubCount > 0 ? (
+        {s.clubsEnabled && clubCount > 0 ? (
           <SettingsGroup>
             <SettingsRow
               icon="groups"
@@ -241,12 +252,28 @@ export default function MoreScreen() {
           </View>
         ) : null}
 
+        <View key="Sync">
+          <SettingsLabel>Sync</SettingsLabel>
+          <SettingsRow
+            icon="sync"
+            title="Sync settings"
+            desc="Use cloud synced settings. Turn off to keep settings local."
+            last
+            control={
+              <SettingsToggle
+                on={s.useSharedSettings}
+                onChange={(v) => setSetting('useSharedSettings', v)}
+              />
+            }
+          />
+        </View>
+
         <View style={styles.aboutRow}>
           <AppText variant="meta" color={colors.textMuted}>
             HearthShelf Mobile
           </AppText>
           <AppText variant="meta" color={colors.textFaint}>
-            v{Constants.expoConfig?.version ?? '0.0.1'}
+            {Constants.expoConfig?.version ?? 'DEV BUILD'}
           </AppText>
         </View>
       </ScrollView>

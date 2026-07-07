@@ -1,6 +1,17 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+/**
+ * Integrations panel: connect other services and import your reading history.
+ *
+ * Cards, top to bottom: Hardcover (connect / sync / disconnect), Import from
+ * Goodreads (its own card, opens a bottom sheet), Server integrations (info -
+ * RMAB etc. are set up server-side by an admin), and External book links (which
+ * store search links show on a book's detail page).
+ *
+ * This replaces the old "Connections" panel; the search toggle moved to
+ * app/settings/search.tsx and the social toggles to app/settings/community.tsx.
+ */
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Pressable, TextInput, View } from 'react-native'
-import { useRouter } from 'expo-router'
+import type { BottomSheetModal } from '@gorhom/bottom-sheet'
 import {
   SettingsPanel,
   SettingsGroup,
@@ -12,6 +23,7 @@ import { AppText } from '@/ui/primitives'
 import { spacing } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { getSettingsState, subscribeSettings, setSetting } from '@/store/settings'
+import { GoodreadsImportSheet } from '@/settings/GoodreadsImportSheet'
 import {
   connectHardcover,
   disconnectHardcover,
@@ -20,9 +32,9 @@ import {
   type HardcoverAccountStatus,
 } from '@/api/finishedBooks'
 
-export default function ConnectionsPanel() {
-  const router = useRouter()
+export default function IntegrationsPanel() {
   const colors = useColors()
+  const importSheet = useRef<BottomSheetModal>(null)
   const [status, setStatus] = useState<HardcoverAccountStatus | null>(null)
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
@@ -86,10 +98,6 @@ export default function ConnectionsPanel() {
   }
 
   const connected = status?.connected === true
-  const searchExternalSources = useSyncExternalStore(
-    subscribeSettings,
-    () => getSettingsState().searchExternalSources,
-  )
   const externalLinkGoodreads = useSyncExternalStore(
     subscribeSettings,
     () => getSettingsState().externalLinkGoodreads,
@@ -105,21 +113,7 @@ export default function ConnectionsPanel() {
 
   return (
     <SettingsPanel>
-      <SettingsLabel>Search</SettingsLabel>
-      <SettingsGroup>
-        <SettingsRow
-          icon="travel-explore"
-          title="Search outside your library"
-          desc="Also find audiobooks you don't own yet. Search shows them in a 'Not in your library' section so you can request them."
-          control={
-            <SettingsToggle
-              on={searchExternalSources}
-              onChange={(v) => setSetting('searchExternalSources', v)}
-            />
-          }
-          last
-        />
-      </SettingsGroup>
+      <SettingsLabel>Services</SettingsLabel>
       <SettingsGroup>
         <SettingsRow
           icon="link"
@@ -127,8 +121,9 @@ export default function ConnectionsPanel() {
           desc={
             connected
               ? `Connected as ${status?.username ?? 'your Hardcover account'}.`
-              : 'Sync finished books to your Hardcover reading history.'
+              : 'Sync the books you finish here to your Hardcover reading history.'
           }
+          last
         />
         {!connected ? (
           <View
@@ -181,13 +176,27 @@ export default function ConnectionsPanel() {
             </View>
           </View>
         )}
+      </SettingsGroup>
+
+      <SettingsGroup>
         <SettingsRow
           icon="upload-file"
           title="Import from Goodreads"
-          desc="Paste a Goodreads CSV export and review matches before importing."
-          onPress={() => router.push('/settings/import-goodreads')}
+          desc="Upload your Goodreads export CSV to bring in your reading history."
+          onPress={() => importSheet.current?.present()}
+          last
         />
       </SettingsGroup>
+
+      <SettingsGroup>
+        <SettingsRow
+          icon="dns"
+          title="Server integrations"
+          desc="ReadMeABook and similar integrations are set up by your server admin under Server Admin on the server itself."
+          last
+        />
+      </SettingsGroup>
+
       <SettingsLabel>External book links</SettingsLabel>
       <SettingsGroup>
         <SettingsRow
@@ -225,6 +234,7 @@ export default function ConnectionsPanel() {
           last
         />
       </SettingsGroup>
+
       {message ? (
         <AppText
           variant="caption"
@@ -234,6 +244,8 @@ export default function ConnectionsPanel() {
           {message}
         </AppText>
       ) : null}
+
+      <GoodreadsImportSheet ref={importSheet} />
     </SettingsPanel>
   )
 }

@@ -1,11 +1,11 @@
 /**
- * Social panel: what other people can see about you, and how noisy the app's
- * community features are on this device.
+ * Community panel: what other people can see about you, and how noisy the app's
+ * community features are on this device. (Renamed from the old "Social" panel.)
  *
- * - Listening now (account): tri-state. "Follow default" means you never chose,
- *   so the server's community default (which ships OFF for presence) decides.
- *   "Share" / "Hide" are your explicit choice and always win.
- * - Note pops (device): whether crossing a Book Club note shows a toast here.
+ * - Reading list / Listening now (account): Share/Hide only. Until the user
+ *   picks explicitly, the row shows and stores the server's community default
+ *   (which ships ON for reading list, OFF for presence).
+ * - Book Club: master on/off, player shortcut, and note pops (device).
  */
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { getSettingsState, subscribeSettings, setSetting } from '@/store/settings'
@@ -20,29 +20,29 @@ import {
   SettingsToggle,
 } from '@/ui/settingsControls'
 
-/** The tri-state presence choice as a segment value. 'default' = null (unset). */
-type ShareChoice = 'default' | 'share' | 'hide'
+type ShareChoice = 'share' | 'hide'
 
-function choiceFromValue(v: boolean | null): ShareChoice {
-  if (v === true) return 'share'
-  if (v === false) return 'hide'
-  return 'default'
+function choiceFromValue(v: boolean | null, fallback: boolean): ShareChoice {
+  const resolved = v ?? fallback
+  return resolved ? 'share' : 'hide'
 }
-function valueFromChoice(c: ShareChoice): boolean | null {
-  if (c === 'share') return true
-  if (c === 'hide') return false
-  return null
+function valueFromChoice(c: ShareChoice): boolean {
+  return c === 'share'
 }
 
-export default function SocialPanel() {
+export default function CommunityPanel() {
   const s = useSyncExternalStore(subscribeSettings, getSettingsState)
-  const [defaultShareListening, setDefaultShareListening] = useState<boolean | null>(null)
+  const [defaultShare, setDefaultShare] = useState(true)
+  const [defaultShareListening, setDefaultShareListening] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     getCommunityConfig()
       .then((c) => {
-        if (!cancelled) setDefaultShareListening(c.defaultShareListening)
+        if (!cancelled) {
+          setDefaultShare(c.defaultShare)
+          setDefaultShareListening(c.defaultShareListening)
+        }
       })
       .catch(() => {})
     return () => {
@@ -50,34 +50,23 @@ export default function SocialPanel() {
     }
   }, [])
 
-  const choice = choiceFromValue(s.shareCurrentlyListening)
-  const readChoice = choiceFromValue(s.shareReadBooks)
-  // Copy for the "Follow default" state names what that default currently is.
-  const defaultLabel =
-    defaultShareListening == null
-      ? 'Follows the server default.'
-      : defaultShareListening
-        ? 'The server shares this by default.'
-        : 'The server keeps this private by default.'
+  const choice = choiceFromValue(s.shareCurrentlyListening, defaultShareListening)
+  const readChoice = choiceFromValue(s.shareReadBooks, defaultShare)
   const desc =
-    choice === 'default'
-      ? `Let others see when you're listening to a book. ${defaultLabel}`
-      : choice === 'share'
-        ? "Others can see when you're listening to a book, on that book's page."
-        : "Nobody sees when you're listening."
+    choice === 'share'
+      ? "Others can see when you're listening to a book, on that book's page."
+      : "Nobody sees when you're listening."
 
   return (
     <SettingsPanel>
-      <SettingsLabel>People</SettingsLabel>
+      <SettingsLabel>Sharing</SettingsLabel>
       <SettingsGroup>
         <SettingsRow
           title="Reading list"
           desc={
-            readChoice === 'default'
-              ? 'Appear on server reading lists using the server default until you choose.'
-              : readChoice === 'share'
-                ? 'Other listeners can see your finished reading history on shared server surfaces.'
-                : 'Your finished reading history stays hidden from shared server surfaces.'
+            readChoice === 'share'
+              ? 'Other listeners can see your finished reading history on shared server surfaces.'
+              : 'Your finished reading history stays hidden from shared server surfaces.'
           }
           stacked
         >
@@ -86,7 +75,6 @@ export default function SocialPanel() {
             onChange={(c) => setSetting('shareReadBooks', valueFromChoice(c))}
             fill
             options={[
-              { value: 'default', label: 'Default' },
               { value: 'share', label: 'Share' },
               { value: 'hide', label: 'Hide' },
             ]}
@@ -98,7 +86,6 @@ export default function SocialPanel() {
             onChange={(c) => setSetting('shareCurrentlyListening', valueFromChoice(c))}
             fill
             options={[
-              { value: 'default', label: 'Default' },
               { value: 'share', label: 'Share' },
               { value: 'hide', label: 'Hide' },
             ]}
