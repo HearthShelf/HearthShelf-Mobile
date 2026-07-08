@@ -13,6 +13,7 @@
  */
 import { startPlay, mediaUrl, coverUrl, closeSession, syncSession, ABSRequestError } from '@/api/abs'
 import { getSession } from '@/api/session'
+import { progressFor } from '@/store/progress'
 import { loadTrack, getState, type NowPlaying, type ChapterMark } from './store'
 import { localSourceFor, applyAutoDownloads } from './downloads'
 import { recordLocalSession } from './pendingProgress'
@@ -128,7 +129,17 @@ export async function playItemById(itemId: string, autoPlay = true): Promise<voi
   offline = null
   lastTickTime = null
 
-  const startAt = session.currentTime > 0 ? session.currentTime : 0
+  // Resume position: trust the play-session's currentTime, but fall back to the
+  // saved media-progress spot when the session reports 0. ABS sometimes opens a
+  // fresh session at 0 (e.g. right after a cold app reload) even though the
+  // user's media progress is well into the book - without this fallback the
+  // first progress tick would sync 0 back over the real server position and
+  // wipe it. The saved progress is the same value ABS shows on tiles.
+  let startAt = session.currentTime > 0 ? session.currentTime : 0
+  if (startAt === 0) {
+    const saved = progressFor(itemId)
+    if (saved && !saved.isFinished && saved.currentTime > 0) startAt = saved.currentTime
+  }
   const np: NowPlaying = {
     itemId,
     sessionId: session.id,

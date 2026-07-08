@@ -436,13 +436,9 @@ export default function HomeScreen() {
             greeting={<Greeting firstName={firstName} />}
             onResume={async () => {
               try {
-                // Read the saved position BEFORE starting - starting playback
-                // ticks from 0 and would sync 0 back over the real progress.
-                const saved = progressById.get(hero.id)
+                // playItemById resolves the resume position itself (play session,
+                // else the saved media-progress spot), so no manual seek here.
                 await playItemById(hero.id)
-                if (!saved?.isFinished && (saved?.currentTime ?? 0) > 0) {
-                  requestSeek(saved!.currentTime)
-                }
                 router.push('/player')
               } catch {
                 router.push(`/item/${hero.id}`)

@@ -10,8 +10,8 @@ import { StyleSheet, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import { getItemsInProgress } from '@/api/abs'
 import { playItemById } from '@/player/playback'
-import { getState, subscribe, requestSeek } from '@/player/store'
-import { getProgressState } from '@/store/progress'
+import { getState, subscribe } from '@/player/store'
+import { getProgressState, refreshProgress } from '@/store/progress'
 import { AppText, Screen } from '@/ui/primitives'
 import { spacing } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
@@ -54,6 +54,11 @@ function IdleResolver() {
     let cancelled = false
     void (async () => {
       try {
+        // Make sure the shared progress store is populated before we resume. On
+        // a cold app reload this tab can run before Home loads progress, leaving
+        // the store empty - then playItemById would have no saved spot to fall
+        // back to and could resume (and sync) from 0, wiping real progress.
+        if (getProgressState().byId.size === 0) await refreshProgress().catch(() => {})
         const items = await getItemsInProgress()
         const last = items[0]
         if (!last) {
@@ -62,9 +67,9 @@ function IdleResolver() {
         }
         // Load paused at the saved spot; setting nowPlaying re-renders this tab
         // into <PlayerSurface embedded /> (so this component unmounts).
-        const saved = getProgressState().byId.get(last.id)
+        // playItemById resolves the resume position itself (play session, else
+        // the saved media-progress spot now guaranteed to be loaded).
         await playItemById(last.id, false)
-        if (!saved?.isFinished && (saved?.currentTime ?? 0) > 0) requestSeek(saved!.currentTime)
       } catch {
         if (!cancelled) setPhase('empty')
       }

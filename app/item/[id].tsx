@@ -276,8 +276,9 @@ export default function ItemDetailScreen() {
 
   const play = async () => {
     haptics.transport()
+    // playItemById resolves the resume position itself (play session, else the
+    // saved media-progress spot), so no manual seek here.
     await playItemById(detail.id)
-    if (!isFinished && currentTime > 0) requestSeek(currentTime)
     router.push('/player')
   }
 
