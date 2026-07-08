@@ -81,6 +81,7 @@ import { DUR, SpringPressable } from '@/ui/motion'
 import { useToast, Toast } from '@/ui/Toast'
 import { radius, spacing, withAlpha, type Palette } from '@/ui/theme'
 import { useColors, useTheme, type ActiveTheme } from '@/ui/ThemeProvider'
+import { adaptiveContentMaxWidth, adaptivePlayerCoverMaxWidth } from '@/ui/responsive'
 import { Scrubber } from '@/player/Scrubber'
 import { PlayerCoverCarousel } from '@/player/PlayerCoverCarousel'
 import { SkipFeedbackOverlay, type SkipFeedbackHandle } from '@/player/SkipFeedbackOverlay'
@@ -357,9 +358,11 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // Honor the cover-shape setting; height = width / aspect, so cap width so the
   // (possibly portrait) cover still fits the available height.
   const coverAspect = COVER_ASPECT_RATIO[settings.coverAspect]
-  const coverMaxW = Math.min(width - spacing.xl * 2, immersive ? width - 48 : 360)
+  const coverMaxW = Math.min(width - spacing.xl * 2, adaptivePlayerCoverMaxWidth(width, immersive))
   const coverMaxH = height * (immersive ? 0.62 : 0.46)
   const coverWidth = Math.min(coverMaxW, coverMaxH * coverAspect)
+  const contentMaxWidth = adaptiveContentMaxWidth(width)
+  const progressRailWidth = Math.max(0, Math.min(width, contentMaxWidth) - spacing.xl * 2)
   // Width of each skip hotspot: the margin from the screen edge to the artwork.
   const hotspotWidth = Math.max(0, (width - coverWidth) / 2)
 
@@ -476,11 +479,16 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
 
           {/* Thin whole-book progress bar sitting above the numeric strip; the
               fill eases toward each position tick (bookBarStyle). */}
-          <View style={styles.bookBarTrack}>
+          <View style={[styles.bookBarTrack, { width: progressRailWidth }]}>
             <Animated.View style={[styles.bookBarFill, bookBarStyle]} />
           </View>
 
-          <View style={styles.wholeBookStrip}>
+          <View
+            style={[
+              styles.wholeBookStrip,
+              { maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' },
+            ]}
+          >
             <AppText variant="mono" color={colors.textMuted}>
               {formatTimestamp(position)}
             </AppText>
@@ -580,7 +588,9 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
       })()}
 
       {/* Controls pinned to the bottom. */}
-      <View style={styles.controls}>
+      <View
+        style={[styles.controls, { maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }]}
+      >
         <AppText variant="hero" numberOfLines={1} style={styles.title}>
           {nowPlaying.title}
         </AppText>
@@ -1204,7 +1214,7 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
     },
     bookBarTrack: {
       height: 2,
-      marginHorizontal: spacing.xl,
+      alignSelf: 'center',
       borderRadius: 1,
       backgroundColor: colors.fillStrong,
       overflow: 'hidden',
