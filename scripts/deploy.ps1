@@ -41,6 +41,12 @@
   reanimated "fatal error: file '...sysroot/.../algorithm' has been modified since
   the precompiled header ... was built" (stale PCH after an NDK mtime change).
 
+  You normally don't need to pass this up front: the build step recognizes both
+  error signatures itself, clears the caches, and retries the build once
+  automatically. -Clean remains useful to force a clear before the first attempt
+  (skips the wasted first failing build) or for cache issues outside those two
+  known signatures.
+
 .PARAMETER Release
   Build :app:assembleRelease instead of debug. Requires a signing keystore configured
   in android/gradle.properties. For untethered testing use -StandaloneDebug instead.
@@ -254,7 +260,7 @@ if ($Prebuild) {
 }
 
 # --- 2. clear stale native caches (the libworklets.so ninja fix) ---
-if ($Clean) {
+function Clear-NativeCaches {
   Write-Step 'Clearing native build caches (.cxx / android build dirs)'
   $paths = @(
     'node_modules\react-native-worklets\android\build'
@@ -271,12 +277,39 @@ if ($Clean) {
   }
 }
 
-# --- 3. build ---
+if ($Clean) { Clear-NativeCaches }
+
+# Signatures of the known stale-CMake/PCH failures (see deploy.ps1 -Clean docs
+# above): a missing libworklets.so ninja rule, or a reanimated precompiled
+# header invalidated by an NDK sysroot mtime change. Both are fixed by wiping
+# the same native caches, so auto-recover once instead of making the user
+# diagnose and re-run with -Clean by hand.
+$StaleCacheSignatures = @(
+  'missing and no known rule to make it'
+  'has been modified since the precompiled header'
+)
+
+# --- 3. build (auto-retry once after clearing caches on a known stale-cache error) ---
 Write-Step "Building $Variant APK ($Abi only)"
 Push-Location (Join-Path $RepoRoot 'android')
 try {
-  & .\gradlew.bat $GradleTask "-PreactNativeArchitectures=$Abi"
-  if ($LASTEXITCODE -ne 0) { throw "Gradle build failed (exit $LASTEXITCODE)." }
+  $attempt = 1
+  $maxAttempts = if ($Clean) { 1 } else { 2 }
+  while ($true) {
+    $buildOutput = & .\gradlew.bat $GradleTask "-PreactNativeArchitectures=$Abi" 2>&1
+    $buildOutput | ForEach-Object { Write-Host $_ }
+    if ($LASTEXITCODE -eq 0) { break }
+
+    $isStaleCache = $StaleCacheSignatures | Where-Object { $buildOutput -match $_ }
+    if ($isStaleCache -and $attempt -lt $maxAttempts) {
+      Write-Warning 'Detected a stale native build cache (reanimated PCH / libworklets.so). Clearing caches and retrying once.'
+      Clear-NativeCaches
+      $attempt++
+      continue
+    }
+
+    throw "Gradle build failed (exit $LASTEXITCODE)."
+  }
 } finally { Pop-Location }
 
 if (-not (Test-Path $Apk)) { throw "APK not found at $Apk after build." }

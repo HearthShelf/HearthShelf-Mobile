@@ -112,7 +112,17 @@ export function subscribe(fn: () => void): () => void {
   return () => listeners.delete(fn)
 }
 
+// TEMP DEBUG: log every set() call (keys touched + a short stack) to find a
+// re-entrant/tight loop. Remove once the culprit is found.
+let __setCalls = 0
 function set(patch: Partial<PlayerState>): void {
+  __setCalls++
+  if (__setCalls <= 40) {
+    console.warn(
+      `[store-debug] set #${__setCalls} keys=${Object.keys(patch).join(',')}`,
+      new Error().stack?.split('\n').slice(1, 4).join(' | '),
+    )
+  }
   state = { ...state, ...patch }
   listeners.forEach((l) => l())
 }

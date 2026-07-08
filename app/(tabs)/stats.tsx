@@ -242,7 +242,7 @@ type LeaderboardStatus =
 function Leaderboard() {
   const { colors, shadow } = useTheme()
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
-  const [window, setWindow] = useState<LeaderboardWindow>('all')
+  const [window, setWindow] = useState<LeaderboardWindow>('month')
   const [status, setStatus] = useState<LeaderboardStatus>({ phase: 'loading' })
 
   useEffect(() => {

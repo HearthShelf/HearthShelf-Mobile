@@ -10,7 +10,6 @@ import {
   SettingsLabel,
   SettingsRow,
   Seg,
-  SettingsToggle,
   SettingsSlider,
   AccentSwatchPicker,
 } from '@/ui/settingsControls'
@@ -97,18 +96,6 @@ export default function AppearancePanel() {
                 { value: 'gradient', label: 'Gradient' },
                 { value: 'image', label: 'Image' },
               ]}
-            />
-          }
-        />
-        <SettingsRow
-          icon="sync"
-          title="Use shared settings"
-          desc="Use the synced setting store on this device. Turn off to keep this device on local cached settings."
-          last
-          control={
-            <SettingsToggle
-              on={s.useSharedSettings}
-              onChange={(v) => setSetting('useSharedSettings', v)}
             />
           }
         />
