@@ -26,6 +26,7 @@ import { AppTabBar } from '@/ui/AppTabBar'
 import { radius, spacing } from '@/ui/theme'
 import { useContentInset } from '@/ui/useContentInset'
 import { useColors } from '@/ui/ThemeProvider'
+import { adaptiveGridColumns, adaptiveGridTileWidth } from '@/ui/responsive'
 
 type GroupType = 'series' | 'authors' | 'narrators'
 
@@ -121,14 +122,16 @@ export default function GroupDrilldown() {
 
 function GroupGrid({ books }: { books: ABSLibraryItem[] }) {
   const { width } = useWindowDimensions()
-  const cardWidth = (width - spacing.lg * 2 - spacing.md) / 2
+  const cols = adaptiveGridColumns({ width, minTile: 128, maxCols: 5, gutter: spacing.md })
+  const cardWidth = adaptiveGridTileWidth({ width, cols, gutter: spacing.md })
   const contentInset = useContentInset()
 
   return (
     <FlatList
       data={books}
       keyExtractor={(b) => b.id}
-      numColumns={2}
+      key={`group-${cols}`}
+      numColumns={cols}
       columnWrapperStyle={{ gap: spacing.md }}
       contentContainerStyle={{ padding: spacing.lg, paddingBottom: contentInset, gap: spacing.lg }}
       renderItem={({ item }) => <GroupBookCard item={item} width={cardWidth} />}
