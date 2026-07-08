@@ -54,18 +54,27 @@ function timerLive(): boolean {
   return timer?.kind === 'duration' || timer?.kind === 'clock'
 }
 
+/** Ref bundle handed to both platform mounts: `onExtend` fires per accepted
+ *  shake, `onPaused` fires once when the consecutive-shake cutoff kicks in
+ *  (see MAX_CONSECUTIVE_SHAKE_EXTENDS in player/store.ts). */
+interface ShakeCallbacks {
+  onExtend: (mins: number) => void
+  onPaused: () => void
+}
+
 /**
  * Mount the shake-to-extend listener. Call once from a persistent host
  * component (PlayerHost). `onExtend` fires with the minutes added so the host
- * can show a confirmation toast in component context.
+ * can show a confirmation toast in component context; `onPaused` fires once if
+ * shakes stop being honored (too many in a row - likely walking, not waking up).
  */
-export function useShakeToExtend(onExtend: (mins: number) => void): void {
-  const onExtendRef = useRef(onExtend)
-  onExtendRef.current = onExtend
+export function useShakeToExtend(onExtend: (mins: number) => void, onPaused: () => void): void {
+  const callbacksRef = useRef<ShakeCallbacks>({ onExtend, onPaused })
+  callbacksRef.current = { onExtend, onPaused }
 
   useEffect(() => {
-    if (Platform.OS === 'android') return mountNative(onExtendRef)
-    return mountDeviceMotion(onExtendRef)
+    if (Platform.OS === 'android') return mountNative(callbacksRef)
+    return mountDeviceMotion(callbacksRef)
   }, [])
 }
 
@@ -74,7 +83,7 @@ export function useShakeToExtend(onExtend: (mins: number) => void): void {
  * native side adds nothing to the store itself - it emits onShakeExtend and JS
  * applies the minutes here, so the store stays the single source of truth.
  */
-function mountNative(onExtendRef: React.MutableRefObject<(mins: number) => void>): () => void {
+function mountNative(callbacksRef: React.MutableRefObject<ShakeCallbacks>): () => void {
   const Native = NativeModules.HearthShelfAuto
   const push = () => {
     const s = getSettingsState()
@@ -94,10 +103,14 @@ function mountNative(onExtendRef: React.MutableRefObject<(mins: number) => void>
     sub = emitter.addListener('onShakeExtend', (e: { minutes: number }) => {
       // Guard against a stale event arriving after the timer ended.
       if (!shouldListen()) return
-      addSleepMinutes(e.minutes)
+      const result = addSleepMinutes(e.minutes, true)
+      if (result === 'shake-paused') {
+        callbacksRef.current.onPaused()
+        return
+      }
       // No JS haptic here - the service already fired the strong confirm buzz
       // natively at shake time (instant, and works while locked/backgrounded).
-      onExtendRef.current(e.minutes)
+      callbacksRef.current.onExtend(e.minutes)
     })
   }
 
@@ -112,9 +125,7 @@ function mountNative(onExtendRef: React.MutableRefObject<(mins: number) => void>
 
 /** iOS / other: foreground DeviceMotion listener (Activity-bound; works while the
  *  app is in front, which is the only place it can on these platforms anyway). */
-function mountDeviceMotion(
-  onExtendRef: React.MutableRefObject<(mins: number) => void>,
-): () => void {
+function mountDeviceMotion(callbacksRef: React.MutableRefObject<ShakeCallbacks>): () => void {
   let sub: { remove: () => void } | null = null
   let lastShakeAt = 0
   let available = true
@@ -131,9 +142,13 @@ function mountDeviceMotion(
     if (!shouldListen()) return
     lastShakeAt = now
     const mins = getSettingsState().sleepShakeMinutes
-    addSleepMinutes(mins)
+    const result = addSleepMinutes(mins, true)
+    if (result === 'shake-paused') {
+      callbacksRef.current.onPaused()
+      return
+    }
     haptics.confirm()
-    onExtendRef.current(mins)
+    callbacksRef.current.onExtend(mins)
   }
 
   const start = () => {

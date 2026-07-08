@@ -142,7 +142,7 @@ export default function SleepPanel() {
         <SettingsGroup style={{ marginTop: spacing.lg }}>
           <SettingsRow
             title="Shake to extend"
-            desc="Shake your phone while the timer runs to add more time."
+            desc="Shake your phone while the timer runs to add more time. Pauses itself after several shakes in a row (e.g. carrying your phone on a walk) and never extends past 3 hours."
             control={
               <SettingsToggle
                 on={s.sleepShakeExtend}

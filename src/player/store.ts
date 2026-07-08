@@ -276,10 +276,12 @@ function maybeAutoArmSleep(): void {
 
 export function setSleepTimer(timer: SleepTimer): void {
   if (timer) haptics.mode()
+  consecutiveShakeExtends = 0
   set({ sleepTimer: timer })
 }
 
 export function cancelSleepTimer(): void {
+  consecutiveShakeExtends = 0
   if (state.sleepTimer) set({ sleepTimer: null, volume: 1 })
 }
 
@@ -287,20 +289,49 @@ export function setSleepBehavior(patch: Partial<SleepBehavior>): void {
   set({ sleepBehavior: { ...state.sleepBehavior, ...patch } })
 }
 
-/** Add minutes to a live duration/clock countdown ("+5 min" while sleeping).
- *  Grows totalSec too so the depletion ratio stays <= 1. */
-export function addSleepMinutes(mins: number): void {
+/** Ceiling on a duration/clock timer's total length (hours), regardless of how
+ *  it got there (manual extends or shake-to-extend). Prevents a runaway timer -
+ *  e.g. a phone shaking in a pocket on a long walk - from silencing playback for
+ *  an absurd stretch (a real report: a night walk produced a 67-hour timer). */
+const MAX_SLEEP_TOTAL_SEC = 3 * 60 * 60
+
+/** How many shake-to-extend hits in a row (no manual timer change in between)
+ *  are honored before shake-to-extend stops responding for this timer session.
+ *  A person shaking themselves awake does it once or twice; a phone jostling in
+ *  a pocket for an hour does it dozens of times - this tells the two apart. */
+const MAX_CONSECUTIVE_SHAKE_EXTENDS = 6
+
+let consecutiveShakeExtends = 0
+
+export type AddSleepMinutesResult = 'ok' | 'capped' | 'shake-paused'
+
+/** Add minutes to a live duration/clock countdown ("+5 min" while sleeping, or a
+ *  shake-to-extend hit). Grows totalSec too so the depletion ratio stays <= 1,
+ *  up to MAX_SLEEP_TOTAL_SEC. When `viaShake` is set, also enforces the
+ *  consecutive-shake cutoff and resets it on any non-shake call (manual +time
+ *  taps go through here too, via the player UI). */
+export function addSleepMinutes(mins: number, viaShake = false): AddSleepMinutesResult {
   const timer = state.sleepTimer
-  if (!timer || timer.kind === 'endOfChapter') return
+  if (!timer || timer.kind === 'endOfChapter') return 'ok'
+
+  if (viaShake) {
+    if (consecutiveShakeExtends >= MAX_CONSECUTIVE_SHAKE_EXTENDS) return 'shake-paused'
+    consecutiveShakeExtends += 1
+  } else {
+    consecutiveShakeExtends = 0
+  }
+
   const add = mins * 60
-  const remainingSec = timer.remainingSec + add
+  const uncappedRemaining = timer.remainingSec + add
+  const remainingSec = Math.min(uncappedRemaining, MAX_SLEEP_TOTAL_SEC)
   const totalSec = Math.max(timer.totalSec, remainingSec)
   set({
     sleepTimer:
       timer.kind === 'clock'
-        ? { ...timer, remainingSec, totalSec, atMs: timer.atMs + add * 1000 }
+        ? { ...timer, remainingSec, totalSec, atMs: timer.atMs + (remainingSec - timer.remainingSec) * 1000 }
         : { ...timer, remainingSec, totalSec },
   })
+  return uncappedRemaining > MAX_SLEEP_TOTAL_SEC ? 'capped' : 'ok'
 }
 
 /**
