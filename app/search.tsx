@@ -27,8 +27,8 @@ import { DUR } from '@/ui/motion'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useContentInset } from '@/ui/useContentInset'
 import { useColors } from '@/ui/ThemeProvider'
+import { adaptiveGridColumns, adaptiveGridTileWidth } from '@/ui/responsive'
 
-const COLS = 3
 const GUTTER = spacing.lg
 
 export default function SearchScreen() {
@@ -54,7 +54,8 @@ export default function SearchScreen() {
   const sheetRef = useRef<BottomSheetModal>(null)
   const [selected, setSelected] = useState<HSAudibleSearchResult | null>(null)
 
-  const tileWidth = (width - GUTTER * 2 - GUTTER * (COLS - 1)) / COLS
+  const cols = adaptiveGridColumns({ width, minTile: 112, maxCols: 6, gutter: GUTTER })
+  const tileWidth = adaptiveGridTileWidth({ width, cols, gutter: GUTTER })
   const goToTab = (name: string) => {
     router.dismissAll?.()
     router.replace(name === 'index' ? '/(tabs)' : `/(tabs)/${name}`)
@@ -153,8 +154,9 @@ export default function SearchScreen() {
           <FlatList
             data={results}
             keyExtractor={(it) => it.id}
-            numColumns={COLS}
-            columnWrapperStyle={COLS > 1 ? { gap: GUTTER } : undefined}
+            key={`search-${cols}`}
+            numColumns={cols}
+            columnWrapperStyle={cols > 1 ? { gap: GUTTER } : undefined}
             contentContainerStyle={{
               padding: GUTTER,
               paddingBottom: contentInset,

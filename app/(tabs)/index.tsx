@@ -9,6 +9,7 @@ import {
   ScrollView,
   StyleSheet,
   View,
+  useWindowDimensions,
 } from 'react-native'
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -79,6 +80,12 @@ import { haptics } from '@/ui/haptics'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useContentInset } from '@/ui/useContentInset'
 import { useColors, useTheme } from '@/ui/ThemeProvider'
+import {
+  adaptiveContentMaxWidth,
+  adaptiveGridColumns,
+  adaptiveGridTileWidth,
+  adaptiveShelfTileWidth,
+} from '@/ui/responsive'
 
 export default function HomeScreen() {
   const styles = useStyles()
@@ -520,6 +527,8 @@ function ContinueHero({
 }) {
   const colors = useColors()
   const styles = useStyles()
+  const { width } = useWindowDimensions()
+  const contentMaxWidth = adaptiveContentMaxWidth(width)
   const pct = Math.round(Math.max(0, Math.min(1, progress)) * 100)
   const started = progress > 0
   const heroArt = coverUrl(item.id)
@@ -544,7 +553,7 @@ function ContinueHero({
       {/* DS "spotlight 2c": greeting, a gap so the art breathes, then a text-only
           meta block over the art (no duplicate cover thumbnail), progress, and a
           compact Resume pill - matching HearthShelf Android - Material.dc.html. */}
-      <View style={styles.heroContent}>
+      <View style={[styles.heroContent, { maxWidth: contentMaxWidth, width: '100%' }]}>
         <View style={styles.heroGreeting}>{greeting}</View>
         <View style={styles.heroGap} />
         <Pressable style={styles.heroMeta} onLongPress={onLongPress} delayLongPress={350}>
@@ -608,6 +617,8 @@ function PlayerHero({
 }) {
   const colors = useColors()
   const styles = useStyles()
+  const { width } = useWindowDimensions()
+  const contentMaxWidth = adaptiveContentMaxWidth(width)
   const { scrubber, skipForward, skipBack } = useSyncExternalStore(
     subscribeSettings,
     getSettingsState,
@@ -652,7 +663,7 @@ function PlayerHero({
         />
       </ImageBackground>
 
-      <View style={styles.heroContent}>
+      <View style={[styles.heroContent, { maxWidth: contentMaxWidth, width: '100%' }]}>
         <Pressable style={styles.heroGreeting} onPress={onOpen}>
           {greeting}
         </Pressable>
@@ -798,10 +809,23 @@ function Shelf({
   const colors = useColors()
   const styles = useStyles()
   const router = useRouter()
+  const { width } = useWindowDimensions()
   const { coverAspect } = useSyncExternalStore(subscribeSettings, getSettingsState)
   const sheetRef = useRef<SheetRef>(null)
   if (shelf.type !== 'book') return null
   const openAll = () => sheetRef.current?.present()
+  const tileWidth = adaptiveShelfTileWidth(width)
+  const sheetCols = adaptiveGridColumns({
+    width,
+    minTile: 104,
+    maxCols: 5,
+    gutter: spacing.md,
+  })
+  const sheetTileWidth = adaptiveGridTileWidth({
+    width,
+    cols: sheetCols,
+    gutter: spacing.md,
+  })
   return (
     <View style={{ marginTop: spacing.lg }}>
       <SectionHeader
@@ -828,14 +852,14 @@ function Shelf({
           // their own appearance.
           <Animated.View entering={FadeInDown.delay(Math.min(index, 6) * 40).duration(DUR.slow)}>
             <Touchable
-              style={styles.tile}
+              style={{ width: tileWidth }}
               onPress={() => router.push(`/item/${item.id}`)}
               onLongPress={() => onLongPressItem(item)}
             >
               <Cover
                 uri={coverUrl(item.id)}
                 itemId={item.id}
-                width={120}
+                width={tileWidth}
                 aspectRatio={COVER_ASPECT_RATIO[coverAspect]}
                 showDownloadBadge
               />
@@ -843,7 +867,7 @@ function Shelf({
                   both lines up front so the index-0 tile's FadeInDown (delay 0)
                   can't snapshot the frame before the author line has laid out and
                   clip it - the bug that dropped the first author in every row. */}
-              <View style={styles.tileMeta}>
+              <View style={[styles.tileMeta, { width: tileWidth }]}>
                 <AppText variant="meta" numberOfLines={1}>
                   {itemTitle(item)}
                 </AppText>
@@ -862,12 +886,13 @@ function Shelf({
         <BottomSheetFlatList
           data={shelf.entities}
           keyExtractor={(it) => it.id}
-          numColumns={3}
+          key={`home-sheet-${sheetCols}`}
+          numColumns={sheetCols}
           columnWrapperStyle={{ gap: spacing.md }}
           contentContainerStyle={{ gap: spacing.lg, paddingBottom: spacing.xl }}
           renderItem={({ item }) => (
             <Touchable
-              style={styles.sheetTile}
+              style={{ width: sheetTileWidth }}
               onPress={() => {
                 sheetRef.current?.dismiss()
                 router.push(`/item/${item.id}`)
@@ -876,7 +901,7 @@ function Shelf({
               <Cover
                 uri={coverUrl(item.id)}
                 itemId={item.id}
-                width={100}
+                width={sheetTileWidth}
                 aspectRatio={COVER_ASPECT_RATIO[coverAspect]}
                 fallback={{
                   hue: coverHue(item.id),
@@ -920,6 +945,7 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
     },
     heroBgImg: { resizeMode: 'cover' },
     heroContent: {
+      alignSelf: 'center',
       paddingHorizontal: spacing.xl,
       paddingTop: spacing.sm,
       // Gap below the Resume pill so the art's fade-out is visible before the
@@ -967,11 +993,9 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
       ...shadow.accentGlow,
     },
     seeAll: { flexDirection: 'row', alignItems: 'center', gap: 1 },
-    tile: { width: 120 },
     // Reserve space for both text lines so the entrance animation can't clip the
     // author off the first tile (see the renderItem comment).
-    tileMeta: { width: 120, minHeight: 38, marginTop: spacing.xs },
-    sheetTile: { flex: 1, maxWidth: '31%' },
+    tileMeta: { minHeight: 38, marginTop: spacing.xs },
     statsStrip: {
       flexDirection: 'row',
       gap: spacing.sm,

@@ -89,8 +89,8 @@ import { AzRail, AZ_RAIL_WIDTH } from '@/ui/AzRail'
 import { ScrollTopButton } from '@/ui/ScrollTopButton'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
+import { adaptiveGridColumns, adaptiveGridTileWidth, adaptiveLibraryColumns } from '@/ui/responsive'
 
-const COLS = 3
 const GUTTER = spacing.lg
 // Reveal the scroll-to-top button once the list is roughly 1.5 screens deep.
 const SCROLL_TOP_THRESHOLD = 900
@@ -226,7 +226,8 @@ export default function LibraryScreen() {
   // back logic above. Registered after it so it fires first.
   useSheetBackHandler()
 
-  const tileWidth = (width - GUTTER * 2 - GUTTER * (COLS - 1)) / COLS
+  const searchCols = adaptiveGridColumns({ width, minTile: 112, maxCols: 6, gutter: GUTTER })
+  const searchTileWidth = adaptiveGridTileWidth({ width, cols: searchCols, gutter: GUTTER })
 
   if (libError) {
     return (
@@ -295,7 +296,8 @@ export default function LibraryScreen() {
           searching={searching}
           searched={searched}
           results={results}
-          tileWidth={tileWidth}
+          cols={searchCols}
+          tileWidth={searchTileWidth}
         />
       ) : !libraryId ? (
         <Loading />
@@ -341,12 +343,14 @@ function SearchResults({
   searching,
   searched,
   results,
+  cols,
   tileWidth,
 }: {
   query: string
   searching: boolean
   searched: boolean
   results: ABSLibraryItem[]
+  cols: number
   tileWidth: number
 }) {
   const colors = useColors()
@@ -366,7 +370,8 @@ function SearchResults({
       <FlatList
         data={results}
         keyExtractor={(it) => it.id}
-        numColumns={COLS}
+        key={`library-search-${cols}`}
+        numColumns={cols}
         columnWrapperStyle={{ gap: GUTTER }}
         contentContainerStyle={{ padding: GUTTER, paddingBottom: contentInset, gap: spacing.xs }}
         keyboardShouldPersistTaps="handled"
@@ -485,9 +490,12 @@ function BooksView({
   const [desc, setDesc] = useState(false)
   const [display, setDisplay] = useState<DisplayMode>('grid')
   const [size, setSize] = useState<CoverSize>('comfortable')
-  // Grid column count, adjustable by pinch (2 = big covers, 5 = small). Seeded
-  // from the comfortable/compact setting; pinch overrides it live.
-  const [gridCols, setGridCols] = useState(COLS)
+  const defaultGridCols = useMemo(() => adaptiveLibraryColumns(width, size), [width, size])
+  const maxGridCols = size === 'compact' ? 7 : 6
+  // Grid column count, adjustable by pinch. Foldables get wider defaults; pinch
+  // overrides them live until the user changes the cover-size setting.
+  const [gridCols, setGridCols] = useState(defaultGridCols)
+  const manualGridCols = useRef(false)
   const sheetRef = useRef<SheetRef>(null)
   const [sheetTab, setSheetTab] = useState<'display' | 'sort' | 'filter'>('sort')
   // When drilling into a filter group's values (e.g. Genre -> pick one).
@@ -573,6 +581,14 @@ function BooksView({
     [filtered, sort, desc, progressOf],
   )
 
+  useEffect(() => {
+    if (manualGridCols.current) {
+      setGridCols((prev) => Math.max(2, Math.min(maxGridCols, prev)))
+    } else {
+      setGridCols(defaultGridCols)
+    }
+  }, [defaultGridCols, maxGridCols])
+
   const cols = gridCols
   // Pinch the grid to resize covers: spread apart = fewer/bigger columns, pinch
   // together = more/smaller. Clamped 2..5. The column count at gesture start maps
@@ -586,9 +602,10 @@ function BooksView({
     pinchBase.current = colsRef.current
   }, [])
   const applyPinch = useCallback((scale: number) => {
-    const next = Math.max(2, Math.min(5, Math.round(pinchBase.current / scale)))
+    manualGridCols.current = true
+    const next = Math.max(2, Math.min(maxGridCols, Math.round(pinchBase.current / scale)))
     setGridCols((prev) => (prev === next ? prev : next))
-  }, [])
+  }, [maxGridCols])
   const pinchGesture = useMemo(
     () =>
       Gesture.Pinch()
@@ -608,8 +625,12 @@ function BooksView({
   // Tiles fill the row exactly; when the rail reserves space on the right, shrink
   // them so the last column isn't pushed under the rail.
   const railReserve = showAzRail ? AZ_RAIL_WIDTH : 0
-  const rowWidth = width - GUTTER * 2 - railReserve
-  const tileWidth = (rowWidth - GUTTER * (cols - 1)) / cols
+  const tileWidth = adaptiveGridTileWidth({
+    width,
+    cols,
+    gutter: GUTTER,
+    reserved: railReserve,
+  })
 
   const letterIndex = useMemo(() => {
     const map = new Map<string, number>()
@@ -806,8 +827,9 @@ function BooksView({
               options={['comfortable', 'compact'] as CoverSize[]}
               value={size}
               onChange={(s) => {
+                manualGridCols.current = false
                 setSize(s)
-                setGridCols(s === 'compact' ? 4 : COLS)
+                setGridCols(adaptiveLibraryColumns(width, s))
               }}
             />
           </View>

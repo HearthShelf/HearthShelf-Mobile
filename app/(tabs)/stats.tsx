@@ -6,7 +6,7 @@
  * stats strip always agree.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ScrollView, StyleSheet, View } from 'react-native'
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native'
 import Animated, { FadeIn } from 'react-native-reanimated'
 import {
   formatDuration,
@@ -36,6 +36,7 @@ import { Icon, icons } from '@/ui/icons'
 import { DUR } from '@/ui/motion'
 import { useContentInset } from '@/ui/useContentInset'
 import { useBackHandler } from '@/ui/useBackHandler'
+import { adaptiveContentMaxWidth } from '@/ui/responsive'
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
@@ -50,6 +51,8 @@ export default function StatsTab() {
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   const [status, setStatus] = useState<Status>({ phase: 'loading' })
   const contentInset = useContentInset()
+  const { width } = useWindowDimensions()
+  const contentMaxWidth = adaptiveContentMaxWidth(width)
 
   // Non-home tab: hardware back returns to Home rather than exiting the app.
   useBackHandler(
@@ -104,8 +107,11 @@ export default function StatsTab() {
       <Animated.ScrollView
         entering={FadeIn.duration(DUR.base)}
         contentContainerStyle={{
+          alignSelf: 'center',
+          maxWidth: contentMaxWidth,
           padding: spacing.lg,
           paddingBottom: contentInset,
+          width: '100%',
           gap: spacing.lg,
         }}
         showsVerticalScrollIndicator={false}
