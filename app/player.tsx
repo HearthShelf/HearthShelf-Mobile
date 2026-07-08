@@ -1123,14 +1123,17 @@ const RecentSheet = forwardRef<
             const accent = r.synced ? colors.success : colors.accent
             const live = r.kind === 'live'
             const started = new Date(r.startedAt)
+            const jump = (sec: number) => {
+              onSeek(sec)
+              sheetRef.current?.dismiss()
+            }
             return (
               <Touchable
                 key={r.key}
                 style={[recentStyles.row, live && recentStyles.liveRow]}
-                onPress={() => {
-                  onSeek(r.startTime)
-                  sheetRef.current?.dismiss()
-                }}
+                // Tapping the row picks up where this session ENDED (the natural
+                // "keep going" spot). The two timecodes below jump to either end.
+                onPress={() => jump(r.currentTime)}
               >
                 <View style={{ flex: 1, gap: 3 }}>
                   <View style={recentStyles.durationRow}>
@@ -1162,10 +1165,21 @@ const RecentSheet = forwardRef<
                           : started.toLocaleDateString()}
                     </AppText>
                   </View>
-                  <AppText variant="mono" color={colors.textMuted}>
-                    {formatTimestamp(shownPos(r.startTime))} →{' '}
-                    {formatTimestamp(shownPos(r.currentTime))}
-                  </AppText>
+                  <View style={recentStyles.timecodeRow}>
+                    <Touchable hitSlop={8} onPress={() => jump(r.startTime)}>
+                      <AppText variant="mono" color={colors.textMuted}>
+                        {formatTimestamp(shownPos(r.startTime))}
+                      </AppText>
+                    </Touchable>
+                    <AppText variant="mono" color={colors.textMuted}>
+                      {' → '}
+                    </AppText>
+                    <Touchable hitSlop={8} onPress={() => jump(r.currentTime)}>
+                      <AppText variant="mono" color={accent}>
+                        {formatTimestamp(shownPos(r.currentTime))}
+                      </AppText>
+                    </Touchable>
+                  </View>
                   {(startCh || endCh) && (
                     <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
                       {startCh && endCh && startCh !== endCh
@@ -1202,6 +1216,7 @@ const makeRecentStyles = (colors: Palette) =>
       marginBottom: spacing.xs,
     },
     durationRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+    timecodeRow: { flexDirection: 'row', alignItems: 'center' },
   })
 
 const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
