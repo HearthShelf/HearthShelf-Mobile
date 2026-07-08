@@ -44,10 +44,16 @@ export interface ActiveClub {
   name: string
 }
 
+// getActiveClub() is read via useSyncExternalStore, which requires a STABLE
+// reference between calls when nothing changed - a fresh object literal every
+// call reads as "changed" on every render and infinite-loops the player
+// screen. Cache it and only rebuild on a real setActiveClub() change.
+let activeClub: ActiveClub | null = null
+
 /** The club whose current book is the now-playing item, or null. Reactive via
  *  subscribeActiveClub. */
 export function getActiveClub(): ActiveClub | null {
-  return activeClubId ? { id: activeClubId, name: activeClubName } : null
+  return activeClub
 }
 
 export function subscribeActiveClub(fn: () => void): () => void {
@@ -61,6 +67,7 @@ function setActiveClub(id: string, name: string): void {
   if (id === activeClubId && name === activeClubName) return
   activeClubId = id
   activeClubName = name
+  activeClub = id ? { id, name } : null
   emitClub()
 }
 // A caller (open club/notes surface) can force polling on even when the playing
