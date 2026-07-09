@@ -68,6 +68,11 @@ module.exports = {
     supportsTablet: true,
     bundleIdentifier: 'com.hearthshelf.mobile',
     buildNumber: iosBuildNumber,
+    // Universal Links: lets https://app.hearthshelf.com/invite open the app
+    // directly (verified against the apple-app-site-association file hosted at
+    // that domain's /.well-known/). Team ID HCU6KVPTDC + this bundle id make the
+    // appID in that file. Invite links resolve in-app instead of the browser.
+    associatedDomains: ['applinks:app.hearthshelf.com'],
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
       // audio: background playback; processing: offline-progress background flush
@@ -91,6 +96,20 @@ module.exports = {
       backgroundImage: './assets/android-icon-background.png',
       monochromeImage: './assets/android-icon-monochrome.png',
     },
+    // App Links: verified https://app.hearthshelf.com/invite deep links open the
+    // app directly. autoVerify makes Android check the assetlinks.json hosted at
+    // that domain against this package's signing cert. Until the real signing
+    // SHA-256 is in that file (see public/.well-known/assetlinks.json), the OS
+    // still opens the link via the app chooser; verification just makes it
+    // automatic and removes the "open with" prompt.
+    intentFilters: [
+      {
+        action: 'VIEW',
+        autoVerify: true,
+        data: [{ scheme: 'https', host: 'app.hearthshelf.com', pathPrefix: '/invite' }],
+        category: ['BROWSABLE', 'DEFAULT'],
+      },
+    ],
     permissions: ['FOREGROUND_SERVICE', 'FOREGROUND_SERVICE_MEDIA_PLAYBACK', 'WAKE_LOCK'],
     // expo-sensors ships ACTIVITY_RECOGNITION for its Pedometer module, which we
     // don't use (only DeviceMotion for shake-to-extend). Play flags it under the

@@ -18,6 +18,33 @@ let current: AbsSession | null = null
 
 const KEY = 'hs.abs.session'
 const LAST_SERVER_KEY = 'hs.lastServerId'
+const PENDING_INVITE_KEY = 'hs.pendingInviteToken'
+
+/**
+ * An invite token captured from an app.hearthshelf.com/invite?token= universal
+ * link but not yet redeemed - typically because the link arrived while the user
+ * was signed out, so we stash it across the sign-in redirect and redeem it once
+ * a session exists. Persisted (not just in-memory) so it survives the app
+ * restart that a cold universal-link launch can cause.
+ */
+export async function setPendingInviteToken(token: string): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(PENDING_INVITE_KEY, token)
+  } catch {
+    // non-fatal; the invite can be re-opened from the link
+  }
+}
+
+/** Read and clear the pending invite token (redeem-once). */
+export async function takePendingInviteToken(): Promise<string | null> {
+  try {
+    const t = await SecureStore.getItemAsync(PENDING_INVITE_KEY)
+    if (t) await SecureStore.deleteItemAsync(PENDING_INVITE_KEY)
+    return t
+  } catch {
+    return null
+  }
+}
 
 /** Remember which linked server the user last connected to (multi-server). */
 export async function setLastServerId(serverId: string): Promise<void> {

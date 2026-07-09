@@ -14,9 +14,14 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { AppState } from 'react-native'
 import { useAuth } from '@clerk/expo'
-import { fetchLinkedServers, type LinkedServer } from './controlPlane'
+import { fetchLinkedServers, acceptInvite, type LinkedServer } from './controlPlane'
 import { connectServer } from './connect'
-import { setSession, setLastServerId, getLastServerId } from './session'
+import {
+  setSession,
+  setLastServerId,
+  getLastServerId,
+  takePendingInviteToken,
+} from './session'
 import { CLERK_JWT_TEMPLATE } from '@/lib/config'
 import { hasCachedClerkSession } from '@/lib/tokenCache'
 import {
@@ -263,8 +268,35 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
       // yields null. Calling /servers with no token 401s -> session-expired ->
       // sign-out. Bail here so the retry loop waits for Clerk instead.
       if (!(await tokenFn())) throw new NoTokenError()
+
+      // Redeem a pending invite (from an /invite?token= universal link that
+      // arrived while signed out) before listing, so the newly linked server is
+      // present and we can jump straight into it. Best-effort: a bad/expired
+      // token just falls through to the normal precedence below.
+      let invitedServerId: string | null = null
+      const pendingToken = await takePendingInviteToken()
+      if (pendingToken) {
+        try {
+          const { serverId } = await acceptInvite(tokenFn, pendingToken)
+          invitedServerId = serverId
+        } catch {
+          invitedServerId = null
+        }
+      }
+
       const servers = await fetchLinkedServers(tokenFn)
       if (servers.length === 0) throw new NoLinkedServersError()
+
+      // An accepted invite wins precedence: connect straight to that server.
+      if (invitedServerId) {
+        const invited = servers.find((s) => s.id === invitedServerId)
+        if (invited) {
+          await setLastServerId(invited.id)
+          await connectTo(invited, opts)
+          return
+        }
+      }
+
       if (servers.length === 1) {
         await connectTo(servers[0], opts)
         return

@@ -95,6 +95,22 @@ export async function clearDefaultServer(getToken: GetToken, serverId: string): 
   await request(getToken, `/servers/${encodeURIComponent(serverId)}/default`, { method: 'DELETE' })
 }
 
+/**
+ * Accept an invite by its token (from an app.hearthshelf.com/invite?token= link
+ * that opened the app via a universal/app link). Relay-proof: links the invited
+ * server to the signed-in account regardless of its email, so Sign in with Apple
+ * "Hide My Email" users get connected. Returns the linked server id.
+ */
+export async function acceptInvite(
+  getToken: GetToken,
+  token: string,
+): Promise<{ ok: boolean; serverId: string }> {
+  return request<{ ok: boolean; serverId: string }>(getToken, '/invite/accept', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  })
+}
+
 interface GrantResponse {
   grant: string
   server: { id: string; url: string }
