@@ -152,7 +152,8 @@ Same RN codebase. Current state:
   client ID, and iOS URL scheme env vars are all present.
 - Device/TestFlight builds still need an Apple developer account, signing
   assets, and either EAS Build/Submit or a macOS signing workflow.
-- Real CarPlay visibility still needs Apple's playable-content entitlement
-  approval. The plugin only writes that entitlement when
-  `HEARTHSHELF_IOS_CARPLAY_ENTITLEMENT=1`, so unsigned simulator builds remain
-  possible before approval.
+- CarPlay uses Apple's `com.apple.developer.carplay-audio` entitlement
+  (approved). The plugin only writes that entitlement, and the CarPlay scene
+  manifest's provisioning needs, when `HEARTHSHELF_IOS_CARPLAY_ENTITLEMENT=1`, so
+  unsigned simulator builds remain possible without the CarPlay provisioning
+  profile.

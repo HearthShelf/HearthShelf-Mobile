@@ -25,11 +25,14 @@ the native iOS project compiles, but it does not prove device signing,
 TestFlight, push/entitlement behavior, or CarPlay.
 
 The iOS media controller and CarPlay source of truth is
-`plugins/hearthshelf-carplay/`. It owns AVPlayer playback, lock-screen media
-commands, and `MPPlayableContentManager` browse/play callbacks. A real CarPlay
-launcher will not show the app until Apple grants the playable-content
-entitlement; set `HEARTHSHELF_IOS_CARPLAY_ENTITLEMENT=1` only for signed builds
-using an Apple profile that actually includes that entitlement.
+`plugins/hearthshelf-carplay/`. It owns AVPlayer playback and lock-screen media
+commands. CarPlay uses the modern CarPlay framework
+(`com.apple.developer.carplay-audio`, approved): the plugin declares a
+`CPTemplateApplicationSceneSessionRoleApplication` scene in Info.plist backed by
+`HearthShelfCarPlaySceneDelegate`. That delegate is currently a stub (empty root
+list); the browse/now-playing templates are a later pass. Set
+`HEARTHSHELF_IOS_CARPLAY_ENTITLEMENT=1` only for signed builds using an Apple
+profile that includes the CarPlay entitlement.
 
 ## Gradle gotcha (already fixed in `android/gradle.properties`)
 

@@ -23,7 +23,11 @@ function copySwift(config) {
       const src = path.join(cfg.modRequest.projectRoot, 'plugins', 'hearthshelf-carplay', 'ios')
       const dest = path.join(cfg.modRequest.platformProjectRoot, projectName)
       fs.mkdirSync(dest, { recursive: true })
-      for (const f of ['HearthShelfCarPlay.swift', 'HearthShelfCarPlayBridge.m']) {
+      for (const f of [
+        'HearthShelfCarPlay.swift',
+        'HearthShelfCarPlaySceneDelegate.swift',
+        'HearthShelfCarPlayBridge.m',
+      ]) {
         fs.copyFileSync(path.join(src, f), path.join(dest, f))
       }
       return cfg
@@ -36,7 +40,11 @@ function addSourceFiles(config) {
     const project = cfg.modResults
     const projectName = cfg.modRequest.projectName
     const group = project.findPBXGroupKey({ name: projectName })
-    for (const file of ['HearthShelfCarPlay.swift', 'HearthShelfCarPlayBridge.m']) {
+    for (const file of [
+      'HearthShelfCarPlay.swift',
+      'HearthShelfCarPlaySceneDelegate.swift',
+      'HearthShelfCarPlayBridge.m',
+    ]) {
       // copySwift writes these into ios/<projectName>/. Register the Xcode file
       // reference with an explicit SOURCE_ROOT-relative path so Xcode resolves
       // it to ios/<projectName>/<file> deterministically. A bare filename was
@@ -60,7 +68,25 @@ function addInfoPlist(config) {
     const plist = cfg.modResults
     const modes = new Set([...(plist.UIBackgroundModes || []), 'audio'])
     plist.UIBackgroundModes = Array.from(modes)
-    plist.MPPlayableContentManager = true
+
+    // Modern CarPlay (carplay-audio entitlement, iOS 14+) is scene-based. The
+    // app must declare a UIApplicationSceneManifest with a CarPlay scene role so
+    // the OS knows which delegate class owns the car surface. Without this, a car
+    // connection to an app that holds the entitlement fails. We keep the default
+    // window scene role unspecified so expo's AppDelegate window path still drives
+    // the phone UI (only the CarPlay role is scene-managed).
+    const manifest = plist.UIApplicationSceneManifest || {}
+    manifest.UIApplicationSupportsMultipleScenes = true
+    const roles = manifest.UISceneConfigurations || {}
+    roles.CPTemplateApplicationSceneSessionRoleApplication = [
+      {
+        UISceneClassName: 'CPTemplateApplicationScene',
+        UISceneConfigurationName: 'HearthShelfCarPlay',
+        UISceneDelegateClassName: 'HearthShelfCarPlaySceneDelegate',
+      },
+    ]
+    manifest.UISceneConfigurations = roles
+    plist.UIApplicationSceneManifest = manifest
     return cfg
   })
 }
@@ -68,7 +94,7 @@ function addInfoPlist(config) {
 function addCarPlayEntitlement(config) {
   return withEntitlementsPlist(config, (cfg) => {
     if (process.env.HEARTHSHELF_IOS_CARPLAY_ENTITLEMENT === '1') {
-      cfg.modResults['com.apple.developer.playable-content'] = true
+      cfg.modResults['com.apple.developer.carplay-audio'] = true
     }
     return cfg
   })
