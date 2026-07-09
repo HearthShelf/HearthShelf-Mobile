@@ -21,6 +21,7 @@ import { Icon, icons } from '@/ui/icons'
 import { useColors } from '@/ui/ThemeProvider'
 import { radius, spacing } from '@/ui/theme'
 import { uses12HourClock, parseHHMM, toHHMM, formatHHMM } from '@/lib/timeFormat'
+import { previewBeep } from '@/player/sleepBeep'
 
 function fmtRewind(sec: number): string {
   if (sec === 0) return 'Off'
@@ -39,7 +40,8 @@ const AUTO_DURATIONS = [10, 15, 20, 30, 40, 60] as const
 const EXCESSIVE_DESC: Record<'off' | 'limit' | 'disable', string> = {
   off: 'Keep adding time on every shake. Your timer still never goes past 3 hours.',
   limit: 'Stop adding time, but keep the timer running so playback still winds down.',
-  disable: "End the sleep timer so playback keeps going. Auto sleep won't restart until tomorrow's quiet hours or you set a timer yourself.",
+  disable:
+    "End the sleep timer so playback keeps going. Auto sleep won't restart until tomorrow's quiet hours or you set a timer yourself.",
 }
 
 // The warning-beep tones, in picker order. Labels stay short for the segmented
@@ -212,7 +214,31 @@ export default function SleepPanel() {
                   ]}
                 />
               </SettingsRow>
-              <SettingsRow title="Beep sound" desc="Which tone plays." stacked>
+              <SettingsRow
+                title="Beep sound"
+                desc="Which tone plays."
+                stacked
+                control={
+                  <Touchable
+                    onPress={() => previewBeep(s.sleepBeepSound, s.sleepBeepVolume)}
+                    hitSlop={8}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: spacing.xs,
+                      paddingVertical: spacing.xs,
+                      paddingHorizontal: spacing.md,
+                      borderRadius: radius.pill,
+                      backgroundColor: colors.accentWash,
+                    }}
+                  >
+                    <Icon name={icons.play} size={16} color={colors.accent} />
+                    <AppText variant="caption" color={colors.accent}>
+                      Test
+                    </AppText>
+                  </Touchable>
+                }
+              >
                 <Seg
                   fill
                   value={s.sleepBeepSound}

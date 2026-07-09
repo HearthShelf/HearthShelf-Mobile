@@ -78,6 +78,41 @@ const BEEP_ASSETS: Record<BeepSound, number> = {
   bell: require('../../assets/beeps/bell.wav'),
 }
 
+// Lazily-built preview players, shared across previewBeep calls. Kept separate
+// from the iOS runtime players so previewing from Settings never touches the live
+// sleep-timer cue state.
+const previewPlayers = new Map<BeepSound, import('expo-audio').AudioPlayer>()
+let previewModeSet = false
+
+/**
+ * Play a one-shot preview of a beep tone at a given volume (0-100), for the "test
+ * sound" button in Settings. Uses expo-audio on both platforms - the settings
+ * screen is always foreground, and previewing needs no book playing (the Android
+ * SoundPool lives in the media service, which is only up during playback). Safe
+ * to call rapidly; each tap restarts the tone. No-op if expo-audio is unavailable.
+ */
+export function previewBeep(sound: BeepSound, volume: number): void {
+  try {
+    const Audio = require('expo-audio') as typeof import('expo-audio')
+    if (!previewModeSet) {
+      previewModeSet = true
+      Audio.setAudioModeAsync({ interruptionMode: 'mixWithOthers', playsInSilentMode: true }).catch(
+        () => {},
+      )
+    }
+    let p = previewPlayers.get(sound)
+    if (!p) {
+      p = Audio.createAudioPlayer(BEEP_ASSETS[sound])
+      previewPlayers.set(sound, p)
+    }
+    p.volume = Math.max(0, Math.min(1, volume / 100))
+    p.seekTo(0).catch(() => {})
+    p.play()
+  } catch {
+    // A preview that can't play must never break the settings screen.
+  }
+}
+
 /** iOS / other: play the cue from JS with expo-audio, driven by store position
  *  ticks. expo-audio is imported lazily so the Android path (and any platform
  *  without it) never loads the native module. */
