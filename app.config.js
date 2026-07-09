@@ -12,10 +12,10 @@
 
 // All values here are PUBLIC by design (see .env.example). The Google client
 // SECRET is never here - it lives only in the Clerk dashboard.
-// EAS project id for @wutname1/hearthshelf-mobile. Public identifier (safe to
+// EAS project id for the HearthShelf org project. Public identifier (safe to
 // commit); an env var overrides it if you ever point at a different project.
 const EAS_PROJECT_ID =
-  process.env.EXPO_PUBLIC_EAS_PROJECT_ID || 'ef3733f9-5ef2-4666-988b-a32c64463ba4'
+  process.env.EXPO_PUBLIC_EAS_PROJECT_ID || '90f5f764-46e9-4caa-aa2a-dc5b78be191c'
 
 const extra = {
   EXPO_PUBLIC_CONTROL_PLANE_URL: process.env.EXPO_PUBLIC_CONTROL_PLANE_URL,
@@ -49,7 +49,8 @@ const iosBuildNumber = process.env.EXPO_IOS_BUILD_NUMBER || '1'
 
 module.exports = {
   name: 'HearthShelf',
-  slug: 'hearthshelf-mobile',
+  slug: 'hearthshelf',
+  owner: 'hearthshelf',
   version: '0.0.1',
   orientation: 'portrait',
   icon: './assets/icon.png',
