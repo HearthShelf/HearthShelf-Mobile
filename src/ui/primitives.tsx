@@ -525,12 +525,19 @@ export const Sheet = forwardRef<
     title?: string
     kicker?: string
     snapPoints?: BottomSheetModalProps['snapPoints']
+    /** Caps a dynamic-sizing sheet's height (ignored when snapPoints is set).
+     *  Needed when a child scroll view's maxHeight can't bound the measured
+     *  content on its own - the sheet stops growing past this. */
+    maxDynamicContentSize?: BottomSheetModalProps['maxDynamicContentSize']
     /** How this modal behaves when presented over another (default 'replace').
      *  Use 'push' to layer a sub-sheet on top of its opener. */
     stackBehavior?: BottomSheetModalProps['stackBehavior']
     onDismiss?: () => void
   }
->(function Sheet({ children, title, kicker, snapPoints, stackBehavior, onDismiss }, ref) {
+>(function Sheet(
+  { children, title, kicker, snapPoints, maxDynamicContentSize, stackBehavior, onDismiss },
+  ref,
+) {
   const colors = useColors()
   const styles = useStyles()
   const header = (kicker || title) && (
@@ -553,6 +560,7 @@ export const Sheet = forwardRef<
       ref={ref}
       snapPoints={snapPoints}
       enableDynamicSizing={dynamic}
+      maxDynamicContentSize={dynamic ? maxDynamicContentSize : undefined}
       stackBehavior={stackBehavior}
       onDismiss={onDismiss}
       handleIndicatorStyle={{ backgroundColor: colors.textFaint }}

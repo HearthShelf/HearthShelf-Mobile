@@ -13,7 +13,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react'
-import { Platform, StyleSheet, Text, View } from 'react-native'
+import { Dimensions, Platform, StyleSheet, Text, View } from 'react-native'
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import { formatTimestamp } from '@hearthshelf/core'
@@ -645,7 +645,15 @@ export const SleepSheet = forwardRef<SheetHandle, { onEditBehavior: () => void }
       // that could grow unbounded, so it lives in a maxHeight-capped internal
       // scroll (see SleepSetup) - that keeps the dynamic measurement bounded and
       // the tray closable without stretching Duration/Time into a huge sheet.
-      <Sheet ref={sheetRef} kicker={active ? 'Sleep timer' : 'Set a sleep timer'}>
+      <Sheet
+        ref={sheetRef}
+        kicker={active ? 'Sleep timer' : 'Set a sleep timer'}
+        // Cap dynamic height so the Chapter tab's list scrolls inside its own
+        // maxHeight instead of stretching the tray to fill the screen. The
+        // BottomSheetScrollView's maxHeight alone can't bound the measured
+        // content in a dynamic-sizing sheet, so cap the sheet itself.
+        maxDynamicContentSize={Dimensions.get('window').height * 0.8}
+      >
         {active ? (
           <ActiveSleep
             onDismiss={() => sheetRef.current?.dismiss()}
