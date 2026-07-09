@@ -108,6 +108,39 @@ module.exports = {
     ],
     '@clerk/expo',
     '@react-native-community/datetimepicker',
+    [
+      // Embed static font faces at build time with weight/style metadata so
+      // fontWeight resolves natively on iOS and Android. Variable fonts crash
+      // iOS CoreText at registration (expo-font FontUtils), so we ship static
+      // Regular/Bold faces per family. Family names match src/ui/theme.ts.
+      'expo-font',
+      {
+        fonts: [
+          {
+            fontFamily: 'Inter',
+            fontDefinitions: [
+              { path: './assets/fonts/Inter-Regular.ttf', weight: 400 },
+              { path: './assets/fonts/Inter-Bold.ttf', weight: 700 },
+            ],
+          },
+          {
+            fontFamily: 'GeistMono',
+            fontDefinitions: [
+              { path: './assets/fonts/GeistMono-Regular.ttf', weight: 400 },
+              { path: './assets/fonts/GeistMono-Bold.ttf', weight: 700 },
+            ],
+          },
+          {
+            fontFamily: 'LibreBaskerville',
+            fontDefinitions: [
+              { path: './assets/fonts/LibreBaskerville-Regular.ttf', weight: 400 },
+              { path: './assets/fonts/LibreBaskerville-Bold.ttf', weight: 700 },
+              { path: './assets/fonts/LibreBaskerville-Italic.ttf', weight: 400, style: 'italic' },
+            ],
+          },
+        ],
+      },
+    ],
     'expo-notifications',
     'expo-secure-store',
     'expo-router',

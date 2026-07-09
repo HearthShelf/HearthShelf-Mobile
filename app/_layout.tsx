@@ -6,7 +6,6 @@ import { AppState, StyleSheet, View } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
-import { useFonts } from 'expo-font'
 import * as SplashScreen from 'expo-splash-screen'
 import { tokenCache, hasCachedClerkSession, clerkResourceCache } from '@/lib/tokenCache'
 import { CLERK_PUBLISHABLE_KEY, CLERK_JWT_TEMPLATE } from '@/lib/config'
@@ -29,7 +28,6 @@ import { unregisterBackgroundFlush } from '@/player/connectivity'
 import { ensureNotificationChannels } from '@/lib/notifications'
 import { mountNoteForegroundHandler } from '@/social/noteEvents'
 import { mountPushHandlers } from '@/player/pushHandlers'
-import { fonts } from '@/ui/theme'
 import { ThemeProvider, useColors, useTheme } from '@/ui/ThemeProvider'
 import { flushPriorCrash, mountCrashLifecycle } from '@/lib/crashReporter'
 
@@ -222,12 +220,6 @@ function ThemedStatusBar() {
 }
 
 export default function RootLayout() {
-  const [fontsLoaded, fontError] = useFonts({
-    [fonts.sans]: require('../assets/fonts/Inter-VariableFont_opsz_wght.ttf'),
-    [fonts.mono]: require('../assets/fonts/GeistMono-VariableFont_wght.ttf'),
-    [fonts.brand]: require('../assets/fonts/LibreBaskerville-VariableFont_wght.ttf'),
-  })
-
   // Handle a warm tap / reply on a club-note notification while the app is
   // foreground (the cold-start + background paths are wired in index.js).
   useEffect(() => mountNoteForegroundHandler(), [])
@@ -240,14 +232,10 @@ export default function RootLayout() {
   // Auth-independent, so it lives here rather than in the Clerk-scoped AuthGate.
   useEffect(() => mountCrashLifecycle(), [])
 
-  // Keep the native OS splash up until fonts are ready AND the hearth splash has
-  // painted its first frame (it calls SplashScreen.hideAsync itself). Hiding on
-  // root layout instead left a black gap: the OS splash dismissed seconds before
-  // the JS bundle finished loading and React rendered anything.
-  const fontsReady = fontsLoaded || fontError
-
-  if (!fontsReady) return null
-
+  // Fonts are embedded natively at build time via the expo-font config plugin
+  // (see app.config.js), so they are available synchronously at launch - no
+  // async load gate needed. The hearth splash calls SplashScreen.hideAsync
+  // itself once it has painted its first frame.
   return (
     <ClerkProvider
       publishableKey={CLERK_PUBLISHABLE_KEY}
