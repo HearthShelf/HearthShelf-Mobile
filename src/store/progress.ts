@@ -13,6 +13,8 @@
  */
 import type { ABSMediaProgress, ABSMeResponse } from '@hearthshelf/core'
 import { getMe, setItemFinished } from '@/api/abs'
+import { getSettingsState } from '@/store/settings'
+import { isDownloaded, deleteDownload } from '@/player/downloads'
 
 export interface ProgressState {
   byId: ReadonlyMap<string, ABSMediaProgress>
@@ -64,6 +66,7 @@ function stub(itemId: string, finished: boolean, duration = 0): ABSMediaProgress
  *  the /api/me response so callers can reuse it (e.g. bookmarks) without a
  *  second request. */
 export async function refreshProgress(): Promise<ABSMeResponse> {
+  const prev = state.byId
   const me = await getMe()
   const next = new Map(me.mediaProgress.map((p) => [p.libraryItemId, p] as const))
   const now = Date.now()
@@ -81,8 +84,26 @@ export async function refreshProgress(): Promise<ABSMeResponse> {
       next.set(id, stub(id, o.isFinished))
     }
   }
+  cleanupFinishedDownloads(prev, next)
   emit(next)
   return me
+}
+
+/** Free the device for books that just became finished server-side (the common
+ *  case: listened to the end - ABS marks them finished and we learn about it on
+ *  the next refresh). Deletes the local download of any book whose finished flag
+ *  flipped false->true since the last snapshot, when the account opts in. Best-
+ *  effort and fire-and-forget so it never blocks the refresh. */
+function cleanupFinishedDownloads(
+  prev: ReadonlyMap<string, ABSMediaProgress>,
+  next: ReadonlyMap<string, ABSMediaProgress>,
+): void {
+  if (!getSettingsState().removeDownloadOnFinish) return
+  for (const [id, p] of next) {
+    if (p.isFinished === true && prev.get(id)?.isFinished !== true && isDownloaded(id)) {
+      void deleteDownload(id)
+    }
+  }
 }
 
 /**
@@ -104,6 +125,16 @@ export async function markItemsFinished(
     overrides.set(it.id, { isFinished: finished, atMs: Date.now() })
   }
   emit(next)
+
+  // Free the device: when the account opts in, a book you just finished loses its
+  // local download (any download - manual or auto). Best-effort and fire-and-
+  // forget so it never blocks the finished flip; a failed delete just leaves the
+  // file until a manual sweep. Only on the finish direction, never on un-finish.
+  if (finished && getSettingsState().removeDownloadOnFinish) {
+    for (const it of items) {
+      if (isDownloaded(it.id)) void deleteDownload(it.id)
+    }
+  }
 
   let okCount = 0
   let lastErr: unknown = null

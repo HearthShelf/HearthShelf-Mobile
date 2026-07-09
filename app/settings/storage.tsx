@@ -1,8 +1,10 @@
 /**
  * Downloads & storage. Top: auto-download preferences and the space cap. Below:
  * the download manager - active downloads with progress + cancel, and finished
- * downloads with size + delete. All state comes from the shared downloads store
- * (device-local; downloads aren't synced across devices).
+ * downloads with size + delete. Download state is device-local (the files live on
+ * this device); the auto-download prefs likewise. The "remove when finished"
+ * toggle is the one account-synced setting here, so the cleanup choice follows the
+ * user across devices.
  */
 import { useMemo, useSyncExternalStore } from 'react'
 import { Alert, StyleSheet, View, type DimensionValue } from 'react-native'
@@ -17,6 +19,7 @@ import {
   diskSpace,
   type DownloadEntry,
 } from '@/player/downloads'
+import { getSettingsState, subscribeSettings, setSetting } from '@/store/settings'
 import {
   SettingsPanel,
   SettingsGroup,
@@ -42,6 +45,7 @@ export default function StorageScreen() {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const { byId, maxBytes, auto } = useSyncExternalStore(subscribeDownloads, getDownloadsState)
+  const { removeDownloadOnFinish } = useSyncExternalStore(subscribeSettings, getSettingsState)
 
   const entries = [...byId.values()]
   const active = entries.filter((e) => e.status === 'downloading' || e.status === 'queued')
@@ -111,7 +115,6 @@ export default function StorageScreen() {
           title="Maximum download space"
           desc={capGb === 0 ? 'No limit - downloads until the device is full.' : `Auto-download pauses at ${capGb} GB.`}
           stacked
-          last
         >
           <SettingsSlider
             value={capGb}
@@ -122,6 +125,17 @@ export default function StorageScreen() {
             formatLabel={(v) => (v === 0 ? 'Off' : `${v} GB`)}
           />
         </SettingsRow>
+        <SettingsRow
+          title="Remove when finished"
+          desc="Delete a book's download once you finish it, to free up space."
+          control={
+            <SettingsToggle
+              on={removeDownloadOnFinish}
+              onChange={(v) => setSetting('removeDownloadOnFinish', v)}
+            />
+          }
+          last
+        />
       </SettingsGroup>
 
       {active.length > 0 ? (

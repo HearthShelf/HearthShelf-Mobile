@@ -120,6 +120,9 @@ export interface SettingsState {
   // the up-next queue. Swiping browses (audio keeps playing the live book);
   // tapping play on a card switches to it. Off = the classic single cover.
   carouselPlayer: boolean
+  // Delete a book's local download automatically once you finish it, to free up
+  // space. Applies to any download (manual or auto). Account-scoped.
+  removeDownloadOnFinish: boolean
   haptics: HapticLevel
   hapticIntensity: HapticIntensity
   carMode: CarMode
@@ -207,6 +210,7 @@ let state: SettingsState = {
   tapArtworkTogglesPlay: false,
   skipHotspots: true,
   carouselPlayer: true,
+  removeDownloadOnFinish: true,
   haptics: 'minimal',
   hapticIntensity: 'light',
   carMode: 'auto',
