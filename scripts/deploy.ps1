@@ -315,6 +315,11 @@ if ($Clean) { Clear-NativeCaches }
 $StaleCacheSignatures = @(
   'missing and no known rule to make it'
   'has been modified since the precompiled header'
+  # A stranded Gradle daemon (spawned before this run's gradle.properties edits
+  # changed the JVM args) keeps library-output jars open on Windows, so the new
+  # daemon can't rewrite them. Clear-NativeCaches stops all daemons first, which
+  # releases the lock, so the retry succeeds.
+  'Unable to delete file'
 )
 
 # --- 3. build (auto-retry once after clearing caches on a known stale-cache error) ---
