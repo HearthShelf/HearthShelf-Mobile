@@ -56,6 +56,14 @@ module.exports = {
   icon: './assets/icon.png',
   scheme: 'hearthshelf',
   userInterfaceStyle: 'automatic',
+  // EAS Update: JS/asset-only changes ship over-the-air (no build slot, no CI
+  // minutes). runtimeVersion is tied to the app version - it MUST change on any
+  // native change (new native dep, config-plugin/native config edit) so an OTA
+  // bundle never lands on an incompatible binary. Bump `version` for those.
+  runtimeVersion: { policy: 'appVersion' },
+  updates: {
+    url: 'https://u.expo.dev/90f5f764-46e9-4caa-aa2a-dc5b78be191c',
+  },
   ios: {
     supportsTablet: true,
     bundleIdentifier: 'com.hearthshelf.mobile',
