@@ -67,3 +67,15 @@ export const NATIVE_GOOGLE_ENABLED =
   (Platform.OS === 'android'
     ? GOOGLE_ANDROID_CLIENT_ID.length > 0
     : Platform.OS === 'ios' && GOOGLE_IOS_CLIENT_ID.length > 0 && GOOGLE_IOS_URL_SCHEME.length > 0)
+
+/**
+ * Whether to offer "Sign in with Apple". Apple only allows its button on Apple
+ * platforms, so this is iOS-only. The sign-in itself runs through Clerk's
+ * browser-tab OAuth flow (useSSO strategy 'oauth_apple'), which needs no native
+ * module - just the `oauth_apple` strategy enabled in the Clerk dashboard.
+ *
+ * The native one-tap sheet (useSignInWithApple) would additionally require the
+ * expo-apple-authentication module plus the `usesAppleSignIn` iOS entitlement;
+ * until those are added the browser flow is the path.
+ */
+export const APPLE_ENABLED = Platform.OS === 'ios'

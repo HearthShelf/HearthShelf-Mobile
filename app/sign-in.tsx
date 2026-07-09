@@ -1,3 +1,4 @@
+import type { SetActive, SignUpResource } from '@clerk/shared/types'
 import { useSSO } from '@clerk/expo'
 // The classic create()/setActive() useSignIn shape (the new signal-based
 // useSignIn in @clerk/expo's root would require a flow rewrite; the email path
@@ -8,7 +9,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useEffect, useState } from 'react'
 import * as WebBrowser from 'expo-web-browser'
 import Svg, { Path } from 'react-native-svg'
-import { NATIVE_GOOGLE_ENABLED } from '@/lib/config'
+import { APPLE_ENABLED, NATIVE_GOOGLE_ENABLED } from '@/lib/config'
 import { fonts } from '@/ui/theme'
 import {
   ActivityIndicator,
@@ -49,6 +50,14 @@ function GoogleLogo() {
   )
 }
 
+function AppleLogo() {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="#fff">
+      <Path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
+    </Svg>
+  )
+}
+
 function DiscordLogo() {
   return (
     <Svg width={20} height={20} viewBox="0 0 127.14 96.36" fill="#fff">
@@ -80,6 +89,13 @@ export default function SignInScreen() {
   const [password, setPassword] = useState('')
   const [emailMode, setEmailMode] = useState(false)
   const [busy, setBusy] = useState(false)
+  // When an OAuth sign-up completes everything except a required username, we
+  // hold the in-progress sign-up here and show the "choose a username" step.
+  // `pendingSetActive` is the flow's own setActive, used once the sign-up
+  // completes into a session.
+  const [pendingSignUp, setPendingSignUp] = useState<SignUpResource | null>(null)
+  const [pendingSetActive, setPendingSetActive] = useState<SetActive | null>(null)
+  const [username, setUsername] = useState('')
   const [error, setError] = useState<string | null>(
     reason === 'expired' ? 'Your session expired. Please sign in again.' : null,
   )
@@ -92,33 +108,71 @@ export default function SignInScreen() {
     }
   }, [])
 
-  // Completes a flow that returns a created session id + its own setActive
-  // (both the native Google hook and useSSO share this shape). `label` is only
-  // used to phrase the "did not complete" / failure messages.
+  // Completes a flow that returns a created session id + its own setActive (the
+  // native Google hook and useSSO share this shape). `label` phrases the
+  // cancel/failure messages.
+  //
+  // A session id can arrive three ways: top-level `createdSessionId` (an
+  // existing user signing in), or on the `signUp`/`signIn` resource when the
+  // OAuth transfer created/matched an account. When the provider gives a
+  // verified email but no username (Apple and Google both do this), Clerk's
+  // sign-up lands on `missing_requirements` with `username` outstanding - there
+  // is no hosted UI for that step in the native flow, so we collect it in-app
+  // (see the username step) and complete the sign-up.
   async function completeFlow(
     label: string,
     run: () => Promise<{
       createdSessionId?: string | null
-      setActive?: (opts: { session: string }) => Promise<unknown>
+      setActive?: SetActive
+      signIn?: { createdSessionId?: string | null } | null
+      signUp?: SignUpResource | null
+      authSessionResult?: { type?: string } | null
     }>,
   ) {
     if (busy) return
     setBusy(true)
     setError(null)
     try {
-      const { createdSessionId, setActive: flowSetActive } = await run()
-      if (createdSessionId && flowSetActive) {
-        await flowSetActive({ session: createdSessionId })
+      const res = await run()
+      const flowSetActive = res.setActive
+      const sessionId =
+        res.createdSessionId || res.signUp?.createdSessionId || res.signIn?.createdSessionId
+      if (sessionId && flowSetActive) {
+        await flowSetActive({ session: sessionId })
         router.replace('/(tabs)')
+        return
+      }
+
+      // Sign-up needs a username before it can complete. Verified email + only
+      // `username` outstanding is the expected Apple/Google new-user case.
+      const su = res.signUp
+      if (
+        su &&
+        su.status === 'missing_requirements' &&
+        su.missingFields.includes('username') &&
+        flowSetActive
+      ) {
+        setPendingSignUp(su)
+        setPendingSetActive(() => flowSetActive)
+        // Seed a suggestion from the email local-part so the field isn't empty.
+        setUsername(su.emailAddress ? su.emailAddress.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '') : '')
+        return
+      }
+
+      if (res.authSessionResult && res.authSessionResult.type !== 'success') {
+        // The browser tab closed without a successful redirect - user cancelled.
+        setError(`${label} sign-in was cancelled`)
       } else {
-        // No session usually means the user cancelled the picker / browser flow.
         setError(`${label} sign-in did not complete`)
       }
     } catch (e) {
+      // Clerk's short `message` is often just "is invalid"; `longMessage` names
+      // the offending parameter (e.g. "strategy is invalid"), which is what
+      // actually tells you the provider/redirect isn't configured.
+      const clerkErr = (e as { errors?: Array<{ message?: string; longMessage?: string }> })
+        ?.errors?.[0]
       const msg =
-        (e as { errors?: Array<{ message?: string }> })?.errors?.[0]?.message ||
-        (e as Error).message ||
-        `${label} sign-in failed`
+        clerkErr?.longMessage || clerkErr?.message || (e as Error).message || `${label} sign-in failed`
       setError(msg)
     } finally {
       setBusy(false)
@@ -139,6 +193,13 @@ export default function SignInScreen() {
         ? startGoogleAuthenticationFlow()
         : startSSOFlow({ strategy: 'oauth_google' }),
     )
+  }
+
+  function onApple() {
+    // Apple's button is iOS-only (gated by APPLE_ENABLED). Runs through the
+    // browser-tab OAuth flow; the value to allowlist in Clerk is the same
+    // `hearthshelf://sso-callback` redirect the Google fallback uses.
+    return completeFlow('Apple', () => startSSOFlow({ strategy: 'oauth_apple' }))
   }
 
   function onDiscord() {
@@ -170,6 +231,41 @@ export default function SignInScreen() {
     }
   }
 
+  // Completes the held OAuth sign-up by attaching the chosen username. On
+  // success Clerk mints the session and we activate it with the flow's own
+  // setActive (captured when we entered this step).
+  async function onSubmitUsername() {
+    if (!pendingSignUp || !pendingSetActive || busy) return
+    const value = username.trim()
+    if (!value) {
+      setError('Please choose a username')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      const updated = await pendingSignUp.update({ username: value })
+      if (updated.status === 'complete' && updated.createdSessionId) {
+        await pendingSetActive({ session: updated.createdSessionId })
+        setPendingSignUp(null)
+        setPendingSetActive(null)
+        router.replace('/(tabs)')
+      } else {
+        // Still incomplete (another required field, or username rejected). Show
+        // what's outstanding rather than silently stalling.
+        setError(`Sign-up still needs: ${updated.missingFields.join(', ') || updated.status}`)
+      }
+    } catch (e) {
+      const clerkErr = (e as { errors?: Array<{ message?: string; longMessage?: string }> })
+        ?.errors?.[0]
+      const msg =
+        clerkErr?.longMessage || clerkErr?.message || (e as Error).message || 'Could not set username'
+      setError(msg)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <View style={styles.bg}>
       <Image
@@ -190,7 +286,35 @@ export default function SignInScreen() {
         <View style={styles.spacer} />
 
         <View style={styles.authBlock}>
-          {emailMode ? (
+          {pendingSignUp ? (
+            <View style={styles.formCard}>
+              <Text style={styles.stepTitle}>Choose a username</Text>
+              <Text style={styles.stepHint}>This is how you'll show up in HearthShelf.</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Username"
+                placeholderTextColor="#6f6557"
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={username}
+                onChangeText={setUsername}
+              />
+
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+
+              <TouchableOpacity
+                style={styles.primaryButton}
+                onPress={onSubmitUsername}
+                disabled={busy}
+              >
+                {busy ? (
+                  <ActivityIndicator color="#fffaf6" />
+                ) : (
+                  <Text style={styles.primaryButtonText}>Continue</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          ) : emailMode ? (
             <View style={styles.formCard}>
               <TextInput
                 style={styles.input}
@@ -244,6 +368,19 @@ export default function SignInScreen() {
                 )}
               </TouchableOpacity>
 
+              {APPLE_ENABLED ? (
+                <TouchableOpacity style={styles.apple} onPress={onApple} disabled={busy}>
+                  {busy ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <>
+                      <AppleLogo />
+                      <Text style={styles.appleText}>Continue with Apple</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              ) : null}
+
               <TouchableOpacity style={styles.discord} onPress={onDiscord} disabled={busy}>
                 {busy ? (
                   <ActivityIndicator color="#fff" />
@@ -268,7 +405,7 @@ export default function SignInScreen() {
           )}
 
           <Text style={styles.footer}>
-            By continuing you agree to the{'\n'}Terms & Privacy Policy
+            By continuing you agree to the Terms & Privacy Policy
           </Text>
         </View>
       </KeyboardAvoidingView>
@@ -337,11 +474,21 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
   },
   discordText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  apple: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    backgroundColor: '#000',
+    borderRadius: 16,
+    paddingVertical: 15,
+  },
+  appleText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   emailButton: {
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 16,
-    paddingVertical: 14,
+    paddingVertical: 7,
     borderWidth: 1,
     borderColor: '#383530',
     backgroundColor: 'transparent',
@@ -349,6 +496,8 @@ const styles = StyleSheet.create({
   emailButtonText: { color: '#f4f1ea', fontSize: 14.5, fontWeight: '600' },
 
   formCard: { gap: 12 },
+  stepTitle: { color: '#f4f1ea', fontSize: 20, fontWeight: '700', textAlign: 'center' },
+  stepHint: { color: '#aba498', fontSize: 13.5, textAlign: 'center', marginBottom: 4 },
   input: {
     backgroundColor: 'rgba(42,40,37,0.85)',
     color: '#f4f1ea',
@@ -380,8 +529,8 @@ const styles = StyleSheet.create({
   footer: {
     textAlign: 'center',
     color: '#aba498',
-    fontSize: 12,
+    fontSize: 10,
     lineHeight: 18,
-    marginTop: 22,
+    marginTop: 8,
   },
 })
