@@ -50,6 +50,31 @@ final class HearthShelfAuto: RCTEventEmitter, MPPlayableContentDataSource, MPPla
     playableContent.dataSource = self
     playableContent.delegate = self
     rebuildRoot()
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(playerItemDidReachEnd),
+      name: .AVPlayerItemDidPlayToEndTime,
+      object: nil
+    )
+  }
+
+  deinit {
+    NotificationCenter.default.removeObserver(self)
+  }
+
+  @objc
+  private func playerItemDidReachEnd(_ notification: Notification) {
+    guard let endedItem = notification.object as? AVPlayerItem,
+      endedItem === player.currentItem
+    else {
+      return
+    }
+    DispatchQueue.main.async {
+      self.progressTimer?.invalidate()
+      self.progressTimer = nil
+      self.emitState(false)
+      self.emitEnded()
+    }
   }
 
   @objc
@@ -58,7 +83,11 @@ final class HearthShelfAuto: RCTEventEmitter, MPPlayableContentDataSource, MPPla
   }
 
   override func supportedEvents() -> [String]! {
-    ["onProgress", "onState", "onTogglePlay", "onJump"]
+    // Must declare every event the shared JS (PlayerHost) subscribes to, or
+    // RCTEventEmitter throws on addListener. onEnded fires from CarPlay; the
+    // onCar* pair is Android Auto handoff (never emitted on iOS) but still has
+    // to be declared so the cross-platform listener setup is valid here.
+    ["onProgress", "onState", "onTogglePlay", "onJump", "onEnded", "onCarActive", "onCarLoaded"]
   }
 
   override func startObserving() {
@@ -644,6 +673,13 @@ final class HearthShelfAuto: RCTEventEmitter, MPPlayableContentDataSource, MPPla
       return
     }
     sendEvent(withName: "onJump", body: ["delta": delta])
+  }
+
+  private func emitEnded() {
+    guard hasListeners else {
+      return
+    }
+    sendEvent(withName: "onEnded", body: [:])
   }
 }
 
