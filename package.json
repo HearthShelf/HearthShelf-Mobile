@@ -65,6 +65,7 @@
     "deploy:away": "powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1 -StandaloneDebug",
     "live": "powershell -ExecutionPolicy Bypass -File scripts/dev-server.ps1",
     "sync-core": "git submodule update --remote packages/core",
+    "eas-build-pre-install": "bash scripts/eas-init-submodules.sh",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
