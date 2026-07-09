@@ -20,11 +20,15 @@ interface HearthShelfAutoNative {
   setSkipSeconds(skipBackSec: number, skipForwardSec: number): void
   setDiscover(json: string): void
   setNotePopsEnabled(enabled: boolean): void
-  setSleepShake(
+  setSleepShake(enabled: boolean, minutes: number, timerActive: boolean, hapticLevel: string): void
+  setSleepBeep(
     enabled: boolean,
-    minutes: number,
-    timerActive: boolean,
-    hapticLevel: string,
+    at2min: boolean,
+    at1min: boolean,
+    atFinal: boolean,
+    sound: string,
+    volume: number,
+    remainingSec: number,
   ): void
   clearSession(): void
 }
@@ -85,6 +89,27 @@ export function setAutoSleepShake(
 ): void {
   if (Platform.OS === 'android') {
     native?.setSleepShake(enabled, minutes, timerActive, hapticLevel)
+  }
+}
+
+/**
+ * Push the warning-beep settings + the live sleep timer's remaining playback
+ * seconds to native, so the phone media service fires the cues itself (screen-off
+ * / backgrounded, like shake-to-extend). `remainingSec` is -1 when no
+ * duration/clock timer is armed. Android only: the iOS beep runs foreground in JS
+ * (see useSleepBeep), since the background media service is Android-only here.
+ */
+export function setAutoSleepBeep(
+  enabled: boolean,
+  at2min: boolean,
+  at1min: boolean,
+  atFinal: boolean,
+  sound: string,
+  volume: number,
+  remainingSec: number,
+): void {
+  if (Platform.OS === 'android') {
+    native?.setSleepBeep(enabled, at2min, at1min, atFinal, sound, volume, remainingSec)
   }
 }
 

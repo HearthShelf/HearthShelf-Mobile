@@ -109,6 +109,33 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     HearthShelfPlayerService.instance?.evaluateShake()
   }
 
+  /** Push the warning-beep settings + the live sleep timer's remaining playback
+   *  seconds into prefs so the phone media service can fire the cues natively
+   *  (works screen-off / backgrounded, like shake-to-extend). `remainingSec` is
+   *  -1 when no duration/clock timer is armed. The service reads the toggles live
+   *  each tick; a remaining push resets its per-timer cue state so an armed or
+   *  extended timer re-fires. */
+  @ReactMethod
+  fun setSleepBeep(
+    enabled: Boolean,
+    at2min: Boolean,
+    at1min: Boolean,
+    atFinal: Boolean,
+    sound: String,
+    volume: Int,
+    remainingSec: Double,
+  ) {
+    prefs().edit()
+      .putBoolean("sleepBeepEnabled", enabled)
+      .putBoolean("sleepBeepAt2min", at2min)
+      .putBoolean("sleepBeepAt1min", at1min)
+      .putBoolean("sleepBeepFinal", atFinal)
+      .putString("sleepBeepSound", sound)
+      .putInt("sleepBeepVolume", volume)
+      .apply()
+    HearthShelfPlayerService.instance?.updateSleepBeep(if (remainingSec >= 0) remainingSec else null)
+  }
+
   @ReactMethod
   fun clearSession() {
     prefs().edit()

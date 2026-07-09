@@ -28,6 +28,7 @@ import { coverUrl } from '@/api/abs'
 import { syncProgress } from './playback'
 import { advanceQueueOnEnd } from './advance'
 import { useShakeToExtend } from './shakeToExtend'
+import { useSleepBeep } from './sleepBeep'
 import { Toast, useToast } from '@/ui/Toast'
 
 // Native module (added in HearthShelfAutoModule / HearthShelfPlayerService).
@@ -68,6 +69,10 @@ export function PlayerHost() {
     (mins) => toast.show(`+${mins} min added`),
     () => toast.show('Shake to extend paused - too many shakes in a row'),
   )
+
+  // Warning beeps before the sleep timer ends. Pushes prefs to the native service
+  // on Android; plays the cue from JS via expo-audio on iOS.
+  useSleepBeep()
 
   // Android 13+ needs runtime POST_NOTIFICATIONS or the media notification never
   // shows. Ask once on mount (no-op below API 33 / on iOS).

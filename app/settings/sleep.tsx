@@ -5,13 +5,14 @@
 import { useState, useSyncExternalStore } from 'react'
 import { Platform, View } from 'react-native'
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
-import { getSettingsState, subscribeSettings, setSetting } from '@/store/settings'
+import { getSettingsState, subscribeSettings, setSetting, type BeepSound } from '@/store/settings'
 import {
   SettingsPanel,
   SettingsGroup,
   SettingsRow,
   SettingsToggle,
   SettingsSlider,
+  Seg,
   ChipRow,
   SettingsLabel,
 } from '@/ui/settingsControls'
@@ -31,6 +32,49 @@ function fmtRewind(sec: number): string {
 
 // Preset auto-duration lengths in minutes, shared with the sleep slider grid.
 const AUTO_DURATIONS = [10, 15, 20, 30, 40, 60] as const
+
+// The warning-beep tones, in picker order. Labels stay short for the segmented
+// control; keep in step with BeepSound in @hearthshelf/core.
+const BEEP_SOUNDS: { value: BeepSound; label: string }[] = [
+  { value: 'chime', label: 'Chime' },
+  { value: 'marimba', label: 'Marimba' },
+  { value: 'beep', label: 'Beep' },
+  { value: 'bell', label: 'Bell' },
+]
+
+/** A multi-select pill row: each cue toggles on/off independently (unlike the
+ *  single-select Seg). Used to pick which warning beeps fire. */
+function CueChips({
+  cues,
+}: {
+  cues: {
+    key: 'sleepBeepAt2min' | 'sleepBeepAt1min' | 'sleepBeepFinal'
+    label: string
+    on: boolean
+  }[]
+}) {
+  const colors = useColors()
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+      {cues.map((c) => (
+        <Touchable
+          key={c.key}
+          onPress={() => setSetting(c.key, !c.on)}
+          style={{
+            paddingHorizontal: spacing.md,
+            paddingVertical: spacing.sm,
+            borderRadius: radius.pill,
+            backgroundColor: c.on ? colors.accent : colors.fill,
+          }}
+        >
+          <AppText variant="label" color={c.on ? colors.onAccent : colors.text}>
+            {c.label}
+          </AppText>
+        </Touchable>
+      ))}
+    </View>
+  )
+}
 
 /** A tappable time pill that opens the OS clock picker and stores back "HH:MM".
  *  Displays in the system's 12h/24h format. */
@@ -136,6 +180,48 @@ export default function SleepPanel() {
                 formatLabel={(v) => `${v}s`}
               />
             </SettingsRow>
+          )}
+        </SettingsGroup>
+
+        <SettingsGroup style={{ marginTop: spacing.lg }}>
+          <SettingsRow
+            title="Warning beeps"
+            desc="Play a soft beep before the timer ends, so you get a heads-up before the audio goes quiet."
+            control={
+              <SettingsToggle on={s.sleepChime} onChange={(v) => setSetting('sleepChime', v)} />
+            }
+            last={!s.sleepChime}
+          />
+          {s.sleepChime && (
+            <>
+              <SettingsRow title="When to beep" desc="Pick the warnings you want." stacked>
+                <CueChips
+                  cues={[
+                    { key: 'sleepBeepAt2min', label: '2 min left', on: s.sleepBeepAt2min },
+                    { key: 'sleepBeepAt1min', label: '1 min left', on: s.sleepBeepAt1min },
+                    { key: 'sleepBeepFinal', label: 'At the end', on: s.sleepBeepFinal },
+                  ]}
+                />
+              </SettingsRow>
+              <SettingsRow title="Beep sound" desc="Which tone plays." stacked>
+                <Seg
+                  fill
+                  value={s.sleepBeepSound}
+                  onChange={(v) => setSetting('sleepBeepSound', v)}
+                  options={BEEP_SOUNDS}
+                />
+              </SettingsRow>
+              <SettingsRow title="Beep volume" desc="How loud the beep is." stacked last>
+                <SettingsSlider
+                  value={s.sleepBeepVolume}
+                  min={0}
+                  max={100}
+                  step={5}
+                  onChange={(v) => setSetting('sleepBeepVolume', v)}
+                  formatLabel={(v) => `${v}%`}
+                />
+              </SettingsRow>
+            </>
           )}
         </SettingsGroup>
 

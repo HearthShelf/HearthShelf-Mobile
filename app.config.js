@@ -113,6 +113,9 @@ module.exports = {
     'expo-router',
     'expo-background-task',
     'expo-sqlite',
+    // Plays the sleep-timer warning beeps on iOS (the Android beep runs natively
+    // in the media service). Configured to mix so the cue never ducks the book.
+    'expo-audio',
     [
       'react-native-video',
       {

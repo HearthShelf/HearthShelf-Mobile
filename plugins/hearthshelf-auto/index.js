@@ -76,6 +76,22 @@ function copyKotlin(config) {
       for (const f of fs.readdirSync(drawSrc)) {
         fs.copyFileSync(path.join(drawSrc, f), path.join(drawDest, f))
       }
+
+      // Sleep-timer warning beeps (raw WAV) the player service plays via SoundPool
+      // on the media stream so they mix over the book without ducking it.
+      const rawSrc = path.join(src, 'res', 'raw')
+      const rawDest = path.join(
+        cfg.modRequest.platformProjectRoot,
+        'app',
+        'src',
+        'main',
+        'res',
+        'raw',
+      )
+      fs.mkdirSync(rawDest, { recursive: true })
+      for (const f of fs.readdirSync(rawSrc)) {
+        fs.copyFileSync(path.join(rawSrc, f), path.join(rawDest, f))
+      }
       return cfg
     },
   ])

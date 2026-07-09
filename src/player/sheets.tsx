@@ -29,6 +29,7 @@ import {
   type ChapterMark,
 } from './store'
 import { useBookmarks } from './useBookmarks'
+import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { AppText, Sheet, type SheetRef, Touchable } from '@/ui/primitives'
 import { AppSlider } from '@/ui/AppSlider'
 import { Icon, icons } from '@/ui/icons'
@@ -254,6 +255,10 @@ function ActiveSleep({
     subscribe,
     getState,
   )
+  const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
+  const beepOn =
+    settings.sleepChime &&
+    (settings.sleepBeepAt2min || settings.sleepBeepAt1min || settings.sleepBeepFinal)
   const chapters = nowPlaying?.chapters ?? []
 
   // Seconds left + the wall-clock time it ends, resolved for every kind.
@@ -328,6 +333,7 @@ function ActiveSleep({
             ? `Rewinds ${fmtRewind(sleepBehavior.rewindSec)}`
             : 'No rewind'}
           {sleepBehavior.fade ? ` · fades over ${sleepBehavior.fadeLen}s` : ' · no fade'}
+          {beepOn ? ' · beeps before ending' : ''}
         </AppText>
         <AppText variant="caption" color={colors.accent}>
           Edit

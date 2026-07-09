@@ -7,6 +7,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.media.SoundPool
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
@@ -207,6 +208,117 @@ class HearthShelfPlayerService : MediaSessionService() {
     }
   }
 
+  // ---- warning beeps before the sleep timer ends ----
+  //
+  // Same rationale as shake-to-extend: the cue must sound with the screen off /
+  // app backgrounded, when the JS sleep-timer tick is suspended but this
+  // foreground service's progressTick keeps running (active audio holds the CPU
+  // awake). JS pushes the beep settings + the current remaining PLAYBACK seconds
+  // whenever the sleep timer is armed/extended/cancelled; we decrement our own
+  // copy by the observed playback advance each tick (mirroring how the JS store
+  // decrements off position deltas), so the countdown stays right between pushes.
+  // We play the cue via SoundPool on the media stream so it mixes over the book
+  // without requesting audio focus (no ducking / no pausing the book).
+  @Volatile private var soundPool: SoundPool? = null
+  // Loaded sound ids by name ("chime"/"marimba"/"beep"/"bell").
+  private val beepSoundIds = HashMap<String, Int>()
+  // Remaining playback seconds on the live sleep timer, mirrored from JS and
+  // decremented locally each tick; null when no duration/clock timer is armed.
+  @Volatile private var beepRemainingSec: Double? = null
+  // Absolute book position (sec) at the last tick, to measure playback advance.
+  private var beepLastPosSec = -1.0
+  // Which thresholds have already fired for the current timer, so each beeps once.
+  private var beeped2min = false
+  private var beeped1min = false
+  private var beepedFinal = false
+
+  private val beepPrefs
+    get() = getSharedPreferences("hearthshelf_auto", Context.MODE_PRIVATE)
+
+  private fun initSoundPool() {
+    if (soundPool != null) return
+    val attrs = android.media.AudioAttributes.Builder()
+      .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+      .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+      .build()
+    val pool = SoundPool.Builder().setMaxStreams(2).setAudioAttributes(attrs).build()
+    for (name in listOf("chime", "marimba", "beep", "bell")) {
+      val resId = resources.getIdentifier("beep_$name", "raw", packageName)
+      if (resId != 0) beepSoundIds[name] = pool.load(this, resId, 1)
+    }
+    soundPool = pool
+  }
+
+  /** Clear the per-timer beep state (used on a genuine arm/extend/cancel). */
+  private fun clearBeepState() {
+    beepLastPosSec = -1.0
+    beeped2min = false
+    beeped1min = false
+    beepedFinal = false
+  }
+
+  /** Play a beep by the user's chosen tone at the cue volume (0..1). No-op if the
+   *  pool isn't ready or the tone failed to load. */
+  private fun playBeep() {
+    val pool = soundPool ?: return
+    val name = beepPrefs.getString("sleepBeepSound", "chime") ?: "chime"
+    val id = beepSoundIds[name] ?: beepSoundIds["chime"] ?: return
+    val vol = (beepPrefs.getInt("sleepBeepVolume", 60) / 100f).coerceIn(0f, 1f)
+    pool.play(id, vol, vol, 1, 0, 1f)
+  }
+
+  /** Called each progress tick while playing: advance the local remaining-seconds
+   *  mirror and fire any enabled cue as the countdown crosses its threshold. */
+  private fun maybeBeep(posSec: Double) {
+    if (!beepPrefs.getBoolean("sleepBeepEnabled", false)) return
+    val remainingBefore = beepRemainingSec ?: return
+    // Measure playback advance since the last tick (first tick just seeds).
+    val advance = if (beepLastPosSec < 0) 0.0 else (posSec - beepLastPosSec).coerceAtLeast(0.0)
+    beepLastPosSec = posSec
+    val remaining = remainingBefore - advance
+    beepRemainingSec = remaining
+
+    // Cross a threshold: remaining was above it last tick and is at/below now.
+    fun crossed(mark: Double) = remainingBefore > mark && remaining <= mark
+
+    if (!beeped2min && beepPrefs.getBoolean("sleepBeepAt2min", true) && crossed(120.0)) {
+      beeped2min = true
+      playBeep()
+    }
+    if (!beeped1min && beepPrefs.getBoolean("sleepBeepAt1min", true) && crossed(60.0)) {
+      beeped1min = true
+      playBeep()
+    }
+    // Final cue just before the timer fires (JS pauses at remaining <= 0).
+    if (!beepedFinal && beepPrefs.getBoolean("sleepBeepFinal", false) && remaining <= 1.0) {
+      beepedFinal = true
+      playBeep()
+    }
+  }
+
+  /** JS pushed the live timer's remaining playback seconds (null = no
+   *  duration/clock timer). JS pushes on EVERY store change, including each
+   *  routine progress tick, so most pushes just re-sync our locally-decremented
+   *  mirror to correct drift - they must NOT clear the fired-once flags or the
+   *  cues would re-arm every second. Only a genuine (re)arm or extend clears the
+   *  per-timer state: the timer going from none -> armed, or remaining jumping UP
+   *  (an extend / a fresh, longer timer). A routine tick carries a remaining <=
+   *  our mirror, so it only updates the value. Lazily builds the SoundPool the
+   *  first time a timer is armed so a user who never uses beeps pays nothing. */
+  fun updateSleepBeep(remainingSec: Double?) = runOnMain {
+    val prev = beepRemainingSec
+    if (remainingSec == null) {
+      // Timer cancelled / ended.
+      if (prev != null) clearBeepState()
+      beepRemainingSec = null
+      return@runOnMain
+    }
+    if (beepPrefs.getBoolean("sleepBeepEnabled", false)) initSoundPool()
+    // Arm (was none) or extend (jumped up beyond a tick's worth of drift).
+    if (prev == null || remainingSec > prev + 2.0) clearBeepState()
+    beepRemainingSec = remainingSec
+  }
+
   private val progressHandler = android.os.Handler(android.os.Looper.getMainLooper())
   private val progressTick = object : Runnable {
     override fun run() {
@@ -216,6 +328,7 @@ class HearthShelfPlayerService : MediaSessionService() {
         if (p.isPlaying && HearthShelfAutoModule.carPlayer == null) {
           HearthShelfAutoModule.emitProgress(p.currentPosition / 1000.0)
           refreshChapterSubtitle()
+          maybeBeep(p.currentPosition / 1000.0)
         }
       }
       // Heartbeat re-check so a missed state edge (e.g. car handoff) can't strand
@@ -328,6 +441,8 @@ class HearthShelfPlayerService : MediaSessionService() {
       sensorManager?.unregisterListener(shakeListener)
       shakeRegistered = false
     }
+    soundPool?.release()
+    soundPool = null
     session?.run { release() }
     exo?.release()
     session = null

@@ -33,6 +33,8 @@ export type CoverAspect = 'square' | 'portrait'
 export type HapticLevel = 'off' | 'minimal' | 'all'
 export type HapticIntensity = 'light' | 'medium'
 export type CarMode = 'auto' | 'on' | 'off'
+/** The tone played as a sleep-timer warning beep. See src/player/sleepBeep.ts. */
+export type BeepSound = 'chime' | 'marimba' | 'beep' | 'bell'
 /** Aspect ratio (width/height) for cover tiles, per the CoverAspect setting. */
 export const COVER_ASPECT_RATIO: Record<CoverAspect, number> = { square: 1, portrait: 2 / 3 }
 
@@ -129,6 +131,14 @@ export interface SettingsState {
   sleepFadeLen: number
   sleepShakeExtend: boolean
   sleepShakeMinutes: number
+  // Beep before the timer ends: sleepChime is the master on/off; the three cue
+  // toggles pick which warnings fire (2 min / 1 min / right as it stops).
+  sleepChime: boolean
+  sleepBeepAt2min: boolean
+  sleepBeepAt1min: boolean
+  sleepBeepFinal: boolean
+  sleepBeepSound: BeepSound
+  sleepBeepVolume: number
   autoSleep: boolean
   autoSleepStart: string
   autoSleepEnd: string
@@ -207,6 +217,12 @@ let state: SettingsState = {
   sleepFadeLen: 20,
   sleepShakeExtend: false,
   sleepShakeMinutes: 5,
+  sleepChime: false,
+  sleepBeepAt2min: true,
+  sleepBeepAt1min: true,
+  sleepBeepFinal: false,
+  sleepBeepSound: 'chime',
+  sleepBeepVolume: 60,
   autoSleep: false,
   autoSleepStart: '22:00',
   autoSleepEnd: '06:00',
