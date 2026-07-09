@@ -115,30 +115,47 @@ module.exports = {
       // Regular/Bold faces per family. Family names match src/ui/theme.ts.
       'expo-font',
       {
-        fonts: [
-          {
-            fontFamily: 'Inter',
-            fontDefinitions: [
-              { path: './assets/fonts/Inter-Regular.ttf', weight: 400 },
-              { path: './assets/fonts/Inter-Bold.ttf', weight: 700 },
-            ],
-          },
-          {
-            fontFamily: 'GeistMono',
-            fontDefinitions: [
-              { path: './assets/fonts/GeistMono-Regular.ttf', weight: 400 },
-              { path: './assets/fonts/GeistMono-Bold.ttf', weight: 700 },
-            ],
-          },
-          {
-            fontFamily: 'LibreBaskerville',
-            fontDefinitions: [
-              { path: './assets/fonts/LibreBaskerville-Regular.ttf', weight: 400 },
-              { path: './assets/fonts/LibreBaskerville-Bold.ttf', weight: 700 },
-              { path: './assets/fonts/LibreBaskerville-Italic.ttf', weight: 400, style: 'italic' },
-            ],
-          },
-        ],
+        // expo-font v57 takes different shapes per platform: iOS wants flat
+        // string paths (it resolves fontWeight from each file's embedded weight
+        // metadata), Android wants family objects that build the weight->file
+        // XML mapping. Family names match src/ui/theme.ts.
+        ios: {
+          fonts: [
+            './assets/fonts/Inter-Regular.ttf',
+            './assets/fonts/Inter-Bold.ttf',
+            './assets/fonts/GeistMono-Regular.ttf',
+            './assets/fonts/GeistMono-Bold.ttf',
+            './assets/fonts/LibreBaskerville-Regular.ttf',
+            './assets/fonts/LibreBaskerville-Bold.ttf',
+            './assets/fonts/LibreBaskerville-Italic.ttf',
+          ],
+        },
+        android: {
+          fonts: [
+            {
+              fontFamily: 'Inter 18pt',
+              fontDefinitions: [
+                { path: './assets/fonts/Inter-Regular.ttf', weight: 400 },
+                { path: './assets/fonts/Inter-Bold.ttf', weight: 700 },
+              ],
+            },
+            {
+              fontFamily: 'Geist Mono',
+              fontDefinitions: [
+                { path: './assets/fonts/GeistMono-Regular.ttf', weight: 400 },
+                { path: './assets/fonts/GeistMono-Bold.ttf', weight: 700 },
+              ],
+            },
+            {
+              fontFamily: 'Libre Baskerville',
+              fontDefinitions: [
+                { path: './assets/fonts/LibreBaskerville-Regular.ttf', weight: 400 },
+                { path: './assets/fonts/LibreBaskerville-Bold.ttf', weight: 700 },
+                { path: './assets/fonts/LibreBaskerville-Italic.ttf', weight: 400, style: 'italic' },
+              ],
+            },
+          ],
+        },
       },
     ],
     'expo-notifications',

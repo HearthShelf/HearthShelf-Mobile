@@ -245,10 +245,14 @@ export const spacing = {
  * Design-system roles: sans = Inter (UI), mono = Geist Mono (numerals/time),
  * brand = Libre Baskerville (wordmark, eyebrows, editorial).
  */
+// These MUST match each font file's internal (PostScript) family name, because
+// iOS resolves fontFamily against that name, not the filename. The static Inter
+// set reports "Inter 18pt" (its optical-size variant); Geist Mono and Libre
+// Baskerville carry a space. See app.config.js expo-font plugin.
 export const fonts = {
-  sans: 'Inter',
-  mono: 'GeistMono',
-  brand: 'LibreBaskerville',
+  sans: 'Inter 18pt',
+  mono: 'Geist Mono',
+  brand: 'Libre Baskerville',
 } as const
 
 /**
