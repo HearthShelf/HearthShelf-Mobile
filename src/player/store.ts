@@ -261,15 +261,35 @@ function inQuietHours(now: Date, startHHMM: string, endHHMM: string): boolean {
 }
 
 /**
+ * Suppress auto-sleep re-arming after "On excessive shake: disable sleep" fires.
+ * A shake storm inside quiet hours (phone jostling on a walk) both cancels the
+ * running timer and sets this, so play entry points don't immediately re-arm a
+ * new auto timer. Cleared by any manual sleep action or by leaving and re-entering
+ * quiet hours (a fresh window - typically the next night), so it only mutes the
+ * rest of the current window, not auto-sleep forever.
+ */
+let autoSleepSuppressed = false
+/** Tracks the previous quiet-hours membership so we can detect the outside->inside
+ *  edge that lifts autoSleepSuppressed. */
+let wasInQuietHours = false
+
+/**
  * When "Auto sleep timer" is on and playback starts during the configured quiet
  * hours, arm a duration timer of `autoSleepDur` minutes - unless one is already
- * running (manual or a prior auto-arm). Called from the play entry points.
+ * running (manual or a prior auto-arm) or auto-sleep was suppressed by a shake
+ * storm this window. Called from the play entry points.
  */
 function maybeAutoArmSleep(): void {
   if (state.sleepTimer) return
   const s = getSettingsState()
   if (!s.autoSleep) return
-  if (!inQuietHours(new Date(), s.autoSleepStart, s.autoSleepEnd)) return
+  const inside = inQuietHours(new Date(), s.autoSleepStart, s.autoSleepEnd)
+  // Re-entering quiet hours (outside -> inside) starts a fresh window, so lift a
+  // prior shake-storm suppression.
+  if (inside && !wasInQuietHours) autoSleepSuppressed = false
+  wasInQuietHours = inside
+  if (!inside) return
+  if (autoSleepSuppressed) return
   const totalSec = s.autoSleepDur * 60
   set({ sleepTimer: { kind: 'duration', remainingSec: totalSec, totalSec } })
 }
@@ -277,11 +297,14 @@ function maybeAutoArmSleep(): void {
 export function setSleepTimer(timer: SleepTimer): void {
   if (timer) haptics.mode()
   consecutiveShakeExtends = 0
+  // A manual sleep action means the user is engaged; clear any shake suppression.
+  autoSleepSuppressed = false
   set({ sleepTimer: timer })
 }
 
 export function cancelSleepTimer(): void {
   consecutiveShakeExtends = 0
+  autoSleepSuppressed = false
   if (state.sleepTimer) set({ sleepTimer: null, volume: 1 })
 }
 
@@ -303,19 +326,37 @@ const MAX_CONSECUTIVE_SHAKE_EXTENDS = 6
 
 let consecutiveShakeExtends = 0
 
-export type AddSleepMinutesResult = 'ok' | 'capped' | 'shake-paused'
+export type AddSleepMinutesResult = 'ok' | 'capped' | 'shake-paused' | 'shake-disabled'
 
 /** Add minutes to a live duration/clock countdown ("+5 min" while sleeping, or a
  *  shake-to-extend hit). Grows totalSec too so the depletion ratio stays <= 1,
  *  up to MAX_SLEEP_TOTAL_SEC. When `viaShake` is set, also enforces the
  *  consecutive-shake cutoff and resets it on any non-shake call (manual +time
- *  taps go through here too, via the player UI). */
+ *  taps go through here too, via the player UI).
+ *
+ *  What happens at the cutoff is the user's "On excessive shake" choice:
+ *   - 'off'     never cuts off; every shake extends (3h cap is the only backstop)
+ *   - 'limit'   refuse further shakes, timer keeps running ('shake-paused')
+ *   - 'disable' cancel the timer AND suppress auto-sleep re-arm this quiet-hours
+ *               window, so playback isn't silenced ('shake-disabled') */
 export function addSleepMinutes(mins: number, viaShake = false): AddSleepMinutesResult {
   const timer = state.sleepTimer
   if (!timer || timer.kind === 'endOfChapter') return 'ok'
 
   if (viaShake) {
-    if (consecutiveShakeExtends >= MAX_CONSECUTIVE_SHAKE_EXTENDS) return 'shake-paused'
+    const mode = getSettingsState().sleepShakeExcessive
+    if (mode !== 'off' && consecutiveShakeExtends >= MAX_CONSECUTIVE_SHAKE_EXTENDS) {
+      if (mode === 'disable') {
+        // Clearly not a deliberate wake-up shake - stop the timer and don't let
+        // auto-sleep immediately re-arm; the user (or the next night's window)
+        // reactivates it. cancelSleepTimer would reset the flag, so set state here.
+        autoSleepSuppressed = true
+        consecutiveShakeExtends = 0
+        set({ sleepTimer: null, volume: 1 })
+        return 'shake-disabled'
+      }
+      return 'shake-paused'
+    }
     consecutiveShakeExtends += 1
   } else {
     consecutiveShakeExtends = 0

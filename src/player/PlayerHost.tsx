@@ -67,7 +67,12 @@ export function PlayerHost() {
   const toast = useToast()
   useShakeToExtend(
     (mins) => toast.show(`+${mins} min added`),
-    () => toast.show('Shake to extend paused - too many shakes in a row'),
+    (reason) =>
+      toast.show(
+        reason === 'disabled'
+          ? 'Too many shakes - sleep timer ended'
+          : 'Shake to extend paused - too many shakes in a row',
+      ),
   )
 
   // Warning beeps before the sleep timer ends. Pushes prefs to the native service

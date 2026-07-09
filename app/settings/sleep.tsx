@@ -33,6 +33,15 @@ function fmtRewind(sec: number): string {
 // Preset auto-duration lengths in minutes, shared with the sleep slider grid.
 const AUTO_DURATIONS = [10, 15, 20, 30, 40, 60] as const
 
+// Plain-language consequence for each "On excessive shaking" choice, shown under
+// the segmented control so the impact is clear without experimenting. Kicks in
+// after several shakes in a row (about six).
+const EXCESSIVE_DESC: Record<'off' | 'limit' | 'disable', string> = {
+  off: 'Keep adding time on every shake. Your timer still never goes past 3 hours.',
+  limit: 'Stop adding time, but keep the timer running so playback still winds down.',
+  disable: "End the sleep timer so playback keeps going. Auto sleep won't restart until tomorrow's quiet hours or you set a timer yourself.",
+}
+
 // The warning-beep tones, in picker order. Labels stay short for the segmented
 // control; keep in step with BeepSound in @hearthshelf/core.
 const BEEP_SOUNDS: { value: BeepSound; label: string }[] = [
@@ -238,16 +247,42 @@ export default function SleepPanel() {
             last={!s.sleepShakeExtend}
           />
           {s.sleepShakeExtend && (
-            <SettingsRow title="Time added per shake" desc="How much each shake adds." stacked last>
-              <SettingsSlider
-                value={s.sleepShakeMinutes}
-                min={1}
-                max={30}
-                step={1}
-                onChange={(v) => setSetting('sleepShakeMinutes', v)}
-                formatLabel={(v) => `${v} min`}
-              />
-            </SettingsRow>
+            <>
+              <SettingsRow title="Time added per shake" desc="How much each shake adds." stacked>
+                <SettingsSlider
+                  value={s.sleepShakeMinutes}
+                  min={1}
+                  max={30}
+                  step={1}
+                  onChange={(v) => setSetting('sleepShakeMinutes', v)}
+                  formatLabel={(v) => `${v} min`}
+                />
+              </SettingsRow>
+              <SettingsRow
+                title="On excessive shaking"
+                desc="What to do when shakes keep coming (like your phone in a bag on a walk)."
+                stacked
+                last
+              >
+                <Seg
+                  fill
+                  value={s.sleepShakeExcessive}
+                  onChange={(v) => setSetting('sleepShakeExcessive', v)}
+                  options={[
+                    { value: 'off', label: 'Do nothing' },
+                    { value: 'limit', label: 'Stop adding' },
+                    { value: 'disable', label: 'End timer' },
+                  ]}
+                />
+                <AppText
+                  variant="caption"
+                  color={colors.textMuted}
+                  style={{ marginTop: spacing.sm }}
+                >
+                  {EXCESSIVE_DESC[s.sleepShakeExcessive]}
+                </AppText>
+              </SettingsRow>
+            </>
           )}
         </SettingsGroup>
       </View>

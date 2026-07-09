@@ -54,23 +54,32 @@ function timerLive(): boolean {
   return timer?.kind === 'duration' || timer?.kind === 'clock'
 }
 
+/** Why shake-to-extend stopped honoring a shake at the cutoff (the user's "On
+ *  excessive shaking" choice decides which - see addSleepMinutes in
+ *  player/store.ts). 'paused' = timer kept running; 'disabled' = timer ended. */
+export type ShakeCutoff = 'paused' | 'disabled'
+
 /** Ref bundle handed to both platform mounts: `onExtend` fires per accepted
- *  shake, `onPaused` fires once when the consecutive-shake cutoff kicks in
+ *  shake, `onCutoff` fires once when the consecutive-shake cutoff kicks in
  *  (see MAX_CONSECUTIVE_SHAKE_EXTENDS in player/store.ts). */
 interface ShakeCallbacks {
   onExtend: (mins: number) => void
-  onPaused: () => void
+  onCutoff: (reason: ShakeCutoff) => void
 }
 
 /**
  * Mount the shake-to-extend listener. Call once from a persistent host
  * component (PlayerHost). `onExtend` fires with the minutes added so the host
- * can show a confirmation toast in component context; `onPaused` fires once if
- * shakes stop being honored (too many in a row - likely walking, not waking up).
+ * can show a confirmation toast in component context; `onCutoff` fires once when
+ * shakes stop being honored (too many in a row - likely walking, not waking up),
+ * with why (timer paused vs ended) so the host can explain what happened.
  */
-export function useShakeToExtend(onExtend: (mins: number) => void, onPaused: () => void): void {
-  const callbacksRef = useRef<ShakeCallbacks>({ onExtend, onPaused })
-  callbacksRef.current = { onExtend, onPaused }
+export function useShakeToExtend(
+  onExtend: (mins: number) => void,
+  onCutoff: (reason: ShakeCutoff) => void,
+): void {
+  const callbacksRef = useRef<ShakeCallbacks>({ onExtend, onCutoff })
+  callbacksRef.current = { onExtend, onCutoff }
 
   useEffect(() => {
     if (Platform.OS === 'android') return mountNative(callbacksRef)
@@ -104,8 +113,8 @@ function mountNative(callbacksRef: React.MutableRefObject<ShakeCallbacks>): () =
       // Guard against a stale event arriving after the timer ended.
       if (!shouldListen()) return
       const result = addSleepMinutes(e.minutes, true)
-      if (result === 'shake-paused') {
-        callbacksRef.current.onPaused()
+      if (result === 'shake-paused' || result === 'shake-disabled') {
+        callbacksRef.current.onCutoff(result === 'shake-disabled' ? 'disabled' : 'paused')
         return
       }
       // No JS haptic here - the service already fired the strong confirm buzz
@@ -143,8 +152,8 @@ function mountDeviceMotion(callbacksRef: React.MutableRefObject<ShakeCallbacks>)
     lastShakeAt = now
     const mins = getSettingsState().sleepShakeMinutes
     const result = addSleepMinutes(mins, true)
-    if (result === 'shake-paused') {
-      callbacksRef.current.onPaused()
+    if (result === 'shake-paused' || result === 'shake-disabled') {
+      callbacksRef.current.onCutoff(result === 'shake-disabled' ? 'disabled' : 'paused')
       return
     }
     haptics.confirm()

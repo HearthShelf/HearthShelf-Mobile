@@ -35,6 +35,11 @@ export type HapticIntensity = 'light' | 'medium'
 export type CarMode = 'auto' | 'on' | 'off'
 /** The tone played as a sleep-timer warning beep. See src/player/sleepBeep.ts. */
 export type BeepSound = 'chime' | 'marimba' | 'beep' | 'bell'
+/** What shake-to-extend does when too many shakes fire in a row (likely a phone
+ *  jostling on a walk, not a deliberate wake-up). See addSleepMinutes in
+ *  src/player/store.ts. off = never cut off; limit = stop honoring shakes but keep
+ *  the timer; disable = cancel the timer so playback isn't silenced. */
+export type ShakeExcessive = 'off' | 'limit' | 'disable'
 /** Aspect ratio (width/height) for cover tiles, per the CoverAspect setting. */
 export const COVER_ASPECT_RATIO: Record<CoverAspect, number> = { square: 1, portrait: 2 / 3 }
 
@@ -134,6 +139,7 @@ export interface SettingsState {
   sleepFadeLen: number
   sleepShakeExtend: boolean
   sleepShakeMinutes: number
+  sleepShakeExcessive: ShakeExcessive
   // Beep before the timer ends: sleepChime is the master on/off; the three cue
   // toggles pick which warnings fire (2 min / 1 min / right as it stops).
   sleepChime: boolean
@@ -221,6 +227,7 @@ let state: SettingsState = {
   sleepFadeLen: 20,
   sleepShakeExtend: false,
   sleepShakeMinutes: 5,
+  sleepShakeExcessive: 'limit',
   sleepChime: false,
   sleepBeepAt2min: true,
   sleepBeepAt1min: true,
