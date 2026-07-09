@@ -27,4 +27,18 @@ config.resolver.sourceExts = Array.from(
   new Set([...config.resolver.sourceExts, 'ts', 'tsx'])
 )
 
+// Redirect react-native's deprecated core `PushNotificationIOS` to an inert shim.
+// Its real module constructs a NativeEventEmitter with an unlinked native module
+// at import time, which crashes when the `react-native` barrel getter is forced by
+// wildcard interop (see src/shims/PushNotificationIOS.js for the full story).
+const pushNotifShim = path.resolve(projectRoot, 'src/shims/PushNotificationIOS.js')
+const upstreamResolveRequest = config.resolver.resolveRequest
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (/Libraries[\\/]PushNotificationIOS[\\/]PushNotificationIOS$/.test(moduleName)) {
+    return { type: 'sourceFile', filePath: pushNotifShim }
+  }
+  const resolver = upstreamResolveRequest || context.resolveRequest
+  return resolver(context, moduleName, platform)
+}
+
 module.exports = config
