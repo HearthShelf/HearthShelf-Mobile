@@ -37,8 +37,18 @@ function addSourceFiles(config) {
     const projectName = cfg.modRequest.projectName
     const group = project.findPBXGroupKey({ name: projectName })
     for (const file of ['HearthShelfCarPlay.swift', 'HearthShelfCarPlayBridge.m']) {
-      if (!project.hasFile(file)) {
-        project.addSourceFile(file, { target: project.getFirstTarget().uuid }, group)
+      // copySwift writes these into ios/<projectName>/. Register the Xcode file
+      // reference with an explicit SOURCE_ROOT-relative path so Xcode resolves
+      // it to ios/<projectName>/<file> deterministically. A bare filename was
+      // resolving against ios/ (the project root) instead of the project's
+      // source group, so the archive step could not find the file.
+      const projectPath = `${projectName}/${file}`
+      if (!project.hasFile(projectPath)) {
+        project.addSourceFile(
+          projectPath,
+          { target: project.getFirstTarget().uuid, sourceTree: 'SOURCE_ROOT' },
+          group
+        )
       }
     }
     return cfg
