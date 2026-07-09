@@ -16,7 +16,7 @@ import { downloadItem } from '@/player/downloads'
 import { AddToListSheet } from '@/player/AddToListSheet'
 import type { SheetHandle } from '@/player/sheets'
 import { itemAuthor, itemTitle } from '@/api/abs'
-import { getProgressState, subscribeProgress, markItemsFinished } from '@/store/progress'
+import { getProgressState, subscribeProgress, promptAndMarkItemsFinished } from '@/store/progress'
 import { AppText, IconButton, icons } from '@/ui/primitives'
 import { spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
@@ -49,22 +49,27 @@ export function BookSelectionToolbar({
   const markFinished = async () => {
     if (!ids.length || busy.current) return
     const next = !selectionAllFinished
-    const ok = await confirm({
-      title: next ? 'Mark finished' : 'Mark not finished',
-      message: `Mark ${ids.length} book${ids.length === 1 ? '' : 's'} as ${next ? 'finished' : 'not finished'}?`,
-      confirmLabel: next ? 'Mark finished' : 'Mark not finished',
-      destructive: false,
-    })
-    if (!ok) return
+    // Unfinishing a batch still confirms (it clears progress); finishing goes
+    // straight to the date prompt, which itself is the intentional gate.
+    if (!next) {
+      const ok = await confirm({
+        title: 'Mark not finished',
+        message: `Mark ${ids.length} book${ids.length === 1 ? '' : 's'} as not finished?`,
+        confirmLabel: 'Mark not finished',
+        destructive: false,
+      })
+      if (!ok) return
+    }
     busy.current = true
     const idSet = new Set(ids)
     try {
-      await markItemsFinished(
+      const done = await promptAndMarkItemsFinished(
         books
           .filter((b) => idSet.has(b.id))
           .map((b) => ({ id: b.id, duration: b.media.duration ?? 0 })),
         next,
       )
+      if (!done) return // dismissed the prompt
       haptics.success()
       onToast?.(next ? 'Marked finished' : 'Marked not finished')
       selection.clear()

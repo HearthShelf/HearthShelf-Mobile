@@ -13,6 +13,7 @@ import { PlayerHost } from '@/player/PlayerHost'
 import { MiniPlayerDock } from '@/player/MiniPlayerDock'
 import { PopToast } from '@/social/PopToast'
 import { ToastHost } from '@/ui/Toast'
+import { FinishDateHost } from '@/ui/FinishDatePrompt'
 import { SplashScreen as HearthSplash, type SplashPhase } from '@/ui/SplashScreen'
 import { OfflineBanner } from '@/ui/OfflineBanner'
 import { ConnectionProvider, useConnection } from '@/api/ConnectionProvider'
@@ -261,6 +262,10 @@ export default function RootLayout() {
               </AuthGate>
               {/* Persistent audio engine - mounted once, never unmounted. */}
               <PlayerHost />
+              {/* "When did you finish this?" prompt raised by mark-finished
+                  actions app-wide, so backdated completions land in the right
+                  stats bucket. */}
+              <FinishDateHost />
             </BottomSheetModalProvider>
           </ThemeProvider>
         </SafeAreaProvider>

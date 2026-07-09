@@ -15,6 +15,7 @@ import type { ABSMediaProgress, ABSMeResponse } from '@hearthshelf/core'
 import { getMe, setItemFinished } from '@/api/abs'
 import { getSettingsState } from '@/store/settings'
 import { isDownloaded, deleteDownload } from '@/player/downloads'
+import { finishDatePrompt } from '@/ui/FinishDatePrompt'
 
 export interface ProgressState {
   byId: ReadonlyMap<string, ABSMediaProgress>
@@ -79,7 +80,11 @@ export async function refreshProgress(): Promise<ABSMeResponse> {
     if (server?.isFinished === o.isFinished) {
       overrides.delete(id)
     } else if (server) {
-      next.set(id, { ...server, isFinished: o.isFinished, progress: o.isFinished ? 1 : server.progress })
+      next.set(id, {
+        ...server,
+        isFinished: o.isFinished,
+        progress: o.isFinished ? 1 : server.progress,
+      })
     } else {
       next.set(id, stub(id, o.isFinished))
     }
@@ -115,13 +120,19 @@ function cleanupFinishedDownloads(
 export async function markItemsFinished(
   items: { id: string; duration?: number }[],
   finished: boolean,
+  finishedAt?: number,
 ): Promise<void> {
   if (!items.length) return
   const prev = items.map((it) => [it.id, state.byId.get(it.id)] as const)
   const next = new Map(state.byId)
   for (const it of items) {
     const p = next.get(it.id)
-    next.set(it.id, p ? { ...p, isFinished: finished, progress: finished ? 1 : p.progress } : stub(it.id, finished, it.duration))
+    next.set(
+      it.id,
+      p
+        ? { ...p, isFinished: finished, progress: finished ? 1 : p.progress }
+        : stub(it.id, finished, it.duration),
+    )
     overrides.set(it.id, { isFinished: finished, atMs: Date.now() })
   }
   emit(next)
@@ -140,7 +151,7 @@ export async function markItemsFinished(
   let lastErr: unknown = null
   for (const it of items) {
     try {
-      await setItemFinished(it.id, finished)
+      await setItemFinished(it.id, finished, finishedAt)
       okCount++
     } catch (e) {
       lastErr = e
@@ -160,6 +171,33 @@ export async function markItemsFinished(
   void refreshProgress().catch(() => {})
 }
 
-export async function markFinished(itemId: string, finished: boolean, duration?: number): Promise<void> {
-  await markItemsFinished([{ id: itemId, duration }], finished)
+export async function markFinished(
+  itemId: string,
+  finished: boolean,
+  duration?: number,
+  finishedAt?: number,
+): Promise<void> {
+  await markItemsFinished([{ id: itemId, duration }], finished, finishedAt)
+}
+
+/**
+ * Mark items finished, first asking "when did you finish this?" so completion
+ * can be backdated for accurate stats. Unfinishing is instant (no prompt).
+ * Resolves false when the user dismisses the prompt so callers can skip their
+ * success toast / selection-clear. Marking through this keeps the optimistic
+ * flip + protected-override behavior of markItemsFinished.
+ */
+export async function promptAndMarkItemsFinished(
+  items: { id: string; duration?: number }[],
+  finished: boolean,
+): Promise<boolean> {
+  if (!items.length) return false
+  let finishedAt: number | undefined
+  if (finished) {
+    const choice = await finishDatePrompt({ count: items.length })
+    if (!choice) return false
+    finishedAt = choice.finishedAt ?? undefined
+  }
+  await markItemsFinished(items, finished, finishedAt)
+  return true
 }

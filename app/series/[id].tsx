@@ -36,7 +36,7 @@ import {
   getProgressState,
   subscribeProgress,
   refreshProgress,
-  markItemsFinished,
+  promptAndMarkItemsFinished,
 } from '@/store/progress'
 import { requestSeek } from '@/player/store'
 import { playItemById } from '@/player/playback'
@@ -212,7 +212,9 @@ export default function SeriesDetailScreen() {
     const next = !allSeriesFinished
     setMarking(true)
     try {
-      await markItemsFinished(
+      // Finishing asks "when did you finish?" once for the whole series;
+      // unfinishing is instant.
+      await promptAndMarkItemsFinished(
         books.map((b) => ({ id: b.id, duration: b.media.duration ?? 0 })),
         next,
       )

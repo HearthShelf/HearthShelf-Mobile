@@ -44,7 +44,7 @@ import {
   getProgressState,
   subscribeProgress,
   refreshProgress,
-  markFinished,
+  promptAndMarkItemsFinished,
 } from '@/store/progress'
 import {
   getDownloadsState,
@@ -294,11 +294,15 @@ export default function ItemDetailScreen() {
 
   const toggleFinished = async () => {
     const next = !isFinished
-    haptics.success()
-    if (next) setFinishBurst((b) => b + 1)
     try {
+      // Finishing asks "when did you finish?" first; unfinishing is instant.
       // Optimistic flip + rollback live in the shared progress store.
-      await markFinished(detail.id, next, duration)
+      const ok = await promptAndMarkItemsFinished([{ id: detail.id, duration }], next)
+      if (!ok) return // dismissed the prompt
+      if (next) {
+        haptics.success()
+        setFinishBurst((b) => b + 1)
+      }
       show(next ? 'Marked finished' : 'Back in progress')
     } catch {
       show('Could not update')

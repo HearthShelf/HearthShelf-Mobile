@@ -22,7 +22,7 @@ import { StyleSheet, View } from 'react-native'
 import type { ABSLibraryItem } from '@hearthshelf/core'
 import { coverHue } from '@hearthshelf/core'
 import { coverUrl, itemAuthor, itemTitle } from '@/api/abs'
-import { markFinished as markFinishedShared } from '@/store/progress'
+import { promptAndMarkItemsFinished } from '@/store/progress'
 import {
   getDownloadsState,
   subscribeDownloads,
@@ -36,7 +36,6 @@ import { AppText, Cover, Sheet, type SheetRef, Touchable } from '@/ui/primitives
 import { Icon, icons } from '@/ui/icons'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
-import { haptics } from '@/ui/haptics'
 import { confirm } from '@/ui/confirm'
 
 export interface BookActionsHandle {
@@ -77,12 +76,16 @@ export const BookActionsSheet = forwardRef<
     if (!item || busy) return
     const next = !finished
     setBusy(true)
-    haptics.success()
-    // Close right away - the optimistic store flip means the screen behind is
-    // already correct, and holding the tray open on a network wait feels stuck.
+    // Close right away - the finish-date prompt (or the optimistic flip on the
+    // screen behind) takes over; holding the tray open on a wait feels stuck.
     sheetRef.current?.dismiss()
     try {
-      await markFinishedShared(item.id, next, item.media.duration ?? 0)
+      // Finishing asks "when did you finish?"; unfinishing is instant.
+      const ok = await promptAndMarkItemsFinished(
+        [{ id: item.id, duration: item.media.duration ?? 0 }],
+        next,
+      )
+      if (!ok) return // dismissed the prompt
       onMarkedFinished?.(item, next)
       onToast?.(next ? 'Marked finished' : 'Marked not finished')
     } catch {

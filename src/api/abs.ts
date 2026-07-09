@@ -260,11 +260,23 @@ export async function getMe(): Promise<ABSMeResponse> {
   return me
 }
 
-/** Mark an item finished or not finished (ABS PATCH /api/me/progress/:id). */
-export async function setItemFinished(itemId: string, finished: boolean): Promise<void> {
+/**
+ * Mark an item finished or not finished (ABS PATCH /api/me/progress/:id).
+ *
+ * When finishing, an optional `finishedAt` (epoch ms) backdates completion so it
+ * lands in the right bucket for year/listening stats. ABS honors a supplied
+ * `finishedAt`; omit it and the server stamps the current time.
+ */
+export async function setItemFinished(
+  itemId: string,
+  finished: boolean,
+  finishedAt?: number,
+): Promise<void> {
+  const body: { isFinished: boolean; finishedAt?: number } = { isFinished: finished }
+  if (finished && typeof finishedAt === 'number') body.finishedAt = finishedAt
   await absRequest<void>(`/api/me/progress/${encodeURIComponent(itemId)}`, {
     method: 'PATCH',
-    body: JSON.stringify({ isFinished: finished }),
+    body: JSON.stringify(body),
   })
 }
 
