@@ -260,7 +260,35 @@ if ($Prebuild) {
 }
 
 # --- 2. clear stale native caches (the libworklets.so ninja fix) ---
+# A live Gradle daemon keeps build-output jars (e.g. expo-modules-core's
+# classes.jar) open, so deleting those dirs fails with "being used by another
+# process" and the daemons pile up across runs. Stop all daemons before touching
+# the dirs, then retry each delete for a moment in case a scanner briefly holds a
+# freshly-released handle.
+function Stop-GradleDaemons {
+  Write-Step 'Stopping Gradle daemons (they hold build-output jars open)'
+  Push-Location (Join-Path $RepoRoot 'android')
+  try { & .\gradlew.bat --stop 2>&1 | Out-Null } catch { }
+  finally { Pop-Location }
+  # Belt and suspenders: kill any java that survived the graceful stop.
+  Get-Process java -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Milliseconds 500
+}
+
+function Remove-ItemResilient($path) {
+  for ($i = 1; $i -le 5; $i++) {
+    try {
+      Remove-Item -Recurse -Force $path -ErrorAction Stop
+      return
+    } catch {
+      if ($i -eq 5) { throw }
+      Start-Sleep -Seconds 1
+    }
+  }
+}
+
 function Clear-NativeCaches {
+  Stop-GradleDaemons
   Write-Step 'Clearing native build caches (.cxx / android build dirs)'
   $paths = @(
     'node_modules\react-native-worklets\android\build'
@@ -273,7 +301,7 @@ function Clear-NativeCaches {
   )
   foreach ($p in $paths) {
     $full = Join-Path $RepoRoot $p
-    if (Test-Path $full) { Remove-Item -Recurse -Force $full }
+    if (Test-Path $full) { Remove-ItemResilient $full }
   }
 }
 
