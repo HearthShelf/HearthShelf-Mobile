@@ -404,9 +404,7 @@ final class HearthShelfAuto: RCTEventEmitter, MPPlayableContentDataSource, MPPla
       let id = "root:discover:\(shelf.id)"
       nextRoots.append(CarItem(id: id, title: shelf.label, subtitle: "", playable: false))
       nextNodes[id] = .discoverShelf(shelf.id)
-      childrenByRoot[id] = shelf.items.map {
-        CarItem(id: $0.id, title: $0.title, subtitle: $0.author, playable: true)
-      }
+      childrenByRoot[id] = shelf.items
     }
 
     for library in libraryRoots {
