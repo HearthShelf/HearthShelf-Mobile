@@ -87,7 +87,9 @@ export function setAutoSleepShake(
   timerActive: boolean,
   hapticLevel: string,
 ): void {
-  if (Platform.OS === 'android') {
+  // Both platforms now detect the shake natively so it works with the phone
+  // locked (iOS suspends the JS DeviceMotion listener when the screen is off).
+  if (Platform.OS === 'android' || Platform.OS === 'ios') {
     native?.setSleepShake(enabled, minutes, timerActive, hapticLevel)
   }
 }

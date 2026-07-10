@@ -71,6 +71,14 @@ function addInfoPlist(config) {
     const modes = new Set([...(plist.UIBackgroundModes || []), 'audio'])
     plist.UIBackgroundModes = Array.from(modes)
 
+    // CoreMotion (CMMotionManager device-motion) drives native shake-to-extend so
+    // a shake registers with the phone locked. iOS requires a usage string or the
+    // motion API is denied. Only set if absent, so an app.config.js value wins.
+    if (!plist.NSMotionUsageDescription) {
+      plist.NSMotionUsageDescription =
+        'HearthShelf uses motion to let you shake the phone to add time to the sleep timer.'
+    }
+
     // Modern CarPlay (carplay-audio entitlement, iOS 14+) is scene-based. The
     // app must declare a UIApplicationSceneManifest with a CarPlay scene role so
     // the OS knows which delegate class owns the car surface.

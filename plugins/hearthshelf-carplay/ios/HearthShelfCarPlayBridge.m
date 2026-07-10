@@ -9,6 +9,10 @@ RCT_EXTERN_METHOD(setSession:(NSString *)serverUrl
                   skipForwardSec:(nonnull NSNumber *)skipForwardSec)
 RCT_EXTERN_METHOD(setDiscover:(NSString *)json)
 RCT_EXTERN_METHOD(setNotePopsEnabled:(BOOL)enabled)
+RCT_EXTERN_METHOD(setSleepShake:(BOOL)enabled
+                  minutes:(nonnull NSNumber *)minutes
+                  timerActive:(BOOL)timerActive
+                  hapticLevel:(NSString *)hapticLevel)
 RCT_EXTERN_METHOD(clearSession)
 
 RCT_EXTERN_METHOD(load:(NSString *)url

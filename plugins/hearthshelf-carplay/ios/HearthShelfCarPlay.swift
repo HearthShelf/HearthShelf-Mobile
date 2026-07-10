@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreMotion
 import Foundation
 import MediaPlayer
 import React
@@ -54,6 +55,15 @@ final class HearthShelfAuto: RCTEventEmitter {
 
   private let defaults = UserDefaults.standard
   private let player = AVPlayer()
+  // KVO tokens for the current item's load status and the player's stall state.
+  // Held so they can be torn down when the item is replaced (load/stop) - a
+  // dangling observer on a deallocated item crashes.
+  private var itemStatusObs: NSKeyValueObservation?
+  private var timeControlObs: NSKeyValueObservation?
+  private var observedItem: AVPlayerItem?
+  // Set true once we've reported a failure for the current item, so a status
+  // change plus a failedToPlayToEndTime notification don't double-toast.
+  private var didReportError = false
   private var hasListeners = false
   private var progressTimer: Timer?
   private var chapters: [Chapter] = []
@@ -65,6 +75,25 @@ final class HearthShelfAuto: RCTEventEmitter {
   private var skipBackSec = 15
   private var skipForwardSec = 30
 
+  // ---- shake-to-extend the sleep timer (native, works while locked) ----
+  // iOS suspends the JS thread when the phone locks, so the JS DeviceMotion
+  // listener stopped detecting shakes (and firing the haptic) with the screen
+  // off. This mirrors Android's native path: CoreMotion keeps delivering while
+  // audio plays (the app's `audio` background mode keeps the process alive), we
+  // fire the haptic natively, then emit onShakeExtend so JS adds the minutes.
+  private let motionManager = CMMotionManager()
+  private let motionQueue = OperationQueue()
+  private var shakeRunning = false
+  private var lastShakeAt: TimeInterval = 0
+  private var shakeEnabled = false
+  private var shakeTimerActive = false
+  private var shakeMinutes = 5
+  private var hapticLevel = "minimal"
+  /// Shake magnitude (g, gravity removed via userAcceleration) that counts as a
+  /// shake. Android uses 18 m/s^2 ~= 1.83g; 1.8g here is the matched threshold.
+  private let shakeThresholdG = 1.8
+  private let shakeCooldownSec: TimeInterval = 3.0
+
   override init() {
     super.init()
     HearthShelfAuto.shared = self
@@ -74,6 +103,18 @@ final class HearthShelfAuto: RCTEventEmitter {
       self,
       selector: #selector(playerItemDidReachEnd),
       name: .AVPlayerItemDidPlayToEndTime,
+      object: nil
+    )
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(playerItemFailedToEnd),
+      name: .AVPlayerItemFailedToPlayToEndTime,
+      object: nil
+    )
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(playerItemPlaybackStalled),
+      name: .AVPlayerItemPlaybackStalled,
       object: nil
     )
   }
@@ -97,6 +138,35 @@ final class HearthShelfAuto: RCTEventEmitter {
     }
   }
 
+  /// AVFoundation gave up mid-stream (the item couldn't finish playing - e.g. the
+  /// signed stream URL's token expired between load and this point, or the network
+  /// dropped). The userInfo error carries the reason.
+  @objc
+  private func playerItemFailedToEnd(_ notification: Notification) {
+    guard let item = notification.object as? AVPlayerItem, item === player.currentItem else {
+      return
+    }
+    let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+    let message = error?.localizedDescription ?? "Playback stopped unexpectedly"
+    DispatchQueue.main.async { self.reportPlaybackError(message) }
+  }
+
+  /// Playback stalled with no more buffered data. On its own this is just
+  /// buffering (AVPlayer will resume when data returns), so we don't treat it as a
+  /// hard error - timeControlStatus tells buffering from a genuine failure.
+  @objc
+  private func playerItemPlaybackStalled(_ notification: Notification) {
+    guard let item = notification.object as? AVPlayerItem, item === player.currentItem else {
+      return
+    }
+    // A stall on a healthy item is recoverable buffering; only escalate if the
+    // item is already failed (status observer will also catch this).
+    if item.status == .failed {
+      let message = item.error?.localizedDescription ?? "Playback stalled"
+      DispatchQueue.main.async { self.reportPlaybackError(message) }
+    }
+  }
+
   @objc
   override static func requiresMainQueueSetup() -> Bool {
     true
@@ -106,8 +176,13 @@ final class HearthShelfAuto: RCTEventEmitter {
     // Must declare every event the shared JS (PlayerHost) subscribes to, or
     // RCTEventEmitter throws on addListener. onEnded fires from CarPlay; the
     // onCar* pair is Android Auto handoff (never emitted on iOS) but still has
-    // to be declared so the cross-platform listener setup is valid here.
-    ["onProgress", "onState", "onTogglePlay", "onJump", "onEnded", "onCarActive", "onCarLoaded"]
+    // to be declared so the cross-platform listener setup is valid here. onError
+    // surfaces a failed AVPlayerItem load (expired token, network stall,
+    // unplayable format) so JS can toast it and drop the optimistic playing state.
+    [
+      "onProgress", "onState", "onTogglePlay", "onJump", "onEnded", "onError", "onCarActive",
+      "onCarLoaded", "onShakeExtend",
+    ]
   }
 
   override func startObserving() {
@@ -140,6 +215,95 @@ final class HearthShelfAuto: RCTEventEmitter {
   @objc(setNotePopsEnabled:)
   func setNotePopsEnabled(_ enabled: Bool) {
     defaults.set(enabled, forKey: "hs.carplay.notePopsEnabled")
+  }
+
+  // ---- shake-to-extend: gate pushed from JS ----
+  // JS calls this when the setting, the minutes, whether a duration/clock timer
+  // is live, or the haptic level changes. We (un)subscribe CoreMotion to match,
+  // exactly like Android's setSleepShake -> evaluateShake.
+  @objc(setSleepShake:minutes:timerActive:hapticLevel:)
+  func setSleepShake(_ enabled: Bool, minutes: NSNumber, timerActive: Bool, hapticLevel: String) {
+    self.shakeEnabled = enabled
+    self.shakeMinutes = minutes.intValue
+    self.shakeTimerActive = timerActive
+    self.hapticLevel = hapticLevel
+    evaluateShake()
+  }
+
+  /// True when a shake should currently add time: setting on, a duration/clock
+  /// sleep timer live (pushed from JS), and audio actually playing. (No car gate
+  /// on iOS - the CarPlay scene shares this same player.)
+  private func shakeConditionsMet() -> Bool {
+    shakeEnabled && shakeTimerActive && player.rate > 0
+  }
+
+  /// (Un)subscribe the accelerometer to match the current gate. Cheap to call on
+  /// every play/pause/load/stop; only touches CoreMotion when the state flips.
+  private func evaluateShake() {
+    let want = shakeConditionsMet()
+    if want && !shakeRunning {
+      guard motionManager.isDeviceMotionAvailable else {
+        return
+      }
+      motionManager.deviceMotionUpdateInterval = 0.1
+      motionManager.startDeviceMotionUpdates(to: motionQueue) { [weak self] motion, _ in
+        guard let self, let motion else {
+          return
+        }
+        self.handleMotion(motion)
+      }
+      shakeRunning = true
+    } else if !want && shakeRunning {
+      motionManager.stopDeviceMotionUpdates()
+      shakeRunning = false
+    }
+  }
+
+  /// userAcceleration is gravity-removed (in g), so a still phone reads ~0 and a
+  /// deliberate shake spikes past the threshold - the CoreMotion analog of
+  /// Android's TYPE_LINEAR_ACCELERATION stream.
+  private func handleMotion(_ motion: CMDeviceMotion) {
+    let a = motion.userAcceleration
+    let mag = (a.x * a.x + a.y * a.y + a.z * a.z).squareRoot()
+    if mag < shakeThresholdG {
+      return
+    }
+    let now = ProcessInfo.processInfo.systemUptime
+    if now - lastShakeAt < shakeCooldownSec {
+      return
+    }
+    // Re-check the gate at fire time (playback/timer can flip between ticks).
+    if !shakeConditionsMet() {
+      return
+    }
+    lastShakeAt = now
+    // Strong native buzz first, so the confirmation is felt instantly even with
+    // the screen off - before the JS bridge round-trip adds the minutes.
+    buzzConfirm()
+    let mins = shakeMinutes
+    DispatchQueue.main.async { self.emitShakeExtend(mins) }
+  }
+
+  /// A firm buzz the instant a shake is accepted, fired natively (not via the JS
+  /// haptics module) so it lands with the screen off. Silent only when Haptics is
+  /// Off. UINotificationFeedbackGenerator(.success) is the closest system analog to
+  /// Android's double-pulse confirm.
+  private func buzzConfirm() {
+    if hapticLevel == "off" {
+      return
+    }
+    DispatchQueue.main.async {
+      let generator = UINotificationFeedbackGenerator()
+      generator.prepare()
+      generator.notificationOccurred(.success)
+    }
+  }
+
+  private func emitShakeExtend(_ minutes: Int) {
+    guard hasListeners else {
+      return
+    }
+    sendEvent(withName: "onShakeExtend", body: ["minutes": minutes])
   }
 
   @objc
@@ -175,11 +339,14 @@ final class HearthShelfAuto: RCTEventEmitter {
       self.shownChapterIndex = self.chapterIndex(at: startSec.doubleValue)
 
       guard let mediaUrl = URL(string: url) else {
+        self.reportPlaybackError("Could not open the audio for this book")
         return
       }
 
       self.configureAudioSession()
-      self.player.replaceCurrentItem(with: AVPlayerItem(url: mediaUrl))
+      let item = AVPlayerItem(url: mediaUrl)
+      self.observeItem(item)
+      self.player.replaceCurrentItem(with: item)
       self.player.seek(to: CMTime(seconds: startSec.doubleValue, preferredTimescale: 600))
       if autoPlay {
         self.player.rate = self.currentRate
@@ -187,6 +354,7 @@ final class HearthShelfAuto: RCTEventEmitter {
       }
       self.updateNowPlaying()
       self.emitState(autoPlay)
+      self.evaluateShake()
     }
   }
 
@@ -197,6 +365,7 @@ final class HearthShelfAuto: RCTEventEmitter {
       self.startProgressTimer()
       self.updateNowPlaying()
       self.emitState(true)
+      self.evaluateShake()
     }
   }
 
@@ -206,6 +375,7 @@ final class HearthShelfAuto: RCTEventEmitter {
       self.player.pause()
       self.updateNowPlaying()
       self.emitState(false)
+      self.evaluateShake()
     }
   }
 
@@ -245,12 +415,14 @@ final class HearthShelfAuto: RCTEventEmitter {
     DispatchQueue.main.async {
       self.progressTimer?.invalidate()
       self.progressTimer = nil
+      self.teardownItemObservers()
       self.player.pause()
       self.player.replaceCurrentItem(with: nil)
       self.chapters = []
       self.shownChapterIndex = -1
       MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
       self.emitState(false)
+      self.evaluateShake()
     }
   }
 
@@ -263,6 +435,73 @@ final class HearthShelfAuto: RCTEventEmitter {
       // Audio session activation can fail in simulator/headless CI; the player
       // still compiles and will retry when playback is requested on device.
     }
+  }
+
+  // ---- playback error observation ----
+  // AVPlayer fails silently: replaceCurrentItem never throws, and a bad load
+  // (expired ?token= 401, network stall, unplayable format) just leaves the item
+  // in .failed with no audio. Without this, the UI shows "playing" over silence
+  // and nothing reaches JS. We watch the item's status/error and the player's
+  // stall state, then emit onError so PlayerHost can toast and stop the
+  // optimistic playing state.
+
+  /// Attach status/stall observers to a freshly-created item, replacing any from
+  /// the previous load. Must run on the main thread (called from load()).
+  private func observeItem(_ item: AVPlayerItem) {
+    teardownItemObservers()
+    observedItem = item
+    didReportError = false
+
+    itemStatusObs = item.observe(\.status, options: [.new]) { [weak self] observedItem, _ in
+      guard let self else {
+        return
+      }
+      if observedItem.status == .failed {
+        let message = observedItem.error?.localizedDescription ?? "This book could not be played"
+        DispatchQueue.main.async { self.reportPlaybackError(message) }
+      }
+    }
+
+    // timeControlStatus distinguishes buffering (.waitingToPlayAtSpecifiedRate
+    // with a reason) from a genuine stop. A wait with no forward progress and a
+    // failed item is a failure; a wait while evaluating/buffering is normal.
+    timeControlObs = player.observe(\.timeControlStatus, options: [.new]) {
+      [weak self] observedPlayer, _ in
+      guard let self else {
+        return
+      }
+      if observedPlayer.timeControlStatus == .waitingToPlayAtSpecifiedRate,
+        observedPlayer.currentItem?.status == .failed
+      {
+        let message =
+          observedPlayer.currentItem?.error?.localizedDescription ?? "Playback could not continue"
+        DispatchQueue.main.async { self.reportPlaybackError(message) }
+      }
+    }
+  }
+
+  private func teardownItemObservers() {
+    itemStatusObs?.invalidate()
+    itemStatusObs = nil
+    timeControlObs?.invalidate()
+    timeControlObs = nil
+    observedItem = nil
+  }
+
+  /// Emit a single onError per failed item, and drop the optimistic playing state
+  /// so the UI stops showing "playing" over silence. Guarded so a status change
+  /// plus a failedToPlayToEndTime/stall notification don't double-fire.
+  private func reportPlaybackError(_ message: String) {
+    if didReportError {
+      return
+    }
+    didReportError = true
+    progressTimer?.invalidate()
+    progressTimer = nil
+    player.pause()
+    emitState(false)
+    emitError(message)
+    evaluateShake()
   }
 
   private func configureRemoteCommands() {
@@ -852,6 +1091,13 @@ final class HearthShelfAuto: RCTEventEmitter {
       return
     }
     sendEvent(withName: "onEnded", body: [:])
+  }
+
+  private func emitError(_ message: String) {
+    guard hasListeners else {
+      return
+    }
+    sendEvent(withName: "onError", body: ["message": message])
   }
 }
 

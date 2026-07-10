@@ -3,23 +3,23 @@
  * sleep timer is winding down, a shake of the phone adds a few minutes so they
  * don't have to open the player and fiddle with a slider half-asleep.
  *
- * Two implementations, because where the shake is detected decides whether it
- * works when it matters most - phone locked, screen off, app backgrounded:
+ * Detection is native on both platforms, because a JS accelerometer listener is
+ * suspended when the app isn't foregrounded (Android: Activity-bound; iOS: the JS
+ * thread is frozen when the phone locks), so a locked-phone shake did nothing -
+ * exactly when shake-to-extend matters most (half-asleep, screen off). The native
+ * sensor keeps delivering because active audio playback holds the process/CPU
+ * awake, and the confirm haptic fires natively so it lands instantly even locked.
  *
  *  - Android: detection lives in the native phone media service
- *    (HearthShelfPlayerService), the always-alive foreground service that owns
- *    playback. A JS accelerometer listener is Activity-bound and stops delivering
- *    when the app isn't foregrounded, so a locked-phone shake did nothing. The
- *    native SensorManager keeps delivering because active audio holds the CPU
- *    awake. JS just pushes the gate (setting on + minutes + whether a
- *    duration/clock timer is live) to native and listens for onShakeExtend, then
- *    adds the minutes to the store (store stays the source of truth).
+ *    (HearthShelfPlayerService, SensorManager).
+ *  - iOS: detection lives in the native HearthShelfAuto module (CoreMotion), which
+ *    also owns the AVPlayer.
  *
- *  - iOS / other: the phone media service is Android-only, so keep the foreground
- *    DeviceMotion listener. The accelerometer is subscribed only while it can act
- *    (setting on, a duration/clock timer running, playback playing) so it doesn't
- *    listen 24/7. DeviceMotion.acceleration is gravity-removed (m/s^2), so a still
- *    phone reads ~0 and a deliberate shake spikes past the threshold.
+ * In both cases JS just pushes the gate (setting on + minutes + whether a
+ * duration/clock timer is live + haptic level) to native and listens for
+ * onShakeExtend, then adds the minutes to the store (store stays the source of
+ * truth). The JS DeviceMotion path (mountDeviceMotion) remains only as a fallback
+ * for platforms without the native module (e.g. web).
  */
 import { useEffect, useRef } from 'react'
 import { NativeEventEmitter, NativeModules, Platform } from 'react-native'
@@ -82,7 +82,11 @@ export function useShakeToExtend(
   callbacksRef.current = { onExtend, onCutoff }
 
   useEffect(() => {
-    if (Platform.OS === 'android') return mountNative(callbacksRef)
+    // Native detection on both platforms so a locked phone still registers the
+    // shake (iOS suspends the JS DeviceMotion listener with the screen off). The
+    // JS DeviceMotion path is kept only as a fallback for platforms without the
+    // native module (e.g. web).
+    if (Platform.OS === 'android' || Platform.OS === 'ios') return mountNative(callbacksRef)
     return mountDeviceMotion(callbacksRef)
   }, [])
 }
