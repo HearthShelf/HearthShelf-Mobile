@@ -22,7 +22,9 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15
+    # macos-26: default Xcode 26.5 matches EAS, and clerk-ios needs Swift 6.2
+    # tools (macos-15's default Xcode fails SPM resolution on it).
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v7
         with:
