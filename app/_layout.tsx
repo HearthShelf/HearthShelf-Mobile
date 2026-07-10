@@ -67,6 +67,15 @@ function hideOsSplash() {
  *  without this the app hangs on the splash forever. */
 const CLERK_LOAD_TIMEOUT_MS = 4000
 
+// On iOS, resuming from a locked/suspended state re-initializes Clerk, which can
+// briefly report isSignedIn=false before the cached session re-hydrates. Bouncing
+// to /sign-in on that momentary flap threw signed-in users onto the sign-in screen
+// (audio kept playing from PlayerHost, which lives outside this gate). A genuine
+// sign-out stays false well past this window, so it still redirects; a resume flap
+// resolves before the timer fires. Android doesn't flap (its process keeps Clerk's
+// in-memory state warm), which is why it was iOS-only.
+const SIGNED_OUT_REDIRECT_DELAY_MS = 1500
+
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn, getToken } = useAuth()
   const segments = useSegments()
@@ -77,6 +86,9 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   // Set when Clerk hasn't loaded in time AND we have a cached session, so a
   // signed-in user launching offline reaches offline mode instead of hanging.
   const [offlineFallback, setOfflineFallback] = useState(false)
+  // Once we've seen a confirmed signed-in session this run, a later isSignedIn=false
+  // is treated as a possible resume flap and debounced before redirecting.
+  const wasSignedIn = useRef(false)
 
   useEffect(() => {
     if (isLoaded) return
@@ -93,14 +105,29 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const effectiveSignedIn = isSignedIn || (!isLoaded && offlineFallback)
   const ready = isLoaded || offlineFallback
 
+  if (effectiveSignedIn) wasSignedIn.current = true
+
   useEffect(() => {
     if (!ready) return
     // sso-callback catches the OAuth redirect mid-flow (see app/sso-callback.tsx);
     // it routes itself once Clerk settles, so don't yank it to /sign-in while the
     // session is still being established.
     const onAuthRoute = segments[0] === 'sign-in' || segments[0] === 'sso-callback'
-    if (!effectiveSignedIn && !onAuthRoute) router.replace('/sign-in')
-    else if (effectiveSignedIn && segments[0] === 'sign-in') router.replace('/(tabs)')
+    if (effectiveSignedIn && segments[0] === 'sign-in') {
+      router.replace('/(tabs)')
+      return
+    }
+    if (effectiveSignedIn || onAuthRoute) return
+
+    // Not signed in and not on an auth route. If we were signed in earlier this
+    // run, this may be a transient resume flap - wait it out before redirecting.
+    // A real sign-out stays false and the delayed redirect still fires.
+    if (!wasSignedIn.current) {
+      router.replace('/sign-in')
+      return
+    }
+    const t = setTimeout(() => router.replace('/sign-in'), SIGNED_OUT_REDIRECT_DELAY_MS)
+    return () => clearTimeout(t)
   }, [ready, effectiveSignedIn, segments, router])
 
   // Upload a prior crash once genuinely signed in (need a real token; the
