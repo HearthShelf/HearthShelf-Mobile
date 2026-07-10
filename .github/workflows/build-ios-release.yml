@@ -1,0 +1,99 @@
+name: Build iOS Release
+
+# Signed iOS build + TestFlight upload on a GitHub-hosted macOS runner via
+# fastlane. This replaces EAS Build for iOS releases and escapes the EAS
+# free-tier cap of 15 iOS builds/month.
+#
+# Auth model: App Store Connect API key (.p8) - NO interactive Apple login, so
+# the account's YubiKey-only 2FA is never hit. Signing uses the uploaded
+# Apple Distribution cert (.p12) + App Store provisioning profile.
+#
+# Triggers:
+#   - push tag 'v*'   -> tag-driven CD: build the signed IPA and upload to
+#                        TestFlight. The tag sets the app version (and iOS
+#                        buildNumber), matching Android exactly.
+#   - workflow_dispatch -> manual build (still uploads; there's no cheaper
+#                        artifact-only mode for a signed iOS build).
+#
+# Version model (matches Android):
+#   - `version` comes from the tag via EXPO_PUBLIC_APP_VERSION (normalized:
+#     v0.1.0-beta.1 -> 0.1.0-Beta1).
+#   - iOS buildNumber = github.run_number (monotonic; App Store Connect requires
+#     the build number to increase within a version).
+#   eas.json is appVersionSource=local, so these env values win (no EAS
+#   remote autoIncrement).
+#
+# Required repository secrets:
+#   ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_BASE64   App Store Connect API key
+#   IOS_DIST_P12_BASE64, IOS_DIST_P12_PASSWORD     distribution cert + key
+#   IOS_PROVISION_PROFILE_BASE64                   App Store provisioning profile
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    # macos-26: default Xcode 26.5 matches what the sim build uses; clerk-ios
+    # needs Swift 6.2 tools (macos-15's default Xcode fails SPM resolution).
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive # packages/core is a submodule
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Resolve release version from tag
+        if: github.ref_type == 'tag'
+        id: version
+        run: |
+          RAW="${GITHUB_REF_NAME#v}"
+          VER=$(printf '%s' "$RAW" \
+            | sed -E 's/-(beta|b)\.?([0-9]+)/-Beta\2/I' \
+            | sed -E 's/-(alpha|a)\.?([0-9]+)/-Alpha\2/I' \
+            | sed -E 's/-rc\.?([0-9]+)/-RC\1/I')
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "Tag $GITHUB_REF_NAME -> app version $VER"
+
+      - run: npm ci
+
+      - name: Prebuild iOS project
+        env:
+          # Tag drives the version; run_number is the monotonic iOS build number.
+          EXPO_PUBLIC_APP_VERSION: ${{ steps.version.outputs.version }}
+          EXPO_IOS_BUILD_NUMBER: ${{ github.run_number }}
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install
+
+      - name: Decode signing assets
+        env:
+          IOS_DIST_P12_BASE64: ${{ secrets.IOS_DIST_P12_BASE64 }}
+          IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+        run: |
+          echo "$IOS_DIST_P12_BASE64" | base64 -d > fastlane/dist.p12
+          echo "$IOS_PROVISION_PROFILE_BASE64" | base64 -d > fastlane/profile.mobileprovision
+          test -s fastlane/dist.p12 || { echo "::error::IOS_DIST_P12_BASE64 empty/missing"; exit 1; }
+          test -s fastlane/profile.mobileprovision || { echo "::error::IOS_PROVISION_PROFILE_BASE64 empty/missing"; exit 1; }
+
+      - name: Build and upload to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          IOS_DIST_P12_PASSWORD: ${{ secrets.IOS_DIST_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}
+          PROVISIONING_PROFILE_NAME: HearthShelf App Store
+        run: bundle exec fastlane ios release
+
+      - name: Clean up signing assets
+        if: always()
+        run: rm -f fastlane/dist.p12 fastlane/profile.mobileprovision

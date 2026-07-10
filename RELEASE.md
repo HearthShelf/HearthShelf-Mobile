@@ -219,17 +219,63 @@ are visible. Defer until there's a tester pool; it's additive.
 
 ## iOS
 
-Same RN codebase. Current state:
+Same RN codebase. iOS releases go to TestFlight the same way Android goes to
+Play: **push a version tag** and GitHub Actions does the rest - no EAS.
 
-- Simulator compile is handled by GitHub Actions on macOS.
+### iOS release path (GitHub Actions + fastlane, no EAS Build)
+
+`.github/workflows/build-ios-release.yml` triggers on `push: tags: ['v*']`,
+runs on a GitHub-hosted macOS runner, and via `fastlane/Fastfile`:
+
+1. Prebuilds iOS with the tag as `version` + `run_number` as the build number
+   (`eas.json` is `appVersionSource=local`, so these env values win - no EAS
+   remote autoIncrement).
+2. Imports the distribution cert into a throwaway keychain, installs the
+   provisioning profile, forces manual signing.
+3. `build_app` (archive + export, `app-store` method) -> signed IPA.
+4. `upload_to_testflight` via the App Store Connect **API key** (.p8).
+
+**Why not EAS Build:** the EAS free tier caps iOS at **15 builds/month**. This
+path uses GitHub's macOS runners instead (far more headroom) and the same signing
+assets. The account's only 2FA is two YubiKeys, which breaks interactive Apple
+login - the ASC **API key** sidesteps that entirely (no Apple login anywhere).
+
+**EAS Update (OTA) is kept** - it's separate from EAS Build, free-tier, and still
+serves JS-only OTA pushes via `updates.url` + `runtimeVersion` in `app.config.js`.
+`.eas/workflows/ios-testflight.yml` is kept as a **deprecated manual fallback**
+only (it ships version 0.0.1 since EAS runs don't set the version env vars).
+
+### Required iOS secrets (all set)
+
+| Secret | What | Source |
+|---|---|---|
+| `ASC_KEY_P8_BASE64` | App Store Connect API key (.p8), base64 | `AuthKey_PWB6X686S2_EAS.p8` |
+| `ASC_KEY_ID` | ASC key id (`PWB6X686S2`) | key filename |
+| `ASC_ISSUER_ID` | ASC issuer id | App Store Connect -> Users and Access -> Keys |
+| `IOS_DIST_P12_BASE64` | Apple Distribution cert + key (.p12), base64 | `dist.p12` |
+| `IOS_DIST_P12_PASSWORD` | the .p12 export password | you (set manually) |
+| `IOS_PROVISION_PROFILE_BASE64` | App Store profile, base64 | `HearthShelf_App_Store.mobileprovision` |
+
+Signing identity: `Apple Distribution: Jeremy Powers (HCU6KVPTDC)`, profile
+`HearthShelf App Store` (UUID `446cf62d-...`), bundle `com.hearthshelf.mobile`,
+team `HCU6KVPTDC`. Cert/profile expire 2027-07-09.
+
+> **Two things to verify before the first iOS tag:**
+> 1. **`IOS_DIST_P12_PASSWORD`** must be set (the .p12 is password-protected).
+> 2. **`ASC_ISSUER_ID`** is currently set from notes
+>    (`8fa5bf6f-7ea5-4d8a-bbd5-c5e728baf2f9`) - confirm it against App Store
+>    Connect -> Users and Access -> Keys (the issuer id shown above the key list).
+>    A wrong issuer id fails the TestFlight upload.
+
+### Other iOS notes
+
+- Simulator compile is a separate PR gate (`build-ios-simulator.yml`, unsigned).
 - iOS background audio mode is declared in `app.config.js`.
 - The native iOS media controller + CarPlay browse/play surface lives in
   `plugins/hearthshelf-carplay` and is copied into the generated iOS project by
   its Expo config plugin.
 - Native Google sign-in stays on browser OAuth until the Web client ID, iOS
   client ID, and iOS URL scheme env vars are all present.
-- Device/TestFlight builds still need an Apple developer account, signing
-  assets, and either EAS Build/Submit or a macOS signing workflow.
 - CarPlay uses Apple's `com.apple.developer.carplay-audio` entitlement
   (approved). The plugin always writes it - a signed build needs it or the app
   never appears in the CarPlay app grid. Unsigned simulator/CI builds don't

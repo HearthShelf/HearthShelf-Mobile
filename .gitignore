@@ -48,5 +48,12 @@ service-account*.json
 /ios
 /android
 
+# fastlane generated / transient artifacts (signing assets are covered by the
+# *.p12 / *.mobileprovision rules above)
+fastlane/report.xml
+fastlane/README.md
+fastlane/test_output/
+ios/build/
+
 # local-only agent notes
 CLAUDE.local.md

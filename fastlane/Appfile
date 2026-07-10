@@ -1,0 +1,6 @@
+# fastlane Appfile - HearthShelf Mobile iOS.
+# The bundle id and Apple team are fixed; App Store Connect auth is done with an
+# API key in the Fastfile (bypasses interactive 2FA / YubiKey), so no Apple ID
+# or password lives here.
+app_identifier('com.hearthshelf.mobile')
+team_id('HCU6KVPTDC')

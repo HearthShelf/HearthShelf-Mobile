@@ -1,5 +1,15 @@
-name: iOS TestFlight
+name: iOS TestFlight (EAS - deprecated fallback)
 
+# DEPRECATED: iOS releases now build + submit via GitHub Actions + fastlane
+# (.github/workflows/build-ios-release.yml), which escapes the EAS free-tier cap
+# of 15 iOS builds/month. This EAS workflow is kept as a manual fallback only -
+# it still works with the stored EAS credentials if the GitHub path is ever
+# broken. Run it with `npx eas-cli@latest workflow:run ios-testflight.yml`.
+#
+# Note: with eas.json appVersionSource=local (tag-driven versioning), an EAS
+# build here reads version/buildNumber from EXPO_PUBLIC_APP_VERSION /
+# EXPO_IOS_BUILD_NUMBER too - but EAS runs don't set those, so a fallback EAS
+# build ships version 0.0.1. Only use it for emergency validation, not releases.
 on:
   workflow_dispatch: {}
 
