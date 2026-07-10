@@ -20,6 +20,7 @@ interface HearthShelfAutoNative {
   setSkipSeconds(skipBackSec: number, skipForwardSec: number): void
   setDiscover(json: string): void
   setNotePopsEnabled(enabled: boolean): void
+  setChapterProgress(enabled: boolean): void
   setSleepShake(enabled: boolean, minutes: number, timerActive: boolean, hapticLevel: string): void
   setSleepBeep(
     enabled: boolean,
@@ -71,6 +72,16 @@ export function setAutoDiscover(shelves: AutoDiscoverShelf[]): void {
  */
 export function setAutoNotePops(enabled: boolean): void {
   if (Platform.OS === 'android' || Platform.OS === 'ios') native?.setNotePopsEnabled(enabled)
+}
+
+/**
+ * Mirror the "scrubber scope" setting (chapter vs whole book) into the CarPlay
+ * player, so the car/lock-screen progress bar tracks the current chapter or the
+ * whole book to match the phone. iOS only: the Android Auto service computes
+ * chapter-relative progress from its own chapter-clipped windows.
+ */
+export function setAutoChapterProgress(chapterScoped: boolean): void {
+  if (Platform.OS === 'ios') native?.setChapterProgress(chapterScoped)
 }
 
 /**

@@ -16,12 +16,7 @@ import { AppState } from 'react-native'
 import { useAuth } from '@clerk/expo'
 import { fetchLinkedServers, acceptInvite, type LinkedServer } from './controlPlane'
 import { connectServer } from './connect'
-import {
-  setSession,
-  setLastServerId,
-  getLastServerId,
-  takePendingInviteToken,
-} from './session'
+import { setSession, setLastServerId, getLastServerId, takePendingInviteToken } from './session'
 import { CLERK_JWT_TEMPLATE } from '@/lib/config'
 import { hasCachedClerkSession } from '@/lib/tokenCache'
 import {
@@ -29,6 +24,7 @@ import {
   setAutoSession,
   setAutoNotePops,
   setAutoSkipSeconds,
+  setAutoChapterProgress,
 } from '@/player/autoBridge'
 import { startQueueSync } from '@/player/queueSync'
 import { refreshSubscriptions } from '@/player/subscriptions'
@@ -119,6 +115,24 @@ function ensureNotePopsMirror(): void {
       setAutoNotePops(next)
     }
   })
+}
+
+// Mirror the scrubber-scope setting (chapter vs whole book) into the CarPlay
+// player so the car progress bar matches the phone. iOS-only inside the bridge;
+// pushed at connect and kept in sync on change.
+let chapterProgressMirrorArmed = false
+let lastMirroredChapterProgress: boolean | null = null
+function ensureChapterProgressMirror(): void {
+  const push = () => {
+    const next = getSettingsState().scrubber === 'chapter'
+    if (next === lastMirroredChapterProgress) return
+    lastMirroredChapterProgress = next
+    setAutoChapterProgress(next)
+  }
+  push()
+  if (chapterProgressMirrorArmed) return
+  chapterProgressMirrorArmed = true
+  subscribeSettings(push)
 }
 
 // Keep the native skip-second prefs in sync so the phone notification's
@@ -236,6 +250,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         // and keep it in sync as the user toggles it.
         setAutoNotePops(getSettingsState().notePops)
         ensureNotePopsMirror()
+        ensureChapterProgressMirror()
         startQueueSync()
         startClubSync()
         // Release subscriptions + push: pull the follow list and register this

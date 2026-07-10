@@ -23,9 +23,12 @@ import {
   togglePlay,
   setCarActive,
   mirrorCarTrack,
+  setRate,
+  skipChapter,
+  currentChapter,
 } from './store'
-import { coverUrl } from '@/api/abs'
-import { syncProgress } from './playback'
+import { coverUrl, createBookmark } from '@/api/abs'
+import { playItemById, syncProgress } from './playback'
 import { advanceQueueOnEnd } from './advance'
 import { useShakeToExtend } from './shakeToExtend'
 import { useSleepBeep } from './sleepBeep'
@@ -171,6 +174,42 @@ export function PlayerHost() {
           })
         },
       ),
+      // ---- CarPlay (iOS): the car and phone share ONE native AVPlayer, so
+      // instead of a separate car player + mirror (Android's model), a CarPlay
+      // browse tap routes UP to JS here. playItemById() is the single place that
+      // owns the ABS session, resume position, offline/downloaded resolution, and
+      // the store - so a book started from the car behaves exactly like one
+      // started from the phone (right resume, no progress reset, offline files,
+      // local cover art), and the store holds the correct now-playing book.
+      emitter.addListener('onCarPlayRequest', (e: { itemId: string }) => {
+        void playItemById(e.itemId).catch((err) => {
+          showToast(
+            err?.message === 'not_downloaded'
+              ? 'This book is not downloaded'
+              : 'Could not play this book',
+          )
+        })
+      }),
+      // CarPlay now-playing buttons (speed / chapter / bookmark) route through the
+      // same store commands the phone player uses, so behavior is identical.
+      emitter.addListener('onCarRateCycle', () => {
+        const presets = [1, 1.25, 1.5, 1.75, 2, 0.75]
+        const cur = getState().rate
+        const next = presets.find((p) => p > cur + 0.001) ?? presets[0]
+        setRate(next)
+      }),
+      emitter.addListener('onCarChapter', (e: { direction: number }) => {
+        skipChapter(e.direction >= 0 ? 1 : -1)
+      }),
+      emitter.addListener('onCarBookmark', () => {
+        const s = getState()
+        if (!s.nowPlaying) return
+        const ch = currentChapter()
+        const title = ch?.title || 'Bookmark'
+        void createBookmark(s.nowPlaying.itemId, s.position, title)
+          .then(() => showToast('Bookmark saved'))
+          .catch(() => showToast('Could not save bookmark'))
+      }),
     ]
     return () => subs.forEach((s) => s.remove())
   }, [])

@@ -34,7 +34,46 @@ final class HearthShelfCarPlaySceneDelegate: UIResponder, CPTemplateApplicationS
   ) {
     self.interfaceController = interfaceController
     HearthShelfCarPlaySceneDelegate.active = self
+    setupNowPlayingButtons()
     setupTabs()
+  }
+
+  /// Add the custom Now Playing buttons CPNowPlayingTemplate.shared doesn't
+  /// provide by default (it only renders the transport row + the two skip-interval
+  /// buttons). Speed / previous-chapter / next-chapter / bookmark each route back
+  /// through JS (via HearthShelfAuto) to the same store commands the phone uses,
+  /// so the car matches the phone. Configured once on connect; the rate label
+  /// refreshes as JS pushes new rates through Now Playing info.
+  private func setupNowPlayingButtons() {
+    let template = CPNowPlayingTemplate.shared
+
+    let rateButton = CPNowPlayingPlaybackRateButton { [weak self] _ in
+      self?.module?.emitCarRateCycle()
+    }
+    let prevChapter = CPNowPlayingImageButton(
+      image: nowPlayingIcon("backward.end")
+    ) { [weak self] _ in
+      self?.module?.emitCarChapter(-1)
+    }
+    let nextChapter = CPNowPlayingImageButton(
+      image: nowPlayingIcon("forward.end")
+    ) { [weak self] _ in
+      self?.module?.emitCarChapter(1)
+    }
+    let bookmark = CPNowPlayingImageButton(
+      image: nowPlayingIcon("bookmark")
+    ) { [weak self] _ in
+      self?.module?.emitCarBookmark()
+    }
+
+    template.updateNowPlayingButtons([prevChapter, rateButton, bookmark, nextChapter])
+  }
+
+  /// An SF Symbol sized for a CarPlay Now Playing button. Falls back to an empty
+  /// image if the symbol is unavailable, so the button still renders (tappable).
+  private func nowPlayingIcon(_ systemName: String) -> UIImage {
+    let config = UIImage.SymbolConfiguration(pointSize: 28, weight: .medium)
+    return UIImage(systemName: systemName, withConfiguration: config) ?? UIImage()
   }
 
   func templateApplicationScene(
@@ -152,16 +191,17 @@ final class HearthShelfCarPlaySceneDelegate: UIResponder, CPTemplateApplicationS
     loadInto(template, node: node)
   }
 
-  /// Resolve the ABS play session for a tapped row, then present now-playing.
+  /// A browse row was tapped. Hand the item id to JS (playItemById owns the ABS
+  /// session, resume position, and offline/local-file resolution) and show the
+  /// Now Playing screen. The shared native player is driven by JS's load(), so
+  /// the car and phone stay one player with one session - no native second
+  /// session, and downloaded books play from their local files.
   private func play(book: CarBook, completion: @escaping () -> Void) {
-    module?.playById(book.id) { [weak self] ok in
-      if ok {
-        self?.interfaceController?.pushTemplate(
-          CPNowPlayingTemplate.shared, animated: true, completion: nil
-        )
-      }
-      completion()
-    }
+    module?.requestCarPlay(book.id)
+    interfaceController?.pushTemplate(
+      CPNowPlayingTemplate.shared, animated: true, completion: nil
+    )
+    completion()
   }
 
   /// Load a row's cover art off the main thread and set it on the list item.

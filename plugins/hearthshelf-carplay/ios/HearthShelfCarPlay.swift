@@ -74,6 +74,16 @@ final class HearthShelfAuto: RCTEventEmitter {
   private var currentRate: Float = 1
   private var skipBackSec = 15
   private var skipForwardSec = 30
+  // When true, the CarPlay/lock-screen progress bar shows the CURRENT CHAPTER's
+  // elapsed/length instead of the whole book, matching the phone and Android Auto.
+  // Pushed from JS (the per-book "chapter progress" setting) via setChapterProgress.
+  private var chapterProgress = true
+  // KVO on the current item's duration: a freshly-created AVPlayerItem reports
+  // an indefinite duration, so at load() time MPMediaItemPropertyPlaybackDuration
+  // is unknown and CarPlay hides the scrubber until something else refreshes it
+  // (previously only the first pause did). Observing duration lets us refresh
+  // Now Playing the instant AVFoundation resolves it, so the bar shows on play.
+  private var durationObs: NSKeyValueObservation?
 
   // ---- shake-to-extend the sleep timer (native, works while locked) ----
   // iOS suspends the JS thread when the phone locks, so the JS DeviceMotion
@@ -179,9 +189,15 @@ final class HearthShelfAuto: RCTEventEmitter {
     // to be declared so the cross-platform listener setup is valid here. onError
     // surfaces a failed AVPlayerItem load (expired token, network stall,
     // unplayable format) so JS can toast it and drop the optimistic playing state.
+    // onCarPlayRequest: a CarPlay browse row was tapped - JS opens the ABS session
+    // (online/offline/resume all handled there) and drives the shared player, so
+    // the car and phone stay one player with one session. onCarRateCycle /
+    // onCarChapter / onCarBookmark are the CPNowPlayingTemplate custom buttons,
+    // routed through the same store commands the phone uses.
     [
       "onProgress", "onState", "onTogglePlay", "onJump", "onEnded", "onError", "onCarActive",
-      "onCarLoaded", "onShakeExtend",
+      "onCarLoaded", "onShakeExtend", "onCarPlayRequest", "onCarRateCycle", "onCarChapter",
+      "onCarBookmark",
     ]
   }
 
@@ -215,6 +231,58 @@ final class HearthShelfAuto: RCTEventEmitter {
   @objc(setNotePopsEnabled:)
   func setNotePopsEnabled(_ enabled: Bool) {
     defaults.set(enabled, forKey: "hs.carplay.notePopsEnabled")
+  }
+
+  /// JS pushes the per-book "chapter progress" setting: when on, the car/lock
+  /// screen scrubber tracks the current chapter, not the whole book.
+  @objc(setChapterProgress:)
+  func setChapterProgress(_ enabled: Bool) {
+    DispatchQueue.main.async {
+      self.chapterProgress = enabled
+      self.updateNowPlaying()
+    }
+  }
+
+  // ---- CarPlay browse -> JS (a tapped row) ----
+  // The scene delegate calls this when a browse row is tapped. Rather than open
+  // an ABS session natively (a second session that fights the phone's and can't
+  // see downloads), we hand the item id to JS. playItemById() owns the session,
+  // resume position, and offline/local-file resolution; it then drives THIS
+  // shared player via load(). Books are a plain id; podcast episodes are
+  // "podId/episodeId" (playItemById splits it the same way native did).
+  func requestCarPlay(_ rawId: String) {
+    DispatchQueue.main.async { self.emitCarPlayRequest(rawId) }
+  }
+
+  private func emitCarPlayRequest(_ itemId: String) {
+    guard hasListeners else {
+      return
+    }
+    sendEvent(withName: "onCarPlayRequest", body: ["itemId": itemId])
+  }
+
+  // ---- CarPlay now-playing buttons -> JS ----
+  // Each custom button routes through the store command the phone player uses, so
+  // speed/chapter/bookmark behave identically on the car and the phone.
+  func emitCarRateCycle() {
+    guard hasListeners else {
+      return
+    }
+    sendEvent(withName: "onCarRateCycle", body: [:])
+  }
+
+  func emitCarChapter(_ direction: Int) {
+    guard hasListeners else {
+      return
+    }
+    sendEvent(withName: "onCarChapter", body: ["direction": direction])
+  }
+
+  func emitCarBookmark() {
+    guard hasListeners else {
+      return
+    }
+    sendEvent(withName: "onCarBookmark", body: [:])
   }
 
   // ---- shake-to-extend: gate pushed from JS ----
@@ -462,6 +530,19 @@ final class HearthShelfAuto: RCTEventEmitter {
       }
     }
 
+    // A fresh item's duration is indefinite until AVFoundation loads it; without
+    // MPMediaItemPropertyPlaybackDuration CarPlay hides the scrubber. Refresh Now
+    // Playing the moment duration resolves so the bar appears on play, not only
+    // after the first pause.
+    durationObs = item.observe(\.duration, options: [.new]) { [weak self] observedItem, _ in
+      guard let self else {
+        return
+      }
+      if observedItem.duration.isNumeric {
+        DispatchQueue.main.async { self.updateNowPlaying() }
+      }
+    }
+
     // timeControlStatus distinguishes buffering (.waitingToPlayAtSpecifiedRate
     // with a reason) from a genuine stop. A wait with no forward progress and a
     // failed item is a failure; a wait while evaluating/buffering is normal.
@@ -485,6 +566,8 @@ final class HearthShelfAuto: RCTEventEmitter {
     itemStatusObs = nil
     timeControlObs?.invalidate()
     timeControlObs = nil
+    durationObs?.invalidate()
+    durationObs = nil
     observedItem = nil
   }
 
@@ -529,10 +612,17 @@ final class HearthShelfAuto: RCTEventEmitter {
       return .success
     }
     center.changePlaybackPositionCommand.addTarget { [weak self] event in
-      guard let ev = event as? MPChangePlaybackPositionCommandEvent else {
+      guard let self, let ev = event as? MPChangePlaybackPositionCommandEvent else {
         return .commandFailed
       }
-      self?.seekTo(NSNumber(value: ev.positionTime))
+      // positionTime is on the DISPLAYED timeline. In chapter mode that's relative
+      // to the current chapter's start, so convert back to an absolute book time
+      // before seeking; otherwise it's already absolute.
+      var target = ev.positionTime
+      if self.chapterProgress, self.chapters.indices.contains(self.shownChapterIndex) {
+        target += self.chapters[self.shownChapterIndex].start
+      }
+      self.seekTo(NSNumber(value: target))
       return .success
     }
   }
@@ -552,16 +642,39 @@ final class HearthShelfAuto: RCTEventEmitter {
     }
   }
 
+  /// The (elapsed, duration) pair to show on the car/lock-screen scrubber for a
+  /// given absolute book position. When chapterProgress is on and the current
+  /// position falls inside a chapter, both are relative to that chapter (matching
+  /// the phone and Android Auto); otherwise they're whole-book. Duration is nil
+  /// when unknown (a fresh item), so callers omit the key and CarPlay simply
+  /// hasn't got a bar yet rather than showing a wrong one.
+  private func displayedTiming(at rawPosition: Double) -> (elapsed: Double, duration: Double?) {
+    // currentTime() is NaN before the item is ready; clamp so we never write NaN
+    // into Now Playing (which would leave the scrubber in an undefined state).
+    let position = rawPosition.isFinite ? rawPosition : 0
+    let bookDuration = player.currentItem?.duration.seconds
+    let bookDur = (bookDuration?.isFinite == true && (bookDuration ?? 0) > 0) ? bookDuration : nil
+    if chapterProgress, chapters.indices.contains(shownChapterIndex) {
+      let ch = chapters[shownChapterIndex]
+      let end = ch.end > ch.start ? ch.end : (bookDur ?? ch.end)
+      let len = end - ch.start
+      if len > 0 {
+        return (max(0, position - ch.start), len)
+      }
+    }
+    return (position, bookDur)
+  }
+
   private func updateNowPlaying() {
+    let timing = displayedTiming(at: player.currentTime().seconds)
     var info: [String: Any] = [
       MPMediaItemPropertyTitle: bookTitle,
       MPMediaItemPropertyArtist: subtitleForCurrentChapter(),
-      MPNowPlayingInfoPropertyElapsedPlaybackTime: player.currentTime().seconds,
+      MPNowPlayingInfoPropertyElapsedPlaybackTime: timing.elapsed,
       MPNowPlayingInfoPropertyPlaybackRate: player.rate,
       MPNowPlayingInfoPropertyDefaultPlaybackRate: currentRate,
     ]
-    let duration = player.currentItem?.duration.seconds ?? 0
-    if duration.isFinite, duration > 0 {
+    if let duration = timing.duration {
       info[MPMediaItemPropertyPlaybackDuration] = duration
     }
     if let url = URL(string: artworkUri) {
@@ -580,10 +693,16 @@ final class HearthShelfAuto: RCTEventEmitter {
   private func refreshChapterSubtitle(position: Double) {
     let idx = chapterIndex(at: position)
     if idx != shownChapterIndex {
+      // Crossing a chapter boundary changes the subtitle AND (in chapter mode) the
+      // scrubber's baseline/length, so a full rebuild is needed, not just a tick.
       shownChapterIndex = idx
       updateNowPlaying()
     } else if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
-      info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = position
+      let timing = displayedTiming(at: position)
+      info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = timing.elapsed
+      if let duration = timing.duration {
+        info[MPMediaItemPropertyPlaybackDuration] = duration
+      }
       info[MPNowPlayingInfoPropertyPlaybackRate] = player.rate
       MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
@@ -901,55 +1020,6 @@ final class HearthShelfAuto: RCTEventEmitter {
     return mediaUrl(path: "/api/items/\(encodePath(id))/cover")
   }
 
-  // ---- Playback resolution (called by the scene delegate on tap) ----
-
-  /// The car selected a playable row. Create an ABS play session, then hand the
-  /// real stream URL + resume position + chapters to `load`. Books use a plain
-  /// id; podcast episodes use "podId/episodeId".
-  func playById(_ rawId: String, completion: @escaping (Bool) -> Void) {
-    let itemId = rawId.split(separator: "/").first.map(String.init) ?? rawId
-    let episodeId = rawId.contains("/") ? String(rawId.split(separator: "/")[1]) : nil
-    let playPath =
-      episodeId != nil
-      ? "/api/items/\(encodePath(itemId))/play/\(encodePath(episodeId!))"
-      : "/api/items/\(encodePath(itemId))/play"
-
-    request(path: playPath, method: "POST", body: startPlayBody()) { data in
-      guard let data,
-        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-        let tracks = obj["audioTracks"] as? [[String: Any]],
-        let track = tracks.first,
-        let contentUrl = track["contentUrl"] as? String,
-        let url = self.mediaUrl(path: contentUrl)
-      else {
-        DispatchQueue.main.async { completion(false) }
-        return
-      }
-
-      let chapters = ((obj["chapters"] as? [[String: Any]]) ?? []).map {
-        [
-          "title": $0["title"] as? String ?? "",
-          "start": $0["start"] as? Double ?? 0,
-          "end": $0["end"] as? Double ?? 0,
-        ]
-      }
-      let chapterData = try? JSONSerialization.data(withJSONObject: chapters)
-      let chapterJson = chapterData.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
-      DispatchQueue.main.async {
-        self.load(
-          url.absoluteString,
-          startSec: NSNumber(value: obj["currentTime"] as? Double ?? 0),
-          title: obj["displayTitle"] as? String ?? "Untitled",
-          author: obj["displayAuthor"] as? String ?? "",
-          artworkUri: self.coverUrl(itemId: itemId)?.absoluteString ?? "",
-          chaptersJson: chapterJson,
-          autoPlay: true
-        )
-        completion(true)
-      }
-    }
-  }
-
   // ---- HTTP ----
 
   /// Synchronous ABS GET for the browse data layer, which already runs on a
@@ -974,47 +1044,6 @@ final class HearthShelfAuto: RCTEventEmitter {
     }.resume()
     _ = semaphore.wait(timeout: .now() + 10)
     return result
-  }
-
-  private func request(
-    path: String,
-    method: String = "GET",
-    body: Data? = nil,
-    completion: @escaping (Data?) -> Void
-  ) {
-    guard let serverUrl = defaults.string(forKey: "hs.carplay.serverUrl"),
-      let token = defaults.string(forKey: "hs.carplay.token"),
-      let url = URL(string: serverUrl + path)
-    else {
-      completion(nil)
-      return
-    }
-    var req = URLRequest(url: url)
-    req.httpMethod = method
-    req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-    if let body {
-      req.httpBody = body
-      req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    }
-    URLSession.shared.dataTask(with: req) { data, response, _ in
-      guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-        completion(nil)
-        return
-      }
-      completion(data)
-    }.resume()
-  }
-
-  private func startPlayBody() -> Data? {
-    let body: [String: Any] = [
-      "deviceInfo": [
-        "deviceId": "hearthshelf-ios-carplay",
-        "clientName": "HearthShelf iOS",
-        "clientVersion": "0.0.2",
-      ],
-      "supportedMimeTypes": ["audio/mpeg", "audio/mp4", "audio/aac", "audio/flac", "audio/ogg"],
-    ]
-    return try? JSONSerialization.data(withJSONObject: body)
   }
 
   private func mediaUrl(path: String) -> URL? {
