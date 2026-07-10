@@ -53,10 +53,16 @@ const appVersion = process.env.EXPO_PUBLIC_APP_VERSION || '0.0.2'
 // CI stamps the run number as the Android versionCode (EXPO_ANDROID_VERSION_CODE)
 // so every build is distinguishable on-device and strictly monotonic (Play's
 // hard requirement). It is deliberately decoupled from the semver `version` -
-// Play only needs versionCode to increase, not to encode the version. Locally /
-// when unset, fall back to the static value below.
+// Play only needs versionCode to increase, not to encode the version.
+//
+// The offset clears versionCodes from earlier manual Android Studio uploads
+// (the first internal release was code 6). Without it, a fresh workflow whose
+// run_number is <= that would produce a code Play rejects with "existing users
+// cannot upgrade". run_number + 10 stays strictly increasing and always wins.
+// Locally / when unset, fall back to the static value below.
+const VERSION_CODE_OFFSET = 10
 const versionCode = process.env.EXPO_ANDROID_VERSION_CODE
-  ? Number(process.env.EXPO_ANDROID_VERSION_CODE)
+  ? Number(process.env.EXPO_ANDROID_VERSION_CODE) + VERSION_CODE_OFFSET
   : 1
 
 // iOS build numbers are strings in Expo/Apple tooling. GitHub Actions can stamp
