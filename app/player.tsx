@@ -1244,6 +1244,15 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
     },
     coverArea: {
       flex: 1,
+      // minHeight:0 lets this flex child actually shrink below its content size
+      // (RN flex children default to minHeight:auto and refuse to shrink), and
+      // overflow:hidden clips a cover that's still taller than the space left
+      // after the controls - so the artwork can never bleed down over the title.
+      // coverMaxH bounds the cover to a fraction of screen height, but on a short
+      // screen the real flex space is less than that fraction; this keeps the
+      // overlap from happening regardless of device.
+      minHeight: 0,
+      overflow: 'hidden',
       alignItems: 'center',
       justifyContent: 'center',
       paddingHorizontal: spacing.xl,
