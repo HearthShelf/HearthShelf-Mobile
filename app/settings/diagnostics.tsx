@@ -7,9 +7,9 @@
  * TO REMOVE: delete this file, its row in app/(tabs)/more.tsx (the "Diagnostics"
  * SettingsRow + its GROUP entry), and the route is gone. No other refs.
  *
- * Zero new native deps: the dump renders in a read-only multiline TextInput, which
- * gives the native long-press "Select All / Copy" menu on both platforms without a
- * clipboard library.
+ * The dump renders in a read-only multiline TextInput (still long-press selectable)
+ * with a Copy button that writes to the clipboard via expo-clipboard, since the
+ * Android long-press "Select All / Copy" menu is unreliable on a non-editable field.
  */
 import { useMemo, useState } from 'react'
 import {
@@ -25,11 +25,13 @@ import {
 import { useSafeAreaInsets, useSafeAreaFrame } from 'react-native-safe-area-context'
 import Constants from 'expo-constants'
 import * as Device from 'expo-device'
+import * as Clipboard from 'expo-clipboard'
 import { Screen, SectionHeader, AppText, PrimaryButton } from '@/ui/primitives'
 import { spacing, radius, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { windowClass, adaptiveLibraryColumns } from '@/ui/responsive'
 import { getSession } from '@/api/session'
+import { showToast } from '@/ui/Toast'
 
 /** Build the diagnostics text. Pure + synchronous so it can be regenerated on tap. */
 function buildDump(args: {
@@ -162,9 +164,21 @@ export default function DiagnosticsScreen() {
       <SectionHeader title="Diagnostics" />
       <View style={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.sm, gap: spacing.sm }}>
         <AppText variant="caption" color={colors.textMuted}>
-          Long-press the text below, Select All, Copy. Temporary debug tool.
+          Tap Copy, then paste into a message. Temporary debug tool.
         </AppText>
-        <PrimaryButton label="Refresh" onPress={() => setNonce((n) => n + 1)} />
+        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+          <View style={{ flex: 1 }}>
+            <PrimaryButton
+              label="Copy"
+              onPress={() => {
+                void Clipboard.setStringAsync(dump).then(() => showToast('Diagnostics copied'))
+              }}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <PrimaryButton label="Refresh" onPress={() => setNonce((n) => n + 1)} />
+          </View>
+        </View>
       </View>
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingTop: 0 }}
