@@ -192,12 +192,12 @@ at `/changelog`.
   `Fix chapter skip on the head unit [AA] #player`. The website filters and sorts
   large changelogs by section and tag.
 - **Secret:** `CHANGELOG_API_KEY` (repo secret) must equal the website's
-  `CHANGELOG_API_KEY` Pages binding. **Caveat:** the value mirrored into this repo
-  was taken from the website's local `.dev.vars`, which may be a dev placeholder.
-  Before the first tag, confirm the repo secret matches the **production** Pages
-  value (or reset both to a shared strong token:
+  `CHANGELOG_API_KEY` Pages binding. **Done:** a shared 32-byte token was set in
+  all three places (production Pages secret, the website's local `.dev.vars`, and
+  this repo's GitHub secret) and the auth round-trip was verified locally (correct
+  token -> 201, wrong token -> 401). To rotate it later, reset all three:
   `wrangler pages secret put CHANGELOG_API_KEY` on the website +
-  `gh secret set CHANGELOG_API_KEY` here).
+  `gh secret set CHANGELOG_API_KEY` here + update the website `.dev.vars`.
 
 > **Rollout order (one-time):** the website schema + API must be deployed before
 > the first mobile tag push, or the upload 400s. Steps, in order:
