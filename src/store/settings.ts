@@ -95,6 +95,10 @@ export interface SettingsState {
   queueMode: QueueMode
   queueAutoRules: AutoRulePref[]
 
+  // Reading goal (account). Books the user aims to finish this calendar year;
+  // 0 = no goal. The Stats screen shows progress against booksThisYear.
+  yearlyBookGoal: number
+
   // Search (account). When on, Search also looks up titles you don't own via the
   // Audible catalog and shows them in a "Not in your library" section.
   searchExternalSources: boolean
@@ -193,6 +197,8 @@ export interface SettingsState {
 let state: SettingsState = {
   queueMode: 'off',
   queueAutoRules: DEFAULT_AUTO_RULES,
+
+  yearlyBookGoal: 0,
 
   searchExternalSources: true,
   externalLinkGoodreads: true,

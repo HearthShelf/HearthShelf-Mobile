@@ -21,6 +21,7 @@ import type {
   ABSSearchResponse,
   ABSListeningStats,
   HSListeningStats,
+  HSStatsHistory,
   ABSSeries,
   ABSSeriesResponse,
   ABSLibraryAuthor,
@@ -418,6 +419,36 @@ export async function getHSStats(): Promise<HSListeningStats> {
     return computeListeningStats(raw, new Date())
   }
   throw new Error(`hs_stats_failed ${res.status}`)
+}
+
+const HISTORY_UNAVAILABLE: HSStatsHistory = { available: false, days: [], months: [] }
+
+/**
+ * Durable daily listening history (`GET /hs/stats/history?range=`), the nightly
+ * snapshot job's output. Unlike ABS's trailing window this survives ABS
+ * restarts/re-scans and grows for every day since the job started - the source
+ * for the full-year heatmap and the by-month averages. Degrades to an
+ * unavailable/empty shape on ANY failure (network, 404 on an older server, or
+ * the server's own available:false) so the Stats screen just hides those
+ * snapshot-dependent sections instead of erroring.
+ */
+export async function getStatsHistory(
+  range: 'week' | 'month' | 'year' | 'all' = 'year',
+): Promise<HSStatsHistory> {
+  const session = getSession()
+  if (!session) return HISTORY_UNAVAILABLE
+  const { serverUrl, token } = session
+  try {
+    const res = await fetch(`${serverUrl}/hs/stats/history?range=${encodeURIComponent(range)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) return HISTORY_UNAVAILABLE
+    const data = (await res.json()) as HSStatsHistory
+    if (!data || data.available !== true) return HISTORY_UNAVAILABLE
+    return { available: true, days: data.days ?? [], months: data.months ?? [] }
+  } catch {
+    return HISTORY_UNAVAILABLE
+  }
 }
 
 // ---- Playback ----

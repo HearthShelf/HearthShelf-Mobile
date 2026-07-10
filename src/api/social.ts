@@ -11,6 +11,7 @@ import type {
   HSFinishedByResponse,
   HSListeningNowResponse,
   HSListeningNowBulkResponse,
+  HSCompareResponse,
   LeaderboardWindow,
 } from '@hearthshelf/core'
 import { getSession } from './session'
@@ -19,6 +20,12 @@ const UNAVAILABLE_LEADERBOARD: HSLeaderboardResponse = { available: false, me: n
 const UNAVAILABLE_FINISHED_BY: HSFinishedByResponse = { available: false, users: [] }
 const UNAVAILABLE_LISTENING_NOW: HSListeningNowResponse = { available: false, users: [] }
 const UNAVAILABLE_LISTENING_NOW_BULK: HSListeningNowBulkResponse = { available: false, byItem: {} }
+const UNAVAILABLE_COMPARE: HSCompareResponse = {
+  available: false,
+  scope: 'server',
+  me: { booksFinished: 0, secondsListened: 0, activeDays: null },
+  target: { booksFinished: 0, secondsListened: 0, activeDays: null },
+}
 
 /** Instance-wide community defaults, plus whether the caller may edit them
  *  (admin). Used so the presence-sharing toggle can show the inherited default
@@ -54,6 +61,37 @@ export async function getLeaderboard(window?: LeaderboardWindow): Promise<HSLead
     return (await res.json()) as HSLeaderboardResponse
   } catch {
     return UNAVAILABLE_LEADERBOARD
+  }
+}
+
+/**
+ * Compare the caller's listening totals against a target: the whole-server
+ * per-user average (default, no identity leaked) or one opted-in user
+ * (`opts.userId`, drawn only from the leaderboard's privacy-filtered roster).
+ * `tz` (minutes) buckets the year window caller-local, matching /hs/stats.
+ *
+ * Degrades to a neutral unavailable response on ANY failure/older server, and
+ * when the server reports available:false - so the Stats screen hides the
+ * Compare card rather than erroring. The user variant 403s server-side when the
+ * target isn't shareable, which also lands here as unavailable.
+ */
+export async function getCompare(opts: { userId?: string } = {}): Promise<HSCompareResponse> {
+  const session = getSession()
+  if (!session) return UNAVAILABLE_COMPARE
+  const { serverUrl, token } = session
+  const params = new URLSearchParams()
+  params.set('tz', String(new Date().getTimezoneOffset()))
+  if (opts.userId) params.set('userId', opts.userId)
+  try {
+    const res = await fetch(`${serverUrl}/hs/social/compare?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) return UNAVAILABLE_COMPARE
+    const data = (await res.json()) as HSCompareResponse
+    if (!data || data.available !== true || !data.me || !data.target) return UNAVAILABLE_COMPARE
+    return data
+  } catch {
+    return UNAVAILABLE_COMPARE
   }
 }
 
