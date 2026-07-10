@@ -29,7 +29,7 @@ import { syncProgress } from './playback'
 import { advanceQueueOnEnd } from './advance'
 import { useShakeToExtend } from './shakeToExtend'
 import { useSleepBeep } from './sleepBeep'
-import { Toast, useToast } from '@/ui/Toast'
+import { Toast, useToast, showToast } from '@/ui/Toast'
 
 // Native module (added in HearthShelfAutoModule / HearthShelfPlayerService).
 // Typed loosely - it's a thin old-arch bridge.
@@ -123,6 +123,15 @@ export function PlayerHost() {
       // Book ended: advance to the head of the (server-owned) up-next queue.
       emitter.addListener('onEnded', () => {
         void advanceQueueOnEnd().catch(() => {})
+      }),
+      // Native playback failed (expired stream token, network stall, unplayable
+      // format). Drop the optimistic playing state so the UI stops showing
+      // "playing" over silence, and surface the reason. Sync the lastPlaying
+      // marker so the store->native effect doesn't immediately re-issue play().
+      emitter.addListener('onError', (e: { message: string }) => {
+        lastPlaying.current = false
+        setPlaying(false)
+        showToast(e.message || 'Playback failed')
       }),
       // Android Auto took over (or handed back) playback. While active the phone
       // player stands down and transport routes to the car (native side); the
