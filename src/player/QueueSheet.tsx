@@ -21,6 +21,7 @@ import {
   getQueueState,
   reorderQueue,
   removeFromQueue,
+  setManual,
   subscribeQueue,
   QUEUE_MODES,
   QUEUE_MODE_SUB,
@@ -54,6 +55,24 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
     const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
     const { nowPlaying } = useSyncExternalStore(subscribe, getState)
     const [dragActive, setDragActive] = useState(false)
+
+    // Which merged-list rows are hand-added: those whose id is in the durable
+    // manual list. Only these get the inline X / drag handle in Auto mode; the
+    // rest are rule-generated (bolt marker, not editable).
+    const manualIds = useMemo(
+      () => new Set(queue.manual.map((m) => m.libraryItemId)),
+      [queue.manual],
+    )
+
+    // A drag inside the merged Auto list reorders the MANUAL rows among
+    // themselves. Take the post-drag merged order, pull out just the manual
+    // rows in their new relative order, and persist that as the manual list.
+    // Auto rows re-derive from the server on the next pull, so their apparent
+    // positions self-correct; only the manual order is durable.
+    const reorderManualWithin = (merged: QueueEntry[]) => {
+      const nextManual = merged.filter((e) => manualIds.has(e.libraryItemId))
+      setManual(nextManual)
+    }
 
     return (
       <>
@@ -126,67 +145,49 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
               </AppText>
             </View>
           ) : settings.queueMode === 'auto' ? (
-            // Auto: the merged up-next (server-computed) is read-only, but the
-            // user can still edit their durable hand-queued list, which the
-            // 'manual' rule splices into Auto. That editable list is the one
-            // DraggableFlatList here.
-            <GestureHandlerRootView style={{ flex: 1 }}>
-              {queue.items.map((item) => (
-                <QueueRow
-                  key={item.libraryItemId}
-                  item={item}
-                  drag={() => {}}
-                  getIndex={() => undefined}
-                  isActive={false}
-                  editable={false}
-                  dragActive={false}
-                  onJump={() => {
-                    sheetRef.current?.dismiss()
-                    onJump(item.libraryItemId)
-                  }}
-                  onRemove={() => {}}
-                />
-              ))}
+            // Auto: ONE merged list (server-computed). Rule-generated rows carry
+            // a lightning-bolt marker and aren't editable; hand-added rows sit
+            // wherever the 'manual' rule splices them in and keep their inline X
+            // + drag handle, so you manage them right where they are. Dragging a
+            // hand-added row reorders the manual books among themselves.
+            queue.items.length === 0 ? (
               <AppText
                 variant="meta"
                 color={colors.textMuted}
-                style={{
-                  marginTop: spacing.md,
-                  marginBottom: spacing.xs,
-                  textTransform: 'uppercase',
-                  letterSpacing: 0.4,
-                }}
+                style={{ textAlign: 'center', marginTop: spacing.xl }}
               >
-                Books you queued by hand
+                Nothing queued yet. Books you add by hand show up here too.
               </AppText>
-              {queue.manual.length === 0 ? (
-                <AppText variant="caption" color={colors.textMuted}>
-                  Nothing queued by hand. Books you add play after your Auto picks.
-                </AppText>
-              ) : (
+            ) : (
+              <GestureHandlerRootView style={{ flex: 1 }}>
                 <DraggableFlatList
-                  data={queue.manual}
+                  data={queue.items}
                   keyExtractor={(item) => item.libraryItemId}
                   onDragBegin={() => setDragActive(true)}
-                  onDragEnd={({ from, to }) => {
+                  onDragEnd={({ data, from, to }) => {
                     setDragActive(false)
-                    if (from !== to) reorderQueue(from, to)
+                    if (from !== to) reorderManualWithin(data)
                   }}
-                  renderItem={(params: RenderItemParams<QueueEntry>) => (
-                    <QueueRow
-                      {...params}
-                      editable
-                      dragActive={dragActive}
-                      onJump={() => {
-                        sheetRef.current?.dismiss()
-                        onJump(params.item.libraryItemId)
-                      }}
-                      onRemove={() => removeFromQueue(params.item.libraryItemId)}
-                    />
-                  )}
+                  renderItem={(params: RenderItemParams<QueueEntry>) => {
+                    const isManual = manualIds.has(params.item.libraryItemId)
+                    return (
+                      <QueueRow
+                        {...params}
+                        canDrag={isManual}
+                        canRemove={isManual}
+                        showBolt={!isManual}
+                        dragActive={dragActive}
+                        onJump={() => {
+                          sheetRef.current?.dismiss()
+                          onJump(params.item.libraryItemId)
+                        }}
+                        onRemove={() => removeFromQueue(params.item.libraryItemId)}
+                      />
+                    )
+                  }}
                 />
-              )}
-            </GestureHandlerRootView>
+              </GestureHandlerRootView>
+            )
           ) : queue.items.length === 0 ? (
             <AppText
               variant="meta"
@@ -205,20 +206,25 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
                   setDragActive(false)
                   if (from !== to) reorderQueue(from, to)
                 }}
-                renderItem={(params: RenderItemParams<QueueEntry>) => (
-                  <QueueRow
-                    {...params}
-                    // Manual is the only hand-edited mode; Playlist is
-                    // server-owned, so reorder + remove are read-only there.
-                    editable={settings.queueMode === 'manual'}
-                    dragActive={dragActive}
-                    onJump={() => {
-                      sheetRef.current?.dismiss()
-                      onJump(params.item.libraryItemId)
-                    }}
-                    onRemove={() => removeFromQueue(params.item.libraryItemId)}
-                  />
-                )}
+                renderItem={(params: RenderItemParams<QueueEntry>) => {
+                  // Manual is the only hand-edited mode; Playlist is server-owned,
+                  // so reorder + remove are read-only there.
+                  const editable = settings.queueMode === 'manual'
+                  return (
+                    <QueueRow
+                      {...params}
+                      canDrag={editable}
+                      canRemove={editable}
+                      showBolt={false}
+                      dragActive={dragActive}
+                      onJump={() => {
+                        sheetRef.current?.dismiss()
+                        onJump(params.item.libraryItemId)
+                      }}
+                      onRemove={() => removeFromQueue(params.item.libraryItemId)}
+                    />
+                  )
+                }}
               />
             </GestureHandlerRootView>
           )}
@@ -228,8 +234,19 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
           <View>
             {settings.queueAutoRules.map((r) => {
               const copy = RULE_COPY[r.id]
+              // new-in-series-all is a sub-modifier of new-in-series: indent it
+              // and dim/disable it while the parent rule is off (it does nothing
+              // on its own).
+              const isSub = r.id === 'new-in-series-all'
+              const parentOff =
+                isSub && !settings.queueAutoRules.find((x) => x.id === 'new-in-series')?.on
               return (
-                <Touchable key={r.id} style={styles.row} onPress={() => toggleAutoRule(r.id)}>
+                <Touchable
+                  key={r.id}
+                  style={[styles.row, isSub && styles.subRule, parentOff && styles.ruleDisabled]}
+                  disabled={parentOff}
+                  onPress={() => toggleAutoRule(r.id)}
+                >
                   <View style={{ flex: 1 }}>
                     <AppText variant="label">{copy.label}</AppText>
                     <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 3 }}>
@@ -253,12 +270,21 @@ function QueueRow({
   item,
   drag,
   isActive,
-  editable,
+  canDrag,
+  canRemove,
+  showBolt,
   dragActive,
   onJump,
   onRemove,
 }: RenderItemParams<QueueEntry> & {
-  editable: boolean
+  // Drag handle shown + long-press arms a reorder (Manual mode, and hand-added
+  // rows inside the Auto list, which reorder among themselves).
+  canDrag: boolean
+  // Remove (X) shown - only hand-added rows can be pulled out inline.
+  canRemove: boolean
+  // Auto-generated rows show a lightning bolt where the X would be: a marker
+  // that the rules manage this pick (it isn't removable, it'll come back).
+  showBolt: boolean
   dragActive: boolean
   onJump: () => void
   onRemove: () => void
@@ -267,7 +293,7 @@ function QueueRow({
   const styles = useMemo(() => makeStyles(colors), [colors])
   return (
     <View style={[styles.row, isActive && styles.rowDragging]}>
-      {editable ? (
+      {canDrag ? (
         <Pressable onLongPress={drag} disabled={dragActive} hitSlop={8}>
           <Icon name={icons.dragHandle} size={20} color={colors.textMuted} />
         </Pressable>
@@ -294,8 +320,12 @@ function QueueRow({
           </AppText>
         </View>
       </Touchable>
-      {editable ? (
+      {canRemove ? (
         <IconButton name={icons.close} size={20} color={colors.textMuted} onPress={onRemove} />
+      ) : showBolt ? (
+        <View style={styles.boltSlot}>
+          <Icon name={icons.bolt} size={16} color={colors.accent} />
+        </View>
       ) : (
         <View style={{ width: 20 }} />
       )}
@@ -349,6 +379,9 @@ const makeStyles = (colors: Palette) =>
     },
     rowTap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md, minWidth: 0 },
     rowDragging: { backgroundColor: colors.high, borderRadius: radius.row },
+    boltSlot: { width: 20, alignItems: 'center', justifyContent: 'center' },
+    subRule: { paddingLeft: spacing.xl, marginLeft: spacing.xs },
+    ruleDisabled: { opacity: 0.4 },
     empty: { alignItems: 'center', paddingVertical: spacing.xxl, paddingHorizontal: spacing.xl },
     hintRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: spacing.md },
     toggleTrack: {

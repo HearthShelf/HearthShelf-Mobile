@@ -37,7 +37,11 @@ export const AUTO_RULE_COPY: Record<AutoRuleId, { label: string; desc: string }>
   },
   'new-in-series': {
     label: 'New books in series you started',
-    desc: "Add fresh releases from a series you haven't finished yet.",
+    desc: 'Queue the next book from each series you have going.',
+  },
+  'new-in-series-all': {
+    label: 'Include every book in the series',
+    desc: 'Instead of just the next one, queue all the books left in each series you started.',
   },
   'book-club': {
     label: 'Books your clubs are reading',
