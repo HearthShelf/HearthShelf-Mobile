@@ -100,13 +100,16 @@ export function PlayerCoverCarousel({
       // in progress), so it shouldn't vanish from the deck. Rewrite up-next:
       // drop the book we're switching TO (it's about to be live) and put the
       // outgoing live book at the head, so it becomes the new "next up" (#2).
-      // This debounce-syncs to the server; Auto mode reconciles on its next pull
-      // (the outgoing book, being in progress, is kept by the in-progress rule).
+      // bump=false: this is a LOCAL display-only reorder of the deck, not a queue
+      // edit. The server owns the active `items` in Auto/Playlist (it recomputes
+      // on the next pull - the outgoing in-progress book is kept by the
+      // in-progress rule), so we must NOT push this reorder back, or the stored
+      // queue would inflate one prepended book per swipe.
       const outgoing = { libraryItemId: liveItemId, title: liveTitle, author: liveAuthor }
       const rest = getQueueState().items.filter(
         (q) => q.libraryItemId !== page.itemId && q.libraryItemId !== liveItemId,
       )
-      setQueueItems([outgoing, ...rest])
+      setQueueItems([outgoing, ...rest], false)
 
       const saved = getProgressState().byId.get(page.itemId)
       await playItemById(page.itemId)

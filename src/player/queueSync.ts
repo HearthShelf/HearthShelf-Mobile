@@ -39,6 +39,13 @@ const SETTINGS_PUSH_DEBOUNCE_MS = 1200
 let started = false
 let hydratingQueue = false
 let hydratedQueue = false
+// updatedAt of the last queue we adopted from the server. A push is only worth
+// making when the local updatedAt has moved past this - i.e. the user actually
+// edited the queue here. Without this gate, adopting a large server-computed
+// Auto queue (which we hold in `items` to display) would immediately be pushed
+// straight back, and the stored queue inflates across syncs. Mirrors the
+// WebApp's serverUpdatedAt/lastAt guard in useQueueSync.
+let adoptedUpdatedAt = 0
 let hydratingSettings = false
 let hydratedSettings = false
 let queueTimer: ReturnType<typeof setTimeout> | null = null
@@ -71,6 +78,7 @@ async function pullQueue(): Promise<void> {
     setQueueItems(server.items, false)
     setQueueManual(server.manual, false)
     setQueuePlaylistId(server.playlistId, false)
+    adoptedUpdatedAt = getQueueState().updatedAt
     hydratingQueue = false
   } catch {
     // Backend unreachable - keep the local queue as-is.
@@ -99,6 +107,9 @@ async function pullSettings(): Promise<void> {
 
 function pushQueue(): void {
   if (!hydratedQueue || hydratingQueue) return
+  // Nothing changed locally since we adopted the server's queue - don't echo it
+  // back (see adoptedUpdatedAt). A real edit bumps updatedAt past this.
+  if (getQueueState().updatedAt === adoptedUpdatedAt) return
   if (queueTimer) clearTimeout(queueTimer)
   queueTimer = setTimeout(() => {
     const { items, manual, playlistId, updatedAt } = getQueueState()
@@ -109,6 +120,7 @@ function pushQueue(): void {
           setQueueItems(res.items, false)
           setQueueManual(res.manual, false)
           setQueuePlaylistId(res.playlistId, false)
+          adoptedUpdatedAt = getQueueState().updatedAt
           hydratingQueue = false
         }
       })
@@ -188,6 +200,7 @@ export function stopQueueSync(): void {
   started = false
   hydratedQueue = false
   hydratedSettings = false
+  adoptedUpdatedAt = 0
   if (queueTimer) clearTimeout(queueTimer)
   if (settingsTimer) clearTimeout(settingsTimer)
   unsubQueue?.()
