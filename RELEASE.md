@@ -153,7 +153,6 @@ Same RN codebase. Current state:
 - Device/TestFlight builds still need an Apple developer account, signing
   assets, and either EAS Build/Submit or a macOS signing workflow.
 - CarPlay uses Apple's `com.apple.developer.carplay-audio` entitlement
-  (approved). The plugin writes that entitlement by default - a signed build
-  needs it or the app never appears in the CarPlay app grid. Unsigned
-  simulator/CI builds set `HEARTHSHELF_IOS_CARPLAY_ENTITLEMENT=0` to skip it,
-  since their provisioning has no CarPlay capability.
+  (approved). The plugin always writes it - a signed build needs it or the app
+  never appears in the CarPlay app grid. Unsigned simulator/CI builds don't
+  validate entitlements, so it's harmless there.

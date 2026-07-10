@@ -38,9 +38,6 @@ jobs:
       - name: Prebuild iOS project
         env:
           EXPO_IOS_BUILD_NUMBER: ${{ github.run_number }}
-          # Unsigned simulator build: skip the CarPlay entitlement (it only
-          # matters for signed builds, and its capability isn't provisioned here).
-          HEARTHSHELF_IOS_CARPLAY_ENTITLEMENT: '0'
         run: npx expo prebuild --platform ios
 
       - name: Build simulator app

@@ -34,11 +34,10 @@ commands. CarPlay uses the modern CarPlay framework
 Discover); tapping a book resolves an ABS play session and shows the system
 now-playing template. Browse data + playback both run through the shared
 `HearthShelfAuto` module, so the car and phone share one player. Needs a real
-CarPlay head unit (or the CarPlay simulator) to verify. The plugin writes the
-`com.apple.developer.carplay-audio` entitlement by default (a signed build needs
-it or the app never shows in the CarPlay grid); set
-`HEARTHSHELF_IOS_CARPLAY_ENTITLEMENT=0` for unsigned simulator/CI builds, whose
-provisioning has no CarPlay capability.
+CarPlay head unit (or the CarPlay simulator) to verify. The plugin always writes
+the `com.apple.developer.carplay-audio` entitlement (a signed build needs it or
+the app never shows in the CarPlay grid); unsigned simulator/CI builds don't
+validate entitlements, so it's harmless there.
 
 ## Gradle gotcha (already fixed in `android/gradle.properties`)
 
