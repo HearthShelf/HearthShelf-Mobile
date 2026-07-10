@@ -40,6 +40,12 @@ enum CarChildren {
 
 @objc(HearthShelfAuto)
 final class HearthShelfAuto: RCTEventEmitter {
+  /// The live module instance, for the CarPlay scene delegate. RCTBridge.current()
+  /// is nil under the bridgeless New Architecture (the only architecture on
+  /// SDK 57), so the scene layer cannot resolve modules through the bridge -
+  /// the instance registers itself here instead.
+  static weak var shared: HearthShelfAuto?
+
   private struct Chapter {
     let title: String
     let start: Double
@@ -61,6 +67,7 @@ final class HearthShelfAuto: RCTEventEmitter {
 
   override init() {
     super.init()
+    HearthShelfAuto.shared = self
     configureAudioSession()
     configureRemoteCommands()
     NotificationCenter.default.addObserver(

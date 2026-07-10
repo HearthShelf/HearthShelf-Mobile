@@ -26,6 +26,7 @@ function copySwift(config) {
       for (const f of [
         'HearthShelfCarPlay.swift',
         'HearthShelfCarPlaySceneDelegate.swift',
+        'HearthShelfPhoneSceneDelegate.swift',
         'HearthShelfCarPlayBridge.m',
       ]) {
         fs.copyFileSync(path.join(src, f), path.join(dest, f))
@@ -43,6 +44,7 @@ function addSourceFiles(config) {
     for (const file of [
       'HearthShelfCarPlay.swift',
       'HearthShelfCarPlaySceneDelegate.swift',
+      'HearthShelfPhoneSceneDelegate.swift',
       'HearthShelfCarPlayBridge.m',
     ]) {
       // copySwift writes these into ios/<projectName>/. Register the Xcode file
@@ -74,27 +76,36 @@ function addInfoPlist(config) {
     // the OS knows which delegate class owns the car surface.
     //
     // CRITICAL: declaring ANY UISceneConfigurations opts the WHOLE app into the
-    // scene lifecycle, so iOS also requires a UIWindowSceneSessionRoleApplication
-    // (the phone window) role - otherwise it never creates a window and the phone
-    // launches to a BLACK SCREEN (expo's AppDelegate window path is ignored once
-    // a scene manifest exists). So we declare BOTH roles. The phone window role
-    // carries NO custom UISceneDelegateClassName, so UIKit uses the default
-    // UIWindowScene and expo's AppDelegate still drives the phone UI; only the
-    // CarPlay role is delegate-managed.
+    // scene lifecycle. Two hard-won rules (each cost a broken TestFlight build):
+    //
+    // 1. The phone window role MUST have a real scene delegate that attaches a
+    //    window to the scene. Expo's AppDelegate builds the RN window the
+    //    pre-scene way (didFinishLaunchingWithOptions) and never scene-attaches
+    //    it, and a window role with no delegate leaves the scene empty - either
+    //    way the phone launches to a BLACK SCREEN. HearthShelfPhoneSceneDelegate
+    //    adopts the AppDelegate's window into the scene.
+    //
+    // 2. UISceneDelegateClassName must be the RUNTIME class name. These are
+    //    plain Swift classes, so their runtime name is module-qualified -
+    //    $(PRODUCT_MODULE_NAME).ClassName (Xcode expands the variable at build
+    //    time). A bare class name fails NSClassFromString and the scene
+    //    delegate silently never instantiates.
     const manifest = plist.UIApplicationSceneManifest || {}
+    // Required for the CarPlay scene and the phone scene to run simultaneously.
     manifest.UIApplicationSupportsMultipleScenes = true
     const roles = manifest.UISceneConfigurations || {}
     roles.CPTemplateApplicationSceneSessionRoleApplication = [
       {
         UISceneClassName: 'CPTemplateApplicationScene',
         UISceneConfigurationName: 'HearthShelfCarPlay',
-        UISceneDelegateClassName: 'HearthShelfCarPlaySceneDelegate',
+        UISceneDelegateClassName: '$(PRODUCT_MODULE_NAME).HearthShelfCarPlaySceneDelegate',
       },
     ]
     roles.UIWindowSceneSessionRoleApplication = [
       {
         UISceneClassName: 'UIWindowScene',
         UISceneConfigurationName: 'HearthShelfPhone',
+        UISceneDelegateClassName: '$(PRODUCT_MODULE_NAME).HearthShelfPhoneSceneDelegate',
       },
     ]
     manifest.UISceneConfigurations = roles

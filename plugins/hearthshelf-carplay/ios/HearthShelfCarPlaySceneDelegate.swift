@@ -1,6 +1,5 @@
 import CarPlay
 import Foundation
-import React
 import UIKit
 
 /// CarPlay scene delegate for the modern CarPlay framework
@@ -56,10 +55,13 @@ final class HearthShelfCarPlaySceneDelegate: UIResponder, CPTemplateApplicationS
     }
   }
 
-  /// The shared native module instance (browse data + playback). Resolved from
-  /// the RN bridge so the car drives the exact player the phone UI uses.
+  /// The shared native module instance (browse data + playback), so the car
+  /// drives the exact player the phone UI uses. Resolved via the module's own
+  /// static registration - RCTBridge.current() is nil under the bridgeless New
+  /// Architecture, so bridge-based lookup can never find it. Nil until React
+  /// Native instantiates the module (first JS access); setupTabs retries.
   private var module: HearthShelfAuto? {
-    RCTBridge.current()?.module(forName: "HearthShelfAuto") as? HearthShelfAuto
+    HearthShelfAuto.shared
   }
 
   private func setupTabs() {

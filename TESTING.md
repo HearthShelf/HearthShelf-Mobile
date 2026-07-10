@@ -39,6 +39,22 @@ the `com.apple.developer.carplay-audio` entitlement (a signed build needs it or
 the app never shows in the CarPlay grid); unsigned simulator/CI builds don't
 validate entitlements, so it's harmless there.
 
+Because the CarPlay scene manifest opts the whole app into the UIScene
+lifecycle, the phone window only renders because `HearthShelfPhoneSceneDelegate`
+adopts Expo's AppDelegate-built window into the connecting scene. Two black
+TestFlight builds taught us: (a) a scene manifest without a working phone window
+role = black screen on launch, and (b) `UISceneDelegateClassName` needs the
+`$(PRODUCT_MODULE_NAME).` prefix for Swift classes or the delegate silently
+never instantiates. Deep links / universal links are also delivered to the scene
+delegate under this lifecycle, so it forwards them to `RCTLinkingManager`.
+
+**Before spending an EAS iOS build, run the `iOS Launch Check` workflow** (it
+also auto-runs on pushes to main that touch `plugins/**` or `app.config.js`).
+It builds a Release simulator app on GitHub Actions (free, no EAS quota), boots
+a simulator, launches the app, and fails if the process died or the screen is a
+solid color. Green + a screenshot artifact showing real UI = safe to build;
+launch regressions get caught without burning a metered build.
+
 ## Gradle gotcha (already fixed in `android/gradle.properties`)
 
 RN 0.85 / AGP 9 need a JDK 21 toolchain, and toolchain auto-download is off, so

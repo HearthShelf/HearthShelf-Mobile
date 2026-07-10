@@ -1,0 +1,110 @@
+name: iOS Launch Check
+
+# Catches iOS launch regressions (black screen, startup crash) for FREE, before
+# spending one of the month's metered EAS iOS builds.
+#
+# Builds a RELEASE-config simulator app (JS bundle embedded - no Metro, no
+# signing), boots a simulator on the runner, launches the app, screenshots it,
+# and fails if the app died or the screen is a single flat color. Scene/window
+# lifecycle behaves identically on the simulator, so this catches the whole
+# UIApplicationSceneManifest class of bug that shipped two black-screen builds.
+#
+# Verdict reading:
+#   - job green + screenshot shows UI  -> safe to spend an EAS build
+#   - "process not running" failure    -> native startup crash; check app-log
+#   - "solid color" failure            -> window/scene bug (or JS never drew)
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ios-launch-check.yml'
+      - 'app.config.js'
+      - 'package-lock.json'
+      - 'plugins/**'
+
+jobs:
+  launch:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Prebuild iOS project
+        run: npx expo prebuild --platform ios
+
+      - name: Build Release simulator app
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -workspace ios/HearthShelf.xcworkspace \
+            -scheme HearthShelf \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath ios/build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Boot simulator, install, launch, screenshot
+        run: |
+          UDID=$(xcrun simctl list devices available --json | python3 -c "
+          import json, sys
+          devices = json.load(sys.stdin)['devices']
+          print(next(d['udid'] for devs in devices.values() for d in devs if 'iPhone' in d['name']))
+          ")
+          echo "Using simulator $UDID"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          APP=$(find ios/build/Build/Products/Release-iphonesimulator -maxdepth 1 -name '*.app' | head -1)
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl launch "$UDID" com.hearthshelf.mobile
+          sleep 8
+          xcrun simctl io "$UDID" screenshot launch-08s.png
+          sleep 17
+          xcrun simctl io "$UDID" screenshot launch-25s.png
+          xcrun simctl spawn "$UDID" log show --last 3m \
+            --predicate 'processImagePath CONTAINS "HearthShelf"' \
+            --style compact > app-log.txt || true
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+
+      - name: Assert app is still running (no startup crash)
+        run: |
+          if ! pgrep -fl "HearthShelf.app/HearthShelf" > /dev/null; then
+            echo "::error::App process is not running 25s after launch - it crashed on startup. See app-log artifact."
+            exit 1
+          fi
+
+      - name: Assert the screen is not a solid color (black screen)
+        run: |
+          pip3 install --quiet pillow 2>/dev/null || pip3 install --quiet --break-system-packages pillow
+          python3 - <<'PY'
+          from PIL import Image
+          im = Image.open('launch-25s.png').convert('L')
+          lo, hi = im.getextrema()
+          print(f'luma range at 25s: {lo}..{hi}')
+          # A rendered UI (even a dark theme, even an error screen) has text and
+          # contrast. A dead window is one flat color edge to edge.
+          if hi - lo < 8:
+              raise SystemExit('FAIL: screen is a near-solid color - black screen. See screenshot artifacts.')
+          print('OK: screen shows rendered content')
+          PY
+
+      - name: Upload screenshots + app log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-launch-check-${{ github.run_number }}
+          path: |
+            launch-08s.png
+            launch-25s.png
+            app-log.txt
+          if-no-files-found: error
