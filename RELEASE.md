@@ -3,6 +3,31 @@
 How HearthShelf Mobile gets from source to an installable/Play-Store build.
 Android first; iOS simulator builds are now wired for early native validation.
 
+## Cutting a release (TL;DR)
+
+A release is one command: push a version tag.
+
+```powershell
+git tag v0.1.0          # or v0.1.0-beta.1 for the Beta channel
+git push origin v0.1.0
+```
+
+That single tag drives everything - no file is hand-edited to bump the version:
+
+1. The tag sets the app `version` (and the OTA `runtimeVersion`) via
+   `EXPO_PUBLIC_APP_VERSION`, so the build carries `0.1.0` with zero manual edits.
+2. A **signed `.aab`** is built and **published to the Play internal track**.
+3. The **changelog** for the range since the previous tag is generated and
+   uploaded to `hearthshelf.com/changelog`.
+
+Pre-release tags (`v0.1.0-beta.1`, `v0.2.0-rc.2`) normalize to `0.1.0-Beta1` /
+`0.2.0-RC2` and land in the site's **Beta** channel. `versionCode` stays the CI
+`run_number` (strictly increasing, which is all Google Play requires); it is
+deliberately decoupled from the semver `version`.
+
+Tags are only for native/store releases. JS-only OTA pushes ship under the
+current tag's `version` via `eas update` and must **not** get a new tag.
+
 ## What's automated (in this repo)
 
 - **CI** (`.github/workflows/ci.yml`): on every PR and push to main, runs
@@ -104,9 +129,15 @@ unaffected.
 
 ### Building a release
 
-- **Via CI (the real path):** Actions tab -> **Build Android Release** ->
-  Run workflow. Pick `aab` (Play upload) or `apk` (signed sideload test). The
-  signed artifact is uploaded under `app-release-aab-<run>` / `app-release-apk-<run>`.
+- **Via a tag (the real path):** push `v<semver>` (see "Cutting a release"
+  above). `build-android-release.yml` triggers on `push: tags: ['v*']`, builds
+  the signed `.aab`, publishes it to the Play **internal** track, and uploads the
+  changelog. The signed artifact is also kept under `app-release-aab-<run>`.
+- **Via manual dispatch (artifact only):** Actions tab -> **Build Android
+  Release** -> Run workflow. Pick `aab` or `apk`. A dispatch run produces a
+  signed artifact but **skips** the Play publish + changelog steps (those are
+  gated on the tag event), so a manual run can never ship to the store. Dispatch
+  builds carry the fallback version `0.0.1` (no tag to read).
 
 - **Locally (to test the pipeline before trusting CI):** set the signing env
   vars (see `.env.example` "Android RELEASE signing"), then:
@@ -125,14 +156,61 @@ unaffected.
 
 ## Play Store - internal testing track
 
-1. Create the app in the Play Console (package `com.hearthshelf.mobile`).
-2. Enroll in **Play App Signing** (recommended) - grab the app-signing cert
-   SHA-256 and register it with Google + Clerk too (end users get that cert).
-3. Upload the `.aab` to the **Internal testing** track; add testers by email.
-4. Once happy, promote internal -> closed -> open/production.
+The app already exists in the Play Console (package `com.hearthshelf.mobile`)
+with an internal-test track. The tag build **auto-publishes** to it via
+`r0adkll/upload-google-play` (`track: internal`, `status: completed`), using the
+`PLAY_SERVICE_ACCOUNT_JSON` secret. To go wider, promote internal -> closed ->
+open/production in the console.
 
-Automating the upload (fastlane `supply` or EAS Submit) is a follow-up; it needs
-a Play service-account JSON as a CI secret.
+Requirements for the auto-publish to succeed:
+- `PLAY_SERVICE_ACCOUNT_JSON` secret set (the `play-service-account@hearthshelf`
+  service account). Already set.
+- The service account must have **Release to internal testing** permission in
+  the Play Console (Users & permissions).
+- Enroll in **Play App Signing** and register the app-signing cert SHA-256 with
+  Google + Clerk (end users get that cert, not the upload key). See `AUTH_SETUP.md`.
+
+## Changelog publishing
+
+On a tag push the release workflow generates a structured changelog and POSTs it
+to the website API at `https://hearthshelf.com/api/v1/changelogs`, where it shows
+at `/changelog`.
+
+- **How it's built:** `.github/scripts/changelog-items.sh` walks
+  `git log <prev-tag>..<tag>` (full history on the first-ever tag), categorizes
+  each commit subject into a section (`feature`/`fix`/`change`/`docs`/`breaking`/
+  `other`) from its prefix, strips the verb prefix, and emits one structured item
+  per commit. `.github/scripts/upload-changelog.sh` POSTs the JSON and renders a
+  human `CHANGELOG.md` from the same items.
+- **Tags:** each line item is tagged on the **website** (server-side rules) by
+  content - `Android Auto`->`android-auto`, `iPhone`/`CarPlay`->`ios`, plus
+  audiobook-area tags (offline, downloads, sleep-timer, player, sync, sign-in,
+  series). You can force a tag from a commit subject with a trailing marker, e.g.
+  `Fix chapter skip on the head unit [AA] #player`. The website filters and sorts
+  large changelogs by section and tag.
+- **Secret:** `CHANGELOG_API_KEY` (repo secret) must equal the website's
+  `CHANGELOG_API_KEY` Pages binding. **Caveat:** the value mirrored into this repo
+  was taken from the website's local `.dev.vars`, which may be a dev placeholder.
+  Before the first tag, confirm the repo secret matches the **production** Pages
+  value (or reset both to a shared strong token:
+  `wrangler pages secret put CHANGELOG_API_KEY` on the website +
+  `gh secret set CHANGELOG_API_KEY` here).
+
+> **Rollout order (one-time):** the website schema + API must be deployed before
+> the first mobile tag push, or the upload 400s. Steps, in order:
+>
+> 1. **Reset the remote D1 to the new schema.** `migrations/0001_changelogs.sql`
+>    was rewritten in place (the remote is empty, so no data is lost), but
+>    wrangler already has `0001` marked applied and won't re-run it. Apply the new
+>    schema directly from the website repo:
+>    `wrangler d1 execute hearthshelf-changelog --remote --file migrations/0001_changelogs.sql`
+>    (the file is self-contained: it `DROP`s the old `changelogs` table and
+>    rebuilds all three tables).
+> 2. **Deploy the site** (push HearthShelf-Website; CF Pages builds the new
+>    functions + `/changelog` page).
+> 3. **Confirm `CHANGELOG_API_KEY` matches** across the repo secret and the
+>    production Pages binding (see the caveat above).
+> 4. **Then cut the first tag** here.
 
 ## Crash reporting (recommended before wider testing)
 

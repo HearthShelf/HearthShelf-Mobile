@@ -36,9 +36,20 @@ const extra = {
   eas: { projectId: EAS_PROJECT_ID },
 }
 
+// The release tag is the single source of version truth. The tag-driven CD
+// workflow exports EXPO_PUBLIC_APP_VERSION from the pushed tag (leading "v"
+// stripped and the pre-release label normalized, e.g. v0.1.0-beta.1 ->
+// 0.1.0-Beta1). runtimeVersion.policy is `appVersion`, so this value keys OTA
+// compatibility: it MUST change on every native/store release, which a distinct
+// release tag guarantees. Locally / off-tag it falls back to the static value
+// below so `expo start` and debug builds keep working with no manual bump.
+const appVersion = process.env.EXPO_PUBLIC_APP_VERSION || '0.0.1'
+
 // CI stamps the run number as the Android versionCode (EXPO_ANDROID_VERSION_CODE)
-// so every build is distinguishable on-device and monotonic. Locally / when
-// unset, fall back to the static value below.
+// so every build is distinguishable on-device and strictly monotonic (Play's
+// hard requirement). It is deliberately decoupled from the semver `version` -
+// Play only needs versionCode to increase, not to encode the version. Locally /
+// when unset, fall back to the static value below.
 const versionCode = process.env.EXPO_ANDROID_VERSION_CODE
   ? Number(process.env.EXPO_ANDROID_VERSION_CODE)
   : 1
@@ -51,7 +62,7 @@ module.exports = {
   name: 'HearthShelf',
   slug: 'hearthshelf',
   owner: 'hearthshelf',
-  version: '0.0.1',
+  version: appVersion,
   orientation: 'portrait',
   icon: './assets/icon.png',
   scheme: 'hearthshelf',
