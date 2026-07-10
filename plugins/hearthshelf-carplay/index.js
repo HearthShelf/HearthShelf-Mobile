@@ -71,10 +71,16 @@ function addInfoPlist(config) {
 
     // Modern CarPlay (carplay-audio entitlement, iOS 14+) is scene-based. The
     // app must declare a UIApplicationSceneManifest with a CarPlay scene role so
-    // the OS knows which delegate class owns the car surface. Without this, a car
-    // connection to an app that holds the entitlement fails. We keep the default
-    // window scene role unspecified so expo's AppDelegate window path still drives
-    // the phone UI (only the CarPlay role is scene-managed).
+    // the OS knows which delegate class owns the car surface.
+    //
+    // CRITICAL: declaring ANY UISceneConfigurations opts the WHOLE app into the
+    // scene lifecycle, so iOS also requires a UIWindowSceneSessionRoleApplication
+    // (the phone window) role - otherwise it never creates a window and the phone
+    // launches to a BLACK SCREEN (expo's AppDelegate window path is ignored once
+    // a scene manifest exists). So we declare BOTH roles. The phone window role
+    // carries NO custom UISceneDelegateClassName, so UIKit uses the default
+    // UIWindowScene and expo's AppDelegate still drives the phone UI; only the
+    // CarPlay role is delegate-managed.
     const manifest = plist.UIApplicationSceneManifest || {}
     manifest.UIApplicationSupportsMultipleScenes = true
     const roles = manifest.UISceneConfigurations || {}
@@ -83,6 +89,12 @@ function addInfoPlist(config) {
         UISceneClassName: 'CPTemplateApplicationScene',
         UISceneConfigurationName: 'HearthShelfCarPlay',
         UISceneDelegateClassName: 'HearthShelfCarPlaySceneDelegate',
+      },
+    ]
+    roles.UIWindowSceneSessionRoleApplication = [
+      {
+        UISceneClassName: 'UIWindowScene',
+        UISceneConfigurationName: 'HearthShelfPhone',
       },
     ]
     manifest.UISceneConfigurations = roles
