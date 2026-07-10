@@ -1010,7 +1010,7 @@ final class HearthShelfAuto: RCTEventEmitter {
       "deviceInfo": [
         "deviceId": "hearthshelf-ios-carplay",
         "clientName": "HearthShelf iOS",
-        "clientVersion": "0.0.1",
+        "clientVersion": "0.0.2",
       ],
       "supportedMimeTypes": ["audio/mpeg", "audio/mp4", "audio/aac", "audio/flac", "audio/ogg"],
     ]

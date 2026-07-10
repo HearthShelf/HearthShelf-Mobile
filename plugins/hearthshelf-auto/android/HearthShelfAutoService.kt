@@ -1288,7 +1288,7 @@ class HearthShelfAutoService : MediaLibraryService() {
         .put("deviceInfo", JSONObject()
           .put("deviceId", "hearthshelf-auto")
           .put("clientName", "HearthShelf Auto")
-          .put("clientVersion", "0.0.1"))
+          .put("clientVersion", "0.0.2"))
         .put("supportedMimeTypes", JSONArray(listOf(
           "audio/mpeg", "audio/mp4", "audio/aac", "audio/flac", "audio/ogg"
         )))

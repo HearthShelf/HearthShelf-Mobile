@@ -10,8 +10,6 @@ name: Build Android APK
 # encrypted secrets - see RELEASE.md. We do not put signing here yet so secrets
 # aren't required to use this workflow.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       standalone:
