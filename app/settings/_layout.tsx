@@ -52,6 +52,8 @@ export default function SettingsLayout() {
           <Stack.Screen name="admin" options={{ title: 'Server Admin' }} />
           <Stack.Screen name="player-buttons" options={{ title: 'Player buttons' }} />
           <Stack.Screen name="queue" options={{ title: 'Queue' }} />
+          {/* TEMP diagnostics dump - remove with app/settings/diagnostics.tsx */}
+          <Stack.Screen name="diagnostics" options={{ title: 'Diagnostics' }} />
         </Stack>
       </View>
       {hideTabs ? null : <AppTabBar activeName="more" onPressTab={goToTab} />}

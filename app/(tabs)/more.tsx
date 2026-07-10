@@ -268,6 +268,20 @@ export default function MoreScreen() {
           />
         </View>
 
+        {/* TEMP diagnostics dump - remove this block with app/settings/diagnostics.tsx */}
+        <View key="Diagnostics">
+          <SettingsLabel>Debug</SettingsLabel>
+          <SettingsGroup>
+            <SettingsRow
+              icon="bug-report"
+              title="Diagnostics"
+              desc="Device + layout info dump to copy out."
+              onPress={() => router.push('/settings/diagnostics')}
+              last
+            />
+          </SettingsGroup>
+        </View>
+
         <View style={styles.aboutRow}>
           <AppText variant="meta" color={colors.textMuted}>
             HearthShelf Mobile
