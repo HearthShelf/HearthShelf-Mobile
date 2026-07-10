@@ -43,7 +43,12 @@ const extra = {
 // compatibility: it MUST change on every native/store release, which a distinct
 // release tag guarantees. Locally / off-tag it falls back to the static value
 // below so `expo start` and debug builds keep working with no manual bump.
-const appVersion = process.env.EXPO_PUBLIC_APP_VERSION || '0.0.1'
+// 0.0.2: EAS previously published 0.0.1 up to build 12. The GitHub iOS pipeline
+// stamps its run_number as the iOS buildNumber, which would collide with those
+// EAS builds under 0.0.1 once run_number passes 12 (App Store Connect rejects a
+// duplicate version+build). Bumping the fallback version gives the GitHub pipeline
+// a clean build-number namespace. A release tag still overrides this.
+const appVersion = process.env.EXPO_PUBLIC_APP_VERSION || '0.0.2'
 
 // CI stamps the run number as the Android versionCode (EXPO_ANDROID_VERSION_CODE)
 // so every build is distinguishable on-device and strictly monotonic (Play's

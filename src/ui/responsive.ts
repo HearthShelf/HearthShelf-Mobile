@@ -58,7 +58,11 @@ export function adaptiveGridTileWidth({
 export function adaptiveLibraryColumns(width: number, size: 'comfortable' | 'compact'): number {
   return adaptiveGridColumns({
     width,
-    minTile: size === 'compact' ? 86 : 112,
+    // 108 (not 112) so comfortable fits 3 columns at every phone width: a 390pt
+    // iPhone yields available=358 -> floor((358+16)/(108+16)) = 3. At 112 the same
+    // phone floored to 2 (needed >=402pt), which read as an oversized 2-up grid on
+    // iPhone while wider Android dp landed on 3. A real 3-up tile is ~109pt.
+    minTile: size === 'compact' ? 86 : 108,
     maxCols: size === 'compact' ? 7 : 6,
     minCols: 2,
   })
