@@ -4,30 +4,50 @@ import MediaPlayer
 import React
 import UIKit
 
+/// A book/episode row surfaced in the CarPlay browse lists. Playable rows carry
+/// the ABS item id (a "podId/episodeId" pair for podcast episodes); the real
+/// stream URL is resolved lazily via a play session when the row is tapped.
+struct CarBook {
+  let id: String
+  let title: String
+  let subtitle: String
+  // Title with a leading article dropped, for alphabetical sorting (matches the
+  // web/phone library). Defaults to the title when ABS gives no ignore-prefix.
+  var sortKey: String = ""
+}
+
+/// A CarPlay browse node. Mirrors the Android Auto browse tree (childrenOf):
+/// root tabs -> library drill-downs -> playable book lists.
+enum CarNode {
+  case continueListening
+  case new
+  case libraryRoot
+  case discoverRoot
+  case books(libraryId: String)
+  case series(libraryId: String)
+  case seriesItems(libraryId: String, seriesId: String)
+  case podcasts(libraryId: String)
+  case podcastEpisodes(podcastId: String)
+  case discoverShelf(shelfId: String)
+}
+
+/// A resolved browse node's children: either sub-folders (browsable) or a list
+/// of playable books. The scene delegate turns these into CPListItems.
+enum CarChildren {
+  case folders([(node: CarNode, title: String)])
+  case books([CarBook])
+}
+
 @objc(HearthShelfAuto)
-final class HearthShelfAuto: RCTEventEmitter, MPPlayableContentDataSource, MPPlayableContentDelegate {
+final class HearthShelfAuto: RCTEventEmitter {
   private struct Chapter {
     let title: String
     let start: Double
     let end: Double
   }
 
-  private struct CarItem {
-    let id: String
-    let title: String
-    let subtitle: String
-    let playable: Bool
-  }
-
-  private enum Node {
-    case continueListening
-    case discoverShelf(String)
-    case library(String)
-  }
-
   private let defaults = UserDefaults.standard
   private let player = AVPlayer()
-  private let playableContent = MPPlayableContentManager.shared()
   private var hasListeners = false
   private var progressTimer: Timer?
   private var chapters: [Chapter] = []
@@ -38,18 +58,11 @@ final class HearthShelfAuto: RCTEventEmitter, MPPlayableContentDataSource, MPPla
   private var currentRate: Float = 1
   private var skipBackSec = 15
   private var skipForwardSec = 30
-  private var roots: [CarItem] = []
-  private var libraryRoots: [CarItem] = []
-  private var childrenByRoot: [String: [CarItem]] = [:]
-  private var rootNodes: [String: Node] = [:]
 
   override init() {
     super.init()
     configureAudioSession()
     configureRemoteCommands()
-    playableContent.dataSource = self
-    playableContent.delegate = self
-    rebuildRoot()
     NotificationCenter.default.addObserver(
       self,
       selector: #selector(playerItemDidReachEnd),
@@ -108,13 +121,13 @@ final class HearthShelfAuto: RCTEventEmitter, MPPlayableContentDataSource, MPPla
     self.skipForwardSec = skipForwardSec.intValue
     MPRemoteCommandCenter.shared().skipBackwardCommand.preferredIntervals = [skipBackSec]
     MPRemoteCommandCenter.shared().skipForwardCommand.preferredIntervals = [skipForwardSec]
-    reloadCarPlay()
+    HearthShelfCarPlaySceneDelegate.reloadActiveRoot()
   }
 
   @objc(setDiscover:)
   func setDiscover(_ json: String) {
     defaults.set(json, forKey: "hs.carplay.discover")
-    reloadCarPlay()
+    HearthShelfCarPlaySceneDelegate.reloadActiveRoot()
   }
 
   @objc(setNotePopsEnabled:)
@@ -128,7 +141,7 @@ final class HearthShelfAuto: RCTEventEmitter, MPPlayableContentDataSource, MPPla
     defaults.removeObject(forKey: "hs.carplay.token")
     defaults.removeObject(forKey: "hs.carplay.discover")
     stop()
-    reloadCarPlay()
+    HearthShelfCarPlaySceneDelegate.reloadActiveRoot()
   }
 
   @objc(load:startSec:title:author:artworkUri:chaptersJson:)
@@ -225,69 +238,6 @@ final class HearthShelfAuto: RCTEventEmitter, MPPlayableContentDataSource, MPPla
     }
   }
 
-  func numberOfChildItems(at indexPath: IndexPath) -> Int {
-    if indexPath.count == 0 {
-      return roots.count
-    }
-    guard let root = rootItem(at: indexPath) else {
-      return 0
-    }
-    return childrenByRoot[root.id]?.count ?? 0
-  }
-
-  func contentItem(at indexPath: IndexPath) -> MPContentItem? {
-    let item: CarItem?
-    if indexPath.count == 1 {
-      item = roots[safe: indexPath[0]]
-    } else if indexPath.count == 2, let root = roots[safe: indexPath[0]] {
-      item = childrenByRoot[root.id]?[safe: indexPath[1]]
-    } else {
-      item = nil
-    }
-    guard let carItem = item else {
-      return nil
-    }
-    let content = MPContentItem(identifier: carItem.id)
-    content.title = carItem.title
-    content.subtitle = carItem.subtitle
-    content.isPlayable = carItem.playable
-    content.isContainer = !carItem.playable
-    return content
-  }
-
-  func playableContentManager(
-    _ contentManager: MPPlayableContentManager,
-    initiatePlaybackOfContentItemAt indexPath: IndexPath,
-    completionHandler: @escaping (Error?) -> Void
-  ) {
-    guard indexPath.count == 2,
-      let root = roots[safe: indexPath[0]],
-      let item = childrenByRoot[root.id]?[safe: indexPath[1]],
-      item.playable
-    else {
-      completionHandler(nil)
-      return
-    }
-    playItemById(item.id, completion: completionHandler)
-  }
-
-  func playableContentManager(
-    _ contentManager: MPPlayableContentManager,
-    beginLoadingChildItemsAt indexPath: IndexPath,
-    completionHandler: @escaping (Error?) -> Void
-  ) {
-    if indexPath.count == 0 {
-      rebuildRoot()
-      completionHandler(nil)
-      return
-    }
-    guard let root = rootItem(at: indexPath), let node = rootNodes[root.id] else {
-      completionHandler(nil)
-      return
-    }
-    loadChildren(for: root, node: node, completion: completionHandler)
-  }
-
   private func configureAudioSession() {
     do {
       let session = AVAudioSession.sharedInstance()
@@ -355,7 +305,7 @@ final class HearthShelfAuto: RCTEventEmitter, MPPlayableContentDataSource, MPPla
       MPNowPlayingInfoPropertyPlaybackRate: player.rate,
       MPNowPlayingInfoPropertyDefaultPlaybackRate: currentRate,
     ]
-    let duration = player.currentItem?.asset.duration.seconds ?? 0
+    let duration = player.currentItem?.duration.seconds ?? 0
     if duration.isFinite, duration > 0 {
       info[MPMediaItemPropertyPlaybackDuration] = duration
     }
@@ -421,119 +371,295 @@ final class HearthShelfAuto: RCTEventEmitter, MPPlayableContentDataSource, MPPla
     }.resume()
   }
 
-  private func rebuildRoot() {
-    var nextRoots = [CarItem]()
-    var nextNodes = [String: Node]()
+  // ---- CarPlay browse: shared data layer (mirrors Android Auto's childrenOf) ----
 
-    let continueId = "root:continue"
-    nextRoots.append(CarItem(id: continueId, title: "Continue Listening", subtitle: "", playable: false))
-    nextNodes[continueId] = .continueListening
-
-    for shelf in discoverShelves() {
-      let id = "root:discover:\(shelf.id)"
-      nextRoots.append(CarItem(id: id, title: shelf.label, subtitle: "", playable: false))
-      nextNodes[id] = .discoverShelf(shelf.id)
-      childrenByRoot[id] = shelf.items
+  /// Resolve one browse node's children off the main thread and hand them back.
+  /// The scene delegate calls this for every list it pushes.
+  func loadChildren(for node: CarNode, completion: @escaping (CarChildren) -> Void) {
+    DispatchQueue.global(qos: .userInitiated).async {
+      let result = self.childrenOf(node)
+      DispatchQueue.main.async { completion(result) }
     }
-
-    for library in libraryRoots {
-      nextRoots.append(library)
-      nextNodes[library.id] = .library(library.id.replacingOccurrences(of: "root:library:", with: ""))
-    }
-
-    roots = nextRoots
-    rootNodes = nextNodes
   }
 
-  private func reloadCarPlay() {
-    DispatchQueue.main.async {
-      self.rebuildRoot()
-      self.playableContent.reloadData()
-    }
-    fetchLibraries()
+  /// The four root tabs, matching Android Auto: Continue / New / Library / Discover.
+  func rootTabs() -> [(node: CarNode, title: String)] {
+    [
+      (.continueListening, "Continue"),
+      (.new, "New"),
+      (.libraryRoot, "Library"),
+      (.discoverRoot, "Discover"),
+    ]
   }
 
-  private func rootItem(at indexPath: IndexPath) -> CarItem? {
-    guard indexPath.count >= 1 else {
-      return nil
-    }
-    return roots[safe: indexPath[0]]
-  }
-
-  private func loadChildren(
-    for root: CarItem,
-    node: Node,
-    completion: @escaping (Error?) -> Void
-  ) {
+  private func childrenOf(_ node: CarNode) -> CarChildren {
     switch node {
     case .continueListening:
-      fetchItems(path: "/api/me/items-in-progress") { [weak self] result in
-        self?.childrenByRoot[root.id] = result
-        completion(nil)
+      var seen = Set<String>()
+      var items = [CarBook]()
+      for b in fetchBooks(path: "/api/me/items-in-progress", key: "libraryItems") where seen.insert(b.id).inserted {
+        items.append(b)
       }
-    case .discoverShelf:
-      completion(nil)
-    case .library(let libraryId):
-      fetchItems(path: "/api/libraries/\(encodePath(libraryId))/items?page=0&limit=50&minified=1") {
-        [weak self] result in
-        self?.childrenByRoot[root.id] = result
-        completion(nil)
+      for b in continueSeries() where seen.insert(b.id).inserted {
+        items.append(b)
       }
+      return .books(items)
+
+    case .new:
+      return .books(recentlyAdded())
+
+    case .libraryRoot:
+      var folders = [(node: CarNode, title: String)]()
+      let books = bookLibraries()
+      let pods = podcastLibraries()
+      for lib in books {
+        let prefix = books.count > 1 ? "\(lib.name) - " : ""
+        folders.append((.books(libraryId: lib.id), "\(prefix)Books"))
+        folders.append((.series(libraryId: lib.id), "\(prefix)Series"))
+      }
+      for lib in pods {
+        let label = pods.count > 1 ? "\(lib.name) Podcasts" : "Podcasts"
+        folders.append((.podcasts(libraryId: lib.id), label))
+      }
+      return .folders(folders)
+
+    case .books(let libraryId):
+      return .books(libraryItems(libraryId: libraryId))
+
+    case .series(let libraryId):
+      let folders = seriesList(libraryId: libraryId).map {
+        (node: CarNode.seriesItems(libraryId: libraryId, seriesId: $0.id), title: $0.name)
+      }
+      return .folders(folders)
+
+    case .seriesItems(let libraryId, let seriesId):
+      return .books(seriesItems(libraryId: libraryId, seriesId: seriesId))
+
+    case .podcasts(let libraryId):
+      let folders = podcasts(libraryId: libraryId).map {
+        (node: CarNode.podcastEpisodes(podcastId: $0.id), title: $0.title)
+      }
+      return .folders(folders)
+
+    case .podcastEpisodes(let podcastId):
+      return .books(podcastEpisodes(podcastId: podcastId))
+
+    case .discoverRoot:
+      let folders = discoverShelves().map {
+        (node: CarNode.discoverShelf(shelfId: $0.id), title: $0.label)
+      }
+      return .folders(folders)
+
+    case .discoverShelf(let shelfId):
+      let shelf = discoverShelves().first { $0.id == shelfId }
+      return .books(shelf?.items ?? [])
     }
   }
 
-  private func fetchItems(path: String, completion: @escaping ([CarItem]) -> Void) {
-    request(path: path) { data in
-      guard let data,
-        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-      else {
-        completion([])
-        return
-      }
-      let rawItems = (obj["libraryItems"] as? [[String: Any]]) ?? (obj["results"] as? [[String: Any]]) ?? []
-      completion(rawItems.map { self.carItem(from: $0) })
+  // ---- ABS fetch helpers (synchronous; called on a background queue) ----
+
+  private struct Library {
+    let id: String
+    let name: String
+    let mediaType: String
+  }
+
+  private func allLibraries() -> [Library] {
+    guard let data = requestSync(path: "/api/libraries"),
+      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let libraries = obj["libraries"] as? [[String: Any]]
+    else {
+      return []
+    }
+    return libraries.map {
+      Library(
+        id: $0["id"] as? String ?? "",
+        name: $0["name"] as? String ?? "Library",
+        mediaType: $0["mediaType"] as? String ?? "book"
+      )
     }
   }
 
-  private func fetchLibraries() {
-    request(path: "/api/libraries") { [weak self] data in
-      guard let self,
-        let data,
-        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-        let libraries = obj["libraries"] as? [[String: Any]]
-      else {
-        return
-      }
-      let next = libraries.map {
-        CarItem(
-          id: "root:library:\($0["id"] as? String ?? "")",
-          title: $0["name"] as? String ?? "Library",
-          subtitle: "",
-          playable: false
+  private func bookLibraries() -> [Library] {
+    allLibraries().filter { $0.mediaType == "book" }
+  }
+
+  private func podcastLibraries() -> [Library] {
+    allLibraries().filter { $0.mediaType == "podcast" }
+  }
+
+  private func fetchBooks(path: String, key: String) -> [CarBook] {
+    guard let data = requestSync(path: path),
+      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else {
+      return []
+    }
+    let raw = (obj[key] as? [[String: Any]]) ?? (obj["results"] as? [[String: Any]]) ?? []
+    return raw.map { carBook(from: $0) }
+  }
+
+  private func recentlyAdded() -> [CarBook] {
+    var out = [CarBook]()
+    for lib in bookLibraries() {
+      out.append(
+        contentsOf: fetchBooks(
+          path: "/api/libraries/\(encodePath(lib.id))/items?limit=25&minified=1&sort=addedAt&desc=1",
+          key: "results"
+        )
+      )
+    }
+    return out
+  }
+
+  private func libraryItems(libraryId: String) -> [CarBook] {
+    fetchBooks(
+      path: "/api/libraries/\(encodePath(libraryId))/items?limit=100&minified=1",
+      key: "results"
+    )
+    .sorted { $0.sortKey.localizedCaseInsensitiveCompare($1.sortKey) == .orderedAscending }
+  }
+
+  private func seriesList(libraryId: String) -> [(id: String, name: String)] {
+    guard let data = requestSync(path: "/api/libraries/\(encodePath(libraryId))/series?limit=200"),
+      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let results = obj["results"] as? [[String: Any]]
+    else {
+      return []
+    }
+    return results
+      .map {
+        (
+          id: $0["id"] as? String ?? "",
+          name: $0["name"] as? String ?? "Series",
+          sortKey: ($0["nameIgnorePrefix"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            ?? ($0["name"] as? String ?? "Series")
         )
       }
-      DispatchQueue.main.async {
-        self.libraryRoots = next
-        self.rebuildRoot()
-        self.playableContent.reloadData()
+      .sorted { $0.sortKey.localizedCaseInsensitiveCompare($1.sortKey) == .orderedAscending }
+      .map { (id: $0.id, name: $0.name) }
+  }
+
+  private func seriesItems(libraryId: String, seriesId: String) -> [CarBook] {
+    guard let data = requestSync(path: "/api/libraries/\(encodePath(libraryId))/series?limit=200"),
+      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let results = obj["results"] as? [[String: Any]]
+    else {
+      return []
+    }
+    for series in results where (series["id"] as? String) == seriesId {
+      let books = (series["books"] as? [[String: Any]]) ?? []
+      return books.map { carBook(from: $0) }
+    }
+    return []
+  }
+
+  /// Next-up entries: for each series the listener has started, the first book
+  /// they haven't. Mirrors Android's continueSeries heuristic.
+  private func continueSeries() -> [CarBook] {
+    let inProgress = Set(
+      fetchBooks(path: "/api/me/items-in-progress", key: "libraryItems").map { $0.id }
+    )
+    if inProgress.isEmpty {
+      return []
+    }
+    var out = [CarBook]()
+    var seenSeries = Set<String>()
+    for lib in bookLibraries() {
+      guard let data = requestSync(path: "/api/libraries/\(encodePath(lib.id))/series?limit=200"),
+        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        let results = obj["results"] as? [[String: Any]]
+      else {
+        continue
       }
+      for series in results {
+        let books = ((series["books"] as? [[String: Any]]) ?? []).map { carBook(from: $0) }
+        if !books.contains(where: { inProgress.contains($0.id) }) {
+          continue
+        }
+        guard let next = books.first(where: { !inProgress.contains($0.id) }) else {
+          continue
+        }
+        if seenSeries.insert(series["id"] as? String ?? "").inserted {
+          out.append(next)
+        }
+      }
+    }
+    return out
+  }
+
+  private struct Podcast {
+    let id: String
+    let title: String
+  }
+
+  private func podcasts(libraryId: String) -> [Podcast] {
+    guard let data = requestSync(path: "/api/libraries/\(encodePath(libraryId))/items?limit=200&minified=1"),
+      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let results = obj["results"] as? [[String: Any]]
+    else {
+      return []
+    }
+    return results.map {
+      let meta = ($0["media"] as? [String: Any])?["metadata"] as? [String: Any]
+      return Podcast(id: $0["id"] as? String ?? "", title: meta?["title"] as? String ?? "Podcast")
     }
   }
 
-  private func carItem(from obj: [String: Any]) -> CarItem {
+  /// Episodes of a podcast, newest first. The play route takes item id + episode
+  /// id, so each CarBook carries a "podId/episodeId" id that playById splits.
+  private func podcastEpisodes(podcastId: String) -> [CarBook] {
+    guard let data = requestSync(path: "/api/items/\(encodePath(podcastId))?expanded=1"),
+      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let media = obj["media"] as? [String: Any]
+    else {
+      return []
+    }
+    let podTitle = (media["metadata"] as? [String: Any])?["title"] as? String ?? ""
+    let eps = (media["episodes"] as? [[String: Any]]) ?? []
+    return eps.map {
+      CarBook(
+        id: "\(podcastId)/\($0["id"] as? String ?? "")",
+        title: $0["title"] as? String ?? "Episode",
+        subtitle: podTitle
+      )
+    }
+    .reversed()
+  }
+
+  private func carBook(from obj: [String: Any]) -> CarBook {
     let media = obj["media"] as? [String: Any]
     let metadata = media?["metadata"] as? [String: Any]
-    return CarItem(
+    let title = metadata?["title"] as? String ?? obj["title"] as? String ?? "Untitled"
+    let sortKey = (metadata?["titleIgnorePrefix"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? title
+    return CarBook(
       id: obj["id"] as? String ?? "",
-      title: metadata?["title"] as? String ?? obj["title"] as? String ?? "Untitled",
+      title: title,
       subtitle: metadata?["authorName"] as? String ?? "",
-      playable: true
+      sortKey: sortKey
     )
   }
 
-  private func playItemById(_ itemId: String, completion: @escaping (Error?) -> Void) {
-    request(path: "/api/items/\(encodePath(itemId))/play", method: "POST", body: startPlayBody()) {
-      data in
+  /// Artwork URL for a browse row's cover (token-bearing so CarPlay can load it).
+  func coverUrl(itemId: String) -> URL? {
+    // Podcast episodes carry "podId/episodeId"; the cover route wants the item id.
+    let id = itemId.split(separator: "/").first.map(String.init) ?? itemId
+    return mediaUrl(path: "/api/items/\(encodePath(id))/cover")
+  }
+
+  // ---- Playback resolution (called by the scene delegate on tap) ----
+
+  /// The car selected a playable row. Create an ABS play session, then hand the
+  /// real stream URL + resume position + chapters to `load`. Books use a plain
+  /// id; podcast episodes use "podId/episodeId".
+  func playById(_ rawId: String, completion: @escaping (Bool) -> Void) {
+    let itemId = rawId.split(separator: "/").first.map(String.init) ?? rawId
+    let episodeId = rawId.contains("/") ? String(rawId.split(separator: "/")[1]) : nil
+    let playPath =
+      episodeId != nil
+      ? "/api/items/\(encodePath(itemId))/play/\(encodePath(episodeId!))"
+      : "/api/items/\(encodePath(itemId))/play"
+
+    request(path: playPath, method: "POST", body: startPlayBody()) { data in
       guard let data,
         let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
         let tracks = obj["audioTracks"] as? [[String: Any]],
@@ -541,7 +667,7 @@ final class HearthShelfAuto: RCTEventEmitter, MPPlayableContentDataSource, MPPla
         let contentUrl = track["contentUrl"] as? String,
         let url = self.mediaUrl(path: contentUrl)
       else {
-        DispatchQueue.main.async { completion(nil) }
+        DispatchQueue.main.async { completion(false) }
         return
       }
 
@@ -563,9 +689,35 @@ final class HearthShelfAuto: RCTEventEmitter, MPPlayableContentDataSource, MPPla
           artworkUri: self.coverUrl(itemId: itemId)?.absoluteString ?? "",
           chaptersJson: chapterJson
         )
-        completion(nil)
+        completion(true)
       }
     }
+  }
+
+  // ---- HTTP ----
+
+  /// Synchronous ABS GET for the browse data layer, which already runs on a
+  /// background queue (loadChildren). Returns nil on any failure.
+  private func requestSync(path: String) -> Data? {
+    guard let serverUrl = defaults.string(forKey: "hs.carplay.serverUrl"),
+      let token = defaults.string(forKey: "hs.carplay.token"),
+      let url = URL(string: serverUrl + path)
+    else {
+      return nil
+    }
+    var req = URLRequest(url: url)
+    req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    req.timeoutInterval = 8
+    let semaphore = DispatchSemaphore(value: 0)
+    var result: Data?
+    URLSession.shared.dataTask(with: req) { data, response, _ in
+      if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
+        result = data
+      }
+      semaphore.signal()
+    }.resume()
+    _ = semaphore.wait(timeout: .now() + 10)
+    return result
   }
 
   private func request(
@@ -620,11 +772,13 @@ final class HearthShelfAuto: RCTEventEmitter, MPPlayableContentDataSource, MPPla
     return URL(string: "\(serverUrl)\(path)\(separator)token=\(encodedToken)")
   }
 
-  private func coverUrl(itemId: String) -> URL? {
-    mediaUrl(path: "/api/items/\(encodePath(itemId))/cover")
+  private struct DiscoverShelf {
+    let id: String
+    let label: String
+    let items: [CarBook]
   }
 
-  private func discoverShelves() -> [(id: String, label: String, items: [CarItem])] {
+  private func discoverShelves() -> [DiscoverShelf] {
     guard let raw = defaults.string(forKey: "hs.carplay.discover"),
       let data = raw.data(using: .utf8),
       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -633,17 +787,18 @@ final class HearthShelfAuto: RCTEventEmitter, MPPlayableContentDataSource, MPPla
       return []
     }
     return shelves.map { shelf in
-      let id = shelf["id"] as? String ?? ""
-      let label = shelf["label"] as? String ?? "Discover"
       let items = (shelf["items"] as? [[String: Any]] ?? []).map {
-        CarItem(
+        CarBook(
           id: $0["id"] as? String ?? "",
           title: $0["title"] as? String ?? "Untitled",
-          subtitle: $0["author"] as? String ?? "",
-          playable: true
+          subtitle: $0["author"] as? String ?? ""
         )
       }
-      return (id: id, label: label, items: items)
+      return DiscoverShelf(
+        id: shelf["id"] as? String ?? "",
+        label: shelf["label"] as? String ?? "Discover",
+        items: items
+      )
     }
   }
 
@@ -680,12 +835,6 @@ final class HearthShelfAuto: RCTEventEmitter, MPPlayableContentDataSource, MPPla
       return
     }
     sendEvent(withName: "onEnded", body: [:])
-  }
-}
-
-private extension Array {
-  subscript(safe index: Int) -> Element? {
-    indices.contains(index) ? self[index] : nil
   }
 }
 

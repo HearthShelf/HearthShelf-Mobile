@@ -29,8 +29,12 @@ The iOS media controller and CarPlay source of truth is
 commands. CarPlay uses the modern CarPlay framework
 (`com.apple.developer.carplay-audio`, approved): the plugin declares a
 `CPTemplateApplicationSceneSessionRoleApplication` scene in Info.plist backed by
-`HearthShelfCarPlaySceneDelegate`. That delegate is currently a stub (empty root
-list); the browse/now-playing templates are a later pass. Set
+`HearthShelfCarPlaySceneDelegate`. That delegate builds the browse UI as a
+`CPTabBarTemplate` whose four tabs mirror Android Auto (Continue / New / Library /
+Discover); tapping a book resolves an ABS play session and shows the system
+now-playing template. Browse data + playback both run through the shared
+`HearthShelfAuto` module, so the car and phone share one player. Needs a real
+CarPlay head unit (or the CarPlay simulator) to verify. Set
 `HEARTHSHELF_IOS_CARPLAY_ENTITLEMENT=1` only for signed builds using an Apple
 profile that includes the CarPlay entitlement.
 
