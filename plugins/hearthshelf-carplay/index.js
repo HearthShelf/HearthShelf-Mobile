@@ -105,7 +105,14 @@ function addInfoPlist(config) {
 
 function addCarPlayEntitlement(config) {
   return withEntitlementsPlist(config, (cfg) => {
-    if (process.env.HEARTHSHELF_IOS_CARPLAY_ENTITLEMENT === '1') {
+    // Write the CarPlay entitlement by default - a signed build needs it or the
+    // app never appears in the CarPlay app grid. The App ID / provisioning
+    // profile has the CarPlay capability enabled, so this signs cleanly.
+    //
+    // Skip it ONLY for unsigned builds (simulator / CI) by setting
+    // HEARTHSHELF_IOS_CARPLAY_ENTITLEMENT=0: an entitlement whose capability the
+    // profile lacks makes code-signing FAIL, so unsigned/simulator builds opt out.
+    if (process.env.HEARTHSHELF_IOS_CARPLAY_ENTITLEMENT !== '0') {
       cfg.modResults['com.apple.developer.carplay-audio'] = true
     }
     return cfg
