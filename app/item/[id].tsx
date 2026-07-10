@@ -74,6 +74,7 @@ import {
   icons,
 } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
+import { DeviceKindIcon } from '@/ui/DeviceKindIcon'
 import { useSheetBackHandler } from '@/ui/useBackHandler'
 import { AppTabBar } from '@/ui/AppTabBar'
 import { CoverGlow } from '@/ui/CoverGlow'
@@ -536,7 +537,7 @@ export default function ItemDetailScreen() {
         />
         <SheetRow
           icon={icons.recent}
-          label="Previous sessions"
+          label="Recent Listens"
           onPress={() => {
             overflowSheetRef.current?.dismiss()
             sessionsSheetRef.current?.present()
@@ -1076,7 +1077,7 @@ const SessionsSheet = ({
   }, [itemId])
 
   return (
-    <Sheet ref={ref} title="Previous sessions" snapPoints={['50%']}>
+    <Sheet ref={ref} title="Recent Listens" snapPoints={['50%']}>
       <BottomSheetScrollView
         contentContainerStyle={{ paddingBottom: spacing.xxl }}
         onLayout={() => {
@@ -1089,7 +1090,7 @@ const SessionsSheet = ({
           </AppText>
         ) : sessions.length === 0 ? (
           <AppText variant="meta" color={colors.textMuted} style={{ paddingVertical: spacing.lg }}>
-            No recent sessions for this book.
+            You haven't listened to this book yet.
           </AppText>
         ) : (
           sessions.map((s) => (
@@ -1098,7 +1099,7 @@ const SessionsSheet = ({
               style={styles.sessionRow}
               onPress={() => void onJump(s.currentTime)}
             >
-              <Icon name={icons.recent} size={20} color={colors.textMuted} />
+              <DeviceKindIcon deviceInfo={s.deviceInfo} size={18} color={colors.textMuted} />
               <View style={{ flex: 1 }}>
                 <AppText variant="meta">
                   {new Date(s.updatedAt).toLocaleDateString(undefined, {

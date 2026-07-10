@@ -7,6 +7,7 @@
  * URLs (cover, audio stream) carry the token as a `?token=` query param because
  * native players/image loaders can't set headers - same convention ABS uses.
  */
+import { Platform } from 'react-native'
 import { getSession } from './session'
 import type {
   ABSLibrariesResponse,
@@ -453,15 +454,24 @@ export async function getStatsHistory(
 
 // ---- Playback ----
 
+/** Device info sent with every session we open. The platform is baked into both
+ *  deviceId and osName so Recent Listens can tell an Apple phone apart from an
+ *  Android one (the server can't infer it - our client sends no User-Agent). */
+function mobileDeviceInfo() {
+  const isApple = Platform.OS === 'ios'
+  return {
+    deviceId: isApple ? 'hearthshelf-mobile-ios' : 'hearthshelf-mobile-android',
+    clientName: 'HearthShelf Mobile',
+    osName: isApple ? 'iOS' : 'Android',
+    clientVersion: '0.0.1',
+  }
+}
+
 export async function startPlay(itemId: string): Promise<ABSPlaybackSession> {
   return absRequest<ABSPlaybackSession>(`/api/items/${itemId}/play`, {
     method: 'POST',
     body: JSON.stringify({
-      deviceInfo: {
-        deviceId: 'hearthshelf-mobile',
-        clientName: 'HearthShelf Mobile',
-        clientVersion: '0.0.1',
-      },
+      deviceInfo: mobileDeviceInfo(),
       supportedMimeTypes: ['audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/flac', 'audio/ogg'],
     }),
   })
@@ -512,11 +522,7 @@ export async function syncLocalSessions(sessions: LocalSession[]): Promise<void>
   await absRequest<void>('/api/session/local-all', {
     method: 'POST',
     body: JSON.stringify({
-      deviceInfo: {
-        deviceId: 'hearthshelf-mobile',
-        clientName: 'HearthShelf Mobile',
-        clientVersion: '0.0.1',
-      },
+      deviceInfo: mobileDeviceInfo(),
       sessions,
     }),
   })

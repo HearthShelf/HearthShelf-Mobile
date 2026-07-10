@@ -30,8 +30,8 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated'
-import { classifyDevice, coverHue, formatTimestamp } from '@hearthshelf/core'
-import type { ABSDeviceInfo, DeviceKind } from '@hearthshelf/core'
+import { coverHue, formatTimestamp } from '@hearthshelf/core'
+import type { ABSDeviceInfo } from '@hearthshelf/core'
 import {
   getState,
   subscribe,
@@ -72,6 +72,7 @@ import {
   icons,
 } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
+import { DeviceKindIcon } from '@/ui/DeviceKindIcon'
 import { CoverGlow } from '@/ui/CoverGlow'
 import { CoverLightbox } from '@/ui/CoverLightbox'
 import { useBackHandler, useSheetBackHandler } from '@/ui/useBackHandler'
@@ -965,16 +966,6 @@ interface RecentSession {
   deviceInfo?: ABSDeviceInfo
 }
 
-// Core's classifyDevice returns Material Symbols glyph names; map its DeviceKind
-// to our MaterialIcons set so the same web-app device classification renders here.
-const DEVICE_ICON: Record<DeviceKind, keyof typeof icons> = {
-  car: 'car',
-  phone: 'smartphone',
-  tablet: 'tablet',
-  browser: 'language',
-  desktop: 'computer',
-}
-
 /** A unified Recent Listens row: the live "Now" session, a local unsynced
  *  session, or a confirmed server session. `synced` drives the green/orange
  *  accent so the list doubles as a sync dashboard. */
@@ -1101,7 +1092,7 @@ const RecentSheet = forwardRef<
   }, [sync, pending, sessions, itemId])
 
   return (
-    <Sheet ref={sheetRef} kicker="Recent listens" snapPoints={['60%']}>
+    <Sheet ref={sheetRef} kicker="Recent Listens" snapPoints={['60%']}>
       {!sessions && rows.length === 0 ? (
         <AppText variant="meta" color={colors.textMuted}>
           Loading...
@@ -1137,23 +1128,21 @@ const RecentSheet = forwardRef<
               >
                 <View style={{ flex: 1, gap: 3 }}>
                   <View style={recentStyles.durationRow}>
-                    <Icon
-                      name={
-                        // Confirmed server rows show which device recorded them
-                        // (car/phone/etc); the accent tint doubles as sync status.
-                        // Live/pending rows stay on the cloud glyph so the row
-                        // reads as an in-flight sync rather than a device.
-                        r.kind === 'server'
-                          ? icons[DEVICE_ICON[classifyDevice(r.deviceInfo).kind]]
-                          : r.offline
-                            ? icons.cloudOff
-                            : r.synced
-                              ? icons.cloudDone
-                              : icons.cloudQueue
-                      }
-                      size={15}
-                      color={accent}
-                    />
+                    {/* Confirmed server rows show which device recorded them
+                        (Apple/Android/Car/Web); the accent tint doubles as sync
+                        status. Live/pending rows stay on a cloud glyph so the
+                        row reads as an in-flight sync rather than a device. */}
+                    {r.kind === 'server' ? (
+                      <DeviceKindIcon deviceInfo={r.deviceInfo} size={15} color={accent} />
+                    ) : (
+                      <Icon
+                        name={
+                          r.offline ? icons.cloudOff : r.synced ? icons.cloudDone : icons.cloudQueue
+                        }
+                        size={15}
+                        color={accent}
+                      />
+                    )}
                     <AppText variant="label" color={accent}>
                       {formatTimestamp(r.timeListening)} listened
                     </AppText>

@@ -58,9 +58,8 @@ export const icons = {
   hourglass: 'hourglass-top',
   trending: 'trending-up',
   car: 'directions-car',
-  // Recent-session device kinds (mirror core's classifyDevice)
-  smartphone: 'smartphone',
-  tablet: 'tablet',
+  // Recent-session device kinds. Apple/Android/Car are brand logos drawn from
+  // MaterialCommunityIcons in DeviceKindIcon; web/desktop use these MaterialIcons.
   language: 'language',
   computer: 'computer',
   check: 'check',
