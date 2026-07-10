@@ -95,9 +95,12 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!ready) return
-    const onSignIn = segments[0] === 'sign-in'
-    if (!effectiveSignedIn && !onSignIn) router.replace('/sign-in')
-    else if (effectiveSignedIn && onSignIn) router.replace('/(tabs)')
+    // sso-callback catches the OAuth redirect mid-flow (see app/sso-callback.tsx);
+    // it routes itself once Clerk settles, so don't yank it to /sign-in while the
+    // session is still being established.
+    const onAuthRoute = segments[0] === 'sign-in' || segments[0] === 'sso-callback'
+    if (!effectiveSignedIn && !onAuthRoute) router.replace('/sign-in')
+    else if (effectiveSignedIn && segments[0] === 'sign-in') router.replace('/(tabs)')
   }, [ready, effectiveSignedIn, segments, router])
 
   // Upload a prior crash once genuinely signed in (need a real token; the
