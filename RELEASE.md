@@ -42,11 +42,14 @@ current tag's `version` via `eas update` and must **not** get a new tag.
   input off. The CI run number is stamped as the Android `versionCode`
   (`EXPO_ANDROID_VERSION_CODE`, read in `app.config.js`) so every build is
   distinguishable on-device and monotonic.
-- **iOS simulator build** (`.github/workflows/build-ios-simulator.yml`): runs on
-  manual dispatch and on PRs that touch native/app files. It uses a macOS runner
-  to prebuild iOS, install Pods, compile an unsigned Simulator `.app`, and upload
-  it as an artifact. This does **not** need an Apple developer account, signing
-  certificate, provisioning profile, TestFlight, or a device.
+- **iOS launch check** (`.github/workflows/ios-launch-check.yml`): runs on manual
+  dispatch, on PRs, and on main pushes that touch native/app files. It uses a
+  macOS runner to prebuild iOS, install Pods, compile an unsigned **Release**
+  Simulator `.app`, then boots a simulator, launches the app, and fails on a
+  startup crash or a solid-color (black) screen - catching launch regressions for
+  free before any metered build. No Apple developer account, signing cert,
+  provisioning profile, TestFlight, or device needed. (Replaced the old
+  `build-ios-simulator.yml`, which only compiled and never launched the app.)
 
 Both check out the `packages/core` submodule (`submodules: recursive`).
 
@@ -253,23 +256,26 @@ only (it ships version 0.0.1 since EAS runs don't set the version env vars).
 | `ASC_KEY_ID` | ASC key id (`PWB6X686S2`) | key filename |
 | `ASC_ISSUER_ID` | ASC issuer id | App Store Connect -> Users and Access -> Keys |
 | `IOS_DIST_P12_BASE64` | Apple Distribution cert + key (.p12), base64 | `dist.p12` |
-| `IOS_DIST_P12_PASSWORD` | the .p12 export password | you (set manually) |
+| `IOS_DIST_P12_PASSWORD` | the .p12 export password (`hearthshelf`) | you (set) |
 | `IOS_PROVISION_PROFILE_BASE64` | App Store profile, base64 | `HearthShelf_App_Store.mobileprovision` |
 
 Signing identity: `Apple Distribution: Jeremy Powers (HCU6KVPTDC)`, profile
-`HearthShelf App Store` (UUID `446cf62d-...`), bundle `com.hearthshelf.mobile`,
-team `HCU6KVPTDC`. Cert/profile expire 2027-07-09.
+`HearthShelf App Store`, bundle `com.hearthshelf.mobile`, team `HCU6KVPTDC`. The
+fastlane lane references the profile **by name**, not UUID, so re-issuing the
+profile (which mints a new UUID) needs only a re-upload of the .mobileprovision
+into `IOS_PROVISION_PROFILE_BASE64` - no cert change, no Fastfile edit. A profile
+scope change (e.g. new entitlement) re-signs the profile against the SAME cert;
+the `dist.p12` stays valid. Cert/profile expire 2027-07-09.
 
-> **Two things to verify before the first iOS tag:**
-> 1. **`IOS_DIST_P12_PASSWORD`** must be set (the .p12 is password-protected).
-> 2. **`ASC_ISSUER_ID`** is currently set from notes
+> **Before the first iOS tag, one thing left to verify:**
+> - **`ASC_ISSUER_ID`** is currently set from notes
 >    (`8fa5bf6f-7ea5-4d8a-bbd5-c5e728baf2f9`) - confirm it against App Store
 >    Connect -> Users and Access -> Keys (the issuer id shown above the key list).
 >    A wrong issuer id fails the TestFlight upload.
 
 ### Other iOS notes
 
-- Simulator compile is a separate PR gate (`build-ios-simulator.yml`, unsigned).
+- Simulator launch check is a separate PR gate (`ios-launch-check.yml`, unsigned).
 - iOS background audio mode is declared in `app.config.js`.
 - The native iOS media controller + CarPlay browse/play surface lives in
   `plugins/hearthshelf-carplay` and is copied into the generated iOS project by
