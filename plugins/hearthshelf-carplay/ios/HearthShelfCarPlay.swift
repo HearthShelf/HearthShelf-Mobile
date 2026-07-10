@@ -151,14 +151,21 @@ final class HearthShelfAuto: RCTEventEmitter {
     HearthShelfCarPlaySceneDelegate.reloadActiveRoot()
   }
 
-  @objc(load:startSec:title:author:artworkUri:chaptersJson:)
+  // NOTE: the selector (load:startSec:...:autoPlay:) MUST match the JS call in
+  // PlayerHost exactly - 7 args including autoPlay. React Native's bridge
+  // dispatches by selector arity; a 6-arg native method silently never fires for
+  // a 7-arg JS call, which looks like "play does nothing / no audio / frozen
+  // scrubber" because the item is never loaded. The Android HearthShelfPlayerService
+  // load() has the same 7-arg shape.
+  @objc(load:startSec:title:author:artworkUri:chaptersJson:autoPlay:)
   func load(
     _ url: String,
     startSec: NSNumber,
     title: String,
     author: String,
     artworkUri: String,
-    chaptersJson: String
+    chaptersJson: String,
+    autoPlay: Bool
   ) {
     DispatchQueue.main.async {
       self.bookTitle = title
@@ -174,10 +181,12 @@ final class HearthShelfAuto: RCTEventEmitter {
       self.configureAudioSession()
       self.player.replaceCurrentItem(with: AVPlayerItem(url: mediaUrl))
       self.player.seek(to: CMTime(seconds: startSec.doubleValue, preferredTimescale: 600))
-      self.player.rate = self.currentRate
-      self.startProgressTimer()
+      if autoPlay {
+        self.player.rate = self.currentRate
+        self.startProgressTimer()
+      }
       self.updateNowPlaying()
-      self.emitState(true)
+      self.emitState(autoPlay)
     }
   }
 
@@ -694,7 +703,8 @@ final class HearthShelfAuto: RCTEventEmitter {
           title: obj["displayTitle"] as? String ?? "Untitled",
           author: obj["displayAuthor"] as? String ?? "",
           artworkUri: self.coverUrl(itemId: itemId)?.absoluteString ?? "",
-          chaptersJson: chapterJson
+          chaptersJson: chapterJson,
+          autoPlay: true
         )
         completion(true)
       }

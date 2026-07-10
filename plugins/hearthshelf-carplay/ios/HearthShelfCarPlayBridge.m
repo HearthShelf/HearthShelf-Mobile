@@ -16,7 +16,8 @@ RCT_EXTERN_METHOD(load:(NSString *)url
                   title:(NSString *)title
                   author:(NSString *)author
                   artworkUri:(NSString *)artworkUri
-                  chaptersJson:(NSString *)chaptersJson)
+                  chaptersJson:(NSString *)chaptersJson
+                  autoPlay:(BOOL)autoPlay)
 RCT_EXTERN_METHOD(play)
 RCT_EXTERN_METHOD(pause)
 RCT_EXTERN_METHOD(seekTo:(nonnull NSNumber *)sec)
