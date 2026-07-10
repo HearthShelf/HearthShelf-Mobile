@@ -74,6 +74,14 @@ const extra = {
 // a clean build-number namespace. A release tag still overrides this.
 const appVersion = process.env.EXPO_PUBLIC_APP_VERSION || '0.0.2'
 
+// iOS CFBundleShortVersionString must be a plain dotted number (max 3 integers,
+// no letters/suffix) or App Store Connect rejects the upload. A pre-release tag
+// like v0.1.0-beta.1 normalizes to `0.1.0-Beta1` for the changelog/Play channel,
+// but iOS needs just `0.1.0`. Strip any pre-release tail for the iOS marketing
+// version; the "beta-ness" is expressed by the TestFlight track, not the string.
+// (Android versionName and the OTA runtimeVersion keep the full appVersion.)
+const iosMarketingVersion = appVersion.replace(/-.*$/, '')
+
 // CI stamps the run number as the Android versionCode (EXPO_ANDROID_VERSION_CODE)
 // so every build is distinguishable on-device and strictly monotonic (Play's
 // hard requirement). It is deliberately decoupled from the semver `version` -
@@ -113,6 +121,10 @@ module.exports = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: 'com.hearthshelf.mobile',
+    // Plain dotted marketing version (pre-release tail stripped) - see
+    // iosMarketingVersion above. App Store Connect rejects a suffixed
+    // CFBundleShortVersionString.
+    version: iosMarketingVersion,
     buildNumber: iosBuildNumber,
     // Universal Links: lets https://app.hearthshelf.com/invite open the app
     // directly (verified against the apple-app-site-association file hosted at
