@@ -1,0 +1,242 @@
+name: Release
+
+# One release pipeline for BOTH platforms. A pushed version tag (or a manual
+# dispatch) fans out into two independent job chains - `android` and `ios` -
+# that build, sign, and publish in parallel. A shared `version` job resolves the
+# single version string both platforms bake, so the Android .aab, the iOS IPA,
+# the OTA runtimeVersion, and the website changelog all agree.
+#
+# Triggers:
+#   - push tag '*.*.*'  -> tag-driven CD. The tag is the source of version truth.
+#   - workflow_dispatch -> manual run. Publishes the same way a tag does, but
+#                          since there's no tag it resolves the version from the
+#                          latest tag (git describe). The `platform` input picks
+#                          android, ios, or both. Version display everywhere is
+#                          `<version> (BUILD NUM)`, identical to a tag build.
+#
+# Version model (identical on both platforms):
+#   - user-facing `version` comes from the tag (or latest tag on dispatch),
+#     v0.1.0 -> 0.1.0. Pre-release labels normalize to the website's channel
+#     tokens (v0.1.0-beta.1 -> 0.1.0-Beta1) so the changelog lands in the right
+#     channel. That one string feeds EXPO_PUBLIC_APP_VERSION (baked app version +
+#     OTA runtime) and the uploaded changelog version.
+#   - build number = github.run_number on both platforms (Android versionCode /
+#     iOS buildNumber). Strictly increasing, decoupled from semver, which is all
+#     the stores require.
+#
+# Required repository secrets:
+#   Android: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS,
+#            ANDROID_KEY_PASSWORD, PLAY_SERVICE_ACCOUNT_JSON, CHANGELOG_API_KEY
+#   iOS:     ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_BASE64, IOS_DIST_P12_BASE64,
+#            IOS_DIST_P12_PASSWORD, IOS_PROVISION_PROFILE_BASE64
+on:
+  push:
+    tags: ['*.*.*']
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Which platform(s) to build and publish'
+        type: choice
+        default: both
+        options: [both, android, ios]
+
+jobs:
+  # Resolve the version string once so both platform chains bake the same value.
+  # On a tag push the version comes from the tag; on dispatch (no tag) it comes
+  # from the most recent tag so a manual publish still gets a real version.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # need tags for `git describe` on dispatch
+
+      - name: Resolve release version
+        id: resolve
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            RAW="${GITHUB_REF_NAME#v}"
+          else
+            # Dispatch: no tag on this ref, so use the latest tag in history.
+            LATEST=$(git describe --tags --abbrev=0)
+            RAW="${LATEST#v}"
+            echo "Dispatch build - using latest tag $LATEST"
+          fi
+          VER=$(printf '%s' "$RAW" \
+            | sed -E 's/-(beta|b)\.?([0-9]+)/-Beta\2/I' \
+            | sed -E 's/-(alpha|a)\.?([0-9]+)/-Alpha\2/I' \
+            | sed -E 's/-rc\.?([0-9]+)/-RC\1/I')
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "Resolved app version: $VER (build ${{ github.run_number }})"
+
+  android:
+    needs: version
+    # Skip when a dispatch picked ios-only. Tag pushes always build both.
+    if: github.ref_type == 'tag' || github.event.inputs.platform != 'ios'
+    runs-on: ubuntu-latest
+    env:
+      APP_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 0 # changelog needs full history + tags for the diff range
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21 # RN 0.86 / Expo 57 request a Java 21 toolchain
+
+      - uses: android-actions/setup-android@v3
+
+      - run: npm ci
+
+      - name: Decode upload keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          # Fail early if the secret was empty/missing rather than producing a
+          # broken build much later.
+          test -s "$RUNNER_TEMP/upload.jks" || { echo "::error::ANDROID_KEYSTORE_BASE64 is empty or missing"; exit 1; }
+
+      - name: Prebuild (runs config plugins, incl. release signing)
+        env:
+          HEARTHSHELF_RELEASE_SIGNING: '1'
+          HEARTHSHELF_RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/upload.jks
+          HEARTHSHELF_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          HEARTHSHELF_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          HEARTHSHELF_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          # A release build embeds its JS by default, so standalone-js is not
+          # needed here (that plugin only affects the DEBUG variant).
+          EXPO_ANDROID_VERSION_CODE: ${{ github.run_number }}
+          EXPO_PUBLIC_APP_VERSION: ${{ env.APP_VERSION }}
+        run: npx expo prebuild --platform android --no-install
+
+      # Fail fast if the baked version doesn't match what we resolved - catches a
+      # broken resolver before shipping a mis-versioned OTA runtime. Buffers stdin
+      # fully so a chunked --json response can't crash the assertion.
+      - name: Assert baked version matches resolved version
+        env:
+          EXPO_PUBLIC_APP_VERSION: ${{ env.APP_VERSION }}
+        run: |
+          BAKED=$(npx expo config --type public --json \
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).version))')
+          echo "baked version: $BAKED (expected $APP_VERSION)"
+          test "$BAKED" = "$APP_VERSION" \
+            || { echo "::error::baked version $BAKED != resolved $APP_VERSION"; exit 1; }
+
+      - name: Build signed .aab
+        env:
+          # Gradle maps ORG_GRADLE_PROJECT_X -> project property X, which is what
+          # the injected signingConfig reads via providers.gradleProperty('X').
+          ORG_GRADLE_PROJECT_HEARTHSHELF_RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/upload.jks
+          ORG_GRADLE_PROJECT_HEARTHSHELF_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_HEARTHSHELF_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ORG_GRADLE_PROJECT_HEARTHSHELF_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          # Expo's template jvmargs (2 GiB heap/512 MiB metaspace, in the
+          # gitignored android/gradle.properties) OOMs the Gradle daemon during
+          # :app:minifyReleaseWithR8 now that minification is on. GRADLE_OPTS
+          # overrides it without depending on that file surviving prebuild.
+          GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
+        # --stacktrace surfaces the real exception (packageRelease wraps the cause
+        # in IncrementalSplitterRunnable and hides it otherwise).
+        run: ./gradlew :app:bundleRelease --stacktrace
+        working-directory: android
+
+      - name: Upload .aab artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-aab-${{ github.run_number }}
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+
+      - name: Publish to Play (internal track)
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.hearthshelf.mobile
+          releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
+          track: internal
+          status: completed
+
+      - name: Publish changelog to hearthshelf.com
+        env:
+          CHANGELOG_API_KEY: ${{ secrets.CHANGELOG_API_KEY }}
+          CHANGELOG_API_URL: https://hearthshelf.com/api/v1/changelogs
+          PRODUCT: HearthShelf-Mobile
+          RELEASE_VERSION: ${{ env.APP_VERSION }}
+          DOWNLOAD_URL: https://play.google.com/store/apps/details?id=com.hearthshelf.mobile
+          # GITHUB_REF / GITHUB_REF_NAME are provided automatically.
+        run: |
+          chmod +x .github/scripts/changelog-items.sh .github/scripts/upload-changelog.sh
+          .github/scripts/upload-changelog.sh
+
+      - name: Add changelog to run summary
+        if: always()
+        run: |
+          if [ -f CHANGELOG.md ]; then cat CHANGELOG.md >> "$GITHUB_STEP_SUMMARY"; fi
+
+  ios:
+    needs: version
+    # Skip when a dispatch picked android-only. Tag pushes always build both.
+    if: github.ref_type == 'tag' || github.event.inputs.platform != 'android'
+    # macos-26: default Xcode 26.5 matches what the sim build uses; clerk-ios
+    # needs Swift 6.2 tools (macos-15's default Xcode fails SPM resolution).
+    runs-on: macos-26
+    env:
+      APP_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive # packages/core is a submodule
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Prebuild iOS project
+        env:
+          # Tag (or latest tag) drives the version; run_number is the monotonic
+          # iOS build number - matches Android's versionCode exactly.
+          EXPO_PUBLIC_APP_VERSION: ${{ env.APP_VERSION }}
+          EXPO_IOS_BUILD_NUMBER: ${{ github.run_number }}
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install
+
+      - name: Decode signing assets
+        env:
+          IOS_DIST_P12_BASE64: ${{ secrets.IOS_DIST_P12_BASE64 }}
+          IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+        run: |
+          echo "$IOS_DIST_P12_BASE64" | base64 -d > fastlane/dist.p12
+          echo "$IOS_PROVISION_PROFILE_BASE64" | base64 -d > fastlane/profile.mobileprovision
+          test -s fastlane/dist.p12 || { echo "::error::IOS_DIST_P12_BASE64 empty/missing"; exit 1; }
+          test -s fastlane/profile.mobileprovision || { echo "::error::IOS_PROVISION_PROFILE_BASE64 empty/missing"; exit 1; }
+
+      - name: Build and upload to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          IOS_DIST_P12_PASSWORD: ${{ secrets.IOS_DIST_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}
+          PROVISIONING_PROFILE_NAME: HearthShelf App Store
+        run: bundle exec fastlane ios release
+
+      - name: Clean up signing assets
+        if: always()
+        run: rm -f fastlane/dist.p12 fastlane/profile.mobileprovision

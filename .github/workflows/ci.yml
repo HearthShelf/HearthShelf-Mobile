@@ -1,12 +1,9 @@
 name: CI
 
 # Typecheck on every PR and push to main. This does NOT build or release - it is
-# a fast correctness gate. The Android build is a separate, manually-dispatched
-# workflow (build-android.yml) so it never fires a release on its own.
+# a fast correctness gate.
 on:
   pull_request:
-  push:
-    branches: [main]
 
 jobs:
   typecheck:

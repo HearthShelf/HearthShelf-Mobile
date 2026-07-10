@@ -1,4 +1,4 @@
-name: Build Android
+name: Build Android APK
 
 # Builds a debug APK artifact you can sideload. Runs automatically on every push
 # to main (always have a fresh APK waiting), and on manual dispatch from the
