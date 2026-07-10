@@ -8,6 +8,10 @@
  * publishable key and Google *client IDs* are public by design (they ship in
  * the web bundle too); the Google client *secret* lives only in the Clerk
  * dashboard, never here.
+ *
+ * The Google OAuth client IDs are NOT read here - Clerk's native Google module
+ * reads them itself from `expoConfig.extra`, where app.config.js bakes committed
+ * public defaults. See NATIVE_GOOGLE_ENABLED below.
  */
 import Constants from 'expo-constants'
 import { Platform } from 'react-native'
@@ -34,39 +38,21 @@ export const APP_SCHEME = 'hearthshelf'
 // requires. Must match the web app's bridge. NOT the default session token.
 export const CLERK_JWT_TEMPLATE = 'hearthshelf'
 
-/**
- * Native "Sign in with Google" (Android Credential Manager) needs Google OAuth
- * client IDs registered in the Clerk dashboard's custom-credentials config. The
- * client IDs themselves are public; they're surfaced here only so the UI can
- * decide whether to offer the native button or fall back to browser OAuth.
- *
- * Provision these in Google Cloud Console and register them in Clerk:
- *   - Web client ID + SECRET  -> Clerk dashboard (token verification)
- *   - Android client ID       -> needs the signing keystore's SHA-256
- *   - iOS client ID           -> later (iOS milestone)
- * See PROJECT_PLAN.md "Milestone 1" for the full checklist.
- */
-export const GOOGLE_WEB_CLIENT_ID = cfg('EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID', '')
-export const GOOGLE_ANDROID_CLIENT_ID = cfg('EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID', '')
-export const GOOGLE_IOS_CLIENT_ID = cfg('EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID', '')
-export const GOOGLE_IOS_URL_SCHEME = cfg('EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME', '')
-
 // Expo push project id (release notifications). Empty when not provisioned, in
 // which case push registration no-ops and only in-app signals (the Home
 // countdown banner) work. A real token also needs FCM credentials on the build.
 export const EAS_PROJECT_ID = cfg('EXPO_PUBLIC_EAS_PROJECT_ID', '')
 
 /**
- * Whether to offer the native Google account-picker. Clerk's native flow needs
- * the dashboard credentials configured; until the platform credentials are
- * provisioned we fall back to the browser-tab OAuth flow (useSSO), which needs
- * no client ID here. Flipping this on is a config change, not a code change.
+ * Whether to offer the native Google account-picker (vs the browser-tab OAuth
+ * fallback). The Google OAuth client IDs are public and baked into every build
+ * as committed defaults in app.config.js, where Clerk's native Google module
+ * reads them from `expoConfig.extra` - so native Google is available on both
+ * platforms. Android uses Credential Manager; iOS uses the reversed-client-ID
+ * URL scheme (registered in ios.infoPlist.CFBundleURLTypes, app.config.js).
+ * Web has no native flow, so it stays on browser OAuth.
  */
-export const NATIVE_GOOGLE_ENABLED =
-  GOOGLE_WEB_CLIENT_ID.length > 0 &&
-  (Platform.OS === 'android'
-    ? GOOGLE_ANDROID_CLIENT_ID.length > 0
-    : Platform.OS === 'ios' && GOOGLE_IOS_CLIENT_ID.length > 0 && GOOGLE_IOS_URL_SCHEME.length > 0)
+export const NATIVE_GOOGLE_ENABLED = Platform.OS === 'android' || Platform.OS === 'ios'
 
 /**
  * Whether to offer "Sign in with Apple". Apple only allows its button on Apple

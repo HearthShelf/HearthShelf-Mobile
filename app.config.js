@@ -17,14 +17,38 @@
 const EAS_PROJECT_ID =
   process.env.EXPO_PUBLIC_EAS_PROJECT_ID || '90f5f764-46e9-4caa-aa2a-dc5b78be191c'
 
+// Public client identifiers, committed as defaults so EVERY build path bakes
+// them - local deploy.ps1, the APK workflow, and the release workflow. None of
+// these reach CI via .env (it's gitignored), and they are PUBLIC by design: an
+// OAuth *client ID* and a Clerk *publishable* key are meant to ship in the app
+// bundle. The Google client SECRET is never here - it lives only in the Clerk
+// dashboard. An env var still overrides each one (e.g. to point a dev build at a
+// different Clerk instance). Without these baked in, NATIVE_GOOGLE_ENABLED was
+// false in every shipped build, so all users fell back to browser-tab Google.
+const CONTROL_PLANE_URL =
+  process.env.EXPO_PUBLIC_CONTROL_PLANE_URL || 'https://api.hearthshelf.com'
+const CLERK_PUBLISHABLE_KEY =
+  process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || 'pk_live_Y2xlcmsuaGVhcnRoc2hlbGYuY29tJA'
+const GOOGLE_WEB_CLIENT_ID =
+  process.env.EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID ||
+  '177026646968-b8rc4r5gf2u4tc9vde7tpjiii8gbdpfs.apps.googleusercontent.com'
+const GOOGLE_ANDROID_CLIENT_ID =
+  process.env.EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID ||
+  '177026646968-r13c46b7ia9dgvsbjoq8c7aom9137ust.apps.googleusercontent.com'
+const GOOGLE_IOS_CLIENT_ID =
+  process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID ||
+  '177026646968-rprkhf1i7dbdcfqgf717dgp0d7g06f4l.apps.googleusercontent.com'
+const GOOGLE_IOS_URL_SCHEME =
+  process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME ||
+  'com.googleusercontent.apps.177026646968-rprkhf1i7dbdcfqgf717dgp0d7g06f4l'
+
 const extra = {
-  EXPO_PUBLIC_CONTROL_PLANE_URL: process.env.EXPO_PUBLIC_CONTROL_PLANE_URL,
-  EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY,
-  EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID: process.env.EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID,
-  EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID:
-    process.env.EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID,
-  EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID: process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID,
-  EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME: process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME,
+  EXPO_PUBLIC_CONTROL_PLANE_URL: CONTROL_PLANE_URL,
+  EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: CLERK_PUBLISHABLE_KEY,
+  EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID: GOOGLE_WEB_CLIENT_ID,
+  EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID: GOOGLE_ANDROID_CLIENT_ID,
+  EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID: GOOGLE_IOS_CLIENT_ID,
+  EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME: GOOGLE_IOS_URL_SCHEME,
   // Expo push (release notifications). The EAS project id is PUBLIC (not a
   // secret), so it's hardcoded here per Expo's dynamic-config guidance - that
   // also lets the `eas` CLI resolve it without trying (and failing) to write to
@@ -100,6 +124,11 @@ module.exports = {
       // audio: background playback; processing: offline-progress background flush
       // (expo-background-task also adds this during prebuild).
       UIBackgroundModes: ['audio', 'processing'],
+      // Reversed-client-ID URL scheme for Clerk's native Google sign-in on iOS.
+      // The native Google flow redirects back to the app via this scheme; without
+      // it registered here the redirect has nowhere to land and native Google
+      // can't complete on iOS. (Android uses Credential Manager, no scheme needed.)
+      CFBundleURLTypes: [{ CFBundleURLSchemes: [GOOGLE_IOS_URL_SCHEME] }],
     },
   },
   android: {

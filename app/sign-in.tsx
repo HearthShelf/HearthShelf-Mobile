@@ -144,14 +144,23 @@ export default function SignInScreen() {
       }
 
       // Sign-up needs a username before it can complete. Verified email + only
-      // `username` outstanding is the expected Apple/Google new-user case.
+      // `username` outstanding is the expected Apple/Google new-user case (same
+      // wall on both the native account-picker and browser-tab flows).
+      //
+      // Be lenient about how Clerk reports the outstanding username: on an OAuth
+      // transfer sign-up it can surface in `missingFields` OR `requiredFields`
+      // (and the status isn't always the literal `missing_requirements`). The
+      // reliable signal is: the sign-up hasn't produced a session, no username is
+      // set yet, and username is required. Matching only `missing_requirements +
+      // missingFields` let real new-user sign-ups fall through to the dead-end
+      // "did not complete" error.
       const su = res.signUp
-      if (
-        su &&
-        su.status === 'missing_requirements' &&
-        su.missingFields.includes('username') &&
-        flowSetActive
-      ) {
+      const usernameOutstanding =
+        !!su &&
+        !su.createdSessionId &&
+        !su.username &&
+        (su.missingFields.includes('username') || su.requiredFields.includes('username'))
+      if (su && usernameOutstanding && flowSetActive) {
         setPendingSignUp(su)
         setPendingSetActive(() => flowSetActive)
         // Seed a suggestion from the email local-part so the field isn't empty.
