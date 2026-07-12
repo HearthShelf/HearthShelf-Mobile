@@ -71,7 +71,19 @@ import { Icon, type IconName } from '@/ui/icons'
 import { DUR } from '@/ui/motion'
 import { Scrubber } from '@/player/Scrubber'
 import { SkipButton } from '@/player/SkipButton'
-import { BookActionsSheet, type BookActionsHandle } from '@/ui/BookActionsSheet'
+import {
+  BookActionsSheet,
+  type BookActionsHandle,
+  type BookActionsSource,
+} from '@/ui/BookActionsSheet'
+import { getServerQueue } from '@/api/queue'
+import { setQueueItems, setQueueManual } from '@/player/queue'
+import {
+  hydrateDismissals,
+  subscribeDismissals,
+  getDismissalsState,
+  isItemDismissed,
+} from '@/store/dismissals'
 import { HomeClubShelf } from '@/social/HomeClubShelf'
 import { ReleaseCountdownBanner } from '@/ui/ReleaseCountdownBanner'
 import { Toast, useToast } from '@/ui/Toast'
@@ -195,6 +207,10 @@ export default function HomeScreen() {
     // shared progress store; refresh it alongside the rest of Home. Awaited here
     // so the taste engine below sees fresh finished/started state.
     await refreshProgress().catch(() => {})
+
+    // Dismissals drive which series/books are hidden from the Continue-* shelves;
+    // pull them so the filter below is current. Best-effort.
+    await hydrateDismissals().catch(() => {})
 
     // Stats strip is best-effort - a stats failure shouldn't block the rest of
     // Home from loading. Same getHSStats() the Stats tab reads, so the two never
@@ -374,11 +390,33 @@ export default function HomeScreen() {
   )
 
   const openActions = useCallback(
-    (item: ABSLibraryItem) => {
+    (item: ABSLibraryItem, source: BookActionsSource = 'browse', series?: { id: string; name: string }) => {
       haptics.longPress()
-      actionsRef.current?.present(item, progressById.get(item.id)?.isFinished === true)
+      actionsRef.current?.present(
+        item,
+        progressById.get(item.id)?.isFinished === true,
+        source,
+        series,
+      )
     },
     [progressById],
+  )
+
+  // After a dismiss/reset: confirm, re-pull the server queue (the dismissed
+  // series/book changes what Auto computes), and reload Home so the tile drops.
+  // Undo lives in Settings > Hidden from shelves (the toast just confirms).
+  const handleDismissed = useCallback(
+    (label: string) => {
+      showToast(`${label} - restore in Settings`)
+      void getServerQueue()
+        .then((q) => {
+          setQueueItems(q.items, false)
+          setQueueManual(q.manual, false)
+        })
+        .catch(() => {})
+      void loadHome({ silent: true })
+    },
+    [showToast, loadHome],
   )
 
   useEffect(() => {
@@ -455,13 +493,20 @@ export default function HomeScreen() {
         <ReleaseCountdownBanner />
         <HomeClubShelf />
         {shelves.map((shelf) => (
-          <Shelf key={shelf.id} shelf={shelf} onLongPressItem={openActions} />
+          <Shelf
+            key={shelf.id}
+            shelf={shelf}
+            // Continue-Listening tiles get the dismiss + reset-progress actions.
+            source={shelf.id === 'continue-listening' ? 'listening' : 'browse'}
+            onLongPressItem={openActions}
+          />
         ))}
       </Animated.ScrollView>
 
       <BookActionsSheet
         ref={actionsRef}
         onMarkedFinished={handleMarkedFinished}
+        onDismissed={handleDismissed}
         onToast={showToast}
       />
       <Toast message={toast} />
@@ -797,18 +842,25 @@ function sectionIcon(label: string): IconName {
 
 function Shelf({
   shelf,
+  source = 'browse',
   onLongPressItem,
 }: {
   shelf: ABSShelf
-  onLongPressItem: (item: ABSLibraryItem) => void
+  source?: BookActionsSource
+  onLongPressItem: (item: ABSLibraryItem, source?: BookActionsSource) => void
 }) {
   const colors = useColors()
   const styles = useStyles()
   const router = useRouter()
   const { width } = useWindowDimensions()
   const { coverAspect } = useSyncExternalStore(subscribeSettings, getSettingsState)
+  // Hide dismissed books from this shelf live (the dismiss action re-pulls Home,
+  // but this keeps the tile from lingering between the write and the reload).
+  useSyncExternalStore(subscribeDismissals, getDismissalsState)
   const sheetRef = useRef<SheetRef>(null)
   if (shelf.type !== 'book') return null
+  const entities = shelf.entities.filter((it) => !isItemDismissed(it.id))
+  if (entities.length === 0) return null
   const openAll = () => sheetRef.current?.present()
   const tileWidth = adaptiveShelfTileWidth(width)
   const sheetCols = adaptiveGridColumns({
@@ -838,7 +890,7 @@ function Shelf({
         }
       />
       <FlatList
-        data={shelf.entities}
+        data={entities}
         keyExtractor={(it) => it.id}
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -850,7 +902,7 @@ function Shelf({
             <Touchable
               style={{ width: tileWidth }}
               onPress={() => router.push(`/item/${item.id}`)}
-              onLongPress={() => onLongPressItem(item)}
+              onLongPress={() => onLongPressItem(item, source)}
             >
               <Cover
                 uri={coverUrl(item.id)}

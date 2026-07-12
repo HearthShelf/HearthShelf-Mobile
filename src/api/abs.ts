@@ -282,6 +282,18 @@ export async function setItemFinished(
   })
 }
 
+/**
+ * Reset an item's progress to the very start (ABS PATCH /api/me/progress/:id).
+ * Sets currentTime/progress to 0 and clears the finished flag, so the book looks
+ * un-started again. Used by the Continue-Listening "Reset progress" action.
+ */
+export async function resetItemProgress(itemId: string): Promise<void> {
+  await absRequest<void>(`/api/me/progress/${encodeURIComponent(itemId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ currentTime: 0, progress: 0, isFinished: false }),
+  })
+}
+
 // ---- Bookmarks ----
 // User-scoped, per item. ABS has no per-item bookmark GET, so reads go through
 // /api/me (bookmarks[]); create/delete hit the per-item routes.

@@ -12,7 +12,7 @@
  * with useSyncExternalStore and from non-React code.
  */
 import type { ABSMediaProgress, ABSMeResponse } from '@hearthshelf/core'
-import { getMe, setItemFinished } from '@/api/abs'
+import { getMe, setItemFinished, resetItemProgress as resetItemProgressApi } from '@/api/abs'
 import { getSettingsState } from '@/store/settings'
 import { isDownloaded, deleteDownload } from '@/player/downloads'
 import { finishDatePrompt } from '@/ui/FinishDatePrompt'
@@ -167,6 +167,32 @@ export async function markItemsFinished(
     }
     emit(rollback)
     throw lastErr instanceof Error ? lastErr : new Error('mark_finished_failed')
+  }
+  void refreshProgress().catch(() => {})
+}
+
+/**
+ * Reset a book's progress to the start: currentTime/progress 0, not finished.
+ * Optimistic with rollback, same shape as markItemsFinished. Used by the
+ * Continue-Listening "Reset progress" action (which also dismisses the book).
+ */
+export async function resetItemProgress(itemId: string): Promise<void> {
+  const prev = state.byId.get(itemId)
+  const next = new Map(state.byId)
+  if (prev) next.set(itemId, { ...prev, progress: 0, currentTime: 0, isFinished: false })
+  // Record an override so a racing refresh doesn't restore the old position.
+  overrides.set(itemId, { isFinished: false, atMs: Date.now() })
+  emit(next)
+  try {
+    await resetItemProgressApi(itemId)
+  } catch (e) {
+    if (prev) {
+      const rollback = new Map(state.byId)
+      rollback.set(itemId, prev)
+      emit(rollback)
+    }
+    overrides.delete(itemId)
+    throw e instanceof Error ? e : new Error('reset_progress_failed')
   }
   void refreshProgress().catch(() => {})
 }

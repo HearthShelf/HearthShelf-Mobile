@@ -37,11 +37,27 @@ import { Icon, icons } from '@/ui/icons'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { confirm } from '@/ui/confirm'
+import { dismiss as dismissEntity } from '@/store/dismissals'
+import { resetItemProgress } from '@/store/progress'
+
+// Where the long-press originated, so the sheet can offer the right "hide"
+// action: a Continue-Series tile hides the whole SERIES; a Continue-Listening
+// tile hides just that book and offers Reset progress. 'browse' (default) is a
+// plain tile with no dismiss affordance.
+export type BookActionsSource = 'series' | 'listening' | 'browse'
 
 export interface BookActionsHandle {
   /** Open the sheet targeting `item`, with its current finished state so the
-   *  first row reads "Mark finished" vs "Mark unfinished" correctly. */
-  present: (item: ABSLibraryItem, isFinished: boolean) => void
+   *  first row reads "Mark finished" vs "Mark unfinished" correctly. `source`
+   *  controls the dismiss / reset-progress rows. For a Continue-Series tile pass
+   *  `series` ({id,name}) so "Hide this series" dismisses the right series (the
+   *  minified item carries only a series name, not an id). */
+  present: (
+    item: ABSLibraryItem,
+    isFinished: boolean,
+    source?: BookActionsSource,
+    series?: { id: string; name: string },
+  ) => void
 }
 
 export const BookActionsSheet = forwardRef<
@@ -50,25 +66,37 @@ export const BookActionsSheet = forwardRef<
     /** Called after a successful mark-finished so the opener can reconcile its
      *  own lists. `finished` is the new state. */
     onMarkedFinished?: (item: ABSLibraryItem, finished: boolean) => void
+    /** Called after a successful dismiss/reset so the opener can drop the tile
+     *  and re-pull the queue. `label` is a short confirmation ("Hid ..."). */
+    onDismissed?: (label: string) => void
     onToast?: (message: string) => void
   }
->(function BookActionsSheet({ onMarkedFinished, onToast }, ref) {
+>(function BookActionsSheet({ onMarkedFinished, onDismissed, onToast }, ref) {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const sheetRef = useRef<SheetRef>(null)
   const addSheetRef = useRef<SheetHandle>(null)
-  const [target, setTarget] = useState<{ item: ABSLibraryItem; finished: boolean } | null>(null)
+  const [target, setTarget] = useState<{
+    item: ABSLibraryItem
+    finished: boolean
+    source: BookActionsSource
+    series?: { id: string; name: string }
+  } | null>(null)
   const [busy, setBusy] = useState(false)
 
   useImperativeHandle(ref, () => ({
-    present: (item, isFinished) => {
-      setTarget({ item, finished: isFinished })
+    present: (item, isFinished, source = 'browse', series) => {
+      setTarget({ item, finished: isFinished, source, series })
       sheetRef.current?.present()
     },
   }))
 
   const item = target?.item
   const finished = target?.finished ?? false
+  const source = target?.source ?? 'browse'
+  // The series this tile stands for (Continue-Series), if any - drives the
+  // "Hide this series" action. Passed in explicitly by the caller.
+  const seriesRef = target?.series
   const { byId } = useSyncExternalStore(subscribeDownloads, getDownloadsState)
   const dl = item ? byId.get(item.id) : undefined
 
@@ -130,6 +158,45 @@ export const BookActionsSheet = forwardRef<
     sheetRef.current?.dismiss()
   }
 
+  // Hide a series (Continue-Series) or a book (Continue-Listening) from Auto
+  // sources. Optimistic via the dismissals store; the opener gets an Undo.
+  const dismissTarget = async () => {
+    if (!item || busy) return
+    sheetRef.current?.dismiss()
+    const kind: 'series' | 'item' = source === 'series' ? 'series' : 'item'
+    const entityId = source === 'series' ? seriesRef?.id : item.id
+    if (!entityId) return
+    const label = source === 'series' ? seriesRef?.name || 'series' : itemTitle(item)
+    try {
+      await dismissEntity(kind, entityId)
+      onDismissed?.(`Hid "${label}"`)
+    } catch {
+      onToast?.('Could not hide that')
+    }
+  }
+
+  // Reset a Continue-Listening book to the start AND hide it from the shelf
+  // (per the product decision: reset to 0 and remove from the list).
+  const resetProgress = async () => {
+    if (!item || busy) return
+    sheetRef.current?.dismiss()
+    const ok = await confirm({
+      title: 'Reset progress',
+      message: `Start "${itemTitle(item)}" over from the beginning and remove it from Continue Listening?`,
+      confirmLabel: 'Reset',
+    })
+    if (!ok) return
+    try {
+      await resetItemProgress(item.id)
+      await dismissEntity('item', item.id)
+      onDismissed?.(`Reset "${itemTitle(item)}"`)
+    } catch {
+      onToast?.('Could not reset progress')
+    }
+  }
+
+  const canDismiss = source === 'series' ? !!seriesRef : source === 'listening'
+
   return (
     <>
       <Sheet ref={sheetRef} stackBehavior="push">
@@ -164,6 +231,20 @@ export const BookActionsSheet = forwardRef<
         />
         <ActionRow icon={icons.addList} label="Add to list" onPress={addToList} />
         <ActionRow icon={downloadIcon} label={downloadLabel} onPress={() => void download()} />
+        {source === 'listening' && (
+          <ActionRow
+            icon={icons.replay}
+            label="Reset progress"
+            onPress={() => void resetProgress()}
+          />
+        )}
+        {canDismiss && (
+          <ActionRow
+            icon={icons.hidden}
+            label={source === 'series' ? 'Hide this series' : 'Not right now'}
+            onPress={() => void dismissTarget()}
+          />
+        )}
       </Sheet>
 
       {item ? (
