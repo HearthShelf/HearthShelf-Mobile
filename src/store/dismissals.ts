@@ -13,6 +13,16 @@ import * as api from '@/api/dismissals'
 let state: Dismissals = { seriesIds: [], itemIds: [] }
 const listeners = new Set<() => void>()
 
+// Best-effort id -> display label cache so the Settings "Hidden from shelves"
+// list can show titles/series names, not raw ids. Populated when the user
+// dismisses something (we know the label then). An id with no cached label
+// falls back to the id in the UI. Not synced - purely a local convenience.
+const labels = new Map<string, string>()
+
+export function labelFor(entityId: string): string | undefined {
+  return labels.get(entityId)
+}
+
 export function getDismissalsState(): Dismissals {
   return state
 }
@@ -54,8 +64,13 @@ export function resetDismissals(): void {
  * failure, roll back. Returns a promise that resolves when the server confirms
  * (so the caller can re-pull the queue afterward).
  */
-export async function dismiss(kind: 'series' | 'item', entityId: string): Promise<void> {
+export async function dismiss(
+  kind: 'series' | 'item',
+  entityId: string,
+  label?: string,
+): Promise<void> {
   const key = kind === 'series' ? 'seriesIds' : 'itemIds'
+  if (label) labels.set(entityId, label)
   if (state[key].includes(entityId)) return
   const prev = state
   set({ ...state, [key]: [...state[key], entityId] })

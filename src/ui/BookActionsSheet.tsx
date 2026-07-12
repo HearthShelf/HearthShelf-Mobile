@@ -168,7 +168,7 @@ export const BookActionsSheet = forwardRef<
     if (!entityId) return
     const label = source === 'series' ? seriesRef?.name || 'series' : itemTitle(item)
     try {
-      await dismissEntity(kind, entityId)
+      await dismissEntity(kind, entityId, label)
       onDismissed?.(`Hid "${label}"`)
     } catch {
       onToast?.('Could not hide that')
@@ -188,7 +188,7 @@ export const BookActionsSheet = forwardRef<
     if (!ok) return
     try {
       await resetItemProgress(item.id)
-      await dismissEntity('item', item.id)
+      await dismissEntity('item', item.id, itemTitle(item))
       onDismissed?.(`Reset "${itemTitle(item)}"`)
     } catch {
       onToast?.('Could not reset progress')

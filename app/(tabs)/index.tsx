@@ -14,13 +14,14 @@ import {
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
-import type { ABSLibraryItem, ABSShelf, HSListeningStats } from '@hearthshelf/core'
+import type { ABSLibraryItem, ABSShelf, ABSSeries, HSListeningStats } from '@hearthshelf/core'
 import {
   coverHue,
   formatDuration,
   formatTimestamp,
   buildDiscoverShelves,
   rankDiscoverShelves,
+  continueSeriesShelf,
 } from '@hearthshelf/core'
 import { setSessionExpiredHandler } from '@/api/controlPlane'
 import { clearSession } from '@/api/session'
@@ -46,6 +47,7 @@ import {
   getHSStats,
   getItemsInProgress,
   getLibraries,
+  getLibrarySeries,
   getPersonalized,
   itemAuthor,
   itemTitle,
@@ -83,6 +85,7 @@ import {
   subscribeDismissals,
   getDismissalsState,
   isItemDismissed,
+  isSeriesDismissed,
 } from '@/store/dismissals'
 import { HomeClubShelf } from '@/social/HomeClubShelf'
 import { ReleaseCountdownBanner } from '@/ui/ReleaseCountdownBanner'
@@ -98,6 +101,15 @@ import {
   adaptiveGridTileWidth,
   adaptiveShelfTileWidth,
 } from '@/ui/responsive'
+
+// A Home shelf: ABS's shape plus optional dismiss context. `source` picks the
+// long-press actions; `seriesByItemId` maps a Continue-Series tile (rendered as
+// its next book) to the series it stands for, so "Hide this series" dismisses
+// the right series id.
+type HomeShelf = ABSShelf & {
+  source?: BookActionsSource
+  seriesByItemId?: Record<string, { id: string; name: string }>
+}
 
 export default function HomeScreen() {
   const styles = useStyles()
@@ -117,7 +129,7 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [inProgress, setInProgress] = useState<ABSLibraryItem[]>([])
-  const [shelves, setShelves] = useState<ABSShelf[]>([])
+  const [shelves, setShelves] = useState<HomeShelf[]>([])
   const [stats, setStats] = useState<HSListeningStats | null>(null)
   // Shared per-item progress; mark-finished anywhere updates tiles here live.
   const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
@@ -254,31 +266,55 @@ export default function HomeScreen() {
       // ("continue-series") lead; "recently-added" trails. ABS's recommendation /
       // finished rows ("discover", "listen-again") are dropped - the taste engine
       // replaces them. All three kept shelves are type 'book' in ABS.
-      const CONTINUE_IDS = ['continue-listening', 'continue-series']
-      const continueShelves: ABSShelf[] = []
+      // Continue-Listening comes from ABS's personalized feed (books in
+      // progress). Continue-Series is built from @hearthshelf/core's shelf
+      // builder off the /series endpoint instead of ABS's own continue-series
+      // row - that's the ONLY way each tile carries a real series id, which the
+      // "Hide this series" dismiss action needs. Both are the same sources the
+      // Auto queue draws from, so the shelves expose what the rules will queue.
+      const continueShelves: HomeShelf[] = []
       let addedShelf: ABSShelf | null = null
+      const finished = getProgressState().byId
       try {
         const personalized = await getPersonalized(firstBookLib.id)
-        // Preserve ABS's own ordering of the continue rows (listening before
-        // series, as ABS emits them).
-        const finished = getProgressState().byId
         for (const s of personalized) {
           if (s.type !== 'book' || s.entities.length === 0) continue
-          if (CONTINUE_IDS.includes(s.id)) {
-            // Same finished-book pin fix as the hero: keep 100%-complete books
-            // out of the Continue rows.
+          if (s.id === 'continue-listening') {
             const entities = s.entities.filter((e) => finished.get(e.id)?.isFinished !== true)
-            if (entities.length) continueShelves.push({ ...s, entities })
+            if (entities.length) continueShelves.push({ ...s, source: 'listening', entities })
           } else if (s.id === 'recently-added') addedShelf = s
         }
       } catch {
         // Personalized is best-effort; the taste engine still carries Home.
       }
 
+      // Build Continue-Series from core (series id per tile).
+      try {
+        const allSeries = await getLibrarySeries(firstBookLib.id)
+        const csEntries = continueSeriesShelf(allSeries, getProgressState().byId, {
+          seriesIds: [],
+          itemIds: [],
+        })
+        if (csEntries.length) {
+          const seriesByItemId: Record<string, { id: string; name: string }> = {}
+          for (const e of csEntries) seriesByItemId[e.nextBook.id] = { id: e.series.id, name: e.series.name }
+          continueShelves.push({
+            id: 'continue-series',
+            label: 'Continue Series',
+            type: 'book',
+            entities: csEntries.map((e) => e.nextBook),
+            source: 'series',
+            seriesByItemId,
+          })
+        }
+      } catch {
+        // Series fetch best-effort; Continue-Listening + taste engine still show.
+      }
+
       // Order: Continue rows -> taste-engine recommendations -> Recently Added.
       // Continue leads because it's what the listener is most likely to resume;
       // the hero already spotlights the single top in-progress book.
-      const bookShelves: ABSShelf[] = [
+      const bookShelves: HomeShelf[] = [
         ...continueShelves,
         ...recShelves,
         ...(addedShelf ? [addedShelf] : []),
@@ -493,13 +529,7 @@ export default function HomeScreen() {
         <ReleaseCountdownBanner />
         <HomeClubShelf />
         {shelves.map((shelf) => (
-          <Shelf
-            key={shelf.id}
-            shelf={shelf}
-            // Continue-Listening tiles get the dismiss + reset-progress actions.
-            source={shelf.id === 'continue-listening' ? 'listening' : 'browse'}
-            onLongPressItem={openActions}
-          />
+          <Shelf key={shelf.id} shelf={shelf} onLongPressItem={openActions} />
         ))}
       </Animated.ScrollView>
 
@@ -842,24 +872,34 @@ function sectionIcon(label: string): IconName {
 
 function Shelf({
   shelf,
-  source = 'browse',
   onLongPressItem,
 }: {
-  shelf: ABSShelf
-  source?: BookActionsSource
-  onLongPressItem: (item: ABSLibraryItem, source?: BookActionsSource) => void
+  shelf: HomeShelf
+  onLongPressItem: (
+    item: ABSLibraryItem,
+    source?: BookActionsSource,
+    series?: { id: string; name: string },
+  ) => void
 }) {
   const colors = useColors()
   const styles = useStyles()
   const router = useRouter()
   const { width } = useWindowDimensions()
   const { coverAspect } = useSyncExternalStore(subscribeSettings, getSettingsState)
-  // Hide dismissed books from this shelf live (the dismiss action re-pulls Home,
-  // but this keeps the tile from lingering between the write and the reload).
+  // Hide dismissed series/books from this shelf live (the dismiss action re-pulls
+  // Home, but this keeps the tile from lingering between the write and reload).
   useSyncExternalStore(subscribeDismissals, getDismissalsState)
   const sheetRef = useRef<SheetRef>(null)
   if (shelf.type !== 'book') return null
-  const entities = shelf.entities.filter((it) => !isItemDismissed(it.id))
+  const source = shelf.source ?? 'browse'
+  const seriesByItemId = shelf.seriesByItemId
+  const entities = shelf.entities.filter((it) => {
+    if (isItemDismissed(it.id)) return false
+    // A Continue-Series tile is hidden if its series was dismissed.
+    const sr = seriesByItemId?.[it.id]
+    if (sr && isSeriesDismissed(sr.id)) return false
+    return true
+  })
   if (entities.length === 0) return null
   const openAll = () => sheetRef.current?.present()
   const tileWidth = adaptiveShelfTileWidth(width)
@@ -902,7 +942,7 @@ function Shelf({
             <Touchable
               style={{ width: tileWidth }}
               onPress={() => router.push(`/item/${item.id}`)}
-              onLongPress={() => onLongPressItem(item, source)}
+              onLongPress={() => onLongPressItem(item, source, seriesByItemId?.[item.id])}
             >
               <Cover
                 uri={coverUrl(item.id)}
