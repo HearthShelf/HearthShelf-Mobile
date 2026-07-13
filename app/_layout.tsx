@@ -67,15 +67,6 @@ function hideOsSplash() {
  *  without this the app hangs on the splash forever. */
 const CLERK_LOAD_TIMEOUT_MS = 4000
 
-// On iOS, resuming from a locked/suspended state re-initializes Clerk, which can
-// briefly report isSignedIn=false before the cached session re-hydrates. Bouncing
-// to /sign-in on that momentary flap threw signed-in users onto the sign-in screen
-// (audio kept playing from PlayerHost, which lives outside this gate). A genuine
-// sign-out stays false well past this window, so it still redirects; a resume flap
-// resolves before the timer fires. Android doesn't flap (its process keeps Clerk's
-// in-memory state warm), which is why it was iOS-only.
-const SIGNED_OUT_REDIRECT_DELAY_MS = 1500
-
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn, getToken } = useAuth()
   const segments = useSegments()
@@ -86,9 +77,21 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   // Set when Clerk hasn't loaded in time AND we have a cached session, so a
   // signed-in user launching offline reaches offline mode instead of hanging.
   const [offlineFallback, setOfflineFallback] = useState(false)
-  // Once we've seen a confirmed signed-in session this run, a later isSignedIn=false
-  // is treated as a possible resume flap and debounced before redirecting.
+  // True once we've seen a confirmed signed-in session this run. After that we
+  // NEVER auto-redirect to /sign-in on an isSignedIn=false reading - see below.
   const wasSignedIn = useRef(false)
+  // Whether this device has a cached Clerk JWT (was signed in on a prior run).
+  // null = not yet checked. A long iOS suspension can KILL the JS process while
+  // native audio keeps playing; on the cold relaunch `wasSignedIn` starts false
+  // and Clerk can momentarily report isLoaded=true/isSignedIn=false before the
+  // cached session re-hydrates. Without this we'd redirect that returning user to
+  // /sign-in mid-playback. So on a fresh mount we hold the redirect until we've
+  // confirmed there is NO cached session (genuine first launch / signed out).
+  const [hasCachedSession, setHasCachedSession] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    void hasCachedClerkSession().then(setHasCachedSession)
+  }, [])
 
   useEffect(() => {
     if (isLoaded) return
@@ -106,6 +109,15 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const ready = isLoaded || offlineFallback
 
   if (effectiveSignedIn) wasSignedIn.current = true
+  // A returning user whose session is still re-hydrating: cached JWT present but
+  // Clerk hasn't confirmed signed-in yet this run. Treated as "signed in" for
+  // gating so their screen and connection stay mounted while Clerk settles.
+  const rehydrating = hasCachedSession === true && !wasSignedIn.current
+  // Sticky: once signed in this run, stay "signed in" for gating even if Clerk
+  // momentarily flaps to false on a suspend/resume. Keeps ConnectionGate mounted
+  // (no connect-splash flash) and, with the redirect guard below, keeps a
+  // listening user on their screen. Genuine sign-out navigates away explicitly.
+  const gatedSignedIn = effectiveSignedIn || wasSignedIn.current || rehydrating
 
   useEffect(() => {
     if (!ready) return
@@ -119,16 +131,23 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     }
     if (effectiveSignedIn || onAuthRoute) return
 
-    // Not signed in and not on an auth route. If we were signed in earlier this
-    // run, this may be a transient resume flap - wait it out before redirecting.
-    // A real sign-out stays false and the delayed redirect still fires.
-    if (!wasSignedIn.current) {
-      router.replace('/sign-in')
-      return
-    }
-    const t = setTimeout(() => router.replace('/sign-in'), SIGNED_OUT_REDIRECT_DELAY_MS)
-    return () => clearTimeout(t)
-  }, [ready, effectiveSignedIn, segments, router])
+    // Not signed in and not on an auth route. Only auto-redirect on a GENUINE
+    // signed-out state: we've never had a confirmed session this run AND there is
+    // no cached JWT on the device. If either is true, this is Clerk failing to
+    // re-hydrate - after a warm suspend/resume (isSignedIn flaps while wasSignedIn
+    // stays true) or a cold relaunch of a returning user (a long iOS suspension
+    // can kill the JS process while native audio keeps playing; wasSignedIn starts
+    // false but the cached JWT proves they were signed in). Redirecting in either
+    // case threw a listening user onto the sign-in screen mid-playback. A
+    // time-based debounce was wrong: the flap can outlast any timeout. Every
+    // genuine sign-out (account screen, Home, the connect gate's logout) clears
+    // the cache AND navigates to /sign-in itself, so the gate never needs to
+    // auto-redirect a user who has (or recently had) a session.
+    //
+    // hasCachedSession === null means the check hasn't resolved yet - hold the
+    // redirect until it does rather than risk a wrong bounce.
+    if (!wasSignedIn.current && hasCachedSession === false) router.replace('/sign-in')
+  }, [ready, effectiveSignedIn, segments, router, hasCachedSession])
 
   // Upload a prior crash once genuinely signed in (need a real token; the
   // offline-fallback path can't authenticate an upload, so gate on isSignedIn).
@@ -147,7 +166,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   // isn't covered by a connect overlay.
   return (
     <ConnectionProvider>
-      {effectiveSignedIn ? <ConnectionGate>{children}</ConnectionGate> : children}
+      {gatedSignedIn ? <ConnectionGate>{children}</ConnectionGate> : children}
     </ConnectionProvider>
   )
 }

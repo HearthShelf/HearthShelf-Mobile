@@ -9,7 +9,12 @@
 import { CONTROL_PLANE_URL } from '@/lib/config'
 import { fetchWithTimeout } from './fetchWithTimeout'
 
-export type GetToken = () => Promise<string | null>
+// `forceRefresh` asks the caller to bypass Clerk's token cache and mint a fresh
+// JWT (getToken({ skipCache: true })). Used to retry a 401 exactly once: on a
+// warm resume Clerk may hand out a stale cached token before it re-hydrates, and
+// the control plane 401s it. A forced refresh distinguishes a transient stale
+// token (retry succeeds) from a genuinely expired session (retry also 401s).
+export type GetToken = (opts?: { forceRefresh?: boolean }) => Promise<string | null>
 
 export class ApiError extends Error {
   status: number
@@ -31,13 +36,34 @@ export function setSessionExpiredHandler(fn: SessionExpiredHandler | null): void
   onSessionExpired = fn
 }
 
-async function request<T>(getToken: GetToken, path: string, init?: RequestInit): Promise<T> {
-  const token = await getToken()
+async function requestOnce(
+  getToken: GetToken,
+  path: string,
+  init: RequestInit | undefined,
+  forceRefresh: boolean,
+): Promise<Response> {
+  const token = await getToken(forceRefresh ? { forceRefresh: true } : undefined)
   const headers = new Headers(init?.headers)
   headers.set('Content-Type', 'application/json')
   if (token) headers.set('Authorization', `Bearer ${token}`)
+  return fetchWithTimeout(`${CONTROL_PLANE_URL}${path}`, { ...init, headers })
+}
 
-  const res = await fetchWithTimeout(`${CONTROL_PLANE_URL}${path}`, { ...init, headers })
+async function request<T>(getToken: GetToken, path: string, init?: RequestInit): Promise<T> {
+  let res = await requestOnce(getToken, path, init, false)
+
+  // A 401 can mean either a genuinely expired session OR a stale cached Clerk
+  // token handed out during a warm resume (iOS re-inits Clerk when the phone is
+  // unlocked; the first post-resume call can carry a not-yet-refreshed token).
+  // Retry ONCE with a force-refreshed token before concluding the session is
+  // dead - otherwise a transient resume 401 wrongly signs the user out (and
+  // stops their playback) via onSessionExpired. Only if the fresh token is ALSO
+  // rejected do we hand off to the session-expired handler.
+  if (res.status === 401) {
+    res = await requestOnce(getToken, path, init, true)
+    if (res.status === 401) onSessionExpired?.()
+  }
+
   if (!res.ok) {
     let detail = res.statusText
     try {
@@ -46,9 +72,6 @@ async function request<T>(getToken: GetToken, path: string, init?: RequestInit):
     } catch {
       // non-JSON error body; keep statusText
     }
-    // A 401 means the Clerk session is no longer accepted - hand off to the
-    // registered handler (sign out + redirect) rather than surfacing a raw error.
-    if (res.status === 401) onSessionExpired?.()
     throw new ApiError(res.status, detail)
   }
   return res.json() as Promise<T>

@@ -21,6 +21,17 @@ export const tokenCache: TokenCache = {
       // best-effort; a failed cache write just means re-auth next launch
     }
   },
+  // Clerk calls clearToken on sign-out to delete the client JWT
+  // (__clerk_client_jwt). Without it the key is NEVER removed, so
+  // hasCachedClerkSession() would keep returning true after a real sign-out and
+  // the AuthGate would treat a signed-out user as a re-hydrating returning one.
+  async clearToken(key: string) {
+    try {
+      await SecureStore.deleteItemAsync(key)
+    } catch {
+      // best-effort; a failed delete just leaves a stale key that re-auth overwrites
+    }
+  },
 }
 
 // Clerk-expo persists the session JWT here (the same key our tokenCache above

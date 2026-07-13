@@ -220,9 +220,14 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   // getToken identity changes across renders; keep a stable wrapper.
   const getTokenRef = useRef(getToken)
   getTokenRef.current = getToken
-  const tokenFn = useCallback(async () => {
+  const tokenFn = useCallback(async (opts?: { forceRefresh?: boolean }) => {
     try {
-      return await getTokenRef.current({ template: CLERK_JWT_TEMPLATE })
+      // skipCache forces Clerk to mint a fresh JWT - used to retry a 401 that was
+      // really just a stale cached token handed out during a warm resume.
+      return await getTokenRef.current({
+        template: CLERK_JWT_TEMPLATE,
+        skipCache: opts?.forceRefresh,
+      })
     } catch {
       return null
     }

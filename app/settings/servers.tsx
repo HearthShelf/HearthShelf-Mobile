@@ -39,13 +39,18 @@ export default function ServersScreen() {
   // sync with reconnects rather than a one-time getSession() read.
   const activeName = serverName
 
-  const tokenFn = useCallback(async () => {
-    try {
-      return await getToken({ template: CLERK_JWT_TEMPLATE })
-    } catch {
-      return null
-    }
-  }, [getToken])
+  const tokenFn = useCallback(
+    async (opts?: { forceRefresh?: boolean }) => {
+      try {
+        // skipCache forces a fresh JWT so a stale-token 401 can be retried before
+        // the session-expired handler fires (see controlPlane.request).
+        return await getToken({ template: CLERK_JWT_TEMPLATE, skipCache: opts?.forceRefresh })
+      } catch {
+        return null
+      }
+    },
+    [getToken],
+  )
 
   // `silent` refreshes the list in place (e.g. after toggling a default) without
   // flashing the spinner over an already-populated list.
