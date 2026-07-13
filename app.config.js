@@ -82,6 +82,13 @@ const appVersion = process.env.EXPO_PUBLIC_APP_VERSION || '0.0.2'
 // (Android versionName and the OTA runtimeVersion keep the full appVersion.)
 const iosMarketingVersion = appVersion.replace(/-.*$/, '')
 
+// The full tag version (with any pre-release tail, e.g. 0.0.2-R2) for display in
+// the app's More menu. It CANNOT be read back from Constants.expoConfig.version
+// at runtime: on iOS that returns CFBundleShortVersionString, which is the plain
+// iosMarketingVersion (Apple rejects a lettered marketing string), so the "-R2"
+// is gone. Baking it into `extra` surfaces the true tag version on both platforms.
+extra.fullVersion = appVersion
+
 // CI stamps the run number as the Android versionCode (EXPO_ANDROID_VERSION_CODE)
 // so every build is distinguishable on-device and strictly monotonic (Play's
 // hard requirement). It is deliberately decoupled from the semver `version` -

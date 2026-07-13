@@ -287,7 +287,9 @@ export default function MoreScreen() {
             HearthShelf Mobile
           </AppText>
           <AppText variant="meta" color={colors.textFaint}>
-            {Constants.expoConfig?.version ?? 'DEV BUILD'}
+            {(Constants.expoConfig?.extra?.fullVersion as string | undefined) ??
+              Constants.expoConfig?.version ??
+              'DEV BUILD'}
           </AppText>
         </View>
       </ScrollView>
