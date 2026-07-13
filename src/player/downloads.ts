@@ -141,12 +141,31 @@ export async function hydrateDownloads(): Promise<void> {
       items?: DownloadEntry[]
     }
     const byId = new Map<string, DownloadEntry>()
-    for (const e of parsed.items ?? []) byId.set(e.itemId, { ...e, status: 'done' })
+    // Heal absolute file:// URIs against the current document dir. On iOS the
+    // container path changes on every app update/reinstall, so the URIs we
+    // persisted point at a dead container path even though the files survive.
+    let healed = false
+    for (const e of parsed.items ?? []) {
+      const rebased = rebaseEntry({ ...e, status: 'done' })
+      // If not a single track file survived, the download is truly gone (user
+      // cleared app data, etc.) - drop it so the UI stops claiming it's saved.
+      if (rebased.tracks.length === 0) {
+        healed = true
+        continue
+      }
+      if (rebased.coverUri !== e.coverUri || rebased.tracks.some((t, i) => t.uri !== e.tracks[i]?.uri)) {
+        healed = true
+      }
+      byId.set(e.itemId, rebased)
+    }
     emit({
       byId,
       maxBytes: parsed.maxBytes ?? DEFAULT_MAX_BYTES,
       auto: { ...DEFAULT_AUTO, ...(parsed.auto ?? {}) },
     })
+    // Rewrite the index with healed URIs so later saves don't reintroduce the
+    // stale container path.
+    if (healed) persist()
     // Seed the offline catalog from what we know locally, so downloaded books are
     // browseable offline even before (or without) a richer server-detail backfill.
     // libraryId isn't stored per download; a shared 'offline' placeholder is fine -
@@ -170,6 +189,41 @@ function upsert(entry: DownloadEntry): void {
   const byId = new Map(state.byId)
   byId.set(entry.itemId, entry)
   emit({ byId })
+}
+
+/** File name (e.g. "track-0.m4a") from a persisted uri, ignoring its directory. */
+function baseName(uri: string): string {
+  const clean = uri.split('?')[0]
+  const slash = clean.lastIndexOf('/')
+  return slash >= 0 ? clean.slice(slash + 1) : clean
+}
+
+/**
+ * Re-point a persisted entry's file URIs at the CURRENT document directory.
+ *
+ * iOS moves the app's data container to a new UUID path on every update/reinstall,
+ * so the absolute file:// URIs we persisted (track uri, coverUri) go stale even
+ * though the files themselves survive under Documents. The on-disk layout is
+ * deterministic - downloads/<itemId>/<fileName> - so we rebuild each uri from the
+ * live document dir plus the file name we stored. Returns the entry with healed
+ * URIs, dropping any track/cover whose file is missing under the new path.
+ */
+function rebaseEntry(entry: DownloadEntry): DownloadEntry {
+  const dir = itemDir(entry.itemId)
+  const tracks = entry.tracks
+    .map((t) => {
+      const file = new File(dir, baseName(t.uri))
+      return file.exists ? { ...t, uri: file.uri } : null
+    })
+    .filter((t): t is DownloadedTrack => t !== null)
+
+  let coverUri: string | null = null
+  if (entry.coverUri) {
+    const coverFile = new File(dir, baseName(entry.coverUri))
+    if (coverFile.exists) coverUri = coverFile.uri
+  }
+
+  return { ...entry, tracks, coverUri }
 }
 
 function patch(itemId: string, p: Partial<DownloadEntry>): void {
