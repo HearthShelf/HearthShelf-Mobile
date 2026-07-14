@@ -12,7 +12,7 @@
  * latest queue/settings the next time the app comes to the foreground.
  */
 import { AppState, type AppStateStatus } from 'react-native'
-import { validateSetting, SETTINGS_CATALOG } from '@hearthshelf/core'
+import { validateSetting, SETTINGS_CATALOG, type QueueEntry } from '@hearthshelf/core'
 import {
   getQueueState,
   setQueueItems,
@@ -21,7 +21,7 @@ import {
   subscribeQueue,
 } from './queue'
 import { getState as getPlayerState } from './store'
-import { getServerQueue, putServerQueue } from '@/api/queue'
+import { getServerQueue, putServerQueue, recomputeServerQueue } from '@/api/queue'
 import { getServerSettings, putServerSettings, type SettingChange } from '@/api/settings'
 import {
   applyServerKeys,
@@ -60,8 +60,23 @@ function hasActiveSession(): boolean {
   return !!getPlayerState().nowPlaying
 }
 
+// Adopt a server queue into the local store without re-pushing it. Shared by
+// the plain pull (cheap GET) and the recompute path (POST). bump=false so
+// adopting the server's state doesn't look like a new local write.
+function adoptServerQueue(server: { items: QueueEntry[]; manual: QueueEntry[]; playlistId: string | null }): void {
+  hydratingQueue = true
+  setQueueItems(server.items, false)
+  setQueueManual(server.manual, false)
+  setQueuePlaylistId(server.playlistId, false)
+  adoptedUpdatedAt = getQueueState().updatedAt
+  hydratingQueue = false
+}
+
 async function pullQueue(): Promise<void> {
   try {
+    // Cheap read: GET returns the stored queue as-is (no server recompute). The
+    // Auto rebuild happens on triggers - the play-cooldown, settings/manual/
+    // dismissal edits, and the nightly job - not on this foreground/pull.
     const server = await getServerQueue()
     // The active-session guard only protects a MANUAL queue: manual is the one
     // mode this device hand-edits, so a remote pull mustn't stomp its own
@@ -72,19 +87,33 @@ async function pullQueue(): Promise<void> {
     // "Nothing queued" despite a full server-side queue.
     const mode = getSettingsState().queueMode
     if (mode === 'manual' && hasActiveSession()) return
-    hydratingQueue = true
-    // bump=false: adopting the server's state shouldn't immediately look like
-    // a new local write and re-push what we just pulled.
-    setQueueItems(server.items, false)
-    setQueueManual(server.manual, false)
-    setQueuePlaylistId(server.playlistId, false)
-    adoptedUpdatedAt = getQueueState().updatedAt
-    hydratingQueue = false
+    adoptServerQueue(server)
   } catch {
     // Backend unreachable - keep the local queue as-is.
   } finally {
     hydratedQueue = true
   }
+}
+
+// Ask the server to rebuild the Auto queue now, then adopt it. Called on the
+// triggers that should take effect immediately (settings mode/rules change,
+// manual-queue edit, dismissal) rather than waiting for the play-cooldown or
+// nightly job. Passes the now-playing item so finish-series seeds correctly.
+async function recomputeQueue(): Promise<void> {
+  if (getSettingsState().queueMode !== 'auto') return
+  try {
+    const currentItemId = getPlayerState().nowPlaying?.itemId ?? undefined
+    const server = await recomputeServerQueue(currentItemId)
+    if (getSettingsState().queueMode === 'manual' && hasActiveSession()) return
+    adoptServerQueue(server)
+  } catch {
+    // Best-effort; the local queue stays usable.
+  }
+}
+
+/** Public trigger: recompute the Auto queue now (e.g. after a dismissal). */
+export function requestQueueRecompute(): void {
+  void recomputeQueue()
 }
 
 async function pullSettings(): Promise<void> {
@@ -122,6 +151,12 @@ function pushQueue(): void {
           setQueuePlaylistId(res.playlistId, false)
           adoptedUpdatedAt = getQueueState().updatedAt
           hydratingQueue = false
+        } else if (res.applied !== false && getSettingsState().queueMode === 'auto') {
+          // A hand-edit to the manual list landed, but in Auto mode the server
+          // stores manual separately and only splices it into the computed
+          // `items` on a recompute. Trigger one so the merged up-next list shows
+          // the change now instead of on the next play-cooldown / foreground.
+          void recomputeQueue()
         }
       })
       .catch(() => {
@@ -148,9 +183,9 @@ function pushSettings(): void {
       changes.push({ scope: def.scope, key, value: v.value, updatedAt: row.updatedAt })
     }
     if (!changes.length) return
-    // If the queue mode or auto-rules changed, the server recomputes the auto
-    // queue on the next GET - re-pull once the new settings have landed so the
-    // sheet reflects the change immediately (not just on the next foreground).
+    // If the queue mode or auto-rules changed, ask the server to rebuild the
+    // Auto queue now (a plain GET no longer recomputes) so the sheet reflects
+    // the change immediately, not just on the next foreground or play-cooldown.
     const queueSettingsChanged = changes.some(
       (c) => c.key === 'queueMode' || c.key === 'queueAutoRules',
     )
@@ -165,7 +200,7 @@ function pushSettings(): void {
           hydratingSettings = false
         }
         lastSettingsMeta = { ...getSettingsMeta() }
-        if (queueSettingsChanged) void pullQueue()
+        if (queueSettingsChanged) void recomputeQueue()
       })
       .catch(() => {
         // Best-effort; the local store already holds the change.

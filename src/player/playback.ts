@@ -19,6 +19,7 @@ import { localSourceFor, applyAutoDownloads } from './downloads'
 import { recordLocalSession } from './pendingProgress'
 import { breadcrumb } from '@/lib/crashLog'
 import { getQueueState } from './queue'
+import { armRecomputeCooldown, cancelRecomputeCooldown } from './recompute'
 import {
   syncStateStartSession,
   syncStateTick,
@@ -95,9 +96,22 @@ function sanitizeChapters(raw: { title?: unknown; start: number; end: number }[]
  * (the Now Playing tab uses this to drop you into the real player on your last
  * book without starting audio on tab open).
  */
-export async function playItemById(itemId: string, autoPlay = true): Promise<void> {
+export async function playItemById(
+  itemId: string,
+  autoPlay = true,
+  opts: { armRecompute?: boolean } = {},
+): Promise<void> {
   const local = localSourceFor(itemId)
   const online = !!getSession()
+
+  // Starting a new book is a recompute trigger, but we defer it: arm a play-
+  // cooldown so an accidental tap (or the settling just-finished book at an
+  // auto-advance) doesn't immediately reshuffle up-next. The book-end advance
+  // passes armRecompute:false so it never recomputes in the ambiguous window;
+  // it just plays the queue head it already holds. Cancel any prior cooldown
+  // first - switching books abandons the previous book's pending recompute.
+  cancelRecomputeCooldown()
+  if (opts.armRecompute !== false) armRecomputeCooldown(itemId)
 
   // Downloaded + offline: no server reachable, so play locally and accrue a
   // local session to replay on reconnect.

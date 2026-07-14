@@ -29,6 +29,26 @@ export async function getServerQueue(): Promise<ServerQueue> {
   return (await res.json()) as ServerQueue
 }
 
+/**
+ * Ask the server to rebuild the Auto up-next list now (POST /hs/queue/recompute)
+ * and return the fresh queue. Recompute is trigger-based (a plain GET no longer
+ * recomputes), so this is called after the play-cooldown, and on settings /
+ * manual-queue / dismissal edits. `currentItemId` is the book currently playing;
+ * the server seeds the finish-series rule from it (and stores it for the nightly
+ * rebuild), so a barely-played book still continues its series. Omit it for a
+ * plain recompute that uses the last stored current item.
+ */
+export async function recomputeServerQueue(currentItemId?: string | null): Promise<ServerQueue> {
+  const { serverUrl, token } = requireSession()
+  const res = await fetch(`${serverUrl}/hs/queue/recompute`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(currentItemId === undefined ? {} : { currentItemId }),
+  })
+  if (!res.ok) throw new Error(`queue ${res.status}`)
+  return (await res.json()) as ServerQueue
+}
+
 export async function putServerQueue(
   items: QueueEntry[],
   manual: QueueEntry[],

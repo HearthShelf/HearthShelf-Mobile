@@ -9,6 +9,7 @@
  */
 import type { Dismissals } from '@hearthshelf/core'
 import * as api from '@/api/dismissals'
+import { requestQueueRecompute } from '@/player/queueSync'
 
 let state: Dismissals = { seriesIds: [], itemIds: [] }
 const listeners = new Set<() => void>()
@@ -76,6 +77,9 @@ export async function dismiss(
   set({ ...state, [key]: [...state[key], entityId] })
   try {
     set(await api.addDismissal(kind, entityId))
+    // Dismissing hides this series/book from every Auto rule, so rebuild the
+    // queue now instead of waiting for the next play-cooldown / nightly job.
+    requestQueueRecompute()
   } catch {
     set(prev) // roll back the optimistic add
     throw new Error('dismiss_failed')
@@ -90,6 +94,8 @@ export async function restore(kind: 'series' | 'item', entityId: string): Promis
   set({ ...state, [key]: state[key].filter((id) => id !== entityId) })
   try {
     set(await api.removeDismissal(kind, entityId))
+    // Restoring makes the series/book eligible for Auto rules again - rebuild.
+    requestQueueRecompute()
   } catch {
     set(prev)
     throw new Error('restore_failed')
