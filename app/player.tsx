@@ -717,7 +717,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
           {!immersive ? (
             <>
               {hasChapters ? (
-                <TransportBtn icon={icons.skipPrev} onPress={() => skipChapter(-1)} />
+                <TransportBtn icon={icons.skipPrev} ghost onPress={() => skipChapter(-1)} />
               ) : null}
               <SkipButton
                 dir={-1}
@@ -752,7 +752,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                 onPress={() => skipBy(1, settings.skipForward)}
               />
               {hasChapters ? (
-                <TransportBtn icon={icons.skipNext} onPress={() => skipChapter(1)} />
+                <TransportBtn icon={icons.skipNext} ghost onPress={() => skipChapter(1)} />
               ) : null}
             </>
           ) : null}
@@ -955,9 +955,9 @@ function BufferingRing() {
       style={[
         {
           position: 'absolute',
-          width: 88,
-          height: 88,
-          borderRadius: 44,
+          width: 96,
+          height: 96,
+          borderRadius: 48,
           borderWidth: 2.5,
           borderColor: withAlpha(colors.accent, 0.25),
           borderTopColor: colors.accent,
@@ -968,19 +968,23 @@ function BufferingRing() {
   )
 }
 
-/** A borderless, tappable transport button (rewind / skip / forward). */
+/** A borderless, tappable transport button (rewind / skip / forward). Chapter
+ *  prev/next pass `ghost` to render muted, separating them from the always-on
+ *  skip buttons. */
 function TransportBtn({
   icon,
   onPress,
+  ghost,
 }: {
   icon: (typeof icons)[keyof typeof icons]
   onPress: () => void
+  ghost?: boolean
 }) {
   const { colors, shadow } = useTheme()
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   return (
     <SpringPressable onPress={onPress} hitSlop={10} style={styles.transportBtn} scaleTo={0.85}>
-      <Icon name={icon} size={34} color={colors.text} />
+      <Icon name={icon} size={ghost ? 30 : 34} color={ghost ? colors.textMuted : colors.text} />
     </SpringPressable>
   )
 }
@@ -1591,17 +1595,17 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       marginTop: spacing.md,
     },
     transportBtn: {
-      width: 56,
-      height: 56,
+      width: 60,
+      height: 60,
       alignItems: 'center',
       justifyContent: 'center',
     },
     playWrap: { alignItems: 'center', justifyContent: 'center' },
     bufferCaption: { alignItems: 'center', marginTop: spacing.sm },
     play: {
-      width: 76,
-      height: 76,
-      borderRadius: 38,
+      width: 84,
+      height: 84,
+      borderRadius: 42,
       backgroundColor: colors.accent,
       alignItems: 'center',
       justifyContent: 'center',
@@ -1623,12 +1627,14 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
     },
     actionBtn: {
       flex: 1,
+      minHeight: 52,
       alignItems: 'center',
-      gap: spacing.xs,
-      paddingVertical: spacing.sm + 2,
-      borderRadius: radius.row,
+      justifyContent: 'center',
+      gap: 3,
+      paddingVertical: spacing.sm,
+      borderRadius: 14,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
+      borderColor: colors.hairline,
       backgroundColor: colors.fill,
       // Clip the sleep-timer countdown fill to the rounded button shape.
       overflow: 'hidden',
