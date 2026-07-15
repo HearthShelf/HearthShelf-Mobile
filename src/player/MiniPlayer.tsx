@@ -47,22 +47,35 @@ export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
     : nowPlaying.duration > 0
       ? position / nowPlaying.duration
       : 0
-  const elapsed = useChapter ? chPos : position
-  const total = useChapter ? chSpan : nowPlaying.duration
+  // Whole-book position drives the top strip; the ring + subtitle read
+  // chapter-relative when the user's setting asks for it.
+  const bookProgress = nowPlaying.duration > 0 ? position / nowPlaying.duration : 0
+  const remaining = useChapter ? Math.max(0, chSpan - chPos) : Math.max(0, nowPlaying.duration - position)
+  const subtitle =
+    useChapter && chapter?.title
+      ? `${chapter.title} · -${formatTimestamp(remaining)}`
+      : `-${formatTimestamp(remaining)}`
 
-  return <MiniPlayerBar bottomOffset={bottomOffset} progress={progress} elapsed={elapsed} total={total} />
+  return (
+    <MiniPlayerBar
+      bottomOffset={bottomOffset}
+      progress={progress}
+      bookProgress={bookProgress}
+      subtitle={subtitle}
+    />
+  )
 }
 
 function MiniPlayerBar({
   bottomOffset,
   progress,
-  elapsed,
-  total,
+  bookProgress,
+  subtitle,
 }: {
   bottomOffset: number
   progress: number
-  elapsed: number
-  total: number
+  bookProgress: number
+  subtitle: string
 }) {
   const router = useRouter()
   const colors = useColors()
@@ -102,23 +115,29 @@ function MiniPlayerBar({
       style={[styles.wrap, { bottom: bottomOffset }]}
       pointerEvents="box-none"
     >
+      {/* Thin whole-book progress strip across the top of the dock. */}
+      <View style={styles.progTrack}>
+        <View style={[styles.progFill, { width: `${Math.max(0, Math.min(1, bookProgress)) * 100}%` }]} />
+      </View>
       <GestureDetector gesture={swipe}>
         <View style={styles.bar}>
           <Pressable style={styles.tap} onPress={() => router.push('/player')}>
-            <View style={styles.cover}>
-              {/* Thin progress ring around the cover. */}
+            {/* Round cover inside a round chapter-progress ring. */}
+            <View style={styles.ringWrap}>
               <CoverRing progress={progress} color={colors.accent} track={colors.fillStrong} />
-              {nowPlaying.artworkUrl ? (
-                <Image source={{ uri: nowPlaying.artworkUrl }} style={styles.coverImg} />
-              ) : null}
-              <CoverDownloadOverlay itemId={nowPlaying.itemId} size={42} radius={8} />
+              <View style={styles.cover}>
+                {nowPlaying.artworkUrl ? (
+                  <Image source={{ uri: nowPlaying.artworkUrl }} style={styles.coverImg} />
+                ) : null}
+                <CoverDownloadOverlay itemId={nowPlaying.itemId} size={40} radius={20} />
+              </View>
             </View>
             <View style={styles.meta}>
               <AppText variant="label" numberOfLines={1}>
                 {nowPlaying.title}
               </AppText>
               <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
-                {formatTimestamp(elapsed)} / {formatTimestamp(total)}
+                {subtitle}
               </AppText>
             </View>
           </Pressable>
@@ -167,7 +186,7 @@ function MiniPlayerBar({
   )
 }
 
-/** A thin circular progress ring sized to sit around the 42px mini cover. */
+/** A circular chapter-progress ring sized to sit around the 40px round cover. */
 function CoverRing({
   progress,
   color,
@@ -177,8 +196,8 @@ function CoverRing({
   color: string
   track: string
 }) {
-  const size = 46
-  const stroke = 2
+  const size = 50
+  const stroke = 2.5
   const r = (size - stroke) / 2
   const circ = 2 * Math.PI * r
   const dash = Math.max(0, Math.min(1, progress)) * circ
@@ -200,7 +219,7 @@ function CoverRing({
   )
 }
 
-const styles_ring = { position: 'absolute' as const, top: -2, left: -2, zIndex: 2 }
+const styles_ring = { position: 'absolute' as const, top: -5, left: -5, zIndex: 2 }
 
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
@@ -209,6 +228,8 @@ const makeStyles = (colors: Palette) =>
       left: 0,
       right: 0,
     },
+    progTrack: { height: 2, backgroundColor: colors.fillStrong },
+    progFill: { height: 2, backgroundColor: colors.accent },
     bar: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -219,14 +240,16 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.popover,
     },
     tap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md, minWidth: 0 },
+    // Round cover in a round ring; ringWrap reserves the 40px cover footprint.
+    ringWrap: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
     cover: {
-      width: 42,
-      height: 42,
-      borderRadius: 8,
+      width: 40,
+      height: 40,
+      borderRadius: 20,
       backgroundColor: colors.high,
       overflow: 'hidden',
     },
-    coverImg: { width: 42, height: 42, borderRadius: 8 },
+    coverImg: { width: 40, height: 40, borderRadius: 20 },
     meta: { flex: 1, minWidth: 0 },
     play: {
       width: 42,
