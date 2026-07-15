@@ -15,7 +15,12 @@ import {
 } from 'react'
 import { Dimensions, Platform, StyleSheet, Text, View } from 'react-native'
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
-import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
+import {
+  BottomSheetScrollView,
+  BottomSheetFlatList,
+  BottomSheetTextInput,
+  type BottomSheetFlatListMethods,
+} from '@gorhom/bottom-sheet'
 import { formatTimestamp } from '@hearthshelf/core'
 import {
   getState,
@@ -53,29 +58,84 @@ function useSheetHandle(ref: React.Ref<SheetHandle>) {
 
 // ---- Chapters ----
 
+// Above this many chapters, the sheet grows a search field.
+const CHAPTER_SEARCH_THRESHOLD = 50
+
 export const ChaptersSheet = forwardRef<SheetHandle>(function ChaptersSheet(_props, ref) {
-  const sheetRef = useSheetHandle(ref)
+  const innerRef = useRef<SheetRef>(null)
+  const listRef = useRef<BottomSheetFlatListMethods>(null)
+  const [query, setQuery] = useState('')
   const { colors, shadow } = useTheme()
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   const { nowPlaying, position } = useSyncExternalStore(subscribe, getState)
   const active = currentChapter()
   const chapters = nowPlaying?.chapters ?? []
+  const activeIndex = active ? chapters.indexOf(active) : -1
+
+  // Auto-scroll to the current chapter (centered) when the sheet opens.
+  useImperativeHandle(ref, () => ({
+    present: () => {
+      setQuery('')
+      innerRef.current?.present()
+      if (activeIndex > 0) {
+        // Defer past the sheet's open animation so the list is laid out.
+        setTimeout(() => {
+          listRef.current?.scrollToIndex({
+            index: activeIndex,
+            viewPosition: 0.5,
+            animated: false,
+          })
+        }, 260)
+      }
+    },
+    dismiss: () => innerRef.current?.dismiss(),
+  }))
+
+  const needle = query.trim().toLowerCase()
+  const filtered = needle
+    ? chapters
+        .map((c, i) => ({ c, i }))
+        .filter(({ c }) => c.title.toLowerCase().includes(needle))
+    : chapters.map((c, i) => ({ c, i }))
+
+  const showSearch = chapters.length >= CHAPTER_SEARCH_THRESHOLD
 
   return (
-    <Sheet ref={sheetRef} kicker="Chapters" snapPoints={['70%']}>
-      <BottomSheetScrollView>
-        {chapters.map((c: ChapterMark, i: number) => {
+    <Sheet ref={innerRef} kicker="Chapters" snapPoints={['70%']}>
+      {showSearch ? (
+        <View style={styles.chapterSearch}>
+          <Icon name={icons.search} size={18} color={colors.textMuted} />
+          <BottomSheetTextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Find a chapter"
+            placeholderTextColor={colors.textFaint}
+            style={styles.chapterSearchInput}
+            autoCorrect={false}
+          />
+        </View>
+      ) : null}
+      <BottomSheetFlatList
+        ref={listRef}
+        data={filtered}
+        keyExtractor={({ i }) => String(i)}
+        onScrollToIndexFailed={({ index }) => {
+          setTimeout(
+            () => listRef.current?.scrollToIndex({ index, viewPosition: 0.5, animated: false }),
+            120,
+          )
+        }}
+        renderItem={({ item: { c, i } }) => {
           const isActive = active === c
           // Completed once we've listened past its end (not merely "before the
           // active chapter", which broke when nothing was active).
           const isDone = !isActive && position >= c.end
           return (
             <Touchable
-              key={`${c.start}-${i}`}
               style={styles.row}
               onPress={() => {
                 seekToChapter(c)
-                sheetRef.current?.dismiss()
+                innerRef.current?.dismiss()
               }}
             >
               {isActive ? (
@@ -104,8 +164,8 @@ export const ChaptersSheet = forwardRef<SheetHandle>(function ChaptersSheet(_pro
               </AppText>
             </Touchable>
           )
-        })}
-      </BottomSheetScrollView>
+        }}
+      />
     </Sheet>
   )
 })
@@ -706,6 +766,23 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof buildShadow>) =>
       borderRadius: radius.row,
     },
     segOn: { backgroundColor: colors.accentWash },
+    chapterSearch: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+      marginBottom: spacing.sm,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    chapterSearchInput: {
+      flex: 1,
+      paddingVertical: spacing.sm + 2,
+      color: colors.text,
+      fontSize: 15,
+    },
     // Caps the chapter list so it scrolls internally rather than stretching the
     // dynamically-sized sheet to fit all chapters.
     chapterList: { maxHeight: 280 },
