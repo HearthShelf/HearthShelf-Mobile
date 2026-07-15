@@ -19,7 +19,7 @@ import { BottomSheetFlatList, BottomSheetTextInput } from '@gorhom/bottom-sheet'
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { coverHue } from '@hearthshelf/core'
-import type { QueueEntry, ABSLibraryItem } from '@hearthshelf/core'
+import type { QueueEntry, ABSLibraryItem, AutoRulePref } from '@hearthshelf/core'
 import {
   getQueueState,
   reorderQueue,
@@ -31,7 +31,13 @@ import {
   QUEUE_MODE_SUB,
   AUTO_RULE_COPY,
 } from './queue'
-import { getSettingsState, setQueueMode, subscribeSettings, toggleAutoRule } from '@/store/settings'
+import {
+  getSettingsState,
+  setQueueMode,
+  setSetting,
+  subscribeSettings,
+  toggleAutoRule,
+} from '@/store/settings'
 import { getState, subscribe } from './store'
 import { coverUrl, getLibraries, searchLibraryAll, itemTitle, itemAuthor } from '@/api/abs'
 import { AppText, Cover, IconButton, Sheet, type SheetRef, Touchable } from '@/ui/primitives'
@@ -244,35 +250,61 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
         </Sheet>
 
         <Sheet ref={rulesRef} kicker="Auto-queue" stackBehavior="push">
-          <View>
-            {settings.queueAutoRules.map((r) => {
-              const copy = RULE_COPY[r.id]
-              // new-in-series-all is a sub-modifier of new-in-series: indent it
-              // and dim/disable it while the parent rule is off (it does nothing
-              // on its own).
-              const isSub = r.id === 'new-in-series-all'
-              const parentOff =
-                isSub && !settings.queueAutoRules.find((x) => x.id === 'new-in-series')?.on
-              return (
-                <Touchable
-                  key={r.id}
-                  style={[styles.row, isSub && styles.subRule, parentOff && styles.ruleDisabled]}
-                  disabled={parentOff}
-                  onPress={() => toggleAutoRule(r.id)}
-                >
-                  <View style={{ flex: 1 }}>
-                    <AppText variant="label">{copy.label}</AppText>
-                    <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 3 }}>
-                      {copy.desc}
-                    </AppText>
+          <AppText variant="caption" color={colors.textMuted} style={styles.rulesHint}>
+            Higher rules fill the queue first. Drag to reprioritize.
+          </AppText>
+          <GestureHandlerRootView>
+            <DraggableFlatList
+              data={settings.queueAutoRules}
+              keyExtractor={(r) => r.id}
+              onDragEnd={({ data, from, to }) => {
+                if (from !== to) setSetting('queueAutoRules', data)
+              }}
+              renderItem={({ item, drag, isActive }: RenderItemParams<AutoRulePref>) => {
+                const copy = RULE_COPY[item.id]
+                // new-in-series-all is a sub-modifier of new-in-series: indent it
+                // and dim/disable it while the parent rule is off.
+                const isSub = item.id === 'new-in-series-all'
+                const parentOff =
+                  isSub && !settings.queueAutoRules.find((x) => x.id === 'new-in-series')?.on
+                return (
+                  <View
+                    style={[
+                      styles.row,
+                      isActive && styles.rowDragging,
+                      isSub && styles.subRule,
+                      parentOff && styles.ruleDisabled,
+                    ]}
+                  >
+                    <Pressable onLongPress={drag} disabled={parentOff} hitSlop={8}>
+                      <Icon name={icons.dragHandle} size={20} color={colors.textMuted} />
+                    </Pressable>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <AppText variant="label">{copy.label}</AppText>
+                      <AppText
+                        variant="caption"
+                        color={colors.textMuted}
+                        style={{ marginTop: 3 }}
+                        numberOfLines={2}
+                      >
+                        {copy.desc}
+                      </AppText>
+                    </View>
+                    <Touchable
+                      disabled={parentOff}
+                      onPress={() => toggleAutoRule(item.id)}
+                      style={[styles.toggleTrack, item.on && styles.toggleTrackOn]}
+                    >
+                      <View style={[styles.toggleKnob, item.on && styles.toggleKnobOn]} />
+                    </Touchable>
                   </View>
-                  <View style={[styles.toggleTrack, r.on && styles.toggleTrackOn]}>
-                    <View style={[styles.toggleKnob, r.on && styles.toggleKnobOn]} />
-                  </View>
-                </Touchable>
-              )
-            })}
-          </View>
+                )
+              }}
+            />
+          </GestureHandlerRootView>
+          <AppText variant="caption" color={colors.textFaint} style={styles.rulesHint}>
+            Changes rebuild the queue immediately.
+          </AppText>
         </Sheet>
 
         <AddBooksSheet ref={addBooksRef} />
@@ -546,6 +578,7 @@ const makeStyles = (colors: Palette) =>
     },
     rowTap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md, minWidth: 0 },
     rowDragging: { backgroundColor: colors.high, borderRadius: radius.row },
+    rulesHint: { paddingHorizontal: spacing.xs, paddingVertical: spacing.sm },
     boltSlot: { width: 20, alignItems: 'center', justifyContent: 'center' },
     subRule: { paddingLeft: spacing.xl, marginLeft: spacing.xs },
     ruleDisabled: { opacity: 0.4 },
