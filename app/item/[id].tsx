@@ -42,8 +42,13 @@ import {
   getProgressState,
   subscribeProgress,
   refreshProgress,
-  promptAndMarkItemsFinished,
+  markItemsFinished,
+  resetItemProgress,
 } from '@/store/progress'
+import { dismiss as dismissEntity } from '@/store/dismissals'
+import { finishDatePrompt } from '@/ui/FinishDatePrompt'
+import { confirm } from '@/ui/confirm'
+import { showToast } from '@/ui/Toast'
 import {
   getDownloadsState,
   subscribeDownloads,
@@ -292,20 +297,86 @@ export default function ItemDetailScreen() {
     router.push('/player')
   }
 
+  // Re-stamp an already-finished book's completion date. Reached only from the
+  // finish toast's "Edit date" action - never a mandatory interstitial.
+  const editFinishDate = async () => {
+    const choice = await finishDatePrompt({ count: 1 })
+    if (!choice) return
+    try {
+      await markItemsFinished([{ id: detail.id, duration }], true, choice.finishedAt ?? undefined)
+      show('Finish date updated')
+    } catch {
+      show('Could not update the date')
+    }
+  }
+
   const toggleFinished = async () => {
     const next = !isFinished
     try {
-      // Finishing asks "when did you finish?" first; unfinishing is instant.
-      // Optimistic flip + rollback live in the shared progress store.
-      const ok = await promptAndMarkItemsFinished([{ id: detail.id, duration }], next)
-      if (!ok) return // dismissed the prompt
+      // D-FINISH: finishing is ONE tap. Mark it now (server stamps "now"); the
+      // date is editable afterward from the toast, not a blocking prompt.
+      await markItemsFinished([{ id: detail.id, duration }], next)
       if (next) {
         haptics.success()
         setFinishBurst((b) => b + 1)
+        showToast('Finished', {
+          actions: [
+            { label: 'Edit date', onPress: () => void editFinishDate() },
+            { label: 'Undo', onPress: () => void markItemsFinished([{ id: detail.id }], false) },
+          ],
+        })
+      } else {
+        showToast('Back in progress', {
+          action: {
+            label: 'Undo',
+            onPress: () => void markItemsFinished([{ id: detail.id, duration }], true),
+          },
+        })
       }
-      show(next ? 'Marked finished' : 'Back in progress')
     } catch {
       show('Could not update')
+    }
+  }
+
+  // Reset this book to the start (overflow action). Reversible-but-heavy, so it
+  // confirms first, then reports through a toast.
+  const resetProgress = async () => {
+    overflowSheetRef.current?.dismiss()
+    const ok = await confirm({
+      title: 'Reset progress',
+      message: `Start "${title}" over from the beginning?`,
+      confirmLabel: 'Reset',
+    })
+    if (!ok) return
+    try {
+      await resetItemProgress(detail.id)
+      show('Progress reset')
+    } catch {
+      show('Could not reset progress')
+    }
+  }
+
+  // Hide this book (or its series) from Auto queue + Continue shelves. Reversible
+  // via the Undo toast.
+  const hideBook = async () => {
+    overflowSheetRef.current?.dismiss()
+    const seriesRef = series
+    const useSeries = Boolean(seriesRef)
+    const kind: 'series' | 'item' = useSeries ? 'series' : 'item'
+    const entityId = useSeries ? seriesRef!.id : detail.id
+    const label = useSeries ? seriesRef!.name : title
+    try {
+      await dismissEntity(kind, entityId, label)
+      showToast(`Hid "${label}"`, {
+        action: {
+          label: 'Undo',
+          onPress: () => {
+            void import('@/store/dismissals').then((m) => m.restore(kind, entityId))
+          },
+        },
+      })
+    } catch {
+      show('Could not hide that')
     }
   }
 
@@ -406,13 +477,19 @@ export default function ItemDetailScreen() {
           />
         )}
         <ActionSquare
-          icon={download?.status === 'done' ? icons.downloadDone : icons.download}
+          icon={
+            download?.status === 'done'
+              ? icons.downloadDone
+              : download?.status === 'downloading' || download?.status === 'queued'
+                ? icons.close
+                : icons.download
+          }
           label={
             download?.status === 'done'
               ? 'Downloaded'
               : download?.status === 'downloading' || download?.status === 'queued'
                 ? `${Math.round((download.progress ?? 0) * 100)}%`
-                : 'Download'
+                : formatBytes(detail.media.size) || 'Download'
           }
           active={download?.status === 'done'}
           onPress={downloadBook}
@@ -531,6 +608,20 @@ export default function ItemDetailScreen() {
             overflowSheetRef.current?.dismiss()
             sessionsSheetRef.current?.present()
           }}
+        />
+        {(isInProgress || isFinished) && (
+          <SheetRow
+            icon={icons.replay}
+            label="Reset progress"
+            destructive
+            onPress={() => void resetProgress()}
+          />
+        )}
+        <SheetRow
+          icon={icons.hidden}
+          label={series ? 'Not right now (hide series)' : 'Not right now (hide book)'}
+          destructive
+          onPress={() => void hideBook()}
         />
         <FileInfoLine detail={detail} />
       </Sheet>
@@ -1115,18 +1206,23 @@ const SessionsSheet = ({
 function SheetRow({
   icon,
   label,
+  destructive,
   onPress,
 }: {
   icon: (typeof icons)[keyof typeof icons]
   label: string
+  destructive?: boolean
   onPress: () => void
 }) {
   const colors = useColors()
   const styles = useStyles()
+  const tint = destructive ? colors.destructive : undefined
   return (
     <Touchable style={styles.sheetRow} onPress={onPress}>
-      <Icon name={icon} size={21} color={colors.textMuted} />
-      <AppText variant="body">{label}</AppText>
+      <Icon name={icon} size={21} color={tint ?? colors.textMuted} />
+      <AppText variant="body" color={tint}>
+        {label}
+      </AppText>
     </Touchable>
   )
 }
@@ -1168,7 +1264,7 @@ function Header({
     <View style={styles.header}>
       <IconButton name={icons.back} onPress={onBack} style={styles.headerBtn} />
       <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-        {onBookmarks && bookmarkCount > 0 ? (
+        {onBookmarks ? (
           <View>
             <IconButton
               name={icons.bookmarks}
@@ -1176,11 +1272,13 @@ function Header({
               onPress={onBookmarks}
               style={styles.headerBtn}
             />
-            <View style={styles.badge}>
-              <AppText variant="caption" color={colors.onAccent} style={styles.badgeText}>
-                {bookmarkCount}
-              </AppText>
-            </View>
+            {bookmarkCount > 0 ? (
+              <View style={styles.badge}>
+                <AppText variant="caption" color={colors.onAccent} style={styles.badgeText}>
+                  {bookmarkCount}
+                </AppText>
+              </View>
+            ) : null}
           </View>
         ) : null}
         {onOverflow ? (
