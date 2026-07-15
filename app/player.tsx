@@ -16,6 +16,7 @@ import {
   useSyncExternalStore,
 } from 'react'
 import { Image, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
@@ -107,6 +108,7 @@ import { useTimelineMarkers } from '@/social/useTimelineMarkers'
 import type { PlayerActionKey } from '@/store/settings'
 
 const HEARTH_BG = require('../assets/images/hearth-centered.webp')
+const INSPECT_HINT_KEY = 'hs.playerInspectHint'
 
 /** Short label for the queue header chip ("Auto", "Manual", ...). */
 function queueModeLabel(mode: QueueMode): string {
@@ -177,9 +179,24 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // Surface it only after a grace period so micro-stalls don't flash.
   const buffering = useBuffering(isPlaying, position)
 
-  // Cover taps: double-tap always opens the lightbox. A single tap toggles
-  // play/pause only when the user opted into "Tap artwork to play" - otherwise a
-  // single tap does nothing (double-tap for the lightbox is the sole action).
+  // One-time "tap to inspect" hint on the cover (device-local), so the
+  // inspect-by-default gesture is discoverable. Dismissed on first cover tap or
+  // after it has been shown once.
+  const [showInspectHint, setShowInspectHint] = useState(false)
+  useEffect(() => {
+    void AsyncStorage.getItem(INSPECT_HINT_KEY).then((seen) => {
+      if (!seen) setShowInspectHint(true)
+    })
+  }, [])
+  const dismissInspectHint = useCallback(() => {
+    setShowInspectHint(false)
+    void AsyncStorage.setItem(INSPECT_HINT_KEY, '1')
+  }, [])
+
+  // Cover taps. Default (FINAL): a single tap INSPECTS - opens the lightbox -
+  // since the cover is the largest target and shouldn't be a play/pause
+  // hair-trigger. When the user opts into "Tap artwork to play", a single tap
+  // toggles play/pause and a double-tap opens the lightbox instead.
   const [lightbox, setLightbox] = useState(false)
   const lastTap = useRef(0)
   const singleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -191,6 +208,13 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
     [],
   )
   const onCoverTap = useCallback(() => {
+    if (showInspectHint) dismissInspectHint()
+    if (!tapTogglesPlay) {
+      // Inspect-by-default: single tap opens the lightbox immediately.
+      setLightbox(true)
+      return
+    }
+    // Play-on-cover opted in: single tap plays/pauses, double-tap inspects.
     const now = Date.now()
     if (now - lastTap.current < 320) {
       lastTap.current = 0
@@ -201,15 +225,13 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
       setLightbox(true)
     } else {
       lastTap.current = now
-      if (tapTogglesPlay) {
-        // Wait out the double-tap window so a double-tap opens the lightbox
-        // without also flipping play/pause.
-        if (singleTapTimer.current) clearTimeout(singleTapTimer.current)
-        singleTapTimer.current = setTimeout(() => {
-          singleTapTimer.current = null
-          togglePlay()
-        }, 320)
-      }
+      // Wait out the double-tap window so a double-tap opens the lightbox
+      // without also flipping play/pause.
+      if (singleTapTimer.current) clearTimeout(singleTapTimer.current)
+      singleTapTimer.current = setTimeout(() => {
+        singleTapTimer.current = null
+        togglePlay()
+      }, 320)
     }
   }, [tapTogglesPlay])
 
@@ -561,6 +583,21 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                 onPress={() => router.push(`/club/${encodeURIComponent(activeClub!.id)}?from=now`)}
                 style={styles.clubBtn}
               />
+            )}
+            {!immersive && showInspectHint && !tapTogglesPlay && (
+              <Animated.View
+                entering={FadeIn.duration(DUR.base)}
+                exiting={FadeOut.duration(DUR.fast)}
+                style={styles.inspectHint}
+                pointerEvents="none"
+              >
+                <View style={styles.inspectHintChip}>
+                  <Icon name={icons.search} size={13} color="rgba(255,255,255,0.85)" />
+                  <AppText variant="caption" color="rgba(255,255,255,0.85)">
+                    tap to inspect
+                  </AppText>
+                </View>
+              </Animated.View>
             )}
           </>
         )
@@ -1405,6 +1442,27 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       backgroundColor: 'rgba(20,17,15,0.5)',
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    // One-time "tap to inspect" hint chip, bottom-center of the cover. The
+    // absolute wrapper spans the cover width so the chip centers within it.
+    inspectHint: {
+      position: 'absolute',
+      bottom: 10,
+      left: 0,
+      right: 0,
+      flexDirection: 'row',
+      justifyContent: 'center',
+    },
+    inspectHintChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 5,
+      borderRadius: radius.pill,
+      backgroundColor: 'rgba(20,17,15,0.7)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,255,255,0.14)',
     },
     controls: {
       paddingHorizontal: spacing.xl,
