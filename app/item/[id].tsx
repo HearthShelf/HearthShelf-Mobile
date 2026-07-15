@@ -68,7 +68,6 @@ import {
   Centered,
   Cover,
   IconButton,
-  Loading,
   PrimaryButton,
   Screen,
   Sheet,
@@ -76,6 +75,7 @@ import {
   type SheetRef,
   icons,
 } from '@/ui/primitives'
+import { Skeleton, SkeletonRow } from '@/ui/states'
 import { Icon } from '@/ui/icons'
 import { DeviceKindIcon } from '@/ui/DeviceKindIcon'
 import { useSheetBackHandler } from '@/ui/useBackHandler'
@@ -133,6 +133,10 @@ export default function ItemDetailScreen() {
   const [finishedBy, setFinishedBy] = useState<HSFinishedByUser[]>([])
   const [listeningNow, setListeningNow] = useState<HSListeningNowUser[]>([])
   const [error, setError] = useState<string | null>(null)
+  // True when the detail was rebuilt from the downloaded copy because the server
+  // was unreachable - server-only extras (notes, who's listening, description)
+  // are absent, so we show a chip explaining the trimmed page.
+  const [offline, setOffline] = useState(false)
   const [zoomed, setZoomed] = useState(false)
   // Increments each time the book is marked finished, firing the ember burst.
   const [finishBurst, setFinishBurst] = useState(0)
@@ -157,7 +161,7 @@ export default function ItemDetailScreen() {
         // still opens and plays. Only the server-only extras (who's listening,
         // notes, description) are missing.
         const dl = downloadFor(id)
-        const offline = dl
+        const offlineDetail = dl
           ? offlineDetailFor(id, {
               duration: dl.duration,
               chapters: dl.chapters,
@@ -165,8 +169,10 @@ export default function ItemDetailScreen() {
             })
           : null
         if (!cancelled) {
-          if (offline) setDetail(offline)
-          else setError((e as Error).message)
+          if (offlineDetail) {
+            setDetail(offlineDetail)
+            setOffline(true)
+          } else setError((e as Error).message)
         }
         return
       }
@@ -233,7 +239,7 @@ export default function ItemDetailScreen() {
     return (
       <Screen>
         <Header onBack={() => router.back()} />
-        <Loading />
+        <DetailSkeleton />
       </Screen>
     )
   }
@@ -558,6 +564,14 @@ export default function ItemDetailScreen() {
         contentContainerStyle={{ paddingBottom: miniInset }}
         showsVerticalScrollIndicator={false}
       >
+        {offline && (
+          <View style={styles.offlineChip}>
+            <Icon name={icons.cloudOff} size={14} color={colors.brandHearth} />
+            <AppText variant="caption" color={colors.textMuted}>
+              Offline · showing your downloaded copy
+            </AppText>
+          </View>
+        )}
         <Hero
           detail={detail}
           title={title}
@@ -1245,6 +1259,35 @@ function FileInfoLine({ detail }: { detail: ABSLibraryItemDetail }) {
   )
 }
 
+// ---- Loading skeleton ----
+// Mirrors the stable section order (cover, title lines, CTA row, chapter rows)
+// so content fills the exact slots the skeleton reserves - no reflow on load.
+
+function DetailSkeleton() {
+  const styles = useStyles()
+  return (
+    <View style={{ paddingTop: spacing.sm }}>
+      <View style={styles.hero}>
+        <Skeleton width={172} height={258} radius={radius.card} />
+        <SkeletonRow width={'70%'} height={22} style={{ marginTop: spacing.lg }} />
+        <SkeletonRow width={'45%'} height={14} style={{ marginTop: spacing.sm }} />
+        <SkeletonRow width={'55%'} height={12} style={{ marginTop: spacing.sm }} />
+      </View>
+      <View style={styles.ctaRow}>
+        <Skeleton width={'100%'} height={52} radius={radius.card} style={{ flex: 1 }} />
+        <Skeleton width={56} height={52} radius={radius.card} />
+        <Skeleton width={56} height={52} radius={radius.card} />
+      </View>
+      <View style={[styles.section, { gap: spacing.md }]}>
+        <SkeletonRow width={'30%'} height={16} />
+        {[0, 1, 2, 3].map((i) => (
+          <SkeletonRow key={i} width={'100%'} height={18} />
+        ))}
+      </View>
+    </View>
+  )
+}
+
 // ---- Header ----
 
 function Header({
@@ -1319,6 +1362,17 @@ const makeStyles = (colors: Palette) =>
       justifyContent: 'center',
     },
     badgeText: { fontSize: 10, fontWeight: '700', lineHeight: 12 },
+    offlineChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      alignSelf: 'center',
+      marginBottom: spacing.xs,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 5,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+    },
     hero: { alignItems: 'center', paddingHorizontal: spacing.xl },
     title: { textAlign: 'center', marginTop: spacing.lg },
     subtitle: { textAlign: 'center', marginTop: spacing.xs, fontSize: 14 },
