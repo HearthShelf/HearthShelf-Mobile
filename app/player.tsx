@@ -670,7 +670,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                   queue={queue.items}
                   coverWidth={coverWidth}
                   coverAspect={coverAspect}
-                  pageWidth={width - spacing.xl * 2}
+                  pageWidth={width}
                   overlay={coverOverlays}
                   skipFeedback={<SkipFeedbackOverlay ref={skipFeedbackRef} />}
                   hotspots={
@@ -1667,7 +1667,10 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       overflow: 'hidden',
       alignItems: 'center',
       justifyContent: 'center',
-      paddingHorizontal: spacing.xl,
+      // No horizontal padding: the carousel spans the full screen width so the
+      // neighbor covers peek to the true edges. The centered cover is capped at
+      // coverWidth, and Focus view's single cover is likewise well within the
+      // screen, so neither needs page padding here.
     },
     // Full-strength art, shown on its own with no scrim over it.
     hearthBg: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
