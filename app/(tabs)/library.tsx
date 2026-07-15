@@ -1648,6 +1648,10 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.elevated,
       borderWidth: 1,
       borderColor: colors.accent,
+      // Lift above the grid: on Android draw order follows elevation, not
+      // zIndex, so the FlatList tiles would otherwise paint over the pill.
+      zIndex: 50,
+      elevation: 12,
     },
     ctrlIconBtn: {
       width: 38,
