@@ -60,7 +60,8 @@ import {
 } from '@/player/downloads'
 import { catalogHomeShelves } from '@/player/offlineCatalog'
 import { publishHomeShelves } from '@/store/homeShelves'
-import { AppText, Cover, Loading, Screen, SectionHeader, Touchable, icons } from '@/ui/primitives'
+import { AppText, Cover, Screen, SectionHeader, Touchable, icons } from '@/ui/primitives'
+import { EmptyState, ErrorState, Skeleton, SkeletonRow, SkeletonTile } from '@/ui/states'
 import { Icon, type IconName } from '@/ui/icons'
 import { DUR } from '@/ui/motion'
 import { onTabReselect } from '@/ui/tabReselect'
@@ -143,10 +144,12 @@ export default function HomeScreen() {
   // included) mount underneath from app start - so Home must wait for the
   // connection to be `ready` before loading, or getItemsInProgress() throws
   // not_connected. `loading` then covers just the first content fetch.
-  const { status, serverName } = useConnection()
+  const { status, serverName, retry } = useConnection()
   const connected = status.phase === 'ready'
+  const offline = status.phase === 'offline'
   const contentInset = useContentInset()
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [inProgress, setInProgress] = useState<ABSLibraryItem[]>([])
   const [shelves, setShelves] = useState<HomeShelf[]>([])
@@ -401,15 +404,26 @@ export default function HomeScreen() {
     }
   }, [connected, loadHome, loadHomeOffline])
 
+  // First load (and reloads after reconnects/server switches). A failure sets
+  // an error flag rendered as a designed error state - it must not masquerade
+  // as an empty library.
+  const loadHomeSafe = useCallback(() => {
+    setLoadError(false)
+    loadHome().catch(() => {
+      setLoadError(true)
+      setLoading(false)
+    })
+  }, [loadHome])
+
   useEffect(() => {
     // Load once the session exists (reconnects re-fire this too, e.g. after
     // switching servers from the splash's "Manage servers").
     if (connected) {
-      loadHome().catch(() => setLoading(false))
+      loadHomeSafe()
     } else if (status.phase === 'offline') {
       loadHomeOffline()
     }
-  }, [connected, status.phase, loadHome, loadHomeOffline])
+  }, [connected, status.phase, loadHomeSafe, loadHomeOffline])
 
   useEffect(() => {
     if (!connected || !nowPlaying) {
@@ -502,12 +516,35 @@ export default function HomeScreen() {
     return () => setSessionExpiredHandler(null)
   }, [handleSignOut])
 
-  // The gate guarantees a live session before Home mounts; this only covers the
-  // brief first content fetch.
-  if (loading) {
+  // The gate guarantees a live session before Home mounts; the skeleton covers
+  // the first content fetch, mirroring the real layout so content lands
+  // without reflow.
+  if (loading && !loadError) {
     return (
       <Screen>
-        <Loading label={serverName ? `Loading ${serverName}...` : 'Loading your library...'} />
+        <HomeSkeleton />
+      </Screen>
+    )
+  }
+
+  // A failed first load gets a designed error frame with retry + a downloads
+  // escape hatch - failure must not look like an empty library.
+  if (loadError) {
+    return (
+      <Screen>
+        <ErrorState
+          message={
+            serverName
+              ? `${serverName} is not answering. Your downloads still work.`
+              : 'Your server is not answering. Your downloads still work.'
+          }
+          onRetry={() => {
+            setLoading(true)
+            loadHomeSafe()
+          }}
+          secondaryLabel="Go to downloads"
+          onSecondary={() => router.push('/settings/storage')}
+        />
       </Screen>
     )
   }
@@ -536,6 +573,19 @@ export default function HomeScreen() {
           />
         }
       >
+        {offline ? (
+          <View style={styles.offlineChip}>
+            <Icon name={icons.cloudOff} size={16} color={colors.textMuted} />
+            <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
+              Offline - downloaded books only
+            </AppText>
+            <Touchable onPress={retry} style={styles.offlineRetry}>
+              <AppText variant="caption" color={colors.accent}>
+                Retry
+              </AppText>
+            </Touchable>
+          </View>
+        ) : null}
         <HomeHeader firstName={firstName} libraryName={libraryName} />
         {nowPlaying ? (
           <PlayerHero
@@ -561,12 +611,25 @@ export default function HomeScreen() {
             onLongPress={() => openActions(hero)}
           />
         ) : null}
-        <DashboardRow stats={stats} onOpenQueue={() => queueSheetRef.current?.present()} />
-        <ReleaseCountdownBanner />
-        <HomeClubShelf />
-        {shelves.map((shelf) => (
-          <Shelf key={shelf.id} shelf={shelf} onLongPressItem={openActions} />
-        ))}
+        {!nowPlaying && !hero && shelves.length === 0 ? (
+          // First-run empty: a warm invitation instead of a lonely greeting.
+          <EmptyState
+            title="Your hearth is ready"
+            body={"Pick a book and it'll be waiting here, right where you left it."}
+            cta="Browse your library"
+            onCta={() => router.push('/(tabs)/library')}
+            style={{ minHeight: 420 }}
+          />
+        ) : (
+          <>
+            <DashboardRow stats={stats} onOpenQueue={() => queueSheetRef.current?.present()} />
+            <ReleaseCountdownBanner />
+            <HomeClubShelf />
+            {shelves.map((shelf) => (
+              <Shelf key={shelf.id} shelf={shelf} onLongPressItem={openActions} />
+            ))}
+          </>
+        )}
       </Animated.ScrollView>
 
       <BookActionsSheet
@@ -586,6 +649,43 @@ export default function HomeScreen() {
       />
       <Toast message={toast} />
     </Screen>
+  )
+}
+
+/**
+ * Skeleton loading layout mirroring the real Home structure (header, hero
+ * band, dashboard row, one shelf) so content lands without reflow.
+ */
+function HomeSkeleton() {
+  const styles = useStyles()
+  const { width } = useWindowDimensions()
+  const tileWidth = adaptiveShelfTileWidth(width)
+  return (
+    <View>
+      <View style={styles.header}>
+        <View style={{ flex: 1, gap: 6 }}>
+          <SkeletonRow width="45%" height={13} />
+          <SkeletonRow width="30%" height={10} />
+        </View>
+        <Skeleton width={38} height={38} radius={19} />
+        <Skeleton width={38} height={38} radius={19} />
+      </View>
+      <View style={styles.heroWrap}>
+        <Skeleton height={190} radius={20} />
+      </View>
+      <View style={styles.dashRow}>
+        <Skeleton height={96} radius={radius.card} style={{ flex: 1.2 }} />
+        <Skeleton height={96} radius={radius.card} style={{ flex: 1 }} />
+      </View>
+      <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.xl }}>
+        <SkeletonRow width="55%" height={15} />
+        <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.md }}>
+          <SkeletonTile width={tileWidth} />
+          <SkeletonTile width={tileWidth} />
+          <SkeletonTile width={tileWidth} />
+        </View>
+      </View>
+    </View>
   )
 }
 
@@ -1149,6 +1249,27 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
       gap: 2,
     },
     seeAll: { flexDirection: 'row', alignItems: 'center', gap: 1 },
+    // Offline status chip with an explicit bordered Retry button.
+    offlineChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      marginHorizontal: spacing.md,
+      marginTop: spacing.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 9,
+      borderRadius: radius.row,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    offlineRetry: {
+      paddingHorizontal: spacing.md,
+      paddingVertical: 4,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: colors.accent,
+    },
     // Dashboard row: Up-next queue peek + streak/this-week tile. minHeight
     // reserves the band before stats/queue data lands (no layout shift).
     dashRow: {
