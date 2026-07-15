@@ -60,8 +60,9 @@ export function PlayerCoverCarousel({
   hotspots,
   /** Tap the live cover (play/pause or lightbox, per the player's own logic). */
   onLivePress,
-  /** Reports the deck (page count, active index) so the player can draw the
-   *  position dots above the cover in normal flow. */
+  /** Reports the deck (page count, active index, the active page's book, and a
+   *  jump fn) so the player can draw the dots and the browsed book's header +
+   *  transport. */
   onDeckChange,
   onScrollFraction,
 }: {
@@ -77,7 +78,15 @@ export function PlayerCoverCarousel({
   skipFeedback?: React.ReactNode
   hotspots?: React.ReactNode
   onLivePress: () => void
-  onDeckChange?: (count: number, index: number, jumpTo: (i: number) => void) => void
+  onDeckChange?: (info: {
+    count: number
+    index: number
+    /** The book centered right now (live at index 0, else an up-next entry). */
+    active: { itemId: string; title: string; author: string; isLive: boolean }
+    jumpTo: (i: number) => void
+    /** Start/switch to the browsed book and reorder the deck (deck Play btn). */
+    playActive: () => void
+  }) => void
   /** Continuous scroll position (fractional page index), fired every frame so
    *  the player's dots track the finger in real time (not just on settle). */
   onScrollFraction?: (frac: number) => void
@@ -117,12 +126,6 @@ export function PlayerCoverCarousel({
     [coverWidth],
   )
 
-  // Report deck state up so the player can draw the position dots above the
-  // cover (in normal flow, where they can't be clipped by the cover area).
-  useEffect(() => {
-    onDeckChange?.(pages.length, index, jumpTo)
-  }, [pages.length, index, onDeckChange, jumpTo])
-
   const switchTo = useCallback(
     async (page: DeckPage) => {
       haptics.transport()
@@ -150,6 +153,17 @@ export function PlayerCoverCarousel({
     },
     [liveItemId, liveTitle, liveAuthor],
   )
+
+  // Report deck state up: dots, the browsed book (header + its transport), a
+  // jump fn, and a play-this fn. `active` is clamped in case index outruns a
+  // shrinking deck.
+  const active = pages[Math.min(index, pages.length - 1)] ?? pages[0]
+  const playActive = useCallback(() => {
+    if (active && !active.isLive) void switchTo(active)
+  }, [active, switchTo])
+  useEffect(() => {
+    onDeckChange?.({ count: pages.length, index, active, jumpTo, playActive })
+  }, [pages.length, index, active, onDeckChange, jumpTo, playActive])
 
   const snap = coverWidth + PAGE_GAP
   // Last page boundary we ticked, so a fast fling clicks once per book crossed

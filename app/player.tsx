@@ -46,7 +46,7 @@ import {
   currentChapter,
 } from '@/player/store'
 import { getQueueState, subscribeQueue } from '@/player/queue'
-import { getProgressState } from '@/store/progress'
+import { getProgressState, subscribeProgress } from '@/store/progress'
 import { getImmersive, subscribeImmersive, setImmersive } from '@/player/immersive'
 import { getActiveClub, subscribeActiveClub } from '@/player/clubSync'
 import { getSettingsState, subscribeSettings, COVER_ASPECT_RATIO } from '@/store/settings'
@@ -109,9 +109,6 @@ import type { PlayerActionKey } from '@/store/settings'
 
 const HEARTH_BG = require('../assets/images/hearth-centered.webp')
 const INSPECT_HINT_KEY = 'hs.playerInspectHint'
-// Only surface the floating back-to-now-playing button once you're this many
-// books deep in the deck (a casual next-book peek shouldn't nag).
-const BACK_TO_LIVE_DEPTH = 6
 
 /**
  * The full player UI. Rendered as the pushed `/player` route (with a collapse
@@ -172,17 +169,36 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // committing a seek (seek fires once, on release - see Scrubber).
   const [previewRatio, setPreviewRatio] = useState<number | null>(null)
 
-  // Carousel deck state (page count + active index), reported up so the dots
-  // render above the cover in normal flow (where they can't be clipped).
-  const [deck, setDeck] = useState({ count: 1, index: 0 })
+  // Carousel deck state: page count, active index, and the browsed book (drives
+  // the header title + the deck transport when off the live page).
+  type DeckActive = { itemId: string; title: string; author: string; isLive: boolean }
+  const [deck, setDeck] = useState<{ count: number; index: number; active: DeckActive | null }>({
+    count: 1,
+    index: 0,
+    active: null,
+  })
   const deckJumpRef = useRef<(i: number) => void>(() => {})
+  const deckPlayRef = useRef<() => void>(() => {})
   // Continuous fractional page position, driven every frame by the carousel's
   // scroll, so the dots track the finger in sync with the artwork.
   const deckFraction = useSharedValue(0)
   const onDeckChange = useCallback(
-    (count: number, index: number, jumpTo: (i: number) => void) => {
-      deckJumpRef.current = jumpTo
-      setDeck((d) => (d.count === count && d.index === index ? d : { count, index }))
+    (info: {
+      count: number
+      index: number
+      active: DeckActive
+      jumpTo: (i: number) => void
+      playActive: () => void
+    }) => {
+      deckJumpRef.current = info.jumpTo
+      deckPlayRef.current = info.playActive
+      setDeck((d) =>
+        d.count === info.count &&
+        d.index === info.index &&
+        d.active?.itemId === info.active.itemId
+          ? d
+          : { count: info.count, index: info.index, active: info.active },
+      )
     },
     [],
   )
@@ -197,6 +213,9 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // playing but the reported position hasn't advanced, we're likely stalled.
   // Surface it only after a grace period so micro-stalls don't flash.
   const buffering = useBuffering(isPlaying, position)
+
+  // Live per-item progress, so the browsed book's deck progress bar updates.
+  const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
 
   // One-time "tap to inspect" hint on the cover (device-local), so the
   // inspect-by-default gesture is discoverable. Dismissed on first cover tap or
@@ -491,6 +510,14 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const showMore = onScreenKeys.length < settings.playerActions.length
   const iconOnly = settings.playerActionsIconOnly
 
+  // Browsing an up-next book (off the live page): the transport swaps to the
+  // deck set (that book's read-only progress + a big Play that switches to it),
+  // and a compact now-playing strip keeps the playing book controllable.
+  const browsing = !immersive && deck.index > 0 && deck.active != null && !deck.active.isLive
+  const browsedProgress = deck.active ? (progressById.get(deck.active.itemId)?.progress ?? 0) : 0
+  const browsedFinished =
+    deck.active != null && progressById.get(deck.active.itemId)?.isFinished === true
+
   return (
     <Screen edges={immersive ? ['top', 'bottom'] : ['top']}>
       {/* Player background, per the playerBg setting. Blurred cover gets a light
@@ -548,17 +575,16 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
               </AppText>
             </Touchable>
 
-            {/* Center: always the now-playing title/author (marquees when long).
-                Browsing the deck no longer changes this - the floating
-                back-to-live button handles returning home. */}
+            {/* Center: the book you're viewing - the playing book at index 0,
+                else the browsed up-next book (marquees when long). */}
             <View style={styles.headerCenter}>
               <Marquee>
                 <View style={styles.headerTitleRow}>
                   <AppText variant="label" numberOfLines={1} style={styles.headerTitleText}>
-                    {nowPlaying.title}
+                    {deck.active?.title ?? nowPlaying.title}
                   </AppText>
                   <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
-                    {nowPlaying.author}
+                    {deck.active?.author ?? nowPlaying.author}
                   </AppText>
                 </View>
               </Marquee>
@@ -726,33 +752,28 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         )
       })()}
 
-      {/* Floating back-to-now-playing button (scroll-to-top pattern): only when
-          you've browsed deep into the deck, so a casual next-book peek isn't
-          nagged. Sits over the bottom of the cover, above the controls. */}
-      {!immersive && deck.index > BACK_TO_LIVE_DEPTH && (
-        <Animated.View
-          entering={FadeIn.duration(DUR.fast)}
-          exiting={FadeOut.duration(DUR.fast)}
-          style={styles.backToLiveWrap}
-          pointerEvents="box-none"
-        >
-          <SpringPressable
-            onPress={() => deckJumpRef.current(0)}
-            style={styles.backToLive}
-            scaleTo={0.94}
-          >
-            <Icon name={icons.chevronLeft} size={18} color={colors.accent} />
-            <AppText variant="caption" color={colors.accent} style={{ fontWeight: '800' }}>
-              Now playing
-            </AppText>
-          </SpringPressable>
-        </Animated.View>
-      )}
-
-      {/* Controls pinned to the bottom. */}
+      {/* Controls pinned to the bottom. Browsing an up-next book swaps in the
+          deck transport (that book's progress + a big Play + a keep-controlling
+          strip for the playing book); a distinct control set, not the live one
+          reconfigured, so layouts stay clean across displays. */}
       <View
         style={[styles.controls, { maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }]}
       >
+        {browsing && deck.active ? (
+          <DeckControls
+            title={deck.active.title}
+            author={deck.active.author}
+            progress={browsedProgress}
+            finished={browsedFinished}
+            onPlay={() => deckPlayRef.current()}
+            nowTitle={nowPlaying.title}
+            nowIsPlaying={isPlaying}
+            nowProgress={bookProgress}
+            onNowToggle={togglePlay}
+            onNowTap={() => deckJumpRef.current(0)}
+          />
+        ) : (
+          <>
         {/* Focus view has no header, so it keeps a compact title line here;
             normally the title lives in the header's center zone. */}
         {immersive && (
@@ -896,6 +917,8 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
               />
             )}
           </Animated.View>
+        )}
+          </>
         )}
       </View>
 
@@ -1074,6 +1097,93 @@ function DeckDots({
         })}
       </Animated.View>
     </View>
+  )
+}
+
+/**
+ * Deck transport: shown while browsing an up-next book. The browsed book's
+ * read-only whole-book progress + a big Play that switches to it, plus a
+ * compact strip that keeps the actually-playing book controllable (so you never
+ * lose it while browsing).
+ */
+function DeckControls({
+  title,
+  author,
+  progress,
+  finished,
+  onPlay,
+  nowTitle,
+  nowIsPlaying,
+  nowProgress,
+  onNowToggle,
+  onNowTap,
+}: {
+  title: string
+  author: string
+  progress: number
+  finished: boolean
+  onPlay: () => void
+  nowTitle: string
+  nowIsPlaying: boolean
+  nowProgress: number
+  onNowToggle: () => void
+  onNowTap: () => void
+}) {
+  const { colors, shadow } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
+  const pct = Math.round(Math.max(0, Math.min(1, progress)) * 100)
+  return (
+    <Animated.View entering={FadeIn.duration(DUR.fast)}>
+      {/* Browsed book: title + read-only progress bar. */}
+      <View style={styles.deckMeta}>
+        <AppText variant="title" numberOfLines={1} style={styles.deckTitle}>
+          {title}
+        </AppText>
+        <AppText variant="label" color={colors.textMuted} numberOfLines={1}>
+          {author}
+        </AppText>
+      </View>
+      <View style={styles.deckProgRow}>
+        <View style={styles.deckProgTrack}>
+          <View style={[styles.deckProgFill, { width: `${pct}%` }]} />
+        </View>
+        <AppText variant="caption" color={colors.textMuted}>
+          {finished ? 'Finished' : pct > 0 ? `${pct}%` : 'Not started'}
+        </AppText>
+      </View>
+
+      {/* Big Play switches to this book. */}
+      <View style={styles.deckPlayRow}>
+        <SpringPressable onPress={onPlay} style={styles.play} scaleTo={0.9}>
+          <Icon name={finished ? icons.replay : icons.play} size={40} color={colors.onAccent} />
+        </SpringPressable>
+      </View>
+      <AppText variant="caption" color={colors.textMuted} style={styles.deckPlayHint}>
+        {finished ? 'Listen again' : progress > 0 ? 'Resume this book' : 'Start this book'}
+      </AppText>
+
+      {/* Keep the playing book controllable while browsing. */}
+      <Touchable onPress={onNowTap} style={styles.deckNowStrip}>
+        <View style={styles.deckNowProg}>
+          <View style={[styles.deckNowProgFill, { width: `${Math.round(nowProgress * 100)}%` }]} />
+        </View>
+        <View style={styles.deckNowRow}>
+          <Icon name={icons.nowPlaying} size={16} color={colors.accent} />
+          <AppText variant="caption" numberOfLines={1} style={{ flex: 1, fontWeight: '600' }}>
+            {nowTitle}
+          </AppText>
+          <Pressable
+            hitSlop={10}
+            onPress={(e) => {
+              e.stopPropagation()
+              onNowToggle()
+            }}
+          >
+            <Icon name={nowIsPlaying ? icons.pause : icons.play} size={24} color={colors.text} />
+          </Pressable>
+        </View>
+      </Touchable>
+    </Animated.View>
   )
 }
 
@@ -1602,27 +1712,6 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
     headerTitleText: { fontWeight: '700' },
     headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
     // Floating back-to-now-playing button, anchored just above the controls.
-    backToLiveWrap: {
-      position: 'absolute',
-      left: 0,
-      right: 0,
-      bottom: 210,
-      alignItems: 'center',
-      zIndex: 5,
-    },
-    backToLive: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 5,
-      paddingLeft: spacing.md,
-      paddingRight: spacing.lg,
-      paddingVertical: 8,
-      borderRadius: radius.pill,
-      backgroundColor: colors.elevated,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.accent,
-      ...shadow.card,
-    },
     focusExit: {
       alignItems: 'flex-end',
       paddingHorizontal: spacing.lg,
@@ -1757,6 +1846,42 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
     controls: {
       paddingHorizontal: spacing.xl,
       paddingBottom: spacing.lg,
+    },
+    // ---- Deck (browsed up-next book) transport ----
+    deckMeta: { alignItems: 'center', marginTop: spacing.sm },
+    deckTitle: { textAlign: 'center' },
+    deckProgRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      marginTop: spacing.md,
+    },
+    deckProgTrack: {
+      flex: 1,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: colors.fillStrong,
+      overflow: 'hidden',
+    },
+    deckProgFill: { height: '100%', borderRadius: 3, backgroundColor: colors.accent },
+    deckPlayRow: { alignItems: 'center', marginTop: spacing.lg },
+    deckPlayHint: { textAlign: 'center', marginTop: spacing.sm },
+    deckNowStrip: {
+      marginTop: spacing.xl,
+      borderRadius: radius.card,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      overflow: 'hidden',
+    },
+    deckNowProg: { height: 2, backgroundColor: colors.fillStrong },
+    deckNowProgFill: { height: 2, backgroundColor: colors.accent },
+    deckNowRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
     },
     // One-line title/author (marquees when long); the marquee wrapper owns the
     // width so the row can overflow and scroll.
