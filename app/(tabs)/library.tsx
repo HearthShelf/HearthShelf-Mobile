@@ -22,6 +22,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native'
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, { FadeIn, runOnJS } from 'react-native-reanimated'
 import type {
@@ -68,8 +69,12 @@ import {
 } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
 import { DUR } from '@/ui/motion'
+import { haptics } from '@/ui/haptics'
 import { onTabReselect } from '@/ui/tabReselect'
 import { BookTile } from '@/ui/BookTile'
+import { EmptyState, SkeletonTile } from '@/ui/states'
+import { playItemById } from '@/player/playback'
+import { useConnection } from '@/api/ConnectionProvider'
 import { BookSelectionToolbar } from '@/ui/BookSelectionToolbar'
 import { getProgressState, subscribeProgress, refreshProgress } from '@/store/progress'
 import {
@@ -93,6 +98,8 @@ import { adaptiveGridColumns, adaptiveGridTileWidth, adaptiveLibraryColumns } fr
 const GUTTER = spacing.lg
 // Reveal the scroll-to-top button once the list is roughly 1.5 screens deep.
 const SCROLL_TOP_THRESHOLD = 900
+// One-time grid "Pinch to resize" hint (device-local).
+const PINCH_HINT_KEY = 'hs.libraryPinchHint'
 
 type ViewMode = 'books' | 'series' | 'narrators' | 'authors'
 const VIEW_MODES: { key: ViewMode; label: string }[] = [
@@ -430,7 +437,10 @@ function BooksView({
 }) {
   const colors = useColors()
   const styles = useStyles()
+  const router = useRouter()
   const contentInset = useContentInset()
+  const { status } = useConnection()
+  const offline = status.phase === 'offline'
   const [items, setItems] = useState<ABSLibraryItem[] | null>(null)
   // Shared per-item progress; mark-finished anywhere updates this view live.
   const progress = useSyncExternalStore(subscribeProgress, getProgressState).byId
@@ -530,6 +540,32 @@ function BooksView({
     [progress],
   )
 
+  const quickPlay = useCallback(
+    async (id: string) => {
+      haptics.transport()
+      try {
+        await playItemById(id)
+        router.push('/player')
+      } catch {
+        router.push(`/item/${id}?from=library`)
+      }
+    },
+    [router],
+  )
+
+  // One-time "Pinch to resize" hint over the grid (device-local; shown until
+  // dismissed once). Only relevant in grid view.
+  const [showPinchHint, setShowPinchHint] = useState(false)
+  useEffect(() => {
+    void AsyncStorage.getItem(PINCH_HINT_KEY).then((seen) => {
+      if (!seen) setShowPinchHint(true)
+    })
+  }, [])
+  const dismissPinchHint = useCallback(() => {
+    setShowPinchHint(false)
+    void AsyncStorage.setItem(PINCH_HINT_KEY, '1')
+  }, [])
+
   const filtered = useMemo(
     () => (items ? applyLibraryFilter(items, filter, progressOf) : []),
     [items, filter, progressOf],
@@ -578,10 +614,12 @@ function BooksView({
         }),
     [captureCols, applyPinch],
   )
-  // The rail only makes sense on the Title-sorted grid; it works in either
+  // FINAL: the A-Z rail is LIST-view only, on alphabetical (Title/Author)
+  // sorts - so grid covers get the full row width. It works in either
   // direction (letterIndex is built from the already-sorted list, so a desc
   // sort just gives Z-first buckets).
-  const showAzRail = sort === 'Title' && display === 'grid'
+  const alphabetical = sort === 'Title' || sort === 'Author'
+  const showAzRail = alphabetical && display === 'list'
 
   // Tiles fill the row exactly; when the rail reserves space on the right, shrink
   // them so the last column isn't pushed under the rail.
@@ -596,23 +634,26 @@ function BooksView({
   const letterIndex = useMemo(() => {
     const map = new Map<string, number>()
     sorted.forEach((it, i) => {
-      // Bucket by the same key the Title comparator sorts on (ignoring "The"/"A"
-      // prefixes) so the rail's letters line up with the visual order.
-      const l = letterOf(it.media.metadata.titleIgnorePrefix || itemTitle(it))
+      // Bucket by the same key the active comparator sorts on so the rail's
+      // letters line up with the visual order: title (ignoring "The"/"A"
+      // prefixes) for Title sort, author surname for Author sort.
+      const key =
+        sort === 'Author' ? itemAuthor(it) : it.media.metadata.titleIgnorePrefix || itemTitle(it)
+      const l = letterOf(key)
       if (!map.has(l)) map.set(l, i)
     })
     return map
-  }, [sorted])
+  }, [sorted, sort])
   const available = useMemo(() => new Set(letterIndex.keys()), [letterIndex])
 
   const onJump = useCallback(
     (letter: string) => {
       const idx = letterIndex.get(letter)
       if (idx == null) return
-      const rowIndex = display === 'grid' ? Math.floor(idx / cols) : idx
-      listRef.current?.scrollToIndex({ index: rowIndex, animated: true, viewPosition: 0 })
+      // Rail is list-view only now, so the item index is the row index.
+      listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0 })
     },
-    [letterIndex, display, cols],
+    [letterIndex],
   )
 
   const openSheet = (tab: 'display' | 'sort' | 'filter') => {
@@ -630,7 +671,7 @@ function BooksView({
     }
   }
 
-  if (!items && !error) return <Loading />
+  if (!items && !error) return <LibrarySkeleton width={width} cols={defaultGridCols} />
   if (error) {
     return (
       <Centered>
@@ -718,7 +759,29 @@ function BooksView({
         </View>
       )}
 
-      {display === 'grid' ? (
+      {offline && (
+        <View style={styles.offlineChip}>
+          <Icon name={icons.cloudOff} size={14} color={colors.brandHearth} />
+          <AppText variant="caption" color={colors.textMuted}>
+            Offline · downloaded books only
+          </AppText>
+        </View>
+      )}
+
+      {sorted.length === 0 ? (
+        <EmptyState
+          icon={icons.library}
+          iconColor={colors.textMuted}
+          title={filter !== 'all' ? 'No books match these filters' : 'No books in this library yet'}
+          body={
+            filter !== 'all'
+              ? 'Try clearing a filter to see more of your library.'
+              : 'Switch to another library or add books on your server.'
+          }
+          cta={filter !== 'all' ? 'Clear filters' : undefined}
+          onCta={filter !== 'all' ? () => setFilter('all') : undefined}
+        />
+      ) : display === 'grid' ? (
         <GestureDetector gesture={pinchGesture}>
           <FlatList
             ref={listRef}
@@ -743,17 +806,23 @@ function BooksView({
                 animated: true,
               })
             }}
-            renderItem={({ item }) => (
-              <BookTile
-                item={item}
-                width={tileWidth}
-                from="library"
-                selecting={selection.selecting}
-                selected={selection.isSelected(item.id)}
-                onLongPress={() => selection.begin(item.id)}
-                onToggle={() => selection.toggle(item.id)}
-              />
-            )}
+            renderItem={({ item }) => {
+              const p = progressOf(item.id)
+              return (
+                <BookTile
+                  item={item}
+                  width={tileWidth}
+                  from="library"
+                  progress={p?.progress}
+                  finished={p?.isFinished === true}
+                  onQuickPlay={() => void quickPlay(item.id)}
+                  selecting={selection.selecting}
+                  selected={selection.isSelected(item.id)}
+                  onLongPress={() => selection.begin(item.id)}
+                  onToggle={() => selection.toggle(item.id)}
+                />
+              )
+            }}
           />
         </GestureDetector>
       ) : (
@@ -761,10 +830,18 @@ function BooksView({
           ref={listRef}
           data={sorted}
           keyExtractor={(it) => it.id}
-          contentContainerStyle={{ padding: GUTTER, paddingBottom: contentInset, gap: spacing.sm }}
+          contentContainerStyle={{
+            padding: GUTTER,
+            paddingRight: showAzRail ? GUTTER + AZ_RAIL_WIDTH : GUTTER,
+            paddingBottom: contentInset,
+            gap: spacing.sm,
+          }}
           onScroll={onScroll}
           scrollEventThrottle={16}
           refreshControl={refreshControl}
+          onScrollToIndexFailed={({ index, averageItemLength }) => {
+            listRef.current?.scrollToOffset({ offset: index * averageItemLength, animated: true })
+          }}
           renderItem={({ item }) => (
             <BookListRow
               item={item}
@@ -776,7 +853,24 @@ function BooksView({
           )}
         />
       )}
-      {showAzRail && <AzRail available={available} onJump={onJump} reversed={desc} />}
+      {showAzRail && sorted.length > 0 && (
+        <AzRail available={available} onJump={onJump} reversed={desc} />
+      )}
+
+      {/* One-time discoverability hint for pinch-to-resize (grid only). */}
+      {showPinchHint && display === 'grid' && sorted.length > 0 && !selection.selecting && (
+        <View style={styles.pinchHint}>
+          <Icon name={icons.tune} size={15} color={colors.brandHearth} />
+          <AppText variant="caption" color={colors.brandHearth}>
+            Pinch to resize
+          </AppText>
+          <Touchable onPress={dismissPinchHint} hitSlop={8}>
+            <AppText variant="caption" color={colors.brandShelf} style={{ fontWeight: '700' }}>
+              Got it
+            </AppText>
+          </Touchable>
+        </View>
+      )}
 
       {/* Scroll-to-top: only when the A-Z rail isn't already handling navigation,
           and never over the selection toolbar. */}
@@ -904,6 +998,32 @@ function BooksView({
         )}
       </Sheet>
     </Animated.View>
+  )
+}
+
+/** Skeleton grid shown while the library's first page loads, mirroring the
+ *  real grid so content lands without reflow. */
+function LibrarySkeleton({ width, cols }: { width: number; cols: number }) {
+  const contentInset = useContentInset()
+  const tileWidth = adaptiveGridTileWidth({ width, cols, gutter: GUTTER })
+  const rows = Array.from({ length: cols * 4 })
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={{ height: 54 }} />
+      <View
+        style={{
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          gap: GUTTER,
+          padding: GUTTER,
+          paddingBottom: contentInset,
+        }}
+      >
+        {rows.map((_, i) => (
+          <SkeletonTile key={i} width={tileWidth} />
+        ))}
+      </View>
+    </View>
   )
 }
 
@@ -1486,6 +1606,37 @@ const makeStyles = (colors: Palette) =>
       justifyContent: 'center',
     },
     ctrlBadgeText: { fontSize: 10, fontWeight: '700', lineHeight: 14 },
+    offlineChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      alignSelf: 'flex-start',
+      marginLeft: spacing.md,
+      marginBottom: spacing.xs,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 5,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    pinchHint: {
+      position: 'absolute',
+      left: '50%',
+      transform: [{ translateX: -90 }],
+      bottom: 96,
+      width: 180,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 9,
+      borderRadius: radius.pill,
+      backgroundColor: colors.accentWash,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
     ctrlIconBtn: {
       width: 38,
       height: 38,
