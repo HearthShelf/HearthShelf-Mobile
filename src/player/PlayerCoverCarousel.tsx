@@ -27,6 +27,10 @@ import { haptics } from '@/ui/haptics'
 import { radius, spacing, withAlpha, type Palette } from '@/ui/theme'
 import { useTheme } from '@/ui/ThemeProvider'
 
+// Gap between adjacent covers; also how much of each neighbor peeks past the
+// centered active cover at the screen edges.
+const PAGE_GAP = 32
+
 /** One page: the live book (index 0) or an up-next queue entry. */
 interface DeckPage {
   itemId: string
@@ -59,6 +63,7 @@ export function PlayerCoverCarousel({
   /** Reports the deck (page count, active index) so the player can draw the
    *  position dots above the cover in normal flow. */
   onDeckChange,
+  onScrollFraction,
 }: {
   liveItemId: string
   liveTitle: string
@@ -73,6 +78,9 @@ export function PlayerCoverCarousel({
   hotspots?: React.ReactNode
   onLivePress: () => void
   onDeckChange?: (count: number, index: number, jumpTo: (i: number) => void) => void
+  /** Continuous scroll position (fractional page index), fired every frame so
+   *  the player's dots track the finger in real time (not just on settle). */
+  onScrollFraction?: (frac: number) => void
 }) {
   const { colors } = useTheme()
   const styles = useMemo(() => makeStyles(colors), [colors])
@@ -104,9 +112,9 @@ export function PlayerCoverCarousel({
   // Animate the deck to a page (tapping a dot in the player drives this).
   const jumpTo = useCallback(
     (i: number) => {
-      listRef.current?.scrollToOffset({ offset: i * pageW, animated: true })
+      listRef.current?.scrollToOffset({ offset: i * (coverWidth + PAGE_GAP), animated: true })
     },
-    [pageW],
+    [coverWidth],
   )
 
   // Report deck state up so the player can draw the position dots above the
@@ -143,36 +151,40 @@ export function PlayerCoverCarousel({
     [liveItemId, liveTitle, liveAuthor],
   )
 
+  const snap = coverWidth + PAGE_GAP
   const onScroll = useCallback(
     (e: { nativeEvent: { contentOffset: { x: number } } }) => {
-      const i = Math.max(
-        0,
-        Math.min(pages.length - 1, Math.round(e.nativeEvent.contentOffset.x / pageW)),
-      )
+      const x = e.nativeEvent.contentOffset.x
+      // Continuous fractional page for the dots (tracks the finger every frame).
+      onScrollFraction?.(Math.max(0, Math.min(pages.length - 1, x / snap)))
+      const i = Math.max(0, Math.min(pages.length - 1, Math.round(x / snap)))
       if (i !== index) {
         haptics.select()
         setIndex(i)
       }
     },
-    [pageW, index, pages.length],
+    [snap, index, pages.length, onScrollFraction],
   )
 
   const renderPage = ({ item, index: i }: ListRenderItemInfo<DeckPage>) => {
     const isFocus = i === index
     const pageHue = coverHue(item.itemId)
     return (
-      <View style={{ width: pageW, alignItems: 'center' }}>
-        {/* Skip hotspots live in the gutters beside the live cover (double-tap
-            to skip). Rendered behind the card so the cover's own tap wins. */}
-        {item.isLive ? hotspots : null}
+      // Each page is one cover wide plus the inter-cover gap, so neighbors
+      // peek at the screen edges (the deck advertises itself). Snap lands the
+      // active cover centered.
+      <View style={{ width: coverWidth + PAGE_GAP, alignItems: 'center' }}>
         <SpringPressable
           scaleTo={0.98}
           onPress={() =>
             item.isLive
               ? onLivePress()
               : isFocus
-                ? undefined
-                : listRef.current?.scrollToOffset({ offset: i * pageW, animated: true })
+                ? switchTo(item)
+                : listRef.current?.scrollToOffset({
+                    offset: i * (coverWidth + PAGE_GAP),
+                    animated: true,
+                  })
           }
           style={[styles.card, { width: coverWidth }]}
         >
@@ -190,33 +202,29 @@ export function PlayerCoverCarousel({
             style={{ backgroundColor: colors.high }}
           />
 
-          {/* Dim non-live pages so the live one reads as the active book. */}
+          {/* Non-live pages dim and carry a slim UP NEXT kicker; tap the focused
+              one to play it. No separate play button/label - a single tap on
+              the focused up-next cover switches to it (less busy). */}
           {!item.isLive && (
-            <View
-              style={[styles.dim, { backgroundColor: withAlpha('#0a0806', 0.32) }]}
-              pointerEvents="none"
-            />
-          )}
-
-          {/* Play-this on a browsed-to, non-live, focused card. */}
-          {!item.isLive && isFocus && (
-            <View style={styles.playWrap}>
-              <SpringPressable onPress={() => switchTo(item)} style={styles.playBtn} scaleTo={0.9}>
-                <Icon name={icons.play} size={30} color={colors.onAccent} />
-              </SpringPressable>
-              <AppText variant="caption" color="#fff" numberOfLines={2} style={styles.playLabel}>
-                {item.title}
-              </AppText>
-            </View>
-          )}
-
-          {/* Up-next label on non-live cards. */}
-          {!item.isLive && (
-            <View style={styles.upNextTag} pointerEvents="none">
-              <AppText variant="caption" color="rgba(255,255,255,0.75)" style={styles.upNextText}>
-                UP NEXT
-              </AppText>
-            </View>
+            <>
+              <View
+                style={[styles.dim, { backgroundColor: withAlpha('#0a0806', isFocus ? 0.28 : 0.5) }]}
+                pointerEvents="none"
+              />
+              <View style={styles.upNextTag} pointerEvents="none">
+                <AppText variant="caption" color="rgba(255,255,255,0.85)" style={styles.upNextText}>
+                  {`UP NEXT · ${i} OF ${pages.length - 1}`}
+                </AppText>
+              </View>
+              {isFocus && (
+                <View style={styles.playHint} pointerEvents="none">
+                  <Icon name={icons.play} size={26} color={colors.onAccent} />
+                  <AppText variant="caption" color="#fff" style={{ fontWeight: '700' }}>
+                    Tap to play
+                  </AppText>
+                </View>
+              )}
+            </>
           )}
 
           {/* Live overlays (bookmark/club/skip feedback) only over page 0. */}
@@ -231,10 +239,14 @@ export function PlayerCoverCarousel({
     )
   }
 
-  const browsedAway = index !== 0
+  // Center the active cover: side padding reveals a peek sliver of the neighbor.
+  const sidePad = Math.max(0, (pageW - coverWidth - PAGE_GAP) / 2)
 
   return (
     <View style={styles.wrap}>
+      {/* Skip hotspots live in the gutters beside the centered cover (double-tap
+          to skip); above the list so they receive the margin taps. */}
+      {hotspots}
       <FlatList
         ref={listRef}
         data={pages}
@@ -242,14 +254,20 @@ export function PlayerCoverCarousel({
         renderItem={renderPage}
         horizontal
         style={{ width: pageW }}
+        contentContainerStyle={{ paddingHorizontal: sidePad }}
         showsHorizontalScrollIndicator={false}
-        // Full-width pages -> one cover per swipe, no neighbor peeking.
-        pagingEnabled
+        // Snap one cover per swipe while neighbors peek at the edges.
+        snapToInterval={coverWidth + PAGE_GAP}
+        snapToAlignment="start"
         disableIntervalMomentum
         decelerationRate="fast"
         onScroll={onScroll}
         scrollEventThrottle={16}
-        getItemLayout={(_, i) => ({ length: pageW, offset: pageW * i, index: i })}
+        getItemLayout={(_, i) => ({
+          length: coverWidth + PAGE_GAP,
+          offset: (coverWidth + PAGE_GAP) * i,
+          index: i,
+        })}
       />
     </View>
   )
@@ -273,9 +291,10 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: 'rgba(20,17,15,0.55)',
     },
     liveTagText: { letterSpacing: 1, fontWeight: '700' },
-    upNextTag: { position: 'absolute', bottom: 12, left: 14 },
+    upNextTag: { position: 'absolute', top: 12, left: 14 },
     upNextText: { letterSpacing: 1.2, fontWeight: '600' },
-    playWrap: {
+    // A centered "tap to play" hint on the focused up-next cover.
+    playHint: {
       position: 'absolute',
       top: 0,
       left: 0,
@@ -283,26 +302,6 @@ const makeStyles = (colors: Palette) =>
       bottom: 0,
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 8,
-    },
-    playBtn: {
-      width: 62,
-      height: 62,
-      borderRadius: 31,
-      backgroundColor: colors.accent,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 1.5,
-      borderColor: 'rgba(255,255,255,0.3)',
-    },
-    playLabel: {
-      fontSize: 18,
-      fontWeight: '700',
-      textAlign: 'center',
-      paddingHorizontal: spacing.lg,
-      // Readable over any artwork color: a soft dark halo behind the glyphs.
-      textShadowColor: 'rgba(0,0,0,0.85)',
-      textShadowOffset: { width: 0, height: 1 },
-      textShadowRadius: 4,
+      gap: 6,
     },
   })

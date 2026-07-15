@@ -31,8 +31,8 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
-  withSpring,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated'
 import { coverHue, formatTimestamp } from '@hearthshelf/core'
 import type { ABSDeviceInfo } from '@hearthshelf/core'
@@ -179,12 +179,21 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // render above the cover in normal flow (where they can't be clipped).
   const [deck, setDeck] = useState({ count: 1, index: 0 })
   const deckJumpRef = useRef<(i: number) => void>(() => {})
+  // Continuous fractional page position, driven every frame by the carousel's
+  // scroll, so the dots track the finger in sync with the artwork.
+  const deckFraction = useSharedValue(0)
   const onDeckChange = useCallback(
     (count: number, index: number, jumpTo: (i: number) => void) => {
       deckJumpRef.current = jumpTo
       setDeck((d) => (d.count === count && d.index === index ? d : { count, index }))
     },
     [],
+  )
+  const onScrollFraction = useCallback(
+    (frac: number) => {
+      deckFraction.value = frac
+    },
+    [deckFraction],
   )
 
   // Buffering heuristic (no native buffer event yet): while we intend to be
@@ -601,6 +610,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         <DeckDots
           count={deck.count}
           index={deck.index}
+          fraction={deckFraction}
           onJump={(i) => deckJumpRef.current(i)}
         />
       )}
@@ -664,7 +674,9 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                   overlay={coverOverlays}
                   skipFeedback={<SkipFeedbackOverlay ref={skipFeedbackRef} />}
                   hotspots={
-                    settings.skipHotspots && carouselHotspotWidth > 24 ? (
+                    // Only on the live page: once you've paged into the deck,
+                    // hotspots hide so paging and skipping never fight.
+                    settings.skipHotspots && deck.index === 0 && carouselHotspotWidth > 24 ? (
                       <>
                         <Pressable
                           onPress={() => onHotspotTap(-1)}
@@ -681,6 +693,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                   }
                   onLivePress={onCoverTap}
                   onDeckChange={onDeckChange}
+                  onScrollFraction={onScrollFraction}
                 />
               ) : (
                 // Focus view (immersive): a single large cover, no carousel.
@@ -1005,23 +1018,23 @@ const DOT_VIEWPORT = 9 * DOT_PITCH // visible width (~9 dots)
 function DeckDots({
   count,
   index,
+  fraction,
   onJump,
 }: {
   count: number
   index: number
+  /** Live fractional page position (0..count-1), driving the track in sync
+   *  with the finger; falls back toward `index` when idle. */
+  fraction: SharedValue<number>
   onJump: (i: number) => void
 }) {
   const { colors, shadow } = useTheme()
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
-  // Translate the track so the active dot lands at the viewport center.
-  const shift = useSharedValue(0)
-  useEffect(() => {
-    shift.value = withSpring(DOT_VIEWPORT / 2 - (index + 0.5) * DOT_PITCH, {
-      damping: 18,
-      stiffness: 160,
-    })
-  }, [index, shift])
-  const trackStyle = useAnimatedStyle(() => ({ transform: [{ translateX: shift.value }] }))
+  // Translate the track so the LIVE fractional position sits under the center
+  // pointer - so the dots slide continuously with the artwork, not on settle.
+  const trackStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: DOT_VIEWPORT / 2 - (fraction.value + 0.5) * DOT_PITCH }],
+  }))
   return (
     <View style={styles.deckDotsViewport}>
       {/* Fixed accent pointer at the center; the track scrolls under it. */}
@@ -1030,7 +1043,7 @@ function DeckDots({
         {Array.from({ length: count }).map((_, i) => {
           const dist = Math.abs(i - index)
           // Fade dots as they get farther from the pointer so the ends trail off.
-          const opacity = dist === 0 ? 0 : Math.max(0.18, 0.55 - dist * 0.09)
+          const opacity = dist === 0 ? 0.15 : Math.max(0.18, 0.55 - dist * 0.09)
           return (
             <Pressable
               key={i}
@@ -1661,8 +1674,8 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
     coverTap: { position: 'relative' },
     // Skip hotspots fill the margins beside the artwork (edge to cover). Top/
     // bottom are inset so they don't overlap the header or the controls.
-    hotspotLeft: { position: 'absolute', left: 0, top: 0, bottom: 0, zIndex: 1 },
-    hotspotRight: { position: 'absolute', right: 0, top: 0, bottom: 0, zIndex: 1 },
+    hotspotLeft: { position: 'absolute', left: 0, top: 0, bottom: 0 },
+    hotspotRight: { position: 'absolute', right: 0, top: 0, bottom: 0 },
     cover: { backgroundColor: colors.high },
     bookmarkBtn: {
       position: 'absolute',
