@@ -28,7 +28,15 @@ import { clearAudibleCache } from '@/api/absAudible'
 import { clearSubscriptions } from '@/player/subscriptions'
 import { resetPushRegistration } from '@/player/pushRegister'
 import { useConnection } from '@/api/ConnectionProvider'
-import { clearTrack, getState, subscribe, togglePlay, jumpBy, currentChapter } from '@/player/store'
+import {
+  clearTrack,
+  getState,
+  subscribe,
+  togglePlay,
+  jumpBy,
+  requestSeek,
+  currentChapter,
+} from '@/player/store'
 import { getSettingsState, subscribeSettings, COVER_ASPECT_RATIO } from '@/store/settings'
 import { clearAutoSession, setAutoDiscover } from '@/player/autoBridge'
 import { stopQueueSync } from '@/player/queueSync'
@@ -73,7 +81,15 @@ import {
   type BookActionsSource,
 } from '@/ui/BookActionsSheet'
 import { getServerQueue } from '@/api/queue'
-import { setQueueItems, setQueueManual } from '@/player/queue'
+import {
+  setQueueItems,
+  setQueueManual,
+  getQueueState,
+  subscribeQueue,
+  QUEUE_MODES,
+} from '@/player/queue'
+import { QueueSheet } from '@/player/QueueSheet'
+import type { SheetHandle } from '@/player/sheets'
 import {
   hydrateDismissals,
   subscribeDismissals,
@@ -130,6 +146,7 @@ export default function HomeScreen() {
   const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
   const { message: toast, show: showToast } = useToast()
   const actionsRef = useRef<BookActionsHandle>(null)
+  const queueSheetRef = useRef<SheetHandle>(null)
   const scrollRef = useRef<ScrollView>(null)
   // Re-tapping the Home tab while already on it scrolls back to the top.
   useEffect(
@@ -528,7 +545,7 @@ export default function HomeScreen() {
             onLongPress={() => openActions(hero)}
           />
         ) : null}
-        {stats ? <HomeStatsStrip stats={stats} /> : null}
+        <DashboardRow stats={stats} onOpenQueue={() => queueSheetRef.current?.present()} />
         <ReleaseCountdownBanner />
         <HomeClubShelf />
         {shelves.map((shelf) => (
@@ -541,6 +558,15 @@ export default function HomeScreen() {
         onMarkedFinished={handleMarkedFinished}
         onDismissed={handleDismissed}
         onToast={showToast}
+      />
+      <QueueSheet
+        ref={queueSheetRef}
+        onJump={async (itemId) => {
+          const saved = getProgressState().byId.get(itemId)
+          await playItemById(itemId)
+          if (!saved?.isFinished && (saved?.currentTime ?? 0) > 0) requestSeek(saved!.currentTime)
+          router.push('/player')
+        }}
       />
       <Toast message={toast} />
     </Screen>
@@ -814,38 +840,92 @@ function PlayerHero({
 }
 
 /**
- * Day streak + this-week cards, matching the prototype's home stats strip.
- * Reads the same getHSStats() data as the Stats tab, so the two never disagree.
+ * Dashboard row under the hero: an "Up next" card previewing the live queue
+ * (mini covers + count + mode; taps straight into the queue sheet) and the
+ * streak/this-week card that jumps to Stats. Height is reserved up front so
+ * nothing shifts when stats/queue data lands.
  */
-function HomeStatsStrip({ stats }: { stats: HSListeningStats }) {
+function DashboardRow({
+  stats,
+  onOpenQueue,
+}: {
+  stats: HSListeningStats | null
+  onOpenQueue: () => void
+}) {
   const colors = useColors()
   const styles = useStyles()
   const router = useRouter()
+  const queue = useSyncExternalStore(subscribeQueue, getQueueState)
+  const { queueMode } = useSyncExternalStore(subscribeSettings, getSettingsState)
+  const modeLabel = QUEUE_MODES.find((m) => m.v === queueMode)?.label ?? 'Off'
+  const preview = queue.items.slice(0, 3)
+  // Streak nudge: today has no listening yet but there's a streak to protect.
+  const streakAtRisk = stats != null && stats.todaySec === 0 && stats.dayStreak > 0
   return (
-    <Touchable onPress={() => router.push('/(tabs)/stats')} style={styles.statsStrip}>
-      <View style={styles.statsTile}>
-        <Icon name={icons.flame} size={21} color={colors.brandHearth} />
-        <View>
-          <AppText variant="mono" style={{ fontWeight: '700' }}>
-            {stats.dayStreak}
+    <View style={styles.dashRow}>
+      <Touchable onPress={onOpenQueue} style={[styles.dashCard, { flex: 1.2 }]}>
+        <View style={styles.dashHead}>
+          <AppText variant="label">Up next</AppText>
+          <Icon name={icons.queue} size={17} color={colors.textMuted} />
+        </View>
+        {preview.length > 0 ? (
+          <View style={styles.dashCovers}>
+            {preview.map((e, i) => (
+              <View key={e.libraryItemId} style={[styles.dashCover, i > 0 && { marginLeft: -8 }]}>
+                <Cover
+                  uri={coverUrl(e.libraryItemId)}
+                  itemId={e.libraryItemId}
+                  width={26}
+                  aspectRatio={2 / 3}
+                  fallback={{
+                    hue: coverHue(e.libraryItemId),
+                    initial: e.title.charAt(0).toUpperCase(),
+                  }}
+                />
+              </View>
+            ))}
+          </View>
+        ) : null}
+        <AppText variant="caption" color={colors.textMuted} style={styles.dashCaption}>
+          {queue.items.length > 0
+            ? `${queue.items.length} queued · ${modeLabel}`
+            : `Nothing queued · ${modeLabel}`}
+        </AppText>
+      </Touchable>
+      <Touchable onPress={() => router.push('/(tabs)/stats')} style={[styles.dashCard, { flex: 1 }]}>
+        <View style={styles.dashStat}>
+          <Icon name={icons.flame} size={18} color={colors.brandHearth} />
+          <AppText variant="mono" style={styles.dashBig}>
+            {stats ? String(stats.dayStreak) : '–'}
           </AppText>
           <AppText variant="caption" color={colors.textMuted}>
-            Day streak
+            days
           </AppText>
         </View>
-      </View>
-      <View style={styles.statsTile}>
-        <Icon name={icons.schedule} size={21} color={colors.textMuted} />
-        <View>
-          <AppText variant="mono" style={{ fontWeight: '700' }}>
-            {formatDuration(stats.weekSec)}
+        {streakAtRisk ? (
+          <AppText
+            variant="caption"
+            color={colors.textMuted}
+            numberOfLines={2}
+            style={styles.dashCaption}
+          >
+            streak on the line - listen today to keep it
           </AppText>
-          <AppText variant="caption" color={colors.textMuted}>
-            This week
-          </AppText>
-        </View>
-      </View>
-    </Touchable>
+        ) : (
+          <>
+            <View style={[styles.dashStat, { marginTop: spacing.sm }]}>
+              <Icon name={icons.schedule} size={15} color={colors.textMuted} />
+              <AppText variant="mono" style={{ fontWeight: '700' }}>
+                {stats ? formatDuration(stats.weekSec) : '–'}
+              </AppText>
+            </View>
+            <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
+              this week
+            </AppText>
+          </>
+        )}
+      </Touchable>
+    </View>
   )
 }
 
@@ -1107,25 +1187,39 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
     // Reserve space for both text lines so the entrance animation can't clip the
     // author off the first tile (see the renderItem comment).
     tileMeta: { minHeight: 38, marginTop: spacing.xs },
-    statsStrip: {
+    // Dashboard row: Up-next queue peek + streak/this-week tile. minHeight
+    // reserves the band before stats/queue data lands (no layout shift).
+    dashRow: {
       flexDirection: 'row',
-      gap: spacing.sm,
-      marginHorizontal: spacing.lg,
+      gap: spacing.sm + 2,
+      marginHorizontal: spacing.md,
       marginTop: spacing.md,
     },
-    statsTile: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm + 5,
+    dashCard: {
+      minHeight: 96,
+      paddingHorizontal: 14,
+      paddingVertical: spacing.md,
       backgroundColor: colors.card,
       borderRadius: radius.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.hairline,
       ...shadow.card,
     },
+    dashHead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    dashCovers: { flexDirection: 'row', marginTop: spacing.sm + 1 },
+    dashCover: {
+      borderRadius: 6,
+      borderWidth: 1.5,
+      borderColor: colors.card,
+      overflow: 'hidden',
+    },
+    dashCaption: { marginTop: spacing.sm },
+    dashStat: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    dashBig: { fontSize: 19, fontWeight: '700' },
   })
 
 // Hook: the memoized stylesheet for the active palette.
