@@ -37,6 +37,7 @@ import { useBookmarks } from './useBookmarks'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { AppText, Sheet, type SheetRef, Touchable } from '@/ui/primitives'
 import { AppSlider } from '@/ui/AppSlider'
+import { SpringPressable } from '@/ui/motion'
 import { haptics } from '@/ui/haptics'
 import { showToast } from '@/ui/Toast'
 import { Icon, icons } from '@/ui/icons'
@@ -394,11 +395,19 @@ function ActiveSleep({
           </AppText>
           <View style={[styles.grid, { alignSelf: 'stretch' }]}>
             {ADD_MINUTES.map((m) => (
-              <Touchable key={m} style={styles.addBtn} onPress={() => addSleepMinutes(m)}>
+              <SpringPressable
+                key={m}
+                style={styles.addBtn}
+                scaleTo={0.92}
+                onPress={() => {
+                  haptics.select()
+                  addSleepMinutes(m)
+                }}
+              >
                 <AppText variant="label" color={colors.text}>
                   +{m}m
                 </AppText>
-              </Touchable>
+              </SpringPressable>
             ))}
           </View>
         </>
@@ -570,18 +579,18 @@ function SleepSetup({
               Start button below is for the slider's custom value. */}
           <View style={[styles.grid, { marginTop: spacing.lg }]}>
             {SLEEP_DURATIONS.map((m) => (
-              <Touchable key={m} style={styles.speed} onPress={() => armDuration(m)}>
+              <SpringPressable key={m} style={styles.speed} scaleTo={0.92} onPress={() => armDuration(m)}>
                 <AppText variant="label" color={colors.text}>
                   {m}m
                 </AppText>
-              </Touchable>
+              </SpringPressable>
             ))}
             {hasChapters ? (
-              <Touchable style={styles.speed} onPress={armEndOfChapter}>
+              <SpringPressable style={styles.speed} scaleTo={0.92} onPress={armEndOfChapter}>
                 <AppText variant="label" color={colors.text}>
                   End of chapter
                 </AppText>
-              </Touchable>
+              </SpringPressable>
             ) : null}
           </View>
         </View>
