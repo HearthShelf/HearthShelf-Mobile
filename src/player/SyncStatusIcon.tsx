@@ -15,7 +15,9 @@
  */
 import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useSyncExternalStore } from 'react'
-import { Pressable, StyleSheet, View } from 'react-native'
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native'
+import { formatTimestamp } from '@hearthshelf/core'
+import { getState, subscribe, currentChapter } from './store'
 import { AppText, Sheet, Touchable, type SheetRef } from '@/ui/primitives'
 import { Icon, icons, type IconName } from '@/ui/icons'
 import { useTheme } from '@/ui/ThemeProvider'
@@ -120,7 +122,15 @@ const SyncStatusSheet = forwardRef<SyncStatusSheetHandle>(function SyncStatusShe
   const { status: conn } = useConnection()
   const sync = useSyncExternalStore(subscribeSyncState, getSyncState)
   const pending = useSyncExternalStore(subscribePendingSessions, getPendingSessionState)
+  const { nowPlaying, position } = useSyncExternalStore(subscribe, getState)
   const [feedback, setFeedback] = useState<Feedback>('idle')
+  // This device's current spot, so the sheet shows where "here" is on the server.
+  const ch = currentChapter()
+  const devicePosition = nowPlaying
+    ? ch?.title
+      ? `${ch.title} · ${formatTimestamp(position)}`
+      : formatTimestamp(position)
+    : null
 
   useImperativeHandle(ref, () => ({
     present: () => {
@@ -196,6 +206,15 @@ const SyncStatusSheet = forwardRef<SyncStatusSheetHandle>(function SyncStatusShe
           </View>
         )}
 
+        {devicePosition && (
+          <View style={styles.metaRow}>
+            <Icon name={icons.nowPlaying} size={15} color={colors.textFaint} />
+            <AppText variant="caption" color={colors.textMuted}>
+              This device's position · {devicePosition}
+            </AppText>
+          </View>
+        )}
+
         {queued.length > 0 && (
           <View style={styles.queued}>
             <AppText variant="caption" color={colors.textMuted}>
@@ -237,15 +256,19 @@ const SyncStatusSheet = forwardRef<SyncStatusSheetHandle>(function SyncStatusShe
         ) : null}
 
         <Touchable
-          style={[styles.syncBtn, syncing && { opacity: 0.5 }]}
+          style={[styles.syncBtn, syncing && { opacity: 0.7 }]}
           disabled={syncing}
           onPress={onSync}
         >
-          <Icon
-            name={feedback === 'ok' ? icons.checkCircle : retry ? icons.retry : icons.cloudSync}
-            size={18}
-            color={colors.onAccent}
-          />
+          {syncing ? (
+            <ActivityIndicator size="small" color={colors.onAccent} />
+          ) : (
+            <Icon
+              name={feedback === 'ok' ? icons.checkCircle : retry ? icons.retry : icons.cloudSync}
+              size={18}
+              color={colors.onAccent}
+            />
+          )}
           <AppText variant="label" color={colors.onAccent}>
             {btnLabel}
           </AppText>
