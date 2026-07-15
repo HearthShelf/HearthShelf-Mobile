@@ -25,9 +25,11 @@ import Animated, {
   Easing,
   FadeIn,
   FadeOut,
+  cancelAnimation,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
+  withRepeat,
   withTiming,
 } from 'react-native-reanimated'
 import { coverHue, formatTimestamp } from '@hearthshelf/core'
@@ -169,6 +171,11 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // While dragging the scrubber, preview the target time in the labels without
   // committing a seek (seek fires once, on release - see Scrubber).
   const [previewRatio, setPreviewRatio] = useState<number | null>(null)
+
+  // Buffering heuristic (no native buffer event yet): while we intend to be
+  // playing but the reported position hasn't advanced, we're likely stalled.
+  // Surface it only after a grace period so micro-stalls don't flash.
+  const buffering = useBuffering(isPlaying, position)
 
   // Cover taps: double-tap always opens the lightbox. A single tap toggles
   // play/pause only when the user opted into "Tap artwork to play" - otherwise a
@@ -673,12 +680,22 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
               />
             </>
           ) : null}
-          <SpringPressable onPress={togglePlay} style={styles.play} scaleTo={0.9}>
-            {/* Keyed remount so the pause/play glyph fades in rather than snapping. */}
-            <Animated.View key={isPlaying ? 'pause' : 'play'} entering={FadeIn.duration(DUR.fast)}>
-              <Icon name={isPlaying ? icons.pause : icons.play} size={44} color={colors.onAccent} />
-            </Animated.View>
-          </SpringPressable>
+          <View style={styles.playWrap}>
+            {buffering && <BufferingRing />}
+            <SpringPressable onPress={togglePlay} style={styles.play} scaleTo={0.9}>
+              {/* Keyed remount so the pause/play glyph fades in rather than snapping. */}
+              <Animated.View
+                key={isPlaying ? 'pause' : 'play'}
+                entering={FadeIn.duration(DUR.fast)}
+              >
+                <Icon
+                  name={isPlaying ? icons.pause : icons.play}
+                  size={44}
+                  color={colors.onAccent}
+                />
+              </Animated.View>
+            </SpringPressable>
+          </View>
           {!immersive ? (
             <>
               <SkipButton
@@ -693,6 +710,14 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
             </>
           ) : null}
         </View>
+
+        {buffering && (
+          <Animated.View entering={FadeIn.duration(DUR.base)} style={styles.bufferCaption}>
+            <AppText variant="caption" color={colors.textMuted}>
+              Buffering...
+            </AppText>
+          </Animated.View>
+        )}
 
         {immersive && hasChapters && (
           <Animated.View entering={FadeIn.duration(DUR.base)} style={styles.chapterSkipRow}>
@@ -813,9 +838,74 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   )
 }
 
+/**
+ * Buffering heuristic. There's no native buffer event, so infer a stall: while
+ * `playing` is true, if the reported `position` stops advancing for longer than
+ * a grace period, treat it as buffering. Any position change (or a pause)
+ * clears it immediately, so this only lights up during a genuine stall.
+ */
+const BUFFER_GRACE_MS = 400
+function useBuffering(playing: boolean, position: number): boolean {
+  const [buffering, setBuffering] = useState(false)
+  const lastPos = useRef(position)
+  const lastMovedAt = useRef(Date.now())
+
+  useEffect(() => {
+    if (position !== lastPos.current) {
+      lastPos.current = position
+      lastMovedAt.current = Date.now()
+      if (buffering) setBuffering(false)
+    }
+  }, [position, buffering])
+
+  useEffect(() => {
+    if (!playing) {
+      setBuffering(false)
+      return
+    }
+    // Poll while playing; flip to buffering once the position has been static
+    // past the grace window.
+    const t = setInterval(() => {
+      const stalledFor = Date.now() - lastMovedAt.current
+      setBuffering(stalledFor > BUFFER_GRACE_MS)
+    }, 200)
+    return () => clearInterval(t)
+  }, [playing])
+
+  return playing && buffering
+}
+
 /** The pushed `/player` route: the full surface with a collapse button. */
 export default function PlayerScreen() {
   return <PlayerSurface />
+}
+
+/** A thin accent ring that spins around the play button while buffering. */
+function BufferingRing() {
+  const { colors } = useTheme()
+  const spin = useSharedValue(0)
+  useEffect(() => {
+    spin.value = withRepeat(withTiming(1, { duration: 900, easing: Easing.linear }), -1, false)
+    return () => cancelAnimation(spin)
+  }, [spin])
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.value * 360}deg` }] }))
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        {
+          position: 'absolute',
+          width: 88,
+          height: 88,
+          borderRadius: 44,
+          borderWidth: 2.5,
+          borderColor: withAlpha(colors.accent, 0.25),
+          borderTopColor: colors.accent,
+        },
+        style,
+      ]}
+    />
+  )
 }
 
 /** A borderless, tappable transport button (rewind / skip / forward). */
@@ -1365,6 +1455,8 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
+    playWrap: { alignItems: 'center', justifyContent: 'center' },
+    bufferCaption: { alignItems: 'center', marginTop: spacing.sm },
     play: {
       width: 76,
       height: 76,
