@@ -1,11 +1,9 @@
 /**
- * Book detail, phone-first. The screen is state-aware: its sections REORDER by
- * where the listener is with the book, because the job of the screen changes.
- *  - In progress: resume is the job. Status card + CTA up top, then the chapter
- *    list starting at the current chapter (tap a row to play from it).
- *  - Not started: convincing is the job. CTA, then About, series, chapters.
- *  - Finished: what's-next is the job. Finished card, then the series link,
- *    then "Listen again", About, chapters.
+ * Book detail, phone-first. Sections render in ONE fixed order every time -
+ * Hero, Status, CTA, Chapters, Series, About, Community, Notes, Club - so the
+ * page reads the same for an in-progress, not-started, or finished book and you
+ * build muscle memory (D-CONSIST). Only the CTA LABEL adapts to state (Resume /
+ * Start listening / Listen again); the layout does not move under you.
  *
  * Everything visible is a real affordance backed by ABS data or an OS feature:
  * finished toggle (PATCH /api/me/progress), add-to-list, bookmarks (jump/
@@ -356,32 +354,22 @@ export default function ItemDetailScreen() {
     )
   }
 
-  // The job of the screen changes with listening state; so does the order.
-  const sectionOrder: SectionKey[] = isInProgress
-    ? [
-        'status',
-        'cta',
-        'listeningNow',
-        'series',
-        'chapters',
-        'club',
-        'notes',
-        'about',
-        'finishedBy',
-      ]
-    : isFinished
-      ? [
-          'status',
-          'series',
-          'cta',
-          'club',
-          'notes',
-          'about',
-          'finishedBy',
-          'listeningNow',
-          'chapters',
-        ]
-      : ['cta', 'about', 'listeningNow', 'series', 'club', 'notes', 'finishedBy', 'chapters']
+  // ONE fixed section order regardless of listening state, so the screen reads
+  // the same every time and you build muscle memory (D-CONSIST). Only the CTA
+  // label adapts (Resume / Start / Listen again). Status renders as a no-op when
+  // there's no progress, so its slot collapses cleanly for not-started books.
+  // Community = who's listening now + who's finished it.
+  const sectionOrder: SectionKey[] = [
+    'status',
+    'cta',
+    'chapters',
+    'series',
+    'about',
+    'listeningNow',
+    'finishedBy',
+    'notes',
+    'club',
+  ]
 
   const sections: Record<SectionKey, React.ReactNode> = {
     status: (
