@@ -30,6 +30,7 @@ import {
   BottomSheetView,
   type BottomSheetModalProps,
 } from '@gorhom/bottom-sheet'
+import { coverHue } from '@hearthshelf/core'
 import { localCoverFor, subscribeDownloads } from '@/player/downloads'
 import { CoverDownloadOverlay } from './CoverDownloadOverlay'
 import { CoverDownloadedBadge } from './CoverDownloadedBadge'
@@ -436,26 +437,35 @@ export function Avatar({
   size,
   name,
   hue,
+  icon,
 }: {
   uri?: string
   size: number
   name: string
-  hue: string
+  /** Fallback background; defaults to a deterministic hue from the name. */
+  hue?: string
+  /** Draw this glyph instead of initials in the fallback (e.g. a narrator mic). */
+  icon?: IconName
 }) {
   const colors = useColors()
   const styles = useStyles()
   const [failed, setFailed] = useState(false)
+  const bg = hue ?? coverHue(name)
   if (!uri || failed) {
     return (
       <View
         style={[
           styles.avatarFallback,
-          { width: size, height: size, borderRadius: size / 2, backgroundColor: hue },
+          { width: size, height: size, borderRadius: size / 2, backgroundColor: bg },
         ]}
       >
-        <Text allowFontScaling={false} style={[styles.avatarInitials, { fontSize: size * 0.36 }]}>
-          {initialsOf(name)}
-        </Text>
+        {icon ? (
+          <Icon name={icon} size={size * 0.42} color="rgba(255,255,255,0.85)" />
+        ) : (
+          <Text allowFontScaling={false} style={[styles.avatarInitials, { fontSize: size * 0.36 }]}>
+            {initialsOf(name)}
+          </Text>
+        )}
       </View>
     )
   }
