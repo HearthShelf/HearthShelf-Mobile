@@ -7,7 +7,7 @@
  * checkbox and tapping toggles selection instead of opening the book.
  */
 import { useSyncExternalStore } from 'react'
-import { StyleSheet, View } from 'react-native'
+import { Pressable, StyleSheet, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import type { ABSLibraryItem } from '@hearthshelf/core'
 import { coverHue, coverInitial } from '@hearthshelf/core'
@@ -24,6 +24,9 @@ export function BookTile({
   width,
   selecting = false,
   selected = false,
+  progress,
+  finished = false,
+  onQuickPlay,
   onLongPress,
   onToggle,
 }: {
@@ -31,6 +34,13 @@ export function BookTile({
   width: number
   selecting?: boolean
   selected?: boolean
+  /** Listening progress 0..1. When 0<p<1, a thin bar shows under the cover. */
+  progress?: number
+  /** Marks the book done: an accent check badge sits top-right of the cover. */
+  finished?: boolean
+  /** When set AND the book is in progress, a play chip appears bottom-right of
+   *  the cover. Tapping it plays without opening detail. */
+  onQuickPlay?: () => void
   onLongPress?: () => void
   onToggle?: () => void
 }) {
@@ -38,6 +48,8 @@ export function BookTile({
   const colors = useColors()
   const { coverAspect } = useSyncExternalStore(subscribeSettings, getSettingsState)
   const title = itemTitle(item)
+  const inProgress = progress != null && progress > 0 && progress < 1
+  const showChip = !selecting && !!onQuickPlay && inProgress
   return (
     <SpringPressable
       style={[styles.tile, { width }]}
@@ -54,6 +66,27 @@ export function BookTile({
           fallback={{ hue: coverHue(item.id), initial: coverInitial(title), title }}
           showDownloadBadge
         />
+        {finished && !selecting ? (
+          <View style={[styles.finBadge, { backgroundColor: colors.accent }]} pointerEvents="none">
+            <Icon name={icons.check} size={13} color={colors.onAccent} />
+          </View>
+        ) : null}
+        {showChip ? (
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation()
+              onQuickPlay?.()
+            }}
+            hitSlop={6}
+            style={({ pressed }) => [
+              styles.playChip,
+              { backgroundColor: colors.scrim, borderColor: colors.hairline },
+              pressed && styles.playChipPressed,
+            ]}
+          >
+            <Icon name={icons.play} size={18} color="#fff" />
+          </Pressable>
+        ) : null}
         {selecting ? (
           <View
             style={[
@@ -69,6 +102,13 @@ export function BookTile({
           <View style={[styles.selOverlay, { borderColor: colors.accent }]} pointerEvents="none" />
         ) : null}
       </View>
+      {inProgress ? (
+        <View style={[styles.track, { backgroundColor: colors.fillStrong }]}>
+          <View
+            style={[styles.trackFill, { width: `${progress! * 100}%`, backgroundColor: colors.accent }]}
+          />
+        </View>
+      ) : null}
       <View style={styles.meta}>
         <AppText variant="caption" numberOfLines={2}>
           {title}
@@ -84,6 +124,38 @@ export function BookTile({
 const styles = StyleSheet.create({
   tile: { marginBottom: spacing.md },
   meta: { marginTop: spacing.xs, gap: 1 },
+  // Progress bar under the cover (Continue shelf treatment: 3px .track).
+  track: {
+    marginTop: 7,
+    height: 3,
+    borderRadius: radius.pill,
+    overflow: 'hidden',
+  },
+  trackFill: { height: '100%', borderRadius: radius.pill },
+  // Circular quick-play chip, bottom-right of the cover (the web .playchip).
+  playChip: {
+    position: 'absolute',
+    right: 7,
+    bottom: 7,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playChipPressed: { opacity: 0.7 },
+  // Finished badge: accent circle + check, top-right of the cover.
+  finBadge: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   check: {
     position: 'absolute',
     top: spacing.sm,
