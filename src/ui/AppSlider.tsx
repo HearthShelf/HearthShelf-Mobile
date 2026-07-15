@@ -40,6 +40,7 @@ export function AppSlider({
   onComplete,
   ticks,
   formatTick,
+  haptic = true,
   style,
 }: {
   value: number
@@ -53,6 +54,9 @@ export function AppSlider({
   /** Values to mark on the track, with labels beneath (e.g. [0.5, 1, 2, 3]). */
   ticks?: number[]
   formatTick?: (v: number) => string
+  /** Per-step select haptic while dragging. Off for fine-grained sliders (e.g.
+   *  the reader position bar) that fire their own coarser haptic instead. */
+  haptic?: boolean
   style?: StyleProp<ViewStyle>
 }) {
   const colors = useColors()
@@ -76,6 +80,8 @@ export function AppSlider({
   onChangeRef.current = onChange
   const onCompleteRef = useRef(onComplete)
   onCompleteRef.current = onComplete
+  const hapticRef = useRef(haptic)
+  hapticRef.current = haptic
 
   const onLayout = (e: LayoutChangeEvent) => setTrackW(e.nativeEvent.layout.width)
 
@@ -95,7 +101,7 @@ export function AppSlider({
       setDragValue(v)
       if (v !== lastSent.current) {
         lastSent.current = v
-        haptics.select()
+        if (hapticRef.current) haptics.select()
         onChangeRef.current(v)
       }
     },
