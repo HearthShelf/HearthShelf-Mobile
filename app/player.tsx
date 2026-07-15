@@ -80,7 +80,8 @@ import { DeviceKindIcon } from '@/ui/DeviceKindIcon'
 import { CoverGlow } from '@/ui/CoverGlow'
 import { CoverLightbox } from '@/ui/CoverLightbox'
 import { useBackHandler, useSheetBackHandler } from '@/ui/useBackHandler'
-import { AppTabBar } from '@/ui/AppTabBar'
+import { AppTabBar, TAB_BAR_HEIGHT } from '@/ui/AppTabBar'
+import { MiniPlayer } from '@/player/MiniPlayer'
 import { haptics } from '@/ui/haptics'
 import { DUR, SpringPressable } from '@/ui/motion'
 import { useToast, Toast } from '@/ui/Toast'
@@ -126,6 +127,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const queue = useSyncExternalStore(subscribeQueue, getQueueState)
   const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
   const downloads = useSyncExternalStore(subscribeDownloads, getDownloadsState)
+  const insets = useSafeAreaInsets()
   const { width, height } = useWindowDimensions()
   const toast = useToast()
 
@@ -766,11 +768,6 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
             progress={browsedProgress}
             finished={browsedFinished}
             onPlay={() => deckPlayRef.current()}
-            nowTitle={nowPlaying.title}
-            nowIsPlaying={isPlaying}
-            nowProgress={bookProgress}
-            onNowToggle={togglePlay}
-            onNowTap={() => deckJumpRef.current(0)}
           />
         ) : (
           <>
@@ -921,6 +918,13 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
           </>
         )}
       </View>
+
+      {/* While browsing the deck, dock the real mini player so the playing book
+          stays controllable (swipe to skip, tap the transport). It sits just
+          above the tab bar (pushed route) or the screen bottom (embedded). */}
+      {browsing && (
+        <MiniPlayer bottomOffset={embedded ? insets.bottom : insets.bottom + TAB_BAR_HEIGHT} />
+      )}
 
       {/* Nav stays visible unless immersive. */}
       {/* The pushed route shows its own tab bar; embedded, the real tab bar is
@@ -1102,9 +1106,9 @@ function DeckDots({
 
 /**
  * Deck transport: shown while browsing an up-next book. The browsed book's
- * read-only whole-book progress + a big Play that switches to it, plus a
- * compact strip that keeps the actually-playing book controllable (so you never
- * lose it while browsing).
+ * read-only whole-book progress + a big Play that switches to it. The playing
+ * book stays controllable via the real mini player docked below (rendered by
+ * the player while browsing).
  */
 function DeckControls({
   title,
@@ -1112,22 +1116,12 @@ function DeckControls({
   progress,
   finished,
   onPlay,
-  nowTitle,
-  nowIsPlaying,
-  nowProgress,
-  onNowToggle,
-  onNowTap,
 }: {
   title: string
   author: string
   progress: number
   finished: boolean
   onPlay: () => void
-  nowTitle: string
-  nowIsPlaying: boolean
-  nowProgress: number
-  onNowToggle: () => void
-  onNowTap: () => void
 }) {
   const { colors, shadow } = useTheme()
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
@@ -1161,28 +1155,6 @@ function DeckControls({
       <AppText variant="caption" color={colors.textMuted} style={styles.deckPlayHint}>
         {finished ? 'Listen again' : progress > 0 ? 'Resume this book' : 'Start this book'}
       </AppText>
-
-      {/* Keep the playing book controllable while browsing. */}
-      <Touchable onPress={onNowTap} style={styles.deckNowStrip}>
-        <View style={styles.deckNowProg}>
-          <View style={[styles.deckNowProgFill, { width: `${Math.round(nowProgress * 100)}%` }]} />
-        </View>
-        <View style={styles.deckNowRow}>
-          <Icon name={icons.nowPlaying} size={16} color={colors.accent} />
-          <AppText variant="caption" numberOfLines={1} style={{ flex: 1, fontWeight: '600' }}>
-            {nowTitle}
-          </AppText>
-          <Pressable
-            hitSlop={10}
-            onPress={(e) => {
-              e.stopPropagation()
-              onNowToggle()
-            }}
-          >
-            <Icon name={nowIsPlaying ? icons.pause : icons.play} size={24} color={colors.text} />
-          </Pressable>
-        </View>
-      </Touchable>
     </Animated.View>
   )
 }
@@ -1865,24 +1837,8 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
     },
     deckProgFill: { height: '100%', borderRadius: 3, backgroundColor: colors.accent },
     deckPlayRow: { alignItems: 'center', marginTop: spacing.lg },
-    deckPlayHint: { textAlign: 'center', marginTop: spacing.sm },
-    deckNowStrip: {
-      marginTop: spacing.xl,
-      borderRadius: radius.card,
-      backgroundColor: colors.fill,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.hairline,
-      overflow: 'hidden',
-    },
-    deckNowProg: { height: 2, backgroundColor: colors.fillStrong },
-    deckNowProgFill: { height: 2, backgroundColor: colors.accent },
-    deckNowRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
-    },
+    // Leave room below the Play hint for the docked mini player.
+    deckPlayHint: { textAlign: 'center', marginTop: spacing.sm, marginBottom: 72 },
     // One-line title/author (marquees when long); the marquee wrapper owns the
     // width so the row can overflow and scroll.
     titleLine: { marginTop: spacing.xs },
