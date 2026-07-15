@@ -830,8 +830,6 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
       >
         {browsing && deck.active ? (
           <DeckControls
-            title={deck.active.title}
-            author={deck.active.author}
             progress={browsedProgress}
             finished={browsedFinished}
             leftSec={browsedLeftSec}
@@ -1184,16 +1182,12 @@ function DeckDots({
  * the player while browsing).
  */
 function DeckControls({
-  title,
-  author,
   progress,
   finished,
   leftSec,
   chapterLabel,
   onPlay,
 }: {
-  title: string
-  author: string
   progress: number
   finished: boolean
   /** Seconds left in the book (null if not started / unknown). */
@@ -1215,16 +1209,9 @@ function DeckControls({
       : 'Not started'
   return (
     <Animated.View entering={FadeIn.duration(DUR.fast)}>
-      {/* Browsed book: title + read-only progress bar. */}
-      <View style={styles.deckMeta}>
-        <AppText variant="title" numberOfLines={1} style={styles.deckTitle}>
-          {title}
-        </AppText>
-        <AppText variant="label" color={colors.textMuted} numberOfLines={1}>
-          {author}
-        </AppText>
-      </View>
-      <View style={styles.deckProgRow}>
+      {/* Title/author live in the header center; here we just show the browsed
+          book's progress + Play. */}
+      <View style={[styles.deckProgRow, { marginTop: 0 }]}>
         <View style={styles.deckProgTrack}>
           <View style={[styles.deckProgFill, { width: `${pct}%` }]} />
         </View>
@@ -1917,8 +1904,6 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       paddingBottom: spacing.lg,
     },
     // ---- Deck (browsed up-next book) transport ----
-    deckMeta: { alignItems: 'center', marginTop: spacing.sm },
-    deckTitle: { textAlign: 'center' },
     deckProgRow: {
       flexDirection: 'row',
       alignItems: 'center',
