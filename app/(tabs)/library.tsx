@@ -16,7 +16,6 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
   useWindowDimensions,
   type NativeScrollEvent,
@@ -53,7 +52,6 @@ import {
   itemAuthor,
   itemTitle,
   narratorImageUrl,
-  searchLibrary,
 } from '@/api/abs'
 import {
   AppText,
@@ -165,39 +163,6 @@ export default function LibraryScreen() {
     }, [libraryId, libError]),
   )
 
-  // ---- search ----
-  const [query, setQuery] = useState('')
-  const [results, setResults] = useState<ABSLibraryItem[]>([])
-  const [searching, setSearching] = useState(false)
-  const [searched, setSearched] = useState(false)
-  const hasQuery = query.trim().length > 0
-
-  const runSearch = useCallback(
-    async (q: string) => {
-      const trimmed = q.trim()
-      if (!trimmed || !libraryId) {
-        setResults([])
-        setSearched(false)
-        return
-      }
-      setSearching(true)
-      try {
-        setResults(await searchLibrary(libraryId, trimmed))
-      } catch {
-        setResults([])
-      } finally {
-        setSearched(true)
-        setSearching(false)
-      }
-    },
-    [libraryId],
-  )
-
-  useEffect(() => {
-    const handle = setTimeout(() => void runSearch(query), 350)
-    return () => clearTimeout(handle)
-  }, [query, runSearch])
-
   // ---- view selector ----
   const [viewMode, setViewMode] = useState<ViewMode>('books')
 
@@ -206,29 +171,21 @@ export default function LibraryScreen() {
     if (preset) setViewMode('books')
   }, [preset])
 
-  // Hardware back: an active search clears back to the plain library first; a
-  // non-default view (Series/Authors/Narrators) steps back to Books; only from
-  // the plain Books view does back fall through to Home.
+  // Hardware back: a non-default view (Series/Authors/Narrators) steps back to
+  // Books; only from the plain Books view does back fall through to Home.
   useBackHandler(
     useCallback(() => {
-      if (hasQuery) {
-        setQuery('')
-        return true
-      }
       if (viewMode !== 'books') {
         setViewMode('books')
         return true
       }
       router.replace('/(tabs)')
       return true
-    }, [hasQuery, viewMode, router]),
+    }, [viewMode, router]),
   )
-  // Close any open sheet (book actions, view options) before the search/view/home
+  // Close any open sheet (book actions, view options) before the view/home
   // back logic above. Registered after it so it fires first.
   useSheetBackHandler()
-
-  const searchCols = adaptiveGridColumns({ width, minTile: 112, maxCols: 6, gutter: GUTTER })
-  const searchTileWidth = adaptiveGridTileWidth({ width, cols: searchCols, gutter: GUTTER })
 
   if (libError) {
     return (
@@ -251,56 +208,33 @@ export default function LibraryScreen() {
         )}
       </View>
 
-      <View style={styles.searchBox}>
+      {/* Search routes to the ONE unified search screen (D-SEARCH); the view
+          chips below are purely for browsing and never disappear. */}
+      <Touchable onPress={() => router.push('/search?from=library')} style={styles.searchBox}>
         <IconButton name={icons.search} size={20} color={colors.textMuted} />
-        <TextInput
-          style={styles.input}
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Search this library"
-          placeholderTextColor={colors.textFaint}
-          autoCorrect={false}
-          autoCapitalize="none"
-        />
-        {hasQuery && (
-          <IconButton
-            name={icons.close}
-            size={20}
-            color={colors.textMuted}
-            onPress={() => setQuery('')}
-          />
-        )}
+        <AppText variant="meta" color={colors.textFaint} style={{ flex: 1 }}>
+          Search books, series, people…
+        </AppText>
+      </Touchable>
+
+      <View style={styles.viewSelector}>
+        {VIEW_MODES.map((v) => (
+          <Touchable
+            key={v.key}
+            onPress={() => setViewMode(v.key)}
+            style={[styles.viewChip, viewMode === v.key && styles.viewChipActive]}
+          >
+            <AppText
+              variant="label"
+              color={viewMode === v.key ? colors.onAccent : colors.textMuted}
+            >
+              {v.label}
+            </AppText>
+          </Touchable>
+        ))}
       </View>
 
-      {!hasQuery && (
-        <View style={styles.viewSelector}>
-          {VIEW_MODES.map((v) => (
-            <Touchable
-              key={v.key}
-              onPress={() => setViewMode(v.key)}
-              style={[styles.viewChip, viewMode === v.key && styles.viewChipActive]}
-            >
-              <AppText
-                variant="label"
-                color={viewMode === v.key ? colors.onAccent : colors.textMuted}
-              >
-                {v.label}
-              </AppText>
-            </Touchable>
-          ))}
-        </View>
-      )}
-
-      {hasQuery ? (
-        <SearchResults
-          query={query}
-          searching={searching}
-          searched={searched}
-          results={results}
-          cols={searchCols}
-          tileWidth={searchTileWidth}
-        />
-      ) : !libraryId ? (
+      {!libraryId ? (
         <Loading />
       ) : viewMode === 'books' ? (
         <BooksView libraryId={libraryId} width={width} preset={preset} />
@@ -336,49 +270,6 @@ function LibrarySwitcher({
       </AppText>
       <IconButton name={icons.chevronRight} size={16} color={colors.textMuted} />
     </Touchable>
-  )
-}
-
-function SearchResults({
-  query,
-  searching,
-  searched,
-  results,
-  cols,
-  tileWidth,
-}: {
-  query: string
-  searching: boolean
-  searched: boolean
-  results: ABSLibraryItem[]
-  cols: number
-  tileWidth: number
-}) {
-  const colors = useColors()
-  const contentInset = useContentInset()
-  if (searching) return <Loading />
-  if (searched && results.length === 0) {
-    return (
-      <Centered>
-        <AppText variant="meta" color={colors.textMuted}>
-          No matches for "{query.trim()}".
-        </AppText>
-      </Centered>
-    )
-  }
-  return (
-    <Animated.View entering={FadeIn.duration(DUR.base)} style={{ flex: 1 }}>
-      <FlatList
-        data={results}
-        keyExtractor={(it) => it.id}
-        key={`library-search-${cols}`}
-        numColumns={cols}
-        columnWrapperStyle={{ gap: GUTTER }}
-        contentContainerStyle={{ padding: GUTTER, paddingBottom: contentInset, gap: spacing.xs }}
-        keyboardShouldPersistTaps="handled"
-        renderItem={({ item }) => <BookTile item={item} width={tileWidth} from="library" />}
-      />
-    </Animated.View>
   )
 }
 
