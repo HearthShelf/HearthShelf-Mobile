@@ -109,6 +109,9 @@ import type { PlayerActionKey } from '@/store/settings'
 
 const HEARTH_BG = require('../assets/images/hearth-centered.webp')
 const INSPECT_HINT_KEY = 'hs.playerInspectHint'
+// Only surface the floating back-to-now-playing button once you're this many
+// books deep in the deck (a casual next-book peek shouldn't nag).
+const BACK_TO_LIVE_DEPTH = 6
 
 /**
  * The full player UI. Rendered as the pushed `/player` route (with a collapse
@@ -545,31 +548,20 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
               </AppText>
             </Touchable>
 
-            {/* Center: now-playing title/author, or Back-to-now-playing while
-                browsed off the live page. */}
+            {/* Center: always the now-playing title/author (marquees when long).
+                Browsing the deck no longer changes this - the floating
+                back-to-live button handles returning home. */}
             <View style={styles.headerCenter}>
-              {deck.index > 0 ? (
-                <Touchable
-                  style={styles.headerBackToLive}
-                  onPress={() => deckJumpRef.current(0)}
-                >
-                  <Icon name={icons.nowPlaying} size={16} color={colors.accent} />
-                  <AppText variant="caption" color={colors.accent} style={{ fontWeight: '700' }}>
-                    Back to now playing
+              <Marquee>
+                <View style={styles.headerTitleRow}>
+                  <AppText variant="label" numberOfLines={1} style={styles.headerTitleText}>
+                    {nowPlaying.title}
                   </AppText>
-                </Touchable>
-              ) : (
-                <Marquee>
-                  <View style={styles.headerTitleRow}>
-                    <AppText variant="label" numberOfLines={1} style={styles.headerTitleText}>
-                      {nowPlaying.title}
-                    </AppText>
-                    <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
-                      {nowPlaying.author}
-                    </AppText>
-                  </View>
-                </Marquee>
-              )}
+                  <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
+                    {nowPlaying.author}
+                  </AppText>
+                </View>
+              </Marquee>
             </View>
 
             {/* Right: Focus-view entry + passive sync status glyph. */}
@@ -733,6 +725,29 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
           </GestureDetector>
         )
       })()}
+
+      {/* Floating back-to-now-playing button (scroll-to-top pattern): only when
+          you've browsed deep into the deck, so a casual next-book peek isn't
+          nagged. Sits over the bottom of the cover, above the controls. */}
+      {!immersive && deck.index > BACK_TO_LIVE_DEPTH && (
+        <Animated.View
+          entering={FadeIn.duration(DUR.fast)}
+          exiting={FadeOut.duration(DUR.fast)}
+          style={styles.backToLiveWrap}
+          pointerEvents="box-none"
+        >
+          <SpringPressable
+            onPress={() => deckJumpRef.current(0)}
+            style={styles.backToLive}
+            scaleTo={0.94}
+          >
+            <Icon name={icons.chevronLeft} size={18} color={colors.accent} />
+            <AppText variant="caption" color={colors.accent} style={{ fontWeight: '800' }}>
+              Now playing
+            </AppText>
+          </SpringPressable>
+        </Animated.View>
+      )}
 
       {/* Controls pinned to the bottom. */}
       <View
@@ -1585,8 +1600,29 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
     headerCenter: { flex: 1, minWidth: 0, alignItems: 'center' },
     headerTitleRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
     headerTitleText: { fontWeight: '700' },
-    headerBackToLive: { flexDirection: 'row', alignItems: 'center', gap: 5 },
     headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    // Floating back-to-now-playing button, anchored just above the controls.
+    backToLiveWrap: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 210,
+      alignItems: 'center',
+      zIndex: 5,
+    },
+    backToLive: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingLeft: spacing.md,
+      paddingRight: spacing.lg,
+      paddingVertical: 8,
+      borderRadius: radius.pill,
+      backgroundColor: colors.elevated,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.accent,
+      ...shadow.card,
+    },
     focusExit: {
       alignItems: 'flex-end',
       paddingHorizontal: spacing.lg,

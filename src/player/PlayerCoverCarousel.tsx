@@ -300,7 +300,18 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: 'rgba(20,17,15,0.55)',
     },
     liveTagText: { letterSpacing: 1, fontWeight: '700' },
-    upNextTag: { position: 'absolute', top: 12, left: 14 },
+    // Translucent pill so the kicker reads over any artwork.
+    upNextTag: {
+      position: 'absolute',
+      top: 12,
+      left: 12,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: radius.pill,
+      backgroundColor: 'rgba(15,12,10,0.55)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,255,255,0.14)',
+    },
     upNextText: { letterSpacing: 1.2, fontWeight: '600' },
     // A centered "tap to play" hint on the focused up-next cover.
     playHint: {
