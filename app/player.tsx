@@ -624,9 +624,13 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
             beneath the play button, leaving the top row an evenly spaced
             rewind / play / forward trio for easy in-car reach. */}
         <View style={[styles.transport, immersive && styles.transportImmersive]}>
-          {hasChapters && !immersive ? (
+          {/* Chapter-prev is gated on chapters existing; the rewind skip button
+              always renders (a chapterless book still needs to skip back). */}
+          {!immersive ? (
             <>
-              <TransportBtn icon={icons.skipPrev} onPress={() => skipChapter(-1)} />
+              {hasChapters ? (
+                <TransportBtn icon={icons.skipPrev} onPress={() => skipChapter(-1)} />
+              ) : null}
               <SkipButton
                 dir={-1}
                 seconds={settings.skipBack}
@@ -641,7 +645,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
               <Icon name={isPlaying ? icons.pause : icons.play} size={44} color={colors.onAccent} />
             </Animated.View>
           </SpringPressable>
-          {hasChapters && !immersive ? (
+          {!immersive ? (
             <>
               <SkipButton
                 dir={1}
@@ -649,7 +653,9 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                 color={colors.text}
                 onPress={() => skipBy(1, settings.skipForward)}
               />
-              <TransportBtn icon={icons.skipNext} onPress={() => skipChapter(1)} />
+              {hasChapters ? (
+                <TransportBtn icon={icons.skipNext} onPress={() => skipChapter(1)} />
+              ) : null}
             </>
           ) : null}
         </View>
