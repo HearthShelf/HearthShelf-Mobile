@@ -1541,6 +1541,9 @@ const RecentSheet = forwardRef<
   const colors = useColors()
   const recentStyles = useMemo(() => makeRecentStyles(colors), [colors])
   const sheetRef = useRef<SheetRef>(null)
+  const overflowRef = useRef<SheetRef>(null)
+  // The row whose "…" overflow is open (start/end jump targets).
+  const [overflow, setOverflow] = useState<{ start: number; end: number } | null>(null)
   const [sessions, setSessions] = useState<RecentSession[] | null>(null)
   const [open, setOpen] = useState(false)
 
@@ -1641,6 +1644,7 @@ const RecentSheet = forwardRef<
   }, [sync, pending, sessions, itemId])
 
   return (
+    <>
     <Sheet ref={sheetRef} kicker="Recent Listens" snapPoints={['60%']}>
       {!sessions && rows.length === 0 ? (
         <AppText variant="meta" color={colors.textMuted}>
@@ -1703,13 +1707,11 @@ const RecentSheet = forwardRef<
                           : started.toLocaleDateString()}
                     </AppText>
                   </View>
-                  {/* Display-only span; the row's single primary tap resumes at
-                      the end, and the overflow offers jump-to-start. */}
+                  {/* The resume point: tapping the row jumps here (session end).
+                      The overflow covers start/end for the rare cases. */}
                   <View style={recentStyles.timecodeRow}>
-                    <AppText variant="mono" color={colors.textMuted}>
-                      {formatTimestamp(shownPos(r.startTime))} {'→ '}
-                    </AppText>
                     <AppText variant="mono" color={accent}>
+                      {'→ '}
                       {formatTimestamp(shownPos(r.currentTime))}
                     </AppText>
                   </View>
@@ -1721,25 +1723,58 @@ const RecentSheet = forwardRef<
                     </AppText>
                   )}
                 </View>
+                {/* One primary tap (resume at session end) + a "…" overflow for
+                    the rarer jump-to-start / jump-to-end. */}
                 {!live && (
-                  <Touchable
-                    hitSlop={8}
-                    style={recentStyles.jumpStart}
-                    onPress={() => jump(r.startTime)}
-                  >
-                    <Icon name={icons.skipPrev} size={16} color={colors.textMuted} />
-                    <AppText variant="caption" color={colors.textMuted}>
-                      Start
-                    </AppText>
-                  </Touchable>
+                  <>
+                    <Icon name={icons.play} size={20} color={accent} />
+                    <Pressable
+                      hitSlop={10}
+                      onPress={(e) => {
+                        e.stopPropagation()
+                        setOverflow({ start: r.startTime, end: r.currentTime })
+                        overflowRef.current?.present()
+                      }}
+                    >
+                      <Icon name={icons.more} size={20} color={colors.textMuted} />
+                    </Pressable>
+                  </>
                 )}
-                {!live && <Icon name={icons.play} size={20} color={accent} />}
               </Touchable>
             )
           })}
         </BottomSheetScrollView>
       )}
     </Sheet>
+
+    {/* Per-row overflow: the rarer jump-to-start / jump-to-end. */}
+    <Sheet ref={overflowRef} title="Jump to" stackBehavior="push">
+      <View style={{ paddingBottom: spacing.md }}>
+        <Touchable
+          style={recentStyles.overflowRow}
+          onPress={() => {
+            if (overflow) onSeek(overflow.start)
+            overflowRef.current?.dismiss()
+            sheetRef.current?.dismiss()
+          }}
+        >
+          <Icon name={icons.skipPrev} size={22} color={colors.text} />
+          <AppText variant="body">Jump to session start</AppText>
+        </Touchable>
+        <Touchable
+          style={recentStyles.overflowRow}
+          onPress={() => {
+            if (overflow) onSeek(overflow.end)
+            overflowRef.current?.dismiss()
+            sheetRef.current?.dismiss()
+          }}
+        >
+          <Icon name={icons.skipNext} size={22} color={colors.text} />
+          <AppText variant="body">Jump to session end</AppText>
+        </Touchable>
+      </View>
+    </Sheet>
+    </>
   )
 })
 
@@ -1762,7 +1797,12 @@ const makeRecentStyles = (colors: Palette) =>
     },
     durationRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
     timecodeRow: { flexDirection: 'row', alignItems: 'center' },
-    jumpStart: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+    overflowRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.md,
+    },
   })
 
 const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
