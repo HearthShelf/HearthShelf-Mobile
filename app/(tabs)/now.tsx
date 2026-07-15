@@ -6,16 +6,21 @@
  * to resume do we show a small "nothing playing" screen.
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { StyleSheet, View } from 'react-native'
+import { StyleSheet, View, useWindowDimensions } from 'react-native'
 import { useRouter } from 'expo-router'
-import { getItemsInProgress } from '@/api/abs'
+import type { ABSLibraryItem } from '@hearthshelf/core'
+import { getItemsInProgress, getLibraries, getPersonalized } from '@/api/abs'
 import { playItemById } from '@/player/playback'
 import { getState, subscribe } from '@/player/store'
-import { getProgressState, refreshProgress } from '@/store/progress'
-import { AppText, Screen } from '@/ui/primitives'
+import { getProgressState, subscribeProgress, refreshProgress } from '@/store/progress'
+import { AppText, Screen, PrimaryButton, icons } from '@/ui/primitives'
+import { Icon } from '@/ui/icons'
+import { BookTile } from '@/ui/BookTile'
+import { haptics } from '@/ui/haptics'
 import { spacing } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { useBackHandler } from '@/ui/useBackHandler'
+import { adaptiveShelfTileWidth } from '@/ui/responsive'
 import { PlayerSurface } from '../player'
 
 export default function NowPlayingTab() {
@@ -79,23 +84,97 @@ function IdleResolver() {
     }
   }, [])
 
-  return (
-    <Screen>
-      <View style={styles.center}>
-        {phase === 'loading' ? (
+  if (phase === 'loading') {
+    return (
+      <Screen>
+        <View style={styles.center}>
           <AppText variant="meta" color={colors.textMuted}>
             Warming up the hearth...
           </AppText>
-        ) : (
-          <>
-            <AppText variant="title" style={styles.centerText}>
-              Nothing playing
-            </AppText>
-            <AppText variant="meta" color={colors.textMuted} style={styles.centerText}>
-              Start a book from your library and it will show up here.
-            </AppText>
-          </>
-        )}
+        </View>
+      </Screen>
+    )
+  }
+  return <EmptyPlayer />
+}
+
+/**
+ * The designed empty-player state: a hearth flame, "Nothing on the hearth", a
+ * few pick-up-a-book mini tiles (best-effort from the personalized feed), and a
+ * Browse library CTA. Only shown when there is genuinely nothing to resume.
+ */
+function EmptyPlayer() {
+  const router = useRouter()
+  const colors = useColors()
+  const { width } = useWindowDimensions()
+  const tileWidth = adaptiveShelfTileWidth(width)
+  const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
+  const [picks, setPicks] = useState<ABSLibraryItem[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const libs = await getLibraries()
+        const lib = libs.find((l) => l.mediaType === 'book') ?? libs[0]
+        if (!lib) return
+        const shelves = await getPersonalized(lib.id)
+        const shelf =
+          shelves.find((s) => s.type === 'book' && s.entities.length > 0) ??
+          shelves.find((s) => s.type === 'book')
+        if (!cancelled && shelf && shelf.type === 'book') setPicks(shelf.entities.slice(0, 3))
+      } catch {
+        // Best-effort; the CTA still stands on its own.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  return (
+    <Screen>
+      <View style={styles.emptyWrap}>
+        <View style={[styles.flameChip, { backgroundColor: colors.accentWash }]}>
+          <Icon name={icons.flame} size={38} color={colors.brandHearth} />
+        </View>
+        <AppText variant="title" style={styles.centerText}>
+          Nothing on the hearth
+        </AppText>
+        <AppText variant="meta" color={colors.textMuted} style={styles.centerText}>
+          Pick a book and it will be waiting right here.
+        </AppText>
+
+        {picks.length > 0 ? (
+          <View style={styles.picks}>
+            {picks.map((item) => {
+              const p = progressById.get(item.id)
+              return (
+                <BookTile
+                  key={item.id}
+                  item={item}
+                  width={tileWidth}
+                  from="now"
+                  progress={p?.progress}
+                  finished={p?.isFinished === true}
+                  onQuickPlay={() => {
+                    haptics.transport()
+                    void playItemById(item.id)
+                      .then(() => router.push('/player'))
+                      .catch(() => router.push(`/item/${item.id}?from=now`))
+                  }}
+                />
+              )
+            })}
+          </View>
+        ) : null}
+
+        <PrimaryButton
+          label="Browse your library"
+          icon={icons.library}
+          onPress={() => router.replace('/(tabs)/library')}
+          style={{ marginTop: spacing.xl }}
+        />
       </View>
     </Screen>
   )
@@ -110,4 +189,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
   },
   centerText: { textAlign: 'center' },
+  emptyWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+    gap: spacing.sm,
+  },
+  flameChip: {
+    width: 72,
+    height: 72,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  picks: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.xl,
+  },
 })
