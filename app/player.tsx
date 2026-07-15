@@ -858,8 +858,21 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
       />
       <MoreSheet
         ref={moreRef}
-        actions={trayKeys.map((k) => actionMap[k])}
-        onImmersive={enter}
+        actions={trayKeys.map((k) => {
+          const a = actionMap[k]
+          // Surface a live-state badge on the tiles worth glancing at.
+          const badge =
+            k === 'bookmarks'
+              ? bookmarks.length
+              : k === 'notes'
+                ? timelineMarkers.length
+                : undefined
+          return { ...a, badge }
+        })}
+        onSettings={() => {
+          moreRef.current?.dismiss()
+          router.push('/settings/playback')
+        }}
         onEdit={() => {
           moreRef.current?.dismiss()
           router.push('/settings/player-buttons')
@@ -1048,12 +1061,14 @@ const MoreSheet = forwardRef<
       label: string
       disabled?: boolean
       active?: boolean
+      /** A live-state badge count (e.g. saved bookmarks / notes threads). */
+      badge?: number
       onPress: () => void
     }[]
-    onImmersive: () => void
+    onSettings: () => void
     onEdit: () => void
   }
->(function MoreSheet({ actions, onImmersive, onEdit }, ref) {
+>(function MoreSheet({ actions, onSettings, onEdit }, ref) {
   const colors = useColors()
   const moreStyles = useMemo(() => makeMoreStyles(colors), [colors])
   const sheetRef = useRef<SheetRef>(null)
@@ -1063,12 +1078,15 @@ const MoreSheet = forwardRef<
   }))
 
   return (
-    <Sheet ref={sheetRef} title="Player">
-      <View>
+    <Sheet ref={sheetRef} title="More">
+      {/* A 3-across grid of one-tap launch tiles for the tray actions (reads by
+          icon, packs into the thumb arc, mirrors the on-screen action row). */}
+      <View style={moreStyles.grid}>
         {actions.map((a) => (
-          <Touchable
+          <SpringPressable
             key={a.key}
-            style={[moreStyles.row, a.disabled && { opacity: 0.35 }]}
+            style={[moreStyles.tile, a.disabled && { opacity: 0.35 }, a.active && moreStyles.tileActive]}
+            scaleTo={0.94}
             onPress={
               a.disabled
                 ? undefined
@@ -1077,48 +1095,81 @@ const MoreSheet = forwardRef<
                     a.onPress()
                   }
             }
+            disabled={a.disabled}
           >
-            <Icon name={a.icon} size={22} color={colors.accent} />
+            {a.badge != null && a.badge > 0 ? (
+              <View style={moreStyles.badge}>
+                <AppText variant="caption" color={colors.onAccent} style={moreStyles.badgeText}>
+                  {a.badge}
+                </AppText>
+              </View>
+            ) : null}
+            <Icon name={a.icon} size={24} color={a.active ? colors.accent : colors.text} />
             <AppText
-              variant="label"
-              style={{ flex: 1 }}
-              color={a.active ? colors.accent : colors.text}
+              variant="caption"
+              numberOfLines={1}
+              color={a.active ? colors.accent : colors.textMuted}
             >
               {a.label}
             </AppText>
-            <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />
-          </Touchable>
+          </SpringPressable>
         ))}
-
-        <Touchable
-          style={moreStyles.row}
-          onPress={() => {
-            sheetRef.current?.dismiss()
-            onImmersive()
-          }}
-        >
-          <Icon name={icons.focusView} size={22} color={colors.accent} />
-          <AppText variant="label" style={{ flex: 1 }}>
-            Focus view
-          </AppText>
-          <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />
-        </Touchable>
-
-        <View style={moreStyles.divider} />
-        <Touchable style={moreStyles.row} onPress={onEdit}>
-          <Icon name={icons.tune} size={22} color={colors.textMuted} />
-          <AppText variant="label" style={{ flex: 1 }} color={colors.textMuted}>
-            Edit buttons
-          </AppText>
-          <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />
-        </Touchable>
       </View>
+
+      {/* Pinned rows (a different category from the launch grid: they carry a
+          chevron into a sub-surface). */}
+      <View style={moreStyles.divider} />
+      <Touchable style={moreStyles.row} onPress={onSettings}>
+        <Icon name={icons.tune} size={22} color={colors.accent} />
+        <AppText variant="label" style={{ flex: 1 }}>
+          Player settings
+        </AppText>
+        <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />
+      </Touchable>
+      <Touchable style={moreStyles.row} onPress={onEdit}>
+        <Icon name={icons.dragHandle} size={22} color={colors.textMuted} />
+        <AppText variant="label" style={{ flex: 1 }} color={colors.textMuted}>
+          Edit these buttons
+        </AppText>
+        <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />
+      </Touchable>
     </Sheet>
   )
 })
 
 const makeMoreStyles = (colors: Palette) =>
   StyleSheet.create({
+    grid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.sm,
+    },
+    tile: {
+      // Three per row: (100% - 2 gaps) / 3.
+      width: '31.5%',
+      aspectRatio: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.xs,
+      borderRadius: radius.card,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    tileActive: { backgroundColor: colors.accentWash, borderColor: colors.accent },
+    badge: {
+      position: 'absolute',
+      top: 8,
+      right: 8,
+      minWidth: 18,
+      height: 18,
+      paddingHorizontal: 5,
+      borderRadius: 9,
+      backgroundColor: colors.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    badgeText: { fontSize: 10, fontWeight: '700', lineHeight: 15 },
     row: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1128,7 +1179,8 @@ const makeMoreStyles = (colors: Palette) =>
     divider: {
       height: StyleSheet.hairlineWidth,
       backgroundColor: colors.hairline,
-      marginVertical: spacing.sm,
+      marginTop: spacing.lg,
+      marginBottom: spacing.sm,
     },
   })
 
