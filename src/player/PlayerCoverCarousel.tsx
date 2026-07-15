@@ -216,6 +216,21 @@ export function PlayerCoverCarousel({
 
   return (
     <View style={styles.wrap}>
+      {/* Deck-position dots ride ABOVE the cover (per the player layout), so the
+          artwork is the bottom-most element. Only shown with more than one page. */}
+      {pages.length > 1 ? (
+        <View style={styles.dotsTop}>
+          {pages.map((p, i) => (
+            <View
+              key={p.itemId}
+              style={[
+                styles.dot,
+                { backgroundColor: i === index ? colors.accent : withAlpha(colors.text, 0.3) },
+              ]}
+            />
+          ))}
+        </View>
+      ) : null}
       <FlatList
         ref={listRef}
         data={pages}
@@ -233,20 +248,7 @@ export function PlayerCoverCarousel({
         getItemLayout={(_, i) => ({ length: pageW, offset: pageW * i, index: i })}
       />
 
-      {/* Dots + return-to-now-playing chip. */}
-      <View style={styles.footer}>
-        <View style={styles.dots}>
-          {pages.map((p, i) => (
-            <View
-              key={p.itemId}
-              style={[
-                styles.dot,
-                { backgroundColor: i === index ? colors.text : withAlpha(colors.text, 0.3) },
-              ]}
-            />
-          ))}
-        </View>
-      </View>
+      {/* Return-to-now-playing chip (dots moved above the cover). */}
       {browsedAway ? (
         <SpringPressable onPress={returnToLive} style={styles.backChip} scaleTo={0.94}>
           <Icon name={icons.nowPlaying} size={25} color={colors.accent} />
@@ -313,17 +315,14 @@ const makeStyles = (colors: Palette) =>
       textShadowOffset: { width: 0, height: 1 },
       textShadowRadius: 4,
     },
-    // minHeight keeps room for the "back to now playing" chip; the negative
-    // bottom margin pulls the following title up so the dots-to-title gap is
-    // roughly half of the default flow gap.
-    footer: {
-      minHeight: 24,
+    // Deck dots above the cover.
+    dotsTop: {
+      flexDirection: 'row',
+      gap: 6,
       justifyContent: 'center',
-      marginTop: spacing.xs,
-      marginBottom: -spacing.xs,
+      marginBottom: spacing.sm,
     },
-    dots: { flexDirection: 'row', gap: 6 },
-    dot: { width: 12, height: 8, borderRadius: 3 },
+    dot: { width: 8, height: 8, borderRadius: 4 },
     backChip: {
       flexDirection: 'row',
       alignItems: 'center',
