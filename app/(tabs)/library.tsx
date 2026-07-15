@@ -925,6 +925,18 @@ function BooksView({
 
         {sheetTab === 'sort' && (
           <ScrollView style={styles.sheetScroll}>
+            <Touchable
+              onPress={() => {
+                sheetRef.current?.dismiss()
+                selection.begin()
+              }}
+              style={styles.sheetRow}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                <Icon name={icons.checklist} size={18} color={colors.text} />
+                <AppText variant="body">Select books</AppText>
+              </View>
+            </Touchable>
             {CURATED_SORTS.map((s) => (
               <SortRow
                 key={s}

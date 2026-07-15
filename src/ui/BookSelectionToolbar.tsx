@@ -17,8 +17,9 @@ import { AddToListSheet } from '@/player/AddToListSheet'
 import type { SheetHandle } from '@/player/sheets'
 import { itemAuthor, itemTitle } from '@/api/abs'
 import { getProgressState, subscribeProgress, promptAndMarkItemsFinished } from '@/store/progress'
-import { AppText, IconButton, icons } from '@/ui/primitives'
-import { spacing, type Palette } from '@/ui/theme'
+import { AppText, IconButton, Sheet, type SheetRef, Touchable, icons } from '@/ui/primitives'
+import { Icon } from '@/ui/icons'
+import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { haptics } from './haptics'
 import { confirm } from './confirm'
@@ -39,6 +40,7 @@ export function BookSelectionToolbar({
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const addSheetRef = useRef<SheetHandle>(null)
+  const overflowRef = useRef<SheetRef>(null)
   const busy = useRef(false)
   const { byId } = useSyncExternalStore(subscribeProgress, getProgressState)
 
@@ -108,15 +110,19 @@ export function BookSelectionToolbar({
     selection.clear()
   }
 
-  if (!selection.selecting || ids.length === 0) return null
+  // Shown whenever selection mode is active - even with nothing selected yet
+  // (entered via the Library "Select" button), so there's always a visible way
+  // to select-all or exit.
+  if (!selection.selecting) return null
 
-  const allSelected = ids.length === total
+  const allSelected = ids.length > 0 && ids.length === total
+  const hasSelection = ids.length > 0
 
   return (
     <View style={styles.bar}>
       <IconButton name={icons.close} onPress={selection.clear} style={styles.action} />
-      <AppText variant="label" color={colors.accent} numberOfLines={1}>
-        {ids.length}
+      <AppText variant="label" numberOfLines={1} style={styles.count}>
+        {hasSelection ? `${ids.length} selected` : 'Select books'}
       </AppText>
 
       <View style={styles.actions}>
@@ -132,29 +138,30 @@ export function BookSelectionToolbar({
         <IconButton
           name={selectionAllFinished ? icons.removeDone : icons.taskAlt}
           size={20}
-          color={colors.text}
+          color={hasSelection ? colors.text : colors.textFaint}
           onPress={() => void markFinished()}
           style={styles.action}
         />
         <IconButton
           name={icons.addList}
           size={20}
-          color={colors.text}
-          onPress={() => addSheetRef.current?.present()}
+          color={hasSelection ? colors.text : colors.textFaint}
+          onPress={() => hasSelection && addSheetRef.current?.present()}
           style={styles.action}
         />
         <IconButton
           name={icons.queue}
           size={20}
-          color={colors.text}
-          onPress={addToQueueAll}
+          color={hasSelection ? colors.text : colors.textFaint}
+          onPress={() => hasSelection && addToQueueAll()}
           style={styles.action}
         />
+        {/* Rarer op (download) behind an overflow so the row isn't icon soup. */}
         <IconButton
-          name={icons.download}
+          name={icons.more}
           size={20}
-          color={colors.text}
-          onPress={() => void download()}
+          color={hasSelection ? colors.text : colors.textFaint}
+          onPress={() => hasSelection && overflowRef.current?.present()}
           style={styles.action}
         />
       </View>
@@ -168,6 +175,19 @@ export function BookSelectionToolbar({
           selection.clear()
         }}
       />
+
+      <Sheet ref={overflowRef} title={`${ids.length} selected`}>
+        <Touchable
+          style={styles.overflowRow}
+          onPress={() => {
+            overflowRef.current?.dismiss()
+            void download()
+          }}
+        >
+          <Icon name={icons.download} size={22} color={colors.text} />
+          <AppText variant="body">Download for offline</AppText>
+        </Touchable>
+      </Sheet>
     </View>
   )
 }
@@ -196,5 +216,14 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.fill,
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    count: { minWidth: 78 },
+    overflowRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.md,
+      paddingBottom: spacing.xl,
+      borderRadius: radius.row,
     },
   })
