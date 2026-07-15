@@ -37,6 +37,8 @@ import { useBookmarks } from './useBookmarks'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { AppText, Sheet, type SheetRef, Touchable } from '@/ui/primitives'
 import { AppSlider } from '@/ui/AppSlider'
+import { haptics } from '@/ui/haptics'
+import { showToast } from '@/ui/Toast'
 import { Icon, icons } from '@/ui/icons'
 import { radius, spacing, type Palette, type buildShadow } from '@/ui/theme'
 import { useTheme } from '@/ui/ThemeProvider'
@@ -463,6 +465,22 @@ function SleepSetup({
       ? chapIdx
       : chapters.findIndex((_, i) => isFuture(i, chapAt))
 
+  // Arm a preset duration immediately (the sheet flips to running mode via the
+  // store), with a confirming toast + success haptic. Start stays for the
+  // slider's custom value.
+  const armDuration = (m: number) => {
+    haptics.success()
+    setSleepTimer({ kind: 'duration', remainingSec: m * 60, totalSec: m * 60 })
+    showToast(`Sleeping in ${m} min`)
+  }
+  const armEndOfChapter = () => {
+    const idx = chapters.findIndex((_, i) => isFuture(i, 'end'))
+    if (idx < 0) return
+    haptics.success()
+    setSleepTimer({ kind: 'endOfChapter', chapterIndex: idx, at: 'end' })
+    showToast('Sleeping at the end of this chapter')
+  }
+
   const start = () => {
     if (tab === 'duration') {
       setSleepTimer({
@@ -541,21 +559,23 @@ function SleepSetup({
             ticks={[1, 30, 60, 90, 120]}
             formatTick={(v) => `${v}m`}
           />
+          {/* Tapping a preset ARMS the timer immediately (no Start needed); the
+              Start button below is for the slider's custom value. */}
           <View style={[styles.grid, { marginTop: spacing.lg }]}>
-            {SLEEP_DURATIONS.map((m) => {
-              const on = durationMin === m
-              return (
-                <Touchable
-                  key={m}
-                  style={[styles.speed, on && styles.speedOn]}
-                  onPress={() => setDurationMin(m)}
-                >
-                  <AppText variant="label" color={on ? colors.onAccent : colors.text}>
-                    {m}m
-                  </AppText>
-                </Touchable>
-              )
-            })}
+            {SLEEP_DURATIONS.map((m) => (
+              <Touchable key={m} style={styles.speed} onPress={() => armDuration(m)}>
+                <AppText variant="label" color={colors.text}>
+                  {m}m
+                </AppText>
+              </Touchable>
+            ))}
+            {hasChapters ? (
+              <Touchable style={styles.speed} onPress={armEndOfChapter}>
+                <AppText variant="label" color={colors.text}>
+                  End of chapter
+                </AppText>
+              </Touchable>
+            ) : null}
           </View>
         </View>
       )}
