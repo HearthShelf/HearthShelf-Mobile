@@ -31,6 +31,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated'
 import { coverHue, formatTimestamp } from '@hearthshelf/core'
@@ -993,11 +994,14 @@ export default function PlayerScreen() {
 }
 
 /**
- * Deck-position dots above the cover. Tap a dot to jump to that page. For a big
- * deck the dots window around the active index (with shrinking edge dots) so the
- * row stays one line and doesn't push the cover down.
+ * Deck-position dots as a scrolling track under a fixed center pointer: all dots
+ * ride a track that slides so the active dot always sits under the accent
+ * pointer at the viewport's center. Paging feels like turning a wheel past a
+ * fixed marker (not a static set reshuffling), and the whole track stays one
+ * line regardless of deck size. Tap anywhere on a dot to jump to it.
  */
-const DECK_DOTS_MAX = 9
+const DOT_PITCH = 16 // per-dot spacing (dot + gap)
+const DOT_VIEWPORT = 9 * DOT_PITCH // visible width (~9 dots)
 function DeckDots({
   count,
   index,
@@ -1009,37 +1013,38 @@ function DeckDots({
 }) {
   const { colors, shadow } = useTheme()
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
-  // Window the visible dots around the active index for large decks.
-  let start = 0
-  let end = count
-  if (count > DECK_DOTS_MAX) {
-    const half = Math.floor(DECK_DOTS_MAX / 2)
-    start = Math.max(0, Math.min(index - half, count - DECK_DOTS_MAX))
-    end = start + DECK_DOTS_MAX
-  }
-  const visible = []
-  for (let i = start; i < end; i++) visible.push(i)
+  // Translate the track so the active dot lands at the viewport center.
+  const shift = useSharedValue(0)
+  useEffect(() => {
+    shift.value = withSpring(DOT_VIEWPORT / 2 - (index + 0.5) * DOT_PITCH, {
+      damping: 18,
+      stiffness: 160,
+    })
+  }, [index, shift])
+  const trackStyle = useAnimatedStyle(() => ({ transform: [{ translateX: shift.value }] }))
   return (
-    <View style={styles.deckDots}>
-      {visible.map((i) => {
-        const active = i === index
-        // Dots at the window edge (when more exist beyond) shrink to hint overflow.
-        const atEdge =
-          (i === start && start > 0) || (i === end - 1 && end < count)
-        return (
-          <Pressable
-            key={i}
-            onPress={() => onJump(i)}
-            hitSlop={8}
-            style={[
-              styles.deckDot,
-              active && styles.deckDotActive,
-              atEdge && styles.deckDotEdge,
-              { backgroundColor: active ? colors.accent : withAlpha(colors.text, 0.3) },
-            ]}
-          />
-        )
-      })}
+    <View style={styles.deckDotsViewport}>
+      {/* Fixed accent pointer at the center; the track scrolls under it. */}
+      <View style={styles.deckPointer} pointerEvents="none" />
+      <Animated.View style={[styles.deckTrack, trackStyle]}>
+        {Array.from({ length: count }).map((_, i) => {
+          const dist = Math.abs(i - index)
+          // Fade dots as they get farther from the pointer so the ends trail off.
+          const opacity = dist === 0 ? 0 : Math.max(0.18, 0.55 - dist * 0.09)
+          return (
+            <Pressable
+              key={i}
+              onPress={() => onJump(i)}
+              hitSlop={{ top: 10, bottom: 10, left: 2, right: 2 }}
+              style={styles.deckDotSlot}
+            >
+              <View
+                style={[styles.deckDot, { backgroundColor: withAlpha(colors.text, opacity) }]}
+              />
+            </Pressable>
+          )
+        })}
+      </Animated.View>
     </View>
   )
 }
@@ -1566,18 +1571,35 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       paddingHorizontal: spacing.lg,
       paddingTop: spacing.sm,
     },
-    deckDots: {
-      flexDirection: 'row',
+    // Fixed-width viewport; the dot track scrolls under a centered pointer.
+    deckDotsViewport: {
+      width: DOT_VIEWPORT,
+      height: 16,
+      alignSelf: 'center',
+      marginVertical: spacing.sm,
+      overflow: 'hidden',
       justifyContent: 'center',
-      alignItems: 'center',
-      gap: 6,
-      paddingVertical: spacing.sm,
     },
-    deckDot: { width: 8, height: 8, borderRadius: 4 },
-    // Active page reads as a wider pill.
-    deckDotActive: { width: 18 },
-    // Windowed edge dots shrink to hint there are more pages beyond.
-    deckDotEdge: { width: 5, height: 5, borderRadius: 2.5, opacity: 0.6 },
+    // The accent pointer: a fixed pill at the viewport center (the "arrow" the
+    // dots scroll past).
+    deckPointer: {
+      position: 'absolute',
+      alignSelf: 'center',
+      width: 16,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: colors.accent,
+      zIndex: 1,
+    },
+    deckTrack: {
+      position: 'absolute',
+      left: 0,
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    // Each dot occupies one pitch so the track's math (index * pitch) lines up.
+    deckDotSlot: { width: DOT_PITCH, height: 16, alignItems: 'center', justifyContent: 'center' },
+    deckDot: { width: 7, height: 7, borderRadius: 3.5 },
     backToLive: {
       flexDirection: 'row',
       alignSelf: 'center',
