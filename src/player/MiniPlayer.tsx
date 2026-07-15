@@ -25,7 +25,14 @@ import { getState, subscribe, togglePlay, jumpBy, currentChapter } from './store
  *  for content-inset math in useContentInset. */
 export const MINI_PLAYER_HEIGHT = 60
 
-export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
+export function MiniPlayer({
+  bottomOffset = 0,
+  rightInset = 0,
+}: {
+  bottomOffset?: number
+  /** Extra right padding so the bar clears a bottom-right vertical nav column. */
+  rightInset?: number
+}) {
   const router = useRouter()
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
@@ -59,6 +66,7 @@ export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
   return (
     <MiniPlayerBar
       bottomOffset={bottomOffset}
+      rightInset={rightInset}
       progress={progress}
       bookProgress={bookProgress}
       subtitle={subtitle}
@@ -68,11 +76,13 @@ export function MiniPlayer({ bottomOffset = 0 }: { bottomOffset?: number }) {
 
 function MiniPlayerBar({
   bottomOffset,
+  rightInset,
   progress,
   bookProgress,
   subtitle,
 }: {
   bottomOffset: number
+  rightInset: number
   progress: number
   bookProgress: number
   subtitle: string
@@ -112,7 +122,7 @@ function MiniPlayerBar({
     // popping into existence.
     <Animated.View
       entering={FadeInUp.duration(DUR.slow)}
-      style={[styles.wrap, { bottom: bottomOffset }]}
+      style={[styles.wrap, { bottom: bottomOffset, right: rightInset }]}
       pointerEvents="box-none"
     >
       {/* Thin whole-book progress strip across the top of the dock. */}

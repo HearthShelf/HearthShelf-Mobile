@@ -29,6 +29,9 @@ export type ScrubberScope = 'chapter' | 'book'
 /** Remembered default for the note composer's Public/Personal choice (device). */
 export type NoteDefaultVisibility = 'public' | 'personal'
 export type CoverAspect = 'square' | 'portrait'
+/** Layout of the floating nav pill (device). Horizontal = centered bottom pill;
+ *  vertical = a column hugging the bottom-right, freeing the mini player to drop. */
+export type FloatingNavOrientation = 'horizontal' | 'vertical'
 /** How much haptic feedback to fire. See src/ui/haptics.ts for what each covers. */
 export type HapticLevel = 'off' | 'minimal' | 'all'
 export type HapticIntensity = 'light' | 'medium'
@@ -118,6 +121,10 @@ export interface SettingsState {
   // swap the full-width bottom tab bar for a floating glass icon pill
   // (Home / Now / Library / More). An in-app A/B of the nav treatment.
   floatingNav: boolean
+  // Orientation of the floating pill (only meaningful when floatingNav is on):
+  // horizontal centers it along the bottom; vertical stacks it bottom-right and
+  // lets the mini player drop down beside it.
+  floatingNavOrientation: FloatingNavOrientation
 
   // Playback
   scrubber: ScrubberScope
@@ -216,6 +223,7 @@ let state: SettingsState = {
   glowMode: 'gradient',
   coverAspect: 'square',
   floatingNav: false,
+  floatingNavOrientation: 'horizontal',
 
   scrubber: 'chapter',
   defaultSpeed: 1,

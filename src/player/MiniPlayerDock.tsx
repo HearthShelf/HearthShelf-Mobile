@@ -8,7 +8,9 @@
 import { useSyncExternalStore } from 'react'
 import { usePathname } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { TAB_BAR_HEIGHT } from '@/ui/AppTabBar'
+import { TAB_BAR_HEIGHT, VNAV_WIDTH } from '@/ui/AppTabBar'
+import { getSettingsState, subscribeSettings } from '@/store/settings'
+import { spacing } from '@/ui/theme'
 import { getState, subscribe } from './store'
 import { getImmersive, subscribeImmersive } from './immersive'
 import { MiniPlayer } from './MiniPlayer'
@@ -36,7 +38,18 @@ export function MiniPlayerDock() {
   const insets = useSafeAreaInsets()
   const { nowPlaying } = useSyncExternalStore(subscribe, getState)
   const immersive = useSyncExternalStore(subscribeImmersive, getImmersive)
+  const floatingNav = useSyncExternalStore(subscribeSettings, () => getSettingsState().floatingNav)
+  const orientation = useSyncExternalStore(
+    subscribeSettings,
+    () => getSettingsState().floatingNavOrientation
+  )
   if (!nowPlaying || immersive || miniPlayerHiddenOn(pathname)) return null
-  const offset = (hasBottomTabBar(pathname) ? TAB_BAR_HEIGHT : 0) + insets.bottom
-  return <MiniPlayer bottomOffset={offset} />
+  const hasTabBar = hasBottomTabBar(pathname)
+  // With a vertical floating column, the nav hugs the bottom-right instead of
+  // spanning the width, so the mini player drops to the bottom and only insets
+  // its right side to clear the column (width + its right margin).
+  const vertical = hasTabBar && floatingNav && orientation === 'vertical'
+  const offset = (hasTabBar && !vertical ? TAB_BAR_HEIGHT : 0) + insets.bottom
+  const rightInset = vertical ? VNAV_WIDTH + spacing.md : 0
+  return <MiniPlayer bottomOffset={offset} rightInset={rightInset} />
 }

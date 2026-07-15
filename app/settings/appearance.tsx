@@ -111,7 +111,26 @@ export default function AppearancePanel() {
           control={
             <SettingsToggle on={s.floatingNav} onChange={(v) => setSetting('floatingNav', v)} />
           }
+          last={!s.floatingNav}
         />
+        {s.floatingNav ? (
+          <SettingsRow
+            icon="swap-vert"
+            title="Floating nav layout"
+            desc="Horizontal centers the pill along the bottom. Vertical stacks it in the bottom-right and drops the mini player down beside it."
+            control={
+              <Seg
+                value={s.floatingNavOrientation}
+                onChange={(v) => setSetting('floatingNavOrientation', v)}
+                options={[
+                  { value: 'horizontal', label: 'Horizontal' },
+                  { value: 'vertical', label: 'Vertical' },
+                ]}
+              />
+            }
+            last
+          />
+        ) : null}
       </SettingsGroup>
     </SettingsPanel>
   )

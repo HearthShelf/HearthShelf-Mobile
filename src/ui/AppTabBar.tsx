@@ -40,6 +40,10 @@ const GLASS_SPRING = { damping: 18, stiffness: 210, mass: 0.9 } as const
 
 export const TAB_BAR_HEIGHT = 60
 
+/** Width the vertical floating column reserves along the right edge, so the mini
+ *  player can inset its right side and sit beside the column without overlap. */
+export const VNAV_WIDTH = 64
+
 export interface TabDef {
   name: string
   label: string
@@ -83,10 +87,15 @@ export function AppTabBar({
   onPressTab: (name: string) => void
 }) {
   const floatingNav = useSyncExternalStore(subscribeSettings, () => getSettingsState().floatingNav)
-  return floatingNav ? (
-    <FloatingPillNav activeName={activeName} onPressTab={onPressTab} />
+  const orientation = useSyncExternalStore(
+    subscribeSettings,
+    () => getSettingsState().floatingNavOrientation
+  )
+  if (!floatingNav) return <ClassicTabBar activeName={activeName} onPressTab={onPressTab} />
+  return orientation === 'vertical' ? (
+    <VerticalPillNav activeName={activeName} onPressTab={onPressTab} />
   ) : (
-    <ClassicTabBar activeName={activeName} onPressTab={onPressTab} />
+    <FloatingPillNav activeName={activeName} onPressTab={onPressTab} />
   )
 }
 
@@ -240,6 +249,135 @@ function FloatingPillNav({
         })}
       </View>
     </View>
+  )
+}
+
+// ---- Vertical glass icon column (bottom-right) ----
+
+/**
+ * The floating nav as a compact icon column hugging the bottom-right corner. Same
+ * ember-glass slab and gliding lozenge as the horizontal pill, but stacked and
+ * icon-only - no labels reveal sideways (they'd push into content). The column
+ * reserves VNAV_WIDTH along the right edge; the mini player insets to sit beside
+ * it and drops to the bottom, so nothing overlaps.
+ */
+function VerticalPillNav({
+  activeName,
+  onPressTab,
+}: {
+  activeName: string | null
+  onPressTab: (name: string) => void
+}) {
+  const insets = useSafeAreaInsets()
+  const colors = useColors()
+  const styles = makePillStyles(colors)
+
+  // Per-item measured rects (y within the column + height), keyed by tab name.
+  const [rects, setRects] = useState<Record<string, { y: number; h: number }>>({})
+  const onItemLayout = (name: string) => (e: LayoutChangeEvent) => {
+    const { y, height } = e.nativeEvent.layout
+    setRects((prev) => {
+      const cur = prev[name]
+      if (cur && cur.y === y && cur.h === height) return prev
+      return { ...prev, [name]: { y, h: height } }
+    })
+  }
+
+  const indY = useSharedValue(0)
+  const indH = useSharedValue(0)
+  const indOpacity = useSharedValue(0)
+  const placed = useRef(false)
+  const target = activeName ? rects[activeName] : undefined
+  useEffect(() => {
+    if (!target) return
+    if (!placed.current) {
+      placed.current = true
+      indY.value = target.y
+      indH.value = target.h
+      indOpacity.value = withTiming(1, { duration: 160, easing: Easing.out(Easing.quad) })
+    } else {
+      indY.value = withSpring(target.y, GLASS_SPRING)
+      indH.value = withSpring(target.h, GLASS_SPRING)
+    }
+  }, [target?.y, target?.h, indY, indH, indOpacity])
+
+  const indicator = useAnimatedStyle(() => ({
+    transform: [{ translateY: indY.value }],
+    height: indH.value,
+    opacity: indOpacity.value,
+  }))
+
+  return (
+    // Reserves the same footprint as the classic bar / horizontal pill (so
+    // content insets stay identical), but pins its column to the bottom-right
+    // corner instead of centering it. The column overflows upward out of the
+    // band, floating over content above the bottom edge.
+    <View
+      style={[
+        styles.vband,
+        { height: TAB_BAR_HEIGHT + insets.bottom, paddingBottom: insets.bottom },
+      ]}
+      pointerEvents="box-none"
+    >
+      <View style={[styles.vcolumn, { bottom: insets.bottom }]}>
+        <LinearGradient
+          pointerEvents="none"
+          colors={[withAlpha('#ffffff', 0.14), 'transparent', withAlpha('#000000', 0.06)]}
+          locations={[0, 0.55, 1]}
+          style={styles.sheen}
+        />
+        <Animated.View pointerEvents="none" style={[styles.vindicator, indicator]} />
+        {PILL_TABS.map((meta) => {
+          const focused = meta.name === activeName
+          return (
+            <VerticalPillItem
+              key={meta.name}
+              meta={meta}
+              focused={focused}
+              colors={colors}
+              onLayout={onItemLayout(meta.name)}
+              onPress={() => handleTabPress(meta.name, focused, onPressTab)}
+            />
+          )
+        })}
+      </View>
+    </View>
+  )
+}
+
+/** One icon-only destination in the vertical column. Icon pops on focus like the
+ *  horizontal pill; the active lozenge (drawn by the parent) glides behind it. */
+function VerticalPillItem({
+  meta,
+  focused,
+  colors,
+  onLayout,
+  onPress,
+}: {
+  meta: TabDef
+  focused: boolean
+  colors: Palette
+  onLayout: (e: LayoutChangeEvent) => void
+  onPress: () => void
+}) {
+  const styles = makePillStyles(colors)
+  const scale = useSharedValue(1)
+  useEffect(() => {
+    if (focused) {
+      scale.value = 0.82
+      scale.value = withSpring(1, GLASS_SPRING)
+    }
+  }, [focused, scale])
+  const iconStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }))
+  const tint = focused ? colors.accent : colors.textFaint
+  return (
+    <Pressable onPress={onPress} hitSlop={4} onLayout={onLayout}>
+      <View style={styles.vitem}>
+        <Animated.View style={iconStyle}>
+          <Icon name={iconFor(meta.icon, focused)} size={22} color={tint} />
+        </Animated.View>
+      </View>
+    </Pressable>
   )
 }
 
@@ -415,6 +553,51 @@ const makePillStyles = (colors: Palette) =>
       alignItems: 'center',
       gap: spacing.xs + 2,
       paddingHorizontal: ITEM_H_PAD,
+      paddingVertical: ITEM_V_PAD,
+      borderRadius: radius.pill,
+    },
+    // Transparent band matching the classic-bar footprint; the column is pinned
+    // to its bottom-right and overflows upward (overflow visible) over content.
+    vband: {
+      overflow: 'visible',
+    },
+    // Same ember-glass slab as the horizontal pill, stacked into a column, pinned
+    // to the band's bottom-right corner so its height doesn't alter the footprint.
+    vcolumn: {
+      position: 'absolute',
+      right: spacing.md,
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: spacing.xs,
+      padding: PILL_PAD,
+      borderRadius: radius.pill,
+      backgroundColor: withAlpha(colors.elevated, 0.92),
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: withAlpha('#ffffff', 0.12),
+      overflow: 'hidden',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 14 },
+      shadowOpacity: 0.5,
+      shadowRadius: 30,
+      elevation: 14,
+    },
+    // The gliding active lozenge for the vertical column: left/right match the
+    // item box; y + height are animated so it flows between stacked icons.
+    vindicator: {
+      position: 'absolute',
+      left: PILL_PAD,
+      right: PILL_PAD,
+      top: PILL_PAD,
+      borderRadius: radius.pill,
+      backgroundColor: colors.accentTile,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: withAlpha(colors.accent, 0.35),
+    },
+    // Square-ish icon cell so the gliding lozenge behind it reads as a chip.
+    vitem: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: ITEM_V_PAD,
       paddingVertical: ITEM_V_PAD,
       borderRadius: radius.pill,
     },
