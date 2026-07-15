@@ -245,6 +245,12 @@ export default function LibraryScreen() {
   )
 }
 
+/**
+ * Library switcher: a chip showing the current library that opens a picker
+ * sheet listing every library with its book count and a checkmark on the
+ * active one - replacing the old blind cycle-through. Counts are fetched lazily
+ * (the items endpoint's `total`) and cached per id.
+ */
 function LibrarySwitcher({
   libraries,
   activeId,
@@ -256,20 +262,78 @@ function LibrarySwitcher({
 }) {
   const colors = useColors()
   const styles = useStyles()
-  // Simple cycle-through control for the uncommon multi-library case; a full
-  // picker sheet can replace this if servers with >2 book libraries show up.
-  const idx = libraries.findIndex((l) => l.id === activeId)
-  const active = libraries[idx] ?? libraries[0]
+  const sheetRef = useRef<SheetRef>(null)
+  const active = libraries.find((l) => l.id === activeId) ?? libraries[0]
+  const [counts, setCounts] = useState<Record<string, number>>({})
+
+  // Fetch each library's book count once, when the picker opens.
+  const loadCounts = useCallback(() => {
+    for (const lib of libraries) {
+      if (counts[lib.id] !== undefined) continue
+      void getLibraryItemsPage(lib.id, 0, 1)
+        .then((page) => setCounts((c) => ({ ...c, [lib.id]: page.total })))
+        .catch(() => {})
+    }
+  }, [libraries, counts])
+
   return (
-    <Touchable
-      onPress={() => onSelect(libraries[(idx + 1) % libraries.length].id)}
-      style={styles.libSwitcher}
-    >
-      <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
-        {active?.name}
-      </AppText>
-      <IconButton name={icons.chevronRight} size={16} color={colors.textMuted} />
-    </Touchable>
+    <>
+      <Touchable
+        onPress={() => {
+          loadCounts()
+          sheetRef.current?.present()
+        }}
+        style={styles.libSwitcher}
+      >
+        <Icon name={icons.library} size={15} color={colors.brandHearth} />
+        <AppText variant="caption" numberOfLines={1}>
+          {active?.name}
+        </AppText>
+        {counts[active?.id ?? ''] !== undefined ? (
+          <AppText variant="caption" color={colors.textMuted}>
+            · {counts[active.id]}
+          </AppText>
+        ) : null}
+        <Icon name={icons.unfold} size={15} color={colors.textMuted} />
+      </Touchable>
+
+      <Sheet ref={sheetRef} title="Choose a library">
+        <View style={{ paddingBottom: spacing.md }}>
+          {libraries.map((lib) => {
+            const isActive = lib.id === (active?.id ?? activeId)
+            return (
+              <Touchable
+                key={lib.id}
+                style={styles.libPickRow}
+                onPress={() => {
+                  onSelect(lib.id)
+                  sheetRef.current?.dismiss()
+                }}
+              >
+                <Icon
+                  name={icons.library}
+                  size={20}
+                  color={isActive ? colors.accent : colors.textMuted}
+                />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <AppText variant="body" color={isActive ? colors.accent : colors.text} numberOfLines={1}>
+                    {lib.name}
+                  </AppText>
+                  {counts[lib.id] !== undefined ? (
+                    <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 1 }}>
+                      {counts[lib.id]} {counts[lib.id] === 1 ? 'book' : 'books'}
+                    </AppText>
+                  ) : null}
+                </View>
+                {isActive ? (
+                  <Icon name={icons.checkCircle} size={20} color={colors.accent} />
+                ) : null}
+              </Touchable>
+            )
+          })}
+        </View>
+      </Sheet>
+    </>
   )
 }
 
@@ -1329,8 +1393,22 @@ const makeStyles = (colors: Palette) =>
     libSwitcher: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 2,
-      maxWidth: 160,
+      gap: 5,
+      maxWidth: 200,
+      paddingHorizontal: spacing.md - 2,
+      paddingVertical: 7,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    libPickRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
     },
     searchBox: {
       flexDirection: 'row',

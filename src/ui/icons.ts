@@ -73,6 +73,7 @@ export const icons = {
   filter: 'filter-list',
   viewList: 'view-list',
   viewGrid: 'grid-view',
+  unfold: 'unfold-more',
   listNumbered: 'format-list-numbered',
   tune: 'tune',
   sort: 'swap-vert',
