@@ -241,11 +241,19 @@ export async function searchLibrary(
   query: string,
   limit = 25,
 ): Promise<ABSLibraryItem[]> {
-  const q = encodeURIComponent(query)
-  const data = await absRequest<ABSSearchResponse>(
-    `/api/libraries/${libraryId}/search?q=${q}&limit=${limit}`,
-  )
+  const data = await searchLibraryAll(libraryId, query, limit)
   return (data.book ?? []).map((b) => b.libraryItem)
+}
+
+/** Full ABS search response - books plus series/authors/narrators, for the
+ *  unified search screen's scoped sections. */
+export async function searchLibraryAll(
+  libraryId: string,
+  query: string,
+  limit = 25,
+): Promise<ABSSearchResponse> {
+  const q = encodeURIComponent(query)
+  return absRequest<ABSSearchResponse>(`/api/libraries/${libraryId}/search?q=${q}&limit=${limit}`)
 }
 
 export async function getItemsInProgress(): Promise<ABSLibraryItem[]> {
