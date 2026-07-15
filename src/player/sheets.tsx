@@ -134,7 +134,7 @@ export const ChaptersSheet = forwardRef<SheetHandle>(function ChaptersSheet(_pro
           const isDone = !isActive && position >= c.end
           return (
             <Touchable
-              style={styles.row}
+              style={[styles.row, isActive && styles.rowActive]}
               onPress={() => {
                 seekToChapter(c)
                 innerRef.current?.dismiss()
@@ -153,14 +153,21 @@ export const ChaptersSheet = forwardRef<SheetHandle>(function ChaptersSheet(_pro
                   {i + 1}
                 </AppText>
               )}
-              <AppText
-                variant="meta"
-                color={isActive ? colors.accent : colors.text}
-                numberOfLines={1}
-                style={{ flex: 1 }}
-              >
-                {c.title}
-              </AppText>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <AppText
+                  variant="meta"
+                  color={isActive ? colors.accent : isDone ? colors.textMuted : colors.text}
+                  numberOfLines={1}
+                >
+                  {i + 1} · {c.title}
+                </AppText>
+                {isActive ? (
+                  <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
+                    Now playing · {formatTimestamp(Math.max(0, position - c.start))} of{' '}
+                    {formatTimestamp(c.end - c.start)}
+                  </AppText>
+                ) : null}
+              </View>
               <AppText variant="caption" color={colors.textMuted}>
                 {formatTimestamp(c.end - c.start)}
               </AppText>
@@ -769,6 +776,14 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof buildShadow>) =>
       paddingVertical: spacing.md,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.hairline,
+    },
+    // The current chapter reads as active: accent wash, rounded, no divider.
+    rowActive: {
+      backgroundColor: colors.accentWash,
+      borderRadius: radius.card,
+      paddingHorizontal: spacing.md,
+      borderBottomWidth: 0,
+      marginVertical: spacing.xs,
     },
     grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
     speed: {
