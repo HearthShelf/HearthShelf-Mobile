@@ -28,6 +28,7 @@ import Animated, {
 } from 'react-native-reanimated'
 import { LinearGradient } from 'expo-linear-gradient'
 import { haptics } from '@/ui/haptics'
+import { Marquee } from '@/ui/Marquee'
 import { DUR } from '@/ui/motion'
 import { MAX_FONT_SCALE, mixHex, radius, type Palette } from '@/ui/theme'
 import { useTheme } from '@/ui/ThemeProvider'
@@ -176,13 +177,20 @@ export function Scrubber({
               {elapsed}
             </Text>
             {chapter !== undefined && (
-              <Text
-                numberOfLines={1}
-                maxFontSizeMultiplier={MAX_FONT_SCALE}
-                style={[styles.labelText, styles.labelChapter]}
-              >
-                {chapter}
-              </Text>
+              // Long chapter titles scroll inside the pill instead of truncating
+              // (the player's no-extra-row law - the chapter lives here, not on
+              // its own line).
+              <View style={styles.labelChapter}>
+                <Marquee>
+                  <Text
+                    numberOfLines={1}
+                    maxFontSizeMultiplier={MAX_FONT_SCALE}
+                    style={styles.labelText}
+                  >
+                    {chapter}
+                  </Text>
+                </Marquee>
+              </View>
             )}
             <Text numberOfLines={1} maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.labelText}>
               {remain}

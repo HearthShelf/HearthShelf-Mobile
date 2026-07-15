@@ -87,6 +87,7 @@ export const icons = {
   share: 'ios-share',
   cast: 'cast',
   carMode: 'directions-car',
+  focusView: 'center-focus-strong',
   download: 'download',
   downloadDone: 'download-done',
   notes: 'sticky-note-2',

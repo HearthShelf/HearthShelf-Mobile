@@ -41,7 +41,8 @@ import {
   skipChapter,
   currentChapter,
 } from '@/player/store'
-import { getQueueState, subscribeQueue } from '@/player/queue'
+import { getQueueState, subscribeQueue, QUEUE_MODES } from '@/player/queue'
+import type { QueueMode } from '@hearthshelf/core'
 import { getProgressState } from '@/store/progress'
 import { getImmersive, subscribeImmersive, setImmersive } from '@/player/immersive'
 import { getActiveClub, subscribeActiveClub } from '@/player/clubSync'
@@ -84,6 +85,7 @@ import { radius, spacing, withAlpha, type Palette } from '@/ui/theme'
 import { useColors, useTheme, type ActiveTheme } from '@/ui/ThemeProvider'
 import { adaptiveContentMaxWidth, adaptivePlayerCoverMaxWidth } from '@/ui/responsive'
 import { Scrubber } from '@/player/Scrubber'
+import { Marquee } from '@/ui/Marquee'
 import { PlayerCoverCarousel } from '@/player/PlayerCoverCarousel'
 import { SkipFeedbackOverlay, type SkipFeedbackHandle } from '@/player/SkipFeedbackOverlay'
 import { SkipButton } from '@/player/SkipButton'
@@ -103,6 +105,11 @@ import { useTimelineMarkers } from '@/social/useTimelineMarkers'
 import type { PlayerActionKey } from '@/store/settings'
 
 const HEARTH_BG = require('../assets/images/hearth-centered.webp')
+
+/** Short label for the queue header chip ("Auto", "Manual", ...). */
+function queueModeLabel(mode: QueueMode): string {
+  return QUEUE_MODES.find((m) => m.v === mode)?.label ?? 'Off'
+}
 
 /**
  * The full player UI. Rendered as the pushed `/player` route (with a collapse
@@ -360,7 +367,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // (possibly portrait) cover still fits the available height.
   const coverAspect = COVER_ASPECT_RATIO[settings.coverAspect]
   const coverMaxW = Math.min(width - spacing.xl * 2, adaptivePlayerCoverMaxWidth(width, immersive))
-  const coverMaxH = height * (immersive ? 0.62 : 0.46)
+  const coverMaxH = height * (immersive ? 0.62 : 0.52)
   const coverWidth = Math.min(coverMaxW, coverMaxH * coverAspect)
   const contentMaxWidth = adaptiveContentMaxWidth(width)
   const progressRailWidth = Math.max(0, Math.min(width, contentMaxWidth) - spacing.xl * 2)
@@ -467,15 +474,35 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
       {!immersive && (
         <Animated.View entering={FadeIn.duration(DUR.base)} exiting={FadeOut.duration(DUR.fast)}>
           <View style={styles.header}>
-            {embedded ? (
-              <View style={{ width: 28 }} />
-            ) : (
-              <IconButton name={icons.collapse} size={28} onPress={() => router.back()} />
+            {/* Left: queue status chip (count + mode) opening the Queue sheet.
+                On the pushed route a collapse chevron precedes it. */}
+            {!embedded && (
+              <IconButton
+                name={icons.collapse}
+                size={26}
+                onPress={() => router.back()}
+                style={{ marginRight: spacing.xs }}
+              />
             )}
+            <Touchable style={styles.queueChip} onPress={() => queueRef.current?.present()}>
+              <Icon name={icons.queue} size={16} color={colors.accent} />
+              <AppText variant="caption" style={{ fontWeight: '700' }}>
+                {queue.items.length}
+              </AppText>
+              <AppText variant="caption" color={colors.textMuted}>
+                · {queueModeLabel(settings.queueMode)}
+              </AppText>
+            </Touchable>
             <View style={{ flex: 1 }} />
+            {/* Right: Focus-view entry + passive sync status glyph. */}
+            <IconButton
+              name={icons.focusView}
+              size={22}
+              color={colors.textMuted}
+              onPress={enter}
+            />
+            <View style={{ width: spacing.sm }} />
             <SyncStatusIcon />
-            <View style={{ width: spacing.md }} />
-            <IconButton name={icons.queue} size={23} onPress={() => queueRef.current?.present()} />
           </View>
 
           {/* Thin whole-book progress bar sitting above the numeric strip; the
@@ -592,12 +619,19 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
       <View
         style={[styles.controls, { maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }]}
       >
-        <AppText variant="hero" numberOfLines={1} style={styles.title}>
-          {nowPlaying.title}
-        </AppText>
-        <AppText variant="label" color={colors.textMuted} numberOfLines={1} style={styles.author}>
-          {nowPlaying.author}
-        </AppText>
+        {/* One compact title line: title bold + author muted; a long
+            combination marquees horizontally instead of wrapping, so the freed
+            height goes to the artwork (the one-row layout law). */}
+        <Marquee style={styles.titleLine}>
+          <View style={styles.titleRow}>
+            <AppText variant="title" numberOfLines={1} style={styles.titleText}>
+              {nowPlaying.title}
+            </AppText>
+            <AppText variant="label" color={colors.textMuted} numberOfLines={1}>
+              {nowPlaying.author}
+            </AppText>
+          </View>
+        </Marquee>
 
         <View style={styles.scrub}>
           {!immersive && (
@@ -1286,18 +1320,25 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       paddingHorizontal: spacing.xl,
       paddingBottom: spacing.lg,
     },
-    title: {
-      textAlign: 'center',
+    // One-line title/author (marquees when long); the marquee wrapper owns the
+    // width so the row can overflow and scroll.
+    titleLine: { marginTop: spacing.xs },
+    titleRow: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm },
+    titleText: {
       textShadowColor: 'rgba(0,0,0,0.85)',
       textShadowOffset: { width: 0, height: 1 },
       textShadowRadius: 4,
     },
-    author: {
-      textAlign: 'center',
-      marginTop: 2,
-      textShadowColor: 'rgba(0,0,0,0.85)',
-      textShadowOffset: { width: 0, height: 1 },
-      textShadowRadius: 4,
+    queueChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: spacing.md - 2,
+      paddingVertical: 7,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
     },
     scrub: { width: '100%', marginTop: spacing.md },
     transport: {
