@@ -114,6 +114,10 @@ export interface SettingsState {
   glow: number
   glowMode: GlowMode
   coverAspect: CoverAspect
+  // Device-scoped (mobile only, not in the core catalog so it never syncs to web):
+  // swap the full-width bottom tab bar for a floating glass icon pill
+  // (Home / Now / Library / More). An in-app A/B of the nav treatment.
+  floatingNav: boolean
 
   // Playback
   scrubber: ScrubberScope
@@ -211,6 +215,7 @@ let state: SettingsState = {
   glow: 60,
   glowMode: 'gradient',
   coverAspect: 'square',
+  floatingNav: false,
 
   scrubber: 'chapter',
   defaultSpeed: 1,

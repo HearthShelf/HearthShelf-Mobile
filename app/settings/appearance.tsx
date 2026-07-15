@@ -11,6 +11,7 @@ import {
   SettingsRow,
   Seg,
   SettingsSlider,
+  SettingsToggle,
   AccentSwatchPicker,
 } from '@/ui/settingsControls'
 
@@ -97,6 +98,18 @@ export default function AppearancePanel() {
                 { value: 'image', label: 'Image' },
               ]}
             />
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsLabel>Navigation</SettingsLabel>
+      <SettingsGroup>
+        <SettingsRow
+          icon="dashboard"
+          title="Floating nav bar (test)"
+          desc="Swap the bottom bar for a floating icon pill: Home, Now, Library, and More. Stats moves under More. This is a test and lives only on this phone."
+          control={
+            <SettingsToggle on={s.floatingNav} onChange={(v) => setSetting('floatingNav', v)} />
           }
         />
       </SettingsGroup>
