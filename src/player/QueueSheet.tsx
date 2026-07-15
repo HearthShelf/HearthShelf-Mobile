@@ -6,6 +6,8 @@
  */
 import {
   forwardRef,
+  useCallback,
+  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -13,15 +15,17 @@ import {
   useSyncExternalStore,
 } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
+import { BottomSheetFlatList, BottomSheetTextInput } from '@gorhom/bottom-sheet'
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { coverHue } from '@hearthshelf/core'
-import type { QueueEntry } from '@hearthshelf/core'
+import type { QueueEntry, ABSLibraryItem } from '@hearthshelf/core'
 import {
   getQueueState,
   reorderQueue,
   removeFromQueue,
   setManual,
+  addToQueue,
   subscribeQueue,
   QUEUE_MODES,
   QUEUE_MODE_SUB,
@@ -29,9 +33,11 @@ import {
 } from './queue'
 import { getSettingsState, setQueueMode, subscribeSettings, toggleAutoRule } from '@/store/settings'
 import { getState, subscribe } from './store'
-import { coverUrl } from '@/api/abs'
+import { coverUrl, getLibraries, searchLibraryAll, itemTitle, itemAuthor } from '@/api/abs'
 import { AppText, Cover, IconButton, Sheet, type SheetRef, Touchable } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
+import { haptics } from '@/ui/haptics'
+import { showToast } from '@/ui/Toast'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import type { SheetHandle } from './sheets'
@@ -46,6 +52,7 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
     const styles = useMemo(() => makeStyles(colors), [colors])
     const sheetRef = useRef<SheetRef>(null)
     const rulesRef = useRef<SheetRef>(null)
+    const addBooksRef = useRef<SheetRef>(null)
     useImperativeHandle(ref, () => ({
       present: () => sheetRef.current?.present(),
       dismiss: () => sheetRef.current?.dismiss(),
@@ -98,6 +105,12 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
             <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
               {MODE_SUB[settings.queueMode]}
             </AppText>
+            {(settings.queueMode === 'manual' || settings.queueMode === 'auto') && (
+              <Touchable style={styles.rulesBtn} onPress={() => addBooksRef.current?.present()}>
+                <Icon name={icons.add} size={15} color={colors.text} />
+                <AppText variant="caption">Add books</AppText>
+              </Touchable>
+            )}
             {settings.queueMode === 'auto' && (
               <Touchable style={styles.rulesBtn} onPress={() => rulesRef.current?.present()}>
                 <Icon name={icons.tune} size={15} color={colors.text} />
@@ -261,10 +274,141 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
             })}
           </View>
         </Sheet>
+
+        <AddBooksSheet ref={addBooksRef} />
       </>
     )
   },
 )
+
+/** A search-the-library picker that appends the tapped book to the queue's
+ *  durable manual list. Books already queued are marked and no-op. */
+const AddBooksSheet = forwardRef<SheetHandle>(function AddBooksSheet(_props, ref) {
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
+  const sheetRef = useRef<SheetRef>(null)
+  useImperativeHandle(ref, () => ({
+    present: () => {
+      setQuery('')
+      setResults([])
+      sheetRef.current?.present()
+    },
+    dismiss: () => sheetRef.current?.dismiss(),
+  }))
+
+  const queue = useSyncExternalStore(subscribeQueue, getQueueState)
+  const queuedIds = useMemo(
+    () => new Set(queue.manual.map((m) => m.libraryItemId)),
+    [queue.manual],
+  )
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<ABSLibraryItem[]>([])
+  const [loading, setLoading] = useState(false)
+  const libraryIdRef = useRef<string | null>(null)
+
+  const resolveLibraryId = useCallback(async () => {
+    if (libraryIdRef.current) return libraryIdRef.current
+    const libs = await getLibraries()
+    libraryIdRef.current = (libs.find((l) => l.mediaType === 'book') ?? libs[0])?.id ?? null
+    return libraryIdRef.current
+  }, [])
+
+  const runSearch = useCallback(
+    async (q: string) => {
+      const trimmed = q.trim()
+      if (!trimmed) {
+        setResults([])
+        return
+      }
+      setLoading(true)
+      try {
+        const libraryId = await resolveLibraryId()
+        if (!libraryId) return
+        const data = await searchLibraryAll(libraryId, trimmed)
+        setResults(data.book.map((b) => b.libraryItem))
+      } catch {
+        setResults([])
+      } finally {
+        setLoading(false)
+      }
+    },
+    [resolveLibraryId],
+  )
+
+  useEffect(() => {
+    const t = setTimeout(() => void runSearch(query), 300)
+    return () => clearTimeout(t)
+  }, [query, runSearch])
+
+  return (
+    <Sheet ref={sheetRef} kicker="Add to queue" snapPoints={['80%']} stackBehavior="push">
+      <View style={styles.addSearch}>
+        <Icon name={icons.search} size={18} color={colors.textMuted} />
+        <BottomSheetTextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search your library"
+          placeholderTextColor={colors.textFaint}
+          style={styles.addSearchInput}
+          autoCorrect={false}
+          autoCapitalize="none"
+        />
+      </View>
+      <BottomSheetFlatList
+        data={results}
+        keyExtractor={(it) => it.id}
+        ListEmptyComponent={
+          <AppText
+            variant="meta"
+            color={colors.textMuted}
+            style={{ textAlign: 'center', paddingVertical: spacing.xl }}
+          >
+            {loading ? 'Searching...' : query.trim() ? 'No matches' : 'Search to add a book'}
+          </AppText>
+        }
+        renderItem={({ item }) => {
+          const already = queuedIds.has(item.id)
+          return (
+            <Touchable
+              style={styles.addRow}
+              disabled={already}
+              onPress={() => {
+                addToQueue({
+                  libraryItemId: item.id,
+                  title: itemTitle(item),
+                  author: itemAuthor(item),
+                })
+                haptics.success()
+                showToast(`Added ${itemTitle(item)} to queue`)
+              }}
+            >
+              <Cover
+                uri={coverUrl(item.id)}
+                itemId={item.id}
+                size={46}
+                radius={radius.tile}
+                fallback={{ hue: coverHue(item.id), initial: itemTitle(item).charAt(0).toUpperCase() }}
+              />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <AppText variant="label" numberOfLines={1}>
+                  {itemTitle(item)}
+                </AppText>
+                <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
+                  {itemAuthor(item)}
+                </AppText>
+              </View>
+              <Icon
+                name={already ? icons.checkCircle : icons.add}
+                size={22}
+                color={already ? colors.success : colors.accent}
+              />
+            </Touchable>
+          )
+        }}
+      />
+    </Sheet>
+  )
+})
 
 function QueueRow({
   item,
@@ -364,6 +508,29 @@ const makeStyles = (colors: Palette) =>
       paddingVertical: spacing.xs,
       borderRadius: radius.pill,
       backgroundColor: colors.fill,
+    },
+    addSearch: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+      marginBottom: spacing.sm,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    addSearchInput: {
+      flex: 1,
+      paddingVertical: spacing.sm + 2,
+      color: colors.text,
+      fontSize: 15,
+    },
+    addRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.sm,
     },
     row: {
       flexDirection: 'row',
