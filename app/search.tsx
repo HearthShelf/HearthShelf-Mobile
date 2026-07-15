@@ -801,6 +801,7 @@ const makeStyles = (colors: Palette) =>
     input: { flex: 1, paddingVertical: spacing.md - 2, color: colors.text, fontSize: 16 },
     chips: {
       flexDirection: 'row',
+      alignItems: 'center',
       gap: spacing.sm,
       paddingHorizontal: spacing.lg,
       paddingTop: spacing.sm,

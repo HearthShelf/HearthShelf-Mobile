@@ -201,6 +201,7 @@ export function Chip({
       style={({ pressed }) => [styles.chip, active && styles.chipActive, pressed && styles.pressed]}
     >
       <Text
+        numberOfLines={1}
         maxFontSizeMultiplier={MAX_FONT_SCALE}
         style={[styles.chipText, active && styles.chipTextActive]}
       >
@@ -649,6 +650,9 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
       paddingVertical: spacing.sm,
       borderRadius: radius.pill,
       backgroundColor: colors.fill,
+      // Never let a chip shrink below its label in a horizontal row (the search
+      // scope chips were getting squeezed/clipped once results reflowed).
+      flexShrink: 0,
     },
     chipActive: { backgroundColor: colors.accentTile },
     chipText: { ...typeScale.label, color: colors.textMuted },
