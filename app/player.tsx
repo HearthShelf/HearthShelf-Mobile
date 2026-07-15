@@ -34,7 +34,7 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated'
-import { coverHue, formatTimestamp } from '@hearthshelf/core'
+import { coverHue, formatTimestamp, formatDuration } from '@hearthshelf/core'
 import type { ABSDeviceInfo } from '@hearthshelf/core'
 import {
   getState,
@@ -513,12 +513,59 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const iconOnly = settings.playerActionsIconOnly
 
   // Browsing an up-next book (off the live page): the transport swaps to the
-  // deck set (that book's read-only progress + a big Play that switches to it),
-  // and a compact now-playing strip keeps the playing book controllable.
+  // deck set (that book's read-only progress + a big Play that switches to it);
+  // the mini player keeps the playing book controllable.
   const browsing = !immersive && deck.index > 0 && deck.active != null && !deck.active.isLive
-  const browsedProgress = deck.active ? (progressById.get(deck.active.itemId)?.progress ?? 0) : 0
-  const browsedFinished =
-    deck.active != null && progressById.get(deck.active.itemId)?.isFinished === true
+  const browsedItemId = browsing ? (deck.active?.itemId ?? null) : null
+  const browsedRec = browsedItemId ? progressById.get(browsedItemId) : undefined
+  const browsedProgress = browsedRec?.progress ?? 0
+  const browsedFinished = browsedRec?.isFinished === true
+  // Time left = whole book minus the saved position (both from the progress
+  // store, no fetch). Only meaningful once started.
+  const browsedLeftSec =
+    browsedRec && browsedRec.duration > 0
+      ? Math.max(0, browsedRec.duration - browsedRec.currentTime)
+      : null
+
+  // Chapter the browsed book was left on. Chapters aren't in the progress store,
+  // so fetch them lazily - only when the deck SETTLES on a started book (a short
+  // debounce, so a fling doesn't fire a fetch per page), cached per item.
+  const [browsedChapter, setBrowsedChapter] = useState<{ id: string; title: string } | null>(null)
+  const chapterCache = useRef<Map<string, { title: string; start: number; end: number }[]>>(
+    new Map(),
+  )
+  useEffect(() => {
+    if (!browsedItemId || !browsedRec || browsedRec.isFinished || (browsedRec.currentTime ?? 0) <= 0) {
+      setBrowsedChapter(null)
+      return
+    }
+    const id = browsedItemId
+    const at = browsedRec.currentTime
+    const pick = (chs: { title: string; start: number; end: number }[]) => {
+      const c = chs.find((ch) => at >= ch.start && at < ch.end) ?? chs[chs.length - 1]
+      setBrowsedChapter(c ? { id, title: c.title } : null)
+    }
+    const cached = chapterCache.current.get(id)
+    if (cached) {
+      pick(cached)
+      return
+    }
+    let cancelled = false
+    const t = setTimeout(() => {
+      getItemDetail(id)
+        .then((d) => {
+          if (cancelled) return
+          const chs = d.media.chapters ?? []
+          chapterCache.current.set(id, chs)
+          pick(chs)
+        })
+        .catch(() => {})
+    }, 350)
+    return () => {
+      cancelled = true
+      clearTimeout(t)
+    }
+  }, [browsedItemId, browsedRec])
 
   return (
     <Screen edges={immersive ? ['top', 'bottom'] : ['top']}>
@@ -613,28 +660,32 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
             </View>
           )}
 
-          {/* Thin whole-book progress bar sitting above the numeric strip; the
-              fill eases toward each position tick (bookBarStyle). */}
-          <View style={[styles.bookBarTrack, { width: progressRailWidth }]}>
-            <Animated.View style={[styles.bookBarFill, bookBarStyle]} />
-          </View>
-
-          <View
-            style={[
-              styles.wholeBookStrip,
-              { maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' },
-            ]}
-          >
-            <AppText variant="mono" color={colors.textMuted}>
-              {formatTimestamp(position)}
-            </AppText>
-            <AppText variant="mono" style={{ fontWeight: '700' }}>
-              {Math.round(bookProgress * 100)}%
-            </AppText>
-            <AppText variant="mono" color={colors.textMuted}>
-              -{formatTimestamp(Math.max(0, duration - position))}
-            </AppText>
-          </View>
+          {/* Whole-book progress bar + numeric strip for the PLAYING book. Hidden
+              while browsing the deck, where it would misread as the browsed
+              book's progress (the mini player carries the playing book instead). */}
+          {!browsing && (
+            <>
+              <View style={[styles.bookBarTrack, { width: progressRailWidth }]}>
+                <Animated.View style={[styles.bookBarFill, bookBarStyle]} />
+              </View>
+              <View
+                style={[
+                  styles.wholeBookStrip,
+                  { maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' },
+                ]}
+              >
+                <AppText variant="mono" color={colors.textMuted}>
+                  {formatTimestamp(position)}
+                </AppText>
+                <AppText variant="mono" style={{ fontWeight: '700' }}>
+                  {Math.round(bookProgress * 100)}%
+                </AppText>
+                <AppText variant="mono" color={colors.textMuted}>
+                  -{formatTimestamp(Math.max(0, duration - position))}
+                </AppText>
+              </View>
+            </>
+          )}
         </Animated.View>
       )}
 
@@ -767,6 +818,10 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
             author={deck.active.author}
             progress={browsedProgress}
             finished={browsedFinished}
+            leftSec={browsedLeftSec}
+            chapterTitle={
+              browsedChapter?.id === deck.active.itemId ? browsedChapter.title : null
+            }
             onPlay={() => deckPlayRef.current()}
           />
         ) : (
@@ -1115,17 +1170,31 @@ function DeckControls({
   author,
   progress,
   finished,
+  leftSec,
+  chapterTitle,
   onPlay,
 }: {
   title: string
   author: string
   progress: number
   finished: boolean
+  /** Seconds left in the book (null if not started / unknown). */
+  leftSec: number | null
+  /** Chapter left off on (null until fetched / if not started). */
+  chapterTitle: string | null
   onPlay: () => void
 }) {
   const { colors, shadow } = useTheme()
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   const pct = Math.round(Math.max(0, Math.min(1, progress)) * 100)
+  const started = pct > 0 && !finished
+  // Status line under the bar: for an in-progress book, the chapter left off on
+  // and time remaining; otherwise a simple Finished / Not started.
+  const statusRight = finished
+    ? 'Finished'
+    : started && leftSec != null
+      ? `${formatDuration(leftSec)} left`
+      : 'Not started'
   return (
     <Animated.View entering={FadeIn.duration(DUR.fast)}>
       {/* Browsed book: title + read-only progress bar. */}
@@ -1142,9 +1211,19 @@ function DeckControls({
           <View style={[styles.deckProgFill, { width: `${pct}%` }]} />
         </View>
         <AppText variant="caption" color={colors.textMuted}>
-          {finished ? 'Finished' : pct > 0 ? `${pct}%` : 'Not started'}
+          {statusRight}
         </AppText>
       </View>
+      {started && chapterTitle ? (
+        <AppText
+          variant="caption"
+          color={colors.textMuted}
+          numberOfLines={1}
+          style={styles.deckChapter}
+        >
+          Left off in {chapterTitle}
+        </AppText>
+      ) : null}
 
       {/* Big Play switches to this book. */}
       <View style={styles.deckPlayRow}>
@@ -1153,7 +1232,7 @@ function DeckControls({
         </SpringPressable>
       </View>
       <AppText variant="caption" color={colors.textMuted} style={styles.deckPlayHint}>
-        {finished ? 'Listen again' : progress > 0 ? 'Resume this book' : 'Start this book'}
+        {finished ? 'Listen again' : started ? 'Resume this book' : 'Start this book'}
       </AppText>
     </Animated.View>
   )
@@ -1836,6 +1915,7 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       overflow: 'hidden',
     },
     deckProgFill: { height: '100%', borderRadius: 3, backgroundColor: colors.accent },
+    deckChapter: { textAlign: 'center', marginTop: spacing.sm },
     deckPlayRow: { alignItems: 'center', marginTop: spacing.lg },
     // Leave room below the Play hint for the docked mini player.
     deckPlayHint: { textAlign: 'center', marginTop: spacing.sm, marginBottom: 72 },
