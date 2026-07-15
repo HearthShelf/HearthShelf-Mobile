@@ -1331,20 +1331,15 @@ const RecentSheet = forwardRef<
                           : started.toLocaleDateString()}
                     </AppText>
                   </View>
+                  {/* Display-only span; the row's single primary tap resumes at
+                      the end, and the overflow offers jump-to-start. */}
                   <View style={recentStyles.timecodeRow}>
-                    <Touchable hitSlop={8} onPress={() => jump(r.startTime)}>
-                      <AppText variant="mono" color={colors.textMuted}>
-                        {formatTimestamp(shownPos(r.startTime))}
-                      </AppText>
-                    </Touchable>
                     <AppText variant="mono" color={colors.textMuted}>
-                      {' → '}
+                      {formatTimestamp(shownPos(r.startTime))} {'→ '}
                     </AppText>
-                    <Touchable hitSlop={8} onPress={() => jump(r.currentTime)}>
-                      <AppText variant="mono" color={accent}>
-                        {formatTimestamp(shownPos(r.currentTime))}
-                      </AppText>
-                    </Touchable>
+                    <AppText variant="mono" color={accent}>
+                      {formatTimestamp(shownPos(r.currentTime))}
+                    </AppText>
                   </View>
                   {(startCh || endCh) && (
                     <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
@@ -1354,7 +1349,19 @@ const RecentSheet = forwardRef<
                     </AppText>
                   )}
                 </View>
-                {!live && <Icon name={icons.play} size={20} color={colors.textMuted} />}
+                {!live && (
+                  <Touchable
+                    hitSlop={8}
+                    style={recentStyles.jumpStart}
+                    onPress={() => jump(r.startTime)}
+                  >
+                    <Icon name={icons.skipPrev} size={16} color={colors.textMuted} />
+                    <AppText variant="caption" color={colors.textMuted}>
+                      Start
+                    </AppText>
+                  </Touchable>
+                )}
+                {!live && <Icon name={icons.play} size={20} color={accent} />}
               </Touchable>
             )
           })}
@@ -1383,6 +1390,7 @@ const makeRecentStyles = (colors: Palette) =>
     },
     durationRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
     timecodeRow: { flexDirection: 'row', alignItems: 'center' },
+    jumpStart: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   })
 
 const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
