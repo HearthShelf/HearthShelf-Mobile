@@ -111,6 +111,15 @@ import type { PlayerActionKey } from '@/store/settings'
 const HEARTH_BG = require('../assets/images/hearth-centered.webp')
 const INSPECT_HINT_KEY = 'hs.playerInspectHint'
 
+/** "Ch 23 · Career Moves" - unless the title already encodes its number (e.g.
+ *  "Chapter 23"), in which case the title alone is enough. */
+function formatChapterLabel(title: string, num: number): string {
+  const t = title.trim()
+  // Title already leads with a chapter number ("Chapter 23", "Ch. 23", "23.").
+  if (/^(chapter|ch\.?)\s*\d+\b/i.test(t) || /^\d+[.:) ]/.test(t)) return t
+  return `Ch ${num} · ${t}`
+}
+
 /**
  * The full player UI. Rendered as the pushed `/player` route (with a collapse
  * button) and inline in the Now Playing tab (`embedded`, no collapse button - the
@@ -530,7 +539,12 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // Chapter the browsed book was left on. Chapters aren't in the progress store,
   // so fetch them lazily - only when the deck SETTLES on a started book (a short
   // debounce, so a fling doesn't fire a fetch per page), cached per item.
-  const [browsedChapter, setBrowsedChapter] = useState<{ id: string; title: string } | null>(null)
+  const [browsedChapter, setBrowsedChapter] = useState<{
+    id: string
+    title: string
+    num: number
+    total: number
+  } | null>(null)
   const chapterCache = useRef<Map<string, { title: string; start: number; end: number }[]>>(
     new Map(),
   )
@@ -542,8 +556,10 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
     const id = browsedItemId
     const at = browsedRec.currentTime
     const pick = (chs: { title: string; start: number; end: number }[]) => {
-      const c = chs.find((ch) => at >= ch.start && at < ch.end) ?? chs[chs.length - 1]
-      setBrowsedChapter(c ? { id, title: c.title } : null)
+      let i = chs.findIndex((ch) => at >= ch.start && at < ch.end)
+      if (i < 0) i = chs.length - 1
+      const c = chs[i]
+      setBrowsedChapter(c ? { id, title: c.title, num: i + 1, total: chs.length } : null)
     }
     const cached = chapterCache.current.get(id)
     if (cached) {
@@ -819,8 +835,10 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
             progress={browsedProgress}
             finished={browsedFinished}
             leftSec={browsedLeftSec}
-            chapterTitle={
-              browsedChapter?.id === deck.active.itemId ? browsedChapter.title : null
+            chapterLabel={
+              browsedChapter?.id === deck.active.itemId
+                ? formatChapterLabel(browsedChapter.title, browsedChapter.num)
+                : null
             }
             onPlay={() => deckPlayRef.current()}
           />
@@ -1171,7 +1189,7 @@ function DeckControls({
   progress,
   finished,
   leftSec,
-  chapterTitle,
+  chapterLabel,
   onPlay,
 }: {
   title: string
@@ -1180,8 +1198,8 @@ function DeckControls({
   finished: boolean
   /** Seconds left in the book (null if not started / unknown). */
   leftSec: number | null
-  /** Chapter left off on (null until fetched / if not started). */
-  chapterTitle: string | null
+  /** Chapter left off on, e.g. "Ch 23 · Career Moves" (null until fetched). */
+  chapterLabel: string | null
   onPlay: () => void
 }) {
   const { colors, shadow } = useTheme()
@@ -1214,14 +1232,14 @@ function DeckControls({
           {statusRight}
         </AppText>
       </View>
-      {started && chapterTitle ? (
+      {started && chapterLabel ? (
         <AppText
           variant="caption"
           color={colors.textMuted}
           numberOfLines={1}
           style={styles.deckChapter}
         >
-          Left off in {chapterTitle}
+          Left off in {chapterLabel}
         </AppText>
       ) : null}
 
