@@ -45,8 +45,7 @@ import {
   skipChapter,
   currentChapter,
 } from '@/player/store'
-import { getQueueState, subscribeQueue, QUEUE_MODES } from '@/player/queue'
-import type { QueueMode } from '@hearthshelf/core'
+import { getQueueState, subscribeQueue } from '@/player/queue'
 import { getProgressState } from '@/store/progress'
 import { getImmersive, subscribeImmersive, setImmersive } from '@/player/immersive'
 import { getActiveClub, subscribeActiveClub } from '@/player/clubSync'
@@ -110,11 +109,6 @@ import type { PlayerActionKey } from '@/store/settings'
 
 const HEARTH_BG = require('../assets/images/hearth-centered.webp')
 const INSPECT_HINT_KEY = 'hs.playerInspectHint'
-
-/** Short label for the queue header chip ("Auto", "Manual", ...). */
-function queueModeLabel(mode: QueueMode): string {
-  return QUEUE_MODES.find((m) => m.v === mode)?.label ?? 'Off'
-}
 
 /**
  * The full player UI. Rendered as the pushed `/player` route (with a collapse
@@ -538,36 +532,56 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
 
       {!immersive && (
         <Animated.View entering={FadeIn.duration(DUR.base)} exiting={FadeOut.duration(DUR.fast)}>
+          {/* Header, three zones: [queue count] · [title/author or back-to-live]
+              · [focus + sync]. The center carries the now-playing identity
+              (marquees if long) and becomes the return-home action when browsed
+              into the deck, so the cover keeps its full size below. */}
           <View style={styles.header}>
-            {/* Left: queue status chip (count + mode) opening the Queue sheet.
-                On the pushed route a collapse chevron precedes it. */}
-            {!embedded && (
-              <IconButton
-                name={icons.collapse}
-                size={26}
-                onPress={() => router.back()}
-                style={{ marginRight: spacing.xs }}
-              />
-            )}
+            {/* Left: queue chip (icon + count) opening the Queue sheet. */}
             <Touchable style={styles.queueChip} onPress={() => queueRef.current?.present()}>
               <Icon name={icons.queue} size={16} color={colors.accent} />
               <AppText variant="caption" style={{ fontWeight: '700' }}>
                 {queue.items.length}
               </AppText>
-              <AppText variant="caption" color={colors.textMuted}>
-                · {queueModeLabel(settings.queueMode)}
-              </AppText>
             </Touchable>
-            <View style={{ flex: 1 }} />
+
+            {/* Center: now-playing title/author, or Back-to-now-playing while
+                browsed off the live page. */}
+            <View style={styles.headerCenter}>
+              {deck.index > 0 ? (
+                <Touchable
+                  style={styles.headerBackToLive}
+                  onPress={() => deckJumpRef.current(0)}
+                >
+                  <Icon name={icons.nowPlaying} size={16} color={colors.accent} />
+                  <AppText variant="caption" color={colors.accent} style={{ fontWeight: '700' }}>
+                    Back to now playing
+                  </AppText>
+                </Touchable>
+              ) : (
+                <Marquee>
+                  <View style={styles.headerTitleRow}>
+                    <AppText variant="label" numberOfLines={1} style={styles.headerTitleText}>
+                      {nowPlaying.title}
+                    </AppText>
+                    <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
+                      {nowPlaying.author}
+                    </AppText>
+                  </View>
+                </Marquee>
+              )}
+            </View>
+
             {/* Right: Focus-view entry + passive sync status glyph. */}
-            <IconButton
-              name={icons.focusView}
-              size={22}
-              color={colors.textMuted}
-              onPress={enter}
-            />
-            <View style={{ width: spacing.sm }} />
-            <SyncStatusIcon />
+            <View style={styles.headerRight}>
+              <IconButton
+                name={icons.focusView}
+                size={22}
+                color={colors.textMuted}
+                onPress={enter}
+              />
+              <SyncStatusIcon />
+            </View>
           </View>
 
           {carActive && (
@@ -720,38 +734,24 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         )
       })()}
 
-      {/* Back-to-now-playing chip, in normal flow below the cover (was clipped
-          inside the carousel's overflow). Shown when browsed off the live page;
-          tapping the first dot does the same. */}
-      {!immersive && deck.index > 0 && (
-        <Touchable
-          onPress={() => deckJumpRef.current(0)}
-          style={styles.backToLive}
-        >
-          <Icon name={icons.nowPlaying} size={20} color={colors.accent} />
-          <AppText variant="caption" style={{ fontWeight: '800' }}>
-            Back to now playing
-          </AppText>
-        </Touchable>
-      )}
-
       {/* Controls pinned to the bottom. */}
       <View
         style={[styles.controls, { maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }]}
       >
-        {/* One compact title line: title bold + author muted; a long
-            combination marquees horizontally instead of wrapping, so the freed
-            height goes to the artwork (the one-row layout law). */}
-        <Marquee style={styles.titleLine}>
-          <View style={styles.titleRow}>
-            <AppText variant="title" numberOfLines={1} style={styles.titleText}>
-              {nowPlaying.title}
-            </AppText>
-            <AppText variant="label" color={colors.textMuted} numberOfLines={1}>
-              {nowPlaying.author}
-            </AppText>
-          </View>
-        </Marquee>
+        {/* Focus view has no header, so it keeps a compact title line here;
+            normally the title lives in the header's center zone. */}
+        {immersive && (
+          <Marquee style={styles.titleLine}>
+            <View style={styles.titleRow}>
+              <AppText variant="title" numberOfLines={1} style={styles.titleText}>
+                {nowPlaying.title}
+              </AppText>
+              <AppText variant="label" color={colors.textMuted} numberOfLines={1}>
+                {nowPlaying.author}
+              </AppText>
+            </View>
+          </Marquee>
+        )}
 
         <View style={styles.scrub}>
           {!immersive && (
@@ -1576,9 +1576,17 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
     header: {
       flexDirection: 'row',
       alignItems: 'center',
+      gap: spacing.sm,
       paddingHorizontal: spacing.lg,
       paddingVertical: spacing.sm,
     },
+    // Center zone flexes to fill between the queue chip and the right controls;
+    // its Marquee clips + scrolls a long title/author within this width.
+    headerCenter: { flex: 1, minWidth: 0, alignItems: 'center' },
+    headerTitleRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
+    headerTitleText: { fontWeight: '700' },
+    headerBackToLive: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
     focusExit: {
       alignItems: 'flex-end',
       paddingHorizontal: spacing.lg,
@@ -1613,19 +1621,6 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
     // Each dot occupies one pitch so the track's math (index * pitch) lines up.
     deckDotSlot: { width: DOT_PITCH, height: 16, alignItems: 'center', justifyContent: 'center' },
     deckDot: { width: 7, height: 7, borderRadius: 3.5 },
-    backToLive: {
-      flexDirection: 'row',
-      alignSelf: 'center',
-      alignItems: 'center',
-      gap: 6,
-      marginTop: spacing.sm,
-      paddingHorizontal: spacing.lg,
-      paddingVertical: 6,
-      borderRadius: radius.pill,
-      backgroundColor: colors.fill,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-    },
     carChip: {
       flexDirection: 'row',
       alignItems: 'center',
