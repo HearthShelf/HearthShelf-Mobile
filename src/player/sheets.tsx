@@ -273,6 +273,15 @@ export const SpeedSheet = forwardRef<SheetHandle>(function SpeedSheet(_props, re
           )
         })}
       </View>
+      {/* Quick return to normal speed; only shown when the rate is off 1x. */}
+      {Math.abs(rate - 1) >= 0.025 ? (
+        <Touchable style={styles.resetSpeed} onPress={() => setRate(1)}>
+          <Icon name={icons.retry} size={16} color={colors.textMuted} />
+          <AppText variant="label" color={colors.textMuted}>
+            Reset 1x
+          </AppText>
+        </Touchable>
+      ) : null}
     </Sheet>
   )
 })
@@ -751,6 +760,15 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof buildShadow>) =>
       alignItems: 'center',
     },
     speedOn: { backgroundColor: colors.accent },
+    resetSpeed: {
+      flexDirection: 'row',
+      alignSelf: 'center',
+      alignItems: 'center',
+      gap: 6,
+      marginTop: spacing.lg,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.lg,
+    },
     segFull: {
       flexDirection: 'row',
       gap: 4,
