@@ -152,16 +152,23 @@ export function PlayerCoverCarousel({
   )
 
   const snap = coverWidth + PAGE_GAP
+  // Last page boundary we ticked, so a fast fling clicks once per book crossed
+  // (the settled `index` alone would miss the ones that flew by).
+  const lastTick = useRef(0)
   const onScroll = useCallback(
     (e: { nativeEvent: { contentOffset: { x: number } } }) => {
       const x = e.nativeEvent.contentOffset.x
+      const frac = Math.max(0, Math.min(pages.length - 1, x / snap))
       // Continuous fractional page for the dots (tracks the finger every frame).
-      onScrollFraction?.(Math.max(0, Math.min(pages.length - 1, x / snap)))
-      const i = Math.max(0, Math.min(pages.length - 1, Math.round(x / snap)))
-      if (i !== index) {
+      onScrollFraction?.(frac)
+      // Ratchet: tick each time the scroll crosses into a new book's cell, so a
+      // whip across the deck feels like click-click-click past each detent.
+      const nearest = Math.round(frac)
+      if (nearest !== lastTick.current) {
+        lastTick.current = nearest
         haptics.select()
-        setIndex(i)
       }
+      if (nearest !== index) setIndex(nearest)
     },
     [snap, index, pages.length, onScrollFraction],
   )
@@ -256,11 +263,13 @@ export function PlayerCoverCarousel({
         style={{ width: pageW }}
         contentContainerStyle={{ paddingHorizontal: sidePad }}
         showsHorizontalScrollIndicator={false}
-        // Snap one cover per swipe while neighbors peek at the edges.
+        // Momentum ratchet: a fling carries across the deck (each book a detent),
+        // decelerating naturally and settling on the nearest cover. Neighbors
+        // peek at the edges. `disableIntervalMomentum` is intentionally OFF so a
+        // fast whip flies past many books instead of stopping one at a time.
         snapToInterval={coverWidth + PAGE_GAP}
         snapToAlignment="start"
-        disableIntervalMomentum
-        decelerationRate="fast"
+        decelerationRate="normal"
         onScroll={onScroll}
         scrollEventThrottle={16}
         getItemLayout={(_, i) => ({
