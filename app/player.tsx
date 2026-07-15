@@ -174,6 +174,13 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // committing a seek (seek fires once, on release - see Scrubber).
   const [previewRatio, setPreviewRatio] = useState<number | null>(null)
 
+  // Carousel deck state (page count + active index), reported up so the dots
+  // render above the cover in normal flow (where they can't be clipped).
+  const [deck, setDeck] = useState({ count: 1, index: 0 })
+  const onDeckChange = useCallback((count: number, index: number) => {
+    setDeck((d) => (d.count === count && d.index === index ? d : { count, index }))
+  }, [])
+
   // Buffering heuristic (no native buffer event yet): while we intend to be
   // playing but the reported position hasn't advanced, we're likely stalled.
   // Surface it only after a grace period so micro-stalls don't flash.
@@ -401,7 +408,9 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const contentMaxWidth = adaptiveContentMaxWidth(width)
   const progressRailWidth = Math.max(0, Math.min(width, contentMaxWidth) - spacing.xl * 2)
   // Width of each skip hotspot: the margin from the screen edge to the artwork.
-  const hotspotWidth = Math.max(0, (width - coverWidth) / 2)
+  // The carousel page is inset by the content padding; its side gutters (where
+  // the double-tap skip hotspots live) sit beside the centered cover.
+  const carouselHotspotWidth = Math.max(0, (width - spacing.xl * 2 - coverWidth) / 2)
 
   const goToTab = (name: string) => {
     // The player already IS the now-playing surface; tapping that tab is a no-op.
@@ -580,6 +589,25 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         </Animated.View>
       )}
 
+      {/* Carousel deck-position dots, above the cover per the layout. In normal
+          flow here so they can't be clipped by the cover area's overflow. */}
+      {!immersive && deck.count > 1 && (
+        <View style={styles.deckDots}>
+          {Array.from({ length: deck.count }).map((_, i) => (
+            <View
+              key={i}
+              style={[
+                styles.deckDot,
+                {
+                  backgroundColor:
+                    i === deck.index ? colors.accent : withAlpha(colors.text, 0.3),
+                },
+              ]}
+            />
+          ))}
+        </View>
+      )}
+
       {/* Cover fills the space between header and the pinned controls. The
           cover-tap overlays (bookmark/club) are shared between the plain cover
           and the carousel; skip-hotspots are suppressed in carousel mode since
@@ -622,7 +650,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
             )}
           </>
         )
-        const carouselOn = settings.carouselPlayer && !immersive
+        const carouselOn = !immersive
         return (
           <GestureDetector gesture={swipe}>
             <View style={styles.coverArea}>
@@ -638,42 +666,44 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                   pageWidth={width - spacing.xl * 2}
                   overlay={coverOverlays}
                   skipFeedback={<SkipFeedbackOverlay ref={skipFeedbackRef} />}
+                  hotspots={
+                    settings.skipHotspots && carouselHotspotWidth > 24 ? (
+                      <>
+                        <Pressable
+                          onPress={() => onHotspotTap(-1)}
+                          style={[styles.hotspotLeft, { width: carouselHotspotWidth }]}
+                          accessibilityLabel={`Skip back ${settings.skipBack} seconds`}
+                        />
+                        <Pressable
+                          onPress={() => onHotspotTap(1)}
+                          style={[styles.hotspotRight, { width: carouselHotspotWidth }]}
+                          accessibilityLabel={`Skip forward ${settings.skipForward} seconds`}
+                        />
+                      </>
+                    ) : null
+                  }
                   onLivePress={onCoverTap}
+                  onDeckChange={onDeckChange}
                 />
               ) : (
-                <>
-                  {settings.skipHotspots && !immersive && hotspotWidth > 24 && (
-                    <>
-                      <Pressable
-                        onPress={() => onHotspotTap(-1)}
-                        style={[styles.hotspotLeft, { width: hotspotWidth }]}
-                        accessibilityLabel={`Skip back ${settings.skipBack} seconds`}
-                      />
-                      <Pressable
-                        onPress={() => onHotspotTap(1)}
-                        style={[styles.hotspotRight, { width: hotspotWidth }]}
-                        accessibilityLabel={`Skip forward ${settings.skipForward} seconds`}
-                      />
-                    </>
-                  )}
-                  <Pressable onPress={onCoverTap} style={styles.coverTap}>
-                    <Cover
-                      uri={nowPlaying.artworkUrl}
-                      itemId={nowPlaying.itemId}
-                      width={coverWidth}
-                      aspectRatio={coverAspect}
-                      radius={radius.card}
-                      fallback={{
-                        hue,
-                        initial: nowPlaying.title.charAt(0).toUpperCase(),
-                        title: nowPlaying.title,
-                      }}
-                      style={styles.cover}
-                    />
-                    <SkipFeedbackOverlay ref={skipFeedbackRef} />
-                    {coverOverlays}
-                  </Pressable>
-                </>
+                // Focus view (immersive): a single large cover, no carousel.
+                <Pressable onPress={onCoverTap} style={styles.coverTap}>
+                  <Cover
+                    uri={nowPlaying.artworkUrl}
+                    itemId={nowPlaying.itemId}
+                    width={coverWidth}
+                    aspectRatio={coverAspect}
+                    radius={radius.card}
+                    fallback={{
+                      hue,
+                      initial: nowPlaying.title.charAt(0).toUpperCase(),
+                      title: nowPlaying.title,
+                    }}
+                    style={styles.cover}
+                  />
+                  <SkipFeedbackOverlay ref={skipFeedbackRef} />
+                  {coverOverlays}
+                </Pressable>
               )}
             </View>
           </GestureDetector>
@@ -1473,6 +1503,13 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       paddingHorizontal: spacing.lg,
       paddingTop: spacing.sm,
     },
+    deckDots: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: 6,
+      paddingVertical: spacing.sm,
+    },
+    deckDot: { width: 8, height: 8, borderRadius: 4 },
     carChip: {
       flexDirection: 'row',
       alignItems: 'center',

@@ -10,7 +10,7 @@
  * `carouselPlayer` setting is on. Skip-hotspots are suppressed by the caller
  * while this is active (horizontal swipe would fight the edge double-taps).
  */
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FlatList, StyleSheet, View } from 'react-native'
 import type { ListRenderItemInfo } from 'react-native'
 import { coverHue } from '@hearthshelf/core'
@@ -51,8 +51,14 @@ export function PlayerCoverCarousel({
   overlay,
   /** Onscreen skip feedback overlay (only meaningful on the live card). */
   skipFeedback,
+  /** Double-tap skip hotspots for the live card's left/right margins. Rendered
+   *  in the gutters beside the cover so they coexist with horizontal paging. */
+  hotspots,
   /** Tap the live cover (play/pause or lightbox, per the player's own logic). */
   onLivePress,
+  /** Reports the deck (page count, active index) so the player can draw the
+   *  position dots above the cover in normal flow. */
+  onDeckChange,
 }: {
   liveItemId: string
   liveTitle: string
@@ -64,7 +70,9 @@ export function PlayerCoverCarousel({
   pageWidth: number
   overlay?: React.ReactNode
   skipFeedback?: React.ReactNode
+  hotspots?: React.ReactNode
   onLivePress: () => void
+  onDeckChange?: (count: number, index: number) => void
 }) {
   const { colors } = useTheme()
   const styles = useMemo(() => makeStyles(colors), [colors])
@@ -88,6 +96,12 @@ export function PlayerCoverCarousel({
       }))
     return [live, ...rest]
   }, [liveItemId, liveTitle, liveAuthor, queue])
+
+  // Report deck state up so the player can draw the position dots above the
+  // cover (in normal flow, where they can't be clipped by the cover area).
+  useEffect(() => {
+    onDeckChange?.(pages.length, index)
+  }, [pages.length, index, onDeckChange])
 
   // Each page fills the full cover-area width so neighbors sit fully offscreen -
   // only the centered cover shows; the dots signal that more can be swiped in.
@@ -146,6 +160,9 @@ export function PlayerCoverCarousel({
     const pageHue = coverHue(item.itemId)
     return (
       <View style={{ width: pageW, alignItems: 'center' }}>
+        {/* Skip hotspots live in the gutters beside the live cover (double-tap
+            to skip). Rendered behind the card so the cover's own tap wins. */}
+        {item.isLive ? hotspots : null}
         <SpringPressable
           scaleTo={0.98}
           onPress={() =>
@@ -216,21 +233,6 @@ export function PlayerCoverCarousel({
 
   return (
     <View style={styles.wrap}>
-      {/* Deck-position dots ride ABOVE the cover (per the player layout), so the
-          artwork is the bottom-most element. Only shown with more than one page. */}
-      {pages.length > 1 ? (
-        <View style={styles.dotsTop}>
-          {pages.map((p, i) => (
-            <View
-              key={p.itemId}
-              style={[
-                styles.dot,
-                { backgroundColor: i === index ? colors.accent : withAlpha(colors.text, 0.3) },
-              ]}
-            />
-          ))}
-        </View>
-      ) : null}
       <FlatList
         ref={listRef}
         data={pages}
@@ -315,14 +317,6 @@ const makeStyles = (colors: Palette) =>
       textShadowOffset: { width: 0, height: 1 },
       textShadowRadius: 4,
     },
-    // Deck dots above the cover.
-    dotsTop: {
-      flexDirection: 'row',
-      gap: 6,
-      justifyContent: 'center',
-      marginBottom: spacing.sm,
-    },
-    dot: { width: 8, height: 8, borderRadius: 4 },
     backChip: {
       flexDirection: 'row',
       alignItems: 'center',
