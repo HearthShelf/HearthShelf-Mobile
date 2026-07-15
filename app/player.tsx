@@ -445,7 +445,12 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // (possibly portrait) cover still fits the available height.
   const coverAspect = COVER_ASPECT_RATIO[settings.coverAspect]
   const coverMaxW = Math.min(width - spacing.xl * 2, adaptivePlayerCoverMaxWidth(width, immersive))
-  const coverMaxH = height * (immersive ? 0.62 : 0.52)
+  // Cap the cover to the REAL measured height of the cover area (once known), so
+  // it's never taller than the space left after the header/controls and can't be
+  // clipped by the area's overflow. Falls back to a fraction of screen height
+  // for the first frame (before onLayout fires).
+  const [coverAreaH, setCoverAreaH] = useState(0)
+  const coverMaxH = coverAreaH > 0 ? coverAreaH - spacing.md : height * (immersive ? 0.62 : 0.52)
   const coverWidth = Math.min(coverMaxW, coverMaxH * coverAspect)
   const contentMaxWidth = adaptiveContentMaxWidth(width)
   const progressRailWidth = Math.max(0, Math.min(width, contentMaxWidth) - spacing.xl * 2)
@@ -676,32 +681,31 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
             </View>
           )}
 
-          {/* Whole-book progress bar + numeric strip for the PLAYING book. Hidden
-              while browsing the deck, where it would misread as the browsed
-              book's progress (the mini player carries the playing book instead). */}
-          {!browsing && (
-            <>
-              <View style={[styles.bookBarTrack, { width: progressRailWidth }]}>
-                <Animated.View style={[styles.bookBarFill, bookBarStyle]} />
-              </View>
-              <View
-                style={[
-                  styles.wholeBookStrip,
-                  { maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' },
-                ]}
-              >
-                <AppText variant="mono" color={colors.textMuted}>
-                  {formatTimestamp(position)}
-                </AppText>
-                <AppText variant="mono" style={{ fontWeight: '700' }}>
-                  {Math.round(bookProgress * 100)}%
-                </AppText>
-                <AppText variant="mono" color={colors.textMuted}>
-                  -{formatTimestamp(Math.max(0, duration - position))}
-                </AppText>
-              </View>
-            </>
-          )}
+          {/* Whole-book progress bar + numeric strip for the PLAYING book. Made
+              invisible (not removed) while browsing, so its space is reserved
+              and nothing below shifts; the mini player carries the playing book
+              while you browse. */}
+          <View style={browsing ? styles.hiddenReserved : undefined} pointerEvents="none">
+            <View style={[styles.bookBarTrack, { width: progressRailWidth }]}>
+              <Animated.View style={[styles.bookBarFill, bookBarStyle]} />
+            </View>
+            <View
+              style={[
+                styles.wholeBookStrip,
+                { maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' },
+              ]}
+            >
+              <AppText variant="mono" color={colors.textMuted}>
+                {formatTimestamp(position)}
+              </AppText>
+              <AppText variant="mono" style={{ fontWeight: '700' }}>
+                {Math.round(bookProgress * 100)}%
+              </AppText>
+              <AppText variant="mono" color={colors.textMuted}>
+                -{formatTimestamp(Math.max(0, duration - position))}
+              </AppText>
+            </View>
+          </View>
         </Animated.View>
       )}
 
@@ -761,7 +765,13 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         const carouselOn = !immersive
         return (
           <GestureDetector gesture={swipe}>
-            <View style={styles.coverArea}>
+            <View
+              style={styles.coverArea}
+              onLayout={(e) => {
+                const h = e.nativeEvent.layout.height
+                setCoverAreaH((prev) => (Math.abs(prev - h) > 1 ? h : prev))
+              }}
+            >
               {carouselOn ? (
                 <PlayerCoverCarousel
                   liveItemId={nowPlaying.itemId}
@@ -1830,6 +1840,10 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       paddingHorizontal: spacing.xl,
       marginTop: 6,
     },
+    // Keep an element's layout footprint but make it invisible + inert, so
+    // toggling it doesn't reflow the rest (used for the whole-book strip while
+    // browsing the deck).
+    hiddenReserved: { opacity: 0 },
     coverArea: {
       flex: 1,
       // minHeight:0 lets this flex child actually shrink below its content size
