@@ -50,9 +50,11 @@ import {
   ProgressBar,
   Screen,
   Sheet,
+  type SheetRef,
   Touchable,
   icons,
 } from '@/ui/primitives'
+import { Icon } from '@/ui/icons'
 import { AppTabBar, tabFromParam } from '@/ui/AppTabBar'
 import { NotOwnedSheet } from '@/ui/NotOwnedSheet'
 import { CoverGlow } from '@/ui/CoverGlow'
@@ -178,6 +180,15 @@ export default function SeriesDetailScreen() {
   const author = books[0] ? itemAuthor(books[0]) : ''
   const hue = coverHue(books[0]?.id ?? series.id)
 
+  const openAuthor = () => {
+    if (!author) return
+    // Series list items are minified and carry no author id, so route by name;
+    // the group screen resolves the id from the library author list.
+    router.push(
+      `/group/authors/${encodeURIComponent(author)}?libraryId=${encodeURIComponent(libraryId)}&name=${encodeURIComponent(author)}&byName=1&from=${active}`,
+    )
+  }
+
   // Per-book progress, finished count, totals. A finished book counts as 1.0.
   let done = 0
   let sum = 0
@@ -251,7 +262,12 @@ export default function SeriesDetailScreen() {
         <CoverGlow hue={hue} height={340} />
       </View>
 
-      <Header onBack={() => router.back()} />
+      <Header
+        onBack={() => router.back()}
+        allFinished={allSeriesFinished}
+        marking={marking}
+        onMarkSeries={() => void markSeries()}
+      />
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: miniInset }}
@@ -267,9 +283,11 @@ export default function SeriesDetailScreen() {
             {series.name}
           </AppText>
           {author ? (
-            <AppText variant="label" color={colors.textMuted}>
-              {author}
-            </AppText>
+            <Touchable onPress={openAuthor} hitSlop={6}>
+              <AppText variant="label" color={colors.accent}>
+                {author}
+              </AppText>
+            </Touchable>
           ) : null}
 
           <View style={styles.statStrip}>
@@ -294,6 +312,29 @@ export default function SeriesDetailScreen() {
             </AppText>
           </View>
           <SegmentTrack books={books} progressById={progressById} missingCount={missing.length} />
+          {/* Micro-legend so the segmented track is readable at a glance. */}
+          <View style={styles.legend}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: colors.accent }]} />
+              <AppText variant="caption" color={colors.textMuted}>
+                finished
+              </AppText>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, styles.legendDotPartial]} />
+              <AppText variant="caption" color={colors.textMuted}>
+                in progress
+              </AppText>
+            </View>
+            {missing.length > 0 ? (
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, styles.legendDotMissing]} />
+                <AppText variant="caption" color={colors.textMuted}>
+                  not owned
+                </AppText>
+              </View>
+            ) : null}
+          </View>
         </View>
 
         {/* Series actions */}
@@ -307,17 +348,6 @@ export default function SeriesDetailScreen() {
             />
           ) : null}
         </View>
-        <Touchable onPress={markSeries} disabled={marking} style={styles.markSeriesBtn}>
-          <IconButton
-            name={allSeriesFinished ? icons.removeDone : icons.doneAll}
-            size={18}
-            color={colors.text}
-          />
-          <AppText variant="label">
-            {allSeriesFinished ? 'Mark series unfinished' : 'Mark series finished'}
-          </AppText>
-        </Touchable>
-
         {/* List head / selection toolbar. Long-press a book to start selecting. */}
         {selection.selecting ? (
           <BookSelectionToolbar selection={selection} books={books} libraryId={libraryId} />
@@ -348,10 +378,13 @@ export default function SeriesDetailScreen() {
               onPlay={() => play(b.id)}
             />
           ))}
-          {!selection.selecting && missing.length > 0 ? (
-            <MissingBooks books={missing} startSeq={books.length} rmabEnabled={rmabEnabled} />
-          ) : null}
         </View>
+
+        {/* Unowned books collapse into their own section so the reading-order
+            list stays pure (owned books only). */}
+        {!selection.selecting && missing.length > 0 ? (
+          <MissingBooks books={missing} startSeq={books.length} rmabEnabled={rmabEnabled} />
+        ) : null}
       </ScrollView>
 
       <AppTabBar activeName={active} onPressTab={goToTab} />
@@ -547,9 +580,12 @@ function MissingBooks({
   startSeq: number
   rmabEnabled: boolean
 }) {
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   const router = useRouter()
   const sheetRef = useRef<BottomSheetModal>(null)
   const [selected, setSelected] = useState<HSAudibleSeriesBook | null>(null)
+  const [expanded, setExpanded] = useState(false)
 
   const onPressRow = (b: HSAudibleSeriesBook) => {
     // Upcoming (unreleased) book -> the follow/countdown page; already-released
@@ -563,23 +599,38 @@ function MissingBooks({
   }
 
   return (
-    <>
-      {books.map((b, i) => (
-        <MissingBookRow
-          key={b.asin}
-          book={b}
-          index={startSeq + i}
-          rmabEnabled={rmabEnabled}
-          onPress={() => onPressRow(b)}
+    <View style={styles.missingSection}>
+      <Touchable style={styles.missingHead} onPress={() => setExpanded((e) => !e)}>
+        <View style={styles.listHeadTitle}>
+          <IconButton name={icons.hidden} size={18} color={colors.textMuted} />
+          <AppText variant="title">Not in your library ({books.length})</AppText>
+        </View>
+        <IconButton
+          name={expanded ? icons.collapse : icons.chevronDown}
+          size={22}
+          color={colors.textMuted}
         />
-      ))}
+      </Touchable>
+      {expanded ? (
+        <View style={styles.list}>
+          {books.map((b, i) => (
+            <MissingBookRow
+              key={b.asin}
+              book={b}
+              index={startSeq + i}
+              rmabEnabled={rmabEnabled}
+              onPress={() => onPressRow(b)}
+            />
+          ))}
+        </View>
+      ) : null}
       <NotOwnedSheet
         ref={sheetRef}
         book={selected}
         rmabEnabled={rmabEnabled}
         onDismiss={() => setSelected(null)}
       />
-    </>
+    </View>
   )
 }
 
@@ -658,12 +709,52 @@ function StatCell({ value, label }: { value: string; label: string }) {
   )
 }
 
-function Header({ onBack }: { onBack: () => void }) {
+function Header({
+  onBack,
+  allFinished,
+  marking,
+  onMarkSeries,
+}: {
+  onBack: () => void
+  allFinished?: boolean
+  marking?: boolean
+  onMarkSeries?: () => void
+}) {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
+  const overflowRef = useRef<SheetRef>(null)
   return (
     <View style={styles.header}>
       <IconButton name={icons.back} onPress={onBack} style={styles.headerBtn} />
+      {onMarkSeries ? (
+        <>
+          <View style={{ flex: 1 }} />
+          <IconButton
+            name={icons.more}
+            onPress={() => overflowRef.current?.present()}
+            style={styles.headerBtn}
+          />
+          <Sheet ref={overflowRef} title="Series options">
+            <Touchable
+              style={styles.overflowRow}
+              disabled={marking}
+              onPress={() => {
+                overflowRef.current?.dismiss()
+                onMarkSeries()
+              }}
+            >
+              <Icon
+                name={allFinished ? icons.removeDone : icons.doneAll}
+                size={22}
+                color={colors.text}
+              />
+              <AppText variant="body">
+                {allFinished ? 'Mark series unfinished' : 'Mark series finished'}
+              </AppText>
+            </Touchable>
+          </Sheet>
+        </>
+      ) : null}
     </View>
   )
 }
@@ -718,6 +809,34 @@ const makeStyles = (colors: Palette) =>
       gap: spacing.md,
     },
     progTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+    legend: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
+    legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    legendDot: { width: 9, height: 9, borderRadius: 3 },
+    legendDotPartial: {
+      backgroundColor: colors.fillStrong,
+      borderLeftWidth: 4.5,
+      borderLeftColor: colors.accent,
+    },
+    legendDotMissing: {
+      backgroundColor: 'rgba(216,68,58,0.22)',
+      borderWidth: 1,
+      borderColor: 'rgba(216,68,58,0.6)',
+    },
+    missingSection: { marginTop: spacing.lg },
+    missingHead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm,
+    },
+    overflowRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.md,
+      paddingBottom: spacing.xl,
+    },
     segTrack: { flexDirection: 'row', gap: 3 },
     seg: {
       flex: 1,
@@ -748,19 +867,6 @@ const makeStyles = (colors: Palette) =>
       gap: spacing.md,
       marginHorizontal: spacing.lg,
       marginTop: spacing.lg,
-    },
-    markSeriesBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: spacing.sm,
-      marginHorizontal: spacing.lg,
-      marginTop: spacing.md,
-      paddingVertical: spacing.md,
-      borderRadius: radius.card,
-      backgroundColor: colors.fill,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.hairline,
     },
     listHead: {
       flexDirection: 'row',
