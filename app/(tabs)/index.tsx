@@ -71,6 +71,7 @@ import {
 import { BottomSheetFlatList } from '@gorhom/bottom-sheet'
 import { Icon, type IconName } from '@/ui/icons'
 import { DUR } from '@/ui/motion'
+import { onTabReselect } from '@/ui/tabReselect'
 import { Scrubber } from '@/player/Scrubber'
 import { SkipButton } from '@/player/SkipButton'
 import {
@@ -135,6 +136,13 @@ export default function HomeScreen() {
   const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
   const { message: toast, show: showToast } = useToast()
   const actionsRef = useRef<BookActionsHandle>(null)
+  const scrollRef = useRef<ScrollView>(null)
+  // Re-tapping the Home tab while already on it scrolls back to the top.
+  useEffect(
+    () =>
+      onTabReselect('index', () => scrollRef.current?.scrollTo({ y: 0, animated: true })),
+    [],
+  )
   const lastPlaybackItemRef = useRef<string | null>(null)
   const lastPlaybackPlayingRef = useRef<boolean | null>(null)
   const playbackRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -483,6 +491,7 @@ export default function HomeScreen() {
       {/* Mounts fresh when the first load finishes, so content fades in instead
           of hard-cutting from the spinner. */}
       <Animated.ScrollView
+        ref={scrollRef}
         entering={FadeIn.duration(DUR.base)}
         contentContainerStyle={{ paddingBottom: contentInset }}
         showsVerticalScrollIndicator={false}

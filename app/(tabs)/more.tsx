@@ -10,7 +10,7 @@
  * stack. Keeping the menu on the tab removes a whole navigation level.
  */
 import { useUser } from '@clerk/expo'
-import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { useFocusEffect, useRouter, type Href } from 'expo-router'
 import Constants from 'expo-constants'
@@ -24,6 +24,7 @@ import { Icon, type IconName } from '@/ui/icons'
 import { SettingsGroup, SettingsLabel, SettingsRow, SettingsToggle } from '@/ui/settingsControls'
 import { useContentInset } from '@/ui/useContentInset'
 import { useBackHandler } from '@/ui/useBackHandler'
+import { onTabReselect } from '@/ui/tabReselect'
 
 interface MenuItem {
   icon: IconName
@@ -135,6 +136,13 @@ export default function MoreScreen() {
   const contentInset = useContentInset()
   const s = useSyncExternalStore(subscribeSettings, getSettingsState)
 
+  const scrollRef = useRef<ScrollView>(null)
+  // Re-tapping the More tab while already on it scrolls back to the top.
+  useEffect(
+    () => onTabReselect('more', () => scrollRef.current?.scrollTo({ y: 0, animated: true })),
+    [],
+  )
+
   // Non-home tab: hardware back returns to Home rather than exiting the app.
   useBackHandler(
     useCallback(() => {
@@ -170,6 +178,7 @@ export default function MoreScreen() {
     <Screen>
       <SectionHeader title="More" />
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={{
           padding: spacing.lg,
           paddingBottom: contentInset,

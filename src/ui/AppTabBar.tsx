@@ -9,6 +9,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated'
 import { Icon, iconFor, icons } from './icons'
+import { emitTabReselect } from './tabReselect'
 import { haptics } from './haptics'
 import { POP_SPRING } from './motion'
 import { fonts, MAX_FONT_SCALE, radius } from './theme'
@@ -60,7 +61,12 @@ export function AppTabBar({
             key={meta.name}
             style={({ pressed }) => [styles.tab, pressed && styles.tabPressed]}
             onPress={() => {
-              if (!focused) haptics.select()
+              if (focused) {
+                // Re-tapping the active tab: ask its root to scroll to top.
+                emitTabReselect(meta.name)
+              } else {
+                haptics.select()
+              }
               onPressTab(meta.name)
             }}
           >

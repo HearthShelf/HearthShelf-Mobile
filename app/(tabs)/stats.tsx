@@ -13,7 +13,7 @@
  * only when its data exists, so a slim server or a fresh user sees fewer
  * sections rather than a wall of zeros or empty frames.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native'
 import Animated, { FadeIn } from 'react-native-reanimated'
 import Svg, { Circle } from 'react-native-svg'
@@ -52,6 +52,7 @@ import { radius, spacing, fonts, type Palette } from '@/ui/theme'
 import { useTheme } from '@/ui/ThemeProvider'
 import { Icon, icons } from '@/ui/icons'
 import { DUR } from '@/ui/motion'
+import { onTabReselect } from '@/ui/tabReselect'
 import { useContentInset } from '@/ui/useContentInset'
 import { useBackHandler } from '@/ui/useBackHandler'
 import { adaptiveContentMaxWidth } from '@/ui/responsive'
@@ -163,6 +164,13 @@ export default function StatsTab() {
   const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
   const yearlyBookGoal = settings.yearlyBookGoal
 
+  const scrollRef = useRef<ScrollView>(null)
+  // Re-tapping the Stats tab while already on it scrolls back to the top.
+  useEffect(
+    () => onTabReselect('stats', () => scrollRef.current?.scrollTo({ y: 0, animated: true })),
+    [],
+  )
+
   // Non-home tab: hardware back returns to Home rather than exiting the app.
   useBackHandler(
     useCallback(() => {
@@ -217,6 +225,7 @@ export default function StatsTab() {
   return (
     <Screen>
       <Animated.ScrollView
+        ref={scrollRef}
         entering={FadeIn.duration(DUR.base)}
         contentContainerStyle={{
           alignSelf: 'center',

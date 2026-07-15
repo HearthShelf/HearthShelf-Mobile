@@ -70,6 +70,7 @@ import {
 } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
 import { DUR } from '@/ui/motion'
+import { onTabReselect } from '@/ui/tabReselect'
 import { BookTile } from '@/ui/BookTile'
 import { BookSelectionToolbar } from '@/ui/BookSelectionToolbar'
 import { getProgressState, subscribeProgress, refreshProgress } from '@/store/progress'
@@ -511,6 +512,8 @@ function BooksView({
   const scrollToTop = useCallback(() => {
     listRef.current?.scrollToOffset({ offset: 0, animated: true })
   }, [])
+  // Re-tapping the Library tab while already on it scrolls back to the top.
+  useEffect(() => onTabReselect('library', scrollToTop), [scrollToTop])
 
   // Apply an incoming deep-link preset (from Home's shelf headers).
   useEffect(() => {
