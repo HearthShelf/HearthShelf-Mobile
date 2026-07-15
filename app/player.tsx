@@ -124,7 +124,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter()
   const { colors, shadow } = useTheme()
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
-  const { nowPlaying, isPlaying, position, sleepTimer, rate } = useSyncExternalStore(
+  const { nowPlaying, isPlaying, position, sleepTimer, rate, carActive } = useSyncExternalStore(
     subscribe,
     getState,
   )
@@ -445,6 +445,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
     sleepDepletion,
     downloaded: download?.status === 'done',
     downloading: download?.status === 'downloading' || download?.status === 'queued',
+    onFocusView: enter,
     onDownload: () => {
       if (download?.status === 'done') {
         void deleteDownload(nowPlaying.itemId)
@@ -533,6 +534,15 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
             <View style={{ width: spacing.sm }} />
             <SyncStatusIcon />
           </View>
+
+          {carActive && (
+            <View style={styles.carChip}>
+              <Icon name={icons.carMode} size={15} color={colors.accent} />
+              <AppText variant="caption" color={colors.textMuted}>
+                Playing in your car
+              </AppText>
+            </View>
+          )}
 
           {/* Thin whole-book progress bar sitting above the numeric strip; the
               fill eases toward each position tick (bookBarStyle). */}
@@ -1087,9 +1097,9 @@ const MoreSheet = forwardRef<
             onImmersive()
           }}
         >
-          <Icon name={icons.expandLess} size={22} color={colors.accent} />
+          <Icon name={icons.focusView} size={22} color={colors.accent} />
           <AppText variant="label" style={{ flex: 1 }}>
-            Immersive mode
+            Focus view
           </AppText>
           <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />
         </Touchable>
@@ -1382,6 +1392,19 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       alignItems: 'center',
       paddingHorizontal: spacing.lg,
       paddingVertical: spacing.sm,
+    },
+    carChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      alignSelf: 'center',
+      marginBottom: spacing.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 5,
+      borderRadius: radius.pill,
+      backgroundColor: colors.accentWash,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.accent,
     },
     bookBarTrack: {
       height: 2,

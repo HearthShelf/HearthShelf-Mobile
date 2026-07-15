@@ -44,6 +44,8 @@ export interface ActionContext {
   downloading?: boolean
   /** Toggle download for the current item (start / cancel / remove). */
   onDownload?: () => void
+  /** Enter Focus view (the phone's big-artwork minimal layout). */
+  onFocusView?: () => void
 }
 
 /**
@@ -105,12 +107,15 @@ export function buildActions(ctx: ActionContext): Record<PlayerActionKey, Player
       comingSoon: true,
       onPress: () => ctx.comingSoon('Cast'),
     },
+    // The former "Car mode" stub is now the Focus-view launcher: Focus view is a
+    // phone display preference (big artwork, hidden chrome), while the car
+    // experience stays native (Android Auto / CarPlay). Same key so saved
+    // arrangements keep working.
     carMode: {
       key: 'carMode',
-      icon: icons.carMode,
-      label: 'Car mode',
-      comingSoon: true,
-      onPress: () => ctx.comingSoon('Car mode'),
+      icon: icons.focusView,
+      label: 'Focus view',
+      onPress: () => ctx.onFocusView?.(),
     },
     download: {
       key: 'download',
@@ -141,7 +146,7 @@ export const ACTION_META: Record<
   details: { icon: icons.info, label: 'Book details' },
   addList: { icon: icons.addList, label: 'Add to list' },
   cast: { icon: icons.cast, label: 'Cast', comingSoon: true },
-  carMode: { icon: icons.carMode, label: 'Car mode', comingSoon: true },
+  carMode: { icon: icons.focusView, label: 'Focus view' },
   download: { icon: icons.download, label: 'Download', comingSoon: true },
   notes: { icon: icons.notes, label: 'Notes' },
 }
