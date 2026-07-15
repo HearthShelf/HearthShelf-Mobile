@@ -35,7 +35,7 @@ import { CoverDownloadOverlay } from './CoverDownloadOverlay'
 import { CoverDownloadedBadge } from './CoverDownloadedBadge'
 import { Icon, icons, type IconName } from './icons'
 import { TypesetCover } from './TypesetCover'
-import { radius, spacing, type as typeScale, type Palette } from './theme'
+import { MAX_FONT_SCALE, radius, spacing, type as typeScale, type Palette } from './theme'
 import { useColors, useTheme } from './ThemeProvider'
 
 // ---- Screen ----
@@ -71,17 +71,22 @@ export function AppText({
   color,
   numberOfLines,
   style,
+  maxFontSizeMultiplier = MAX_FONT_SCALE,
 }: {
   children: React.ReactNode
   variant?: TextVariant
   color?: string
   numberOfLines?: number
   style?: StyleProp<TextStyle>
+  /** Override the app-wide font-scale ceiling (e.g. 1 to opt out of scaling for
+   *  a fixed-size glyph, or a larger value for a hero line with room to grow). */
+  maxFontSizeMultiplier?: number
 }) {
   const colors = useColors()
   return (
     <Text
       numberOfLines={numberOfLines}
+      maxFontSizeMultiplier={maxFontSizeMultiplier}
       style={[typeScale[variant], { color: color ?? colors.text }, style]}
     >
       {children}
@@ -194,7 +199,12 @@ export function Chip({
       onPress={onPress}
       style={({ pressed }) => [styles.chip, active && styles.chipActive, pressed && styles.pressed]}
     >
-      <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
+      <Text
+        maxFontSizeMultiplier={MAX_FONT_SCALE}
+        style={[styles.chipText, active && styles.chipTextActive]}
+      >
+        {label}
+      </Text>
     </Pressable>
   )
 }
@@ -250,7 +260,9 @@ export function PrimaryButton({
       style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed, style]}
     >
       {icon ? <Icon name={icon} size={18} color={colors.onAccent} /> : null}
-      <Text style={styles.primaryBtnText}>{label}</Text>
+      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.primaryBtnText}>
+        {label}
+      </Text>
     </Pressable>
   )
 }

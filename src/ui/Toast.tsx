@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { TAB_BAR_HEIGHT } from './AppTabBar'
 import { MINI_PLAYER_HEIGHT } from '@/player/MiniPlayer'
 import { Icon, icons } from './icons'
-import { colors, radius, spacing } from './theme'
+import { colors, MAX_FONT_SCALE, radius, spacing } from './theme'
 
 const DISMISS_MS = 1900
 
@@ -77,7 +77,9 @@ export function ToastHost() {
     <View style={[styles.wrap, { bottom: bandCenter - PILL_HALF_HEIGHT }]} pointerEvents="none">
       <View style={styles.pill}>
         <Icon name={icons.checkCircle} size={18} color={colors.accent} />
-        <Text style={styles.text}>{message}</Text>
+        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.text}>
+          {message}
+        </Text>
       </View>
     </View>
   )

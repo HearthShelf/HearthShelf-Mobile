@@ -281,6 +281,19 @@ export const type = {
   },
 } as const
 
+/**
+ * App-wide ceiling on OS font scaling. The type scale and most containers use
+ * fixed pixel sizes, so unbounded scaling (a user cranking the phone's Display
+ * Size / Text Size up) overflows pills, rows, and tiles and text starts to
+ * overlap. Capping at 1.25x still gives large-text users noticeably bigger type
+ * while keeping every layout intact on both platforms. AppText applies it to all
+ * app copy; the few raw <Text> nodes in fixed-height containers (the scrubber
+ * pill, tab bar, toast, and the shared button/chip primitives) pass it
+ * explicitly. React 19 dropped Text.defaultProps, so there is no global default -
+ * a raw <Text> without this prop scales unbounded.
+ */
+export const MAX_FONT_SCALE = 1.25
+
 export const shadow = buildShadow(colors)
 
 export const theme = { colors, radius, spacing, type, shadow } as const

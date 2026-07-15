@@ -11,7 +11,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 import { Icon, iconFor, icons } from './icons'
 import { haptics } from './haptics'
 import { POP_SPRING } from './motion'
-import { fonts, radius } from './theme'
+import { fonts, MAX_FONT_SCALE, radius } from './theme'
 import { useColors } from './ThemeProvider'
 
 export const TAB_BAR_HEIGHT = 60
@@ -70,6 +70,7 @@ export function AppTabBar({
             <Text
               style={[styles.tabLabel, { color: tint }, focused && styles.tabLabelActive]}
               numberOfLines={1}
+              maxFontSizeMultiplier={MAX_FONT_SCALE}
             >
               {meta.label}
             </Text>

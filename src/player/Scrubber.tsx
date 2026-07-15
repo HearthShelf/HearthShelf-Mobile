@@ -29,7 +29,7 @@ import Animated, {
 import { LinearGradient } from 'expo-linear-gradient'
 import { haptics } from '@/ui/haptics'
 import { DUR } from '@/ui/motion'
-import { mixHex, radius, type Palette } from '@/ui/theme'
+import { MAX_FONT_SCALE, mixHex, radius, type Palette } from '@/ui/theme'
 import { useTheme } from '@/ui/ThemeProvider'
 
 const PILL_HEIGHT = 30
@@ -172,15 +172,19 @@ export function Scrubber({
             being clipped to a fixed max width. */}
         {hasLabels && (
           <View style={styles.labels} pointerEvents="none">
-            <Text numberOfLines={1} style={styles.labelText}>
+            <Text numberOfLines={1} maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.labelText}>
               {elapsed}
             </Text>
             {chapter !== undefined && (
-              <Text numberOfLines={1} style={[styles.labelText, styles.labelChapter]}>
+              <Text
+                numberOfLines={1}
+                maxFontSizeMultiplier={MAX_FONT_SCALE}
+                style={[styles.labelText, styles.labelChapter]}
+              >
                 {chapter}
               </Text>
             )}
-            <Text numberOfLines={1} style={styles.labelText}>
+            <Text numberOfLines={1} maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.labelText}>
               {remain}
             </Text>
           </View>
