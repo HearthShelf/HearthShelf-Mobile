@@ -177,9 +177,14 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // Carousel deck state (page count + active index), reported up so the dots
   // render above the cover in normal flow (where they can't be clipped).
   const [deck, setDeck] = useState({ count: 1, index: 0 })
-  const onDeckChange = useCallback((count: number, index: number) => {
-    setDeck((d) => (d.count === count && d.index === index ? d : { count, index }))
-  }, [])
+  const deckJumpRef = useRef<(i: number) => void>(() => {})
+  const onDeckChange = useCallback(
+    (count: number, index: number, jumpTo: (i: number) => void) => {
+      deckJumpRef.current = jumpTo
+      setDeck((d) => (d.count === count && d.index === index ? d : { count, index }))
+    },
+    [],
+  )
 
   // Buffering heuristic (no native buffer event yet): while we intend to be
   // playing but the reported position hasn't advanced, we're likely stalled.
@@ -592,20 +597,11 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
       {/* Carousel deck-position dots, above the cover per the layout. In normal
           flow here so they can't be clipped by the cover area's overflow. */}
       {!immersive && deck.count > 1 && (
-        <View style={styles.deckDots}>
-          {Array.from({ length: deck.count }).map((_, i) => (
-            <View
-              key={i}
-              style={[
-                styles.deckDot,
-                {
-                  backgroundColor:
-                    i === deck.index ? colors.accent : withAlpha(colors.text, 0.3),
-                },
-              ]}
-            />
-          ))}
-        </View>
+        <DeckDots
+          count={deck.count}
+          index={deck.index}
+          onJump={(i) => deckJumpRef.current(i)}
+        />
       )}
 
       {/* Cover fills the space between header and the pinned controls. The
@@ -709,6 +705,21 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
           </GestureDetector>
         )
       })()}
+
+      {/* Back-to-now-playing chip, in normal flow below the cover (was clipped
+          inside the carousel's overflow). Shown when browsed off the live page;
+          tapping the first dot does the same. */}
+      {!immersive && deck.index > 0 && (
+        <Touchable
+          onPress={() => deckJumpRef.current(0)}
+          style={styles.backToLive}
+        >
+          <Icon name={icons.nowPlaying} size={20} color={colors.accent} />
+          <AppText variant="caption" style={{ fontWeight: '800' }}>
+            Back to now playing
+          </AppText>
+        </Touchable>
+      )}
 
       {/* Controls pinned to the bottom. */}
       <View
@@ -979,6 +990,58 @@ function useBuffering(playing: boolean, position: number): boolean {
 /** The pushed `/player` route: the full surface with a collapse button. */
 export default function PlayerScreen() {
   return <PlayerSurface />
+}
+
+/**
+ * Deck-position dots above the cover. Tap a dot to jump to that page. For a big
+ * deck the dots window around the active index (with shrinking edge dots) so the
+ * row stays one line and doesn't push the cover down.
+ */
+const DECK_DOTS_MAX = 9
+function DeckDots({
+  count,
+  index,
+  onJump,
+}: {
+  count: number
+  index: number
+  onJump: (i: number) => void
+}) {
+  const { colors, shadow } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
+  // Window the visible dots around the active index for large decks.
+  let start = 0
+  let end = count
+  if (count > DECK_DOTS_MAX) {
+    const half = Math.floor(DECK_DOTS_MAX / 2)
+    start = Math.max(0, Math.min(index - half, count - DECK_DOTS_MAX))
+    end = start + DECK_DOTS_MAX
+  }
+  const visible = []
+  for (let i = start; i < end; i++) visible.push(i)
+  return (
+    <View style={styles.deckDots}>
+      {visible.map((i) => {
+        const active = i === index
+        // Dots at the window edge (when more exist beyond) shrink to hint overflow.
+        const atEdge =
+          (i === start && start > 0) || (i === end - 1 && end < count)
+        return (
+          <Pressable
+            key={i}
+            onPress={() => onJump(i)}
+            hitSlop={8}
+            style={[
+              styles.deckDot,
+              active && styles.deckDotActive,
+              atEdge && styles.deckDotEdge,
+              { backgroundColor: active ? colors.accent : withAlpha(colors.text, 0.3) },
+            ]}
+          />
+        )
+      })}
+    </View>
+  )
 }
 
 /** A thin accent ring that spins around the play button while buffering. */
@@ -1506,10 +1569,28 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
     deckDots: {
       flexDirection: 'row',
       justifyContent: 'center',
+      alignItems: 'center',
       gap: 6,
       paddingVertical: spacing.sm,
     },
     deckDot: { width: 8, height: 8, borderRadius: 4 },
+    // Active page reads as a wider pill.
+    deckDotActive: { width: 18 },
+    // Windowed edge dots shrink to hint there are more pages beyond.
+    deckDotEdge: { width: 5, height: 5, borderRadius: 2.5, opacity: 0.6 },
+    backToLive: {
+      flexDirection: 'row',
+      alignSelf: 'center',
+      alignItems: 'center',
+      gap: 6,
+      marginTop: spacing.sm,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: 6,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
     carChip: {
       flexDirection: 'row',
       alignItems: 'center',

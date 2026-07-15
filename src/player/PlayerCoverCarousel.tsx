@@ -72,7 +72,7 @@ export function PlayerCoverCarousel({
   skipFeedback?: React.ReactNode
   hotspots?: React.ReactNode
   onLivePress: () => void
-  onDeckChange?: (count: number, index: number) => void
+  onDeckChange?: (count: number, index: number, jumpTo: (i: number) => void) => void
 }) {
   const { colors } = useTheme()
   const styles = useMemo(() => makeStyles(colors), [colors])
@@ -97,15 +97,23 @@ export function PlayerCoverCarousel({
     return [live, ...rest]
   }, [liveItemId, liveTitle, liveAuthor, queue])
 
-  // Report deck state up so the player can draw the position dots above the
-  // cover (in normal flow, where they can't be clipped by the cover area).
-  useEffect(() => {
-    onDeckChange?.(pages.length, index)
-  }, [pages.length, index, onDeckChange])
-
   // Each page fills the full cover-area width so neighbors sit fully offscreen -
   // only the centered cover shows; the dots signal that more can be swiped in.
   const pageW = pageWidth
+
+  // Animate the deck to a page (tapping a dot in the player drives this).
+  const jumpTo = useCallback(
+    (i: number) => {
+      listRef.current?.scrollToOffset({ offset: i * pageW, animated: true })
+    },
+    [pageW],
+  )
+
+  // Report deck state up so the player can draw the position dots above the
+  // cover (in normal flow, where they can't be clipped by the cover area).
+  useEffect(() => {
+    onDeckChange?.(pages.length, index, jumpTo)
+  }, [pages.length, index, onDeckChange, jumpTo])
 
   const switchTo = useCallback(
     async (page: DeckPage) => {
@@ -148,12 +156,6 @@ export function PlayerCoverCarousel({
     },
     [pageW, index, pages.length],
   )
-
-  const returnToLive = useCallback(() => {
-    haptics.select()
-    listRef.current?.scrollToOffset({ offset: 0, animated: true })
-    setIndex(0)
-  }, [])
 
   const renderPage = ({ item, index: i }: ListRenderItemInfo<DeckPage>) => {
     const isFocus = i === index
@@ -249,20 +251,6 @@ export function PlayerCoverCarousel({
         scrollEventThrottle={16}
         getItemLayout={(_, i) => ({ length: pageW, offset: pageW * i, index: i })}
       />
-
-      {/* Return-to-now-playing chip (dots moved above the cover). */}
-      {browsedAway ? (
-        <SpringPressable onPress={returnToLive} style={styles.backChip} scaleTo={0.94}>
-          <Icon name={icons.nowPlaying} size={25} color={colors.accent} />
-          <AppText
-            variant="caption"
-            color={colors.text}
-            style={{ fontWeight: '800', fontSize: 14 }}
-          >
-            Back to now playing
-          </AppText>
-        </SpringPressable>
-      ) : null}
     </View>
   )
 }
@@ -316,16 +304,5 @@ const makeStyles = (colors: Palette) =>
       textShadowColor: 'rgba(0,0,0,0.85)',
       textShadowOffset: { width: 0, height: 1 },
       textShadowRadius: 4,
-    },
-    backChip: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-      paddingHorizontal: spacing.xl,
-      paddingVertical: 6,
-      borderRadius: radius.pill,
-      backgroundColor: colors.fill,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
     },
   })
