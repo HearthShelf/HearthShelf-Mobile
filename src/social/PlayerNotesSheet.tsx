@@ -10,7 +10,15 @@
  * Spoiler gating is the server's; this sheet re-gates cached notes optimistically
  * (gateNotes) as position advances. Composing stamps the live player position.
  */
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { ActivityIndicator, StyleSheet, TextInput, View } from 'react-native'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import type { HSClub, HSNote } from '@hearthshelf/core'
@@ -69,7 +77,9 @@ export const PlayerNotesSheet = forwardRef<
 
   // Composer visibility (general tab only) + the spoiler-safe opt-in.
   const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
-  const [visibility, setVisibility] = useState<NoteDefaultVisibility>(settings.noteDefaultVisibility)
+  const [visibility, setVisibility] = useState<NoteDefaultVisibility>(
+    settings.noteDefaultVisibility,
+  )
   const [safe, setSafe] = useState(false)
   useEffect(() => {
     if (!body) setVisibility(settings.noteDefaultVisibility)
@@ -177,7 +187,11 @@ export const PlayerNotesSheet = forwardRef<
       {club ? (
         <View style={styles.segFull}>
           {(['notes', 'club'] as Tab[]).map((t) => (
-            <Touchable key={t} style={[styles.seg, tab === t && styles.segOn]} onPress={() => setTab(t)}>
+            <Touchable
+              key={t}
+              style={[styles.seg, tab === t && styles.segOn]}
+              onPress={() => setTab(t)}
+            >
               <AppText variant="label" color={tab === t ? colors.text : colors.textMuted}>
                 {t === 'notes' ? 'Everyone' : club.name}
               </AppText>
@@ -187,7 +201,10 @@ export const PlayerNotesSheet = forwardRef<
       ) : null}
 
       {tab === 'club' && club ? (
-        <Touchable style={styles.openRoom} onPress={() => router.push(`/club/${encodeURIComponent(club.id)}`)}>
+        <Touchable
+          style={styles.openRoom}
+          onPress={() => router.push(`/club/${encodeURIComponent(club.id)}?from=now`)}
+        >
           <Icon name={icons.club} size={16} color={colors.accent} />
           <AppText variant="caption" color={colors.accent} style={{ flex: 1 }}>
             Open the full club room
@@ -233,10 +250,20 @@ export const PlayerNotesSheet = forwardRef<
         <View style={styles.composer}>
           {replyTo ? (
             <View style={styles.replyBanner}>
-              <AppText variant="caption" color={colors.textMuted} numberOfLines={1} style={{ flex: 1 }}>
+              <AppText
+                variant="caption"
+                color={colors.textMuted}
+                numberOfLines={1}
+                style={{ flex: 1 }}
+              >
                 Replying to {replyTo.username}
               </AppText>
-              <IconButton name={icons.close} size={16} color={colors.textMuted} onPress={() => setReplyTo(null)} />
+              <IconButton
+                name={icons.close}
+                size={16}
+                color={colors.textMuted}
+                onPress={() => setReplyTo(null)}
+              />
             </View>
           ) : null}
           {!replyTo && tab === 'notes' ? (
@@ -277,7 +304,12 @@ const makeStyles = (colors: Palette) =>
       padding: 4,
       marginBottom: spacing.md,
     },
-    seg: { flex: 1, alignItems: 'center', paddingVertical: spacing.sm + 2, borderRadius: radius.row },
+    seg: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: spacing.sm + 2,
+      borderRadius: radius.row,
+    },
     segOn: { backgroundColor: colors.card },
     openRoom: {
       flexDirection: 'row',

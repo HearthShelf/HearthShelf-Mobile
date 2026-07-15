@@ -45,9 +45,9 @@ export function HomeClubShelf() {
     <View>
       <SectionHeader
         title="Your book clubs"
-        onPress={() => router.push('/club')}
+        onPress={() => router.push('/club?from=home')}
         action={
-          <Touchable hitSlop={8} onPress={() => router.push('/club')}>
+          <Touchable hitSlop={8} onPress={() => router.push('/club?from=home')}>
             <AppText variant="caption" color={colors.accent}>
               See all
             </AppText>
@@ -63,7 +63,7 @@ export function HomeClubShelf() {
           <Touchable
             key={c.id}
             style={styles.card}
-            onPress={() => router.push(`/club/${encodeURIComponent(c.id)}`)}
+            onPress={() => router.push(`/club/${encodeURIComponent(c.id)}?from=home`)}
           >
             <Cover
               uri={c.currentBook ? coverUrl(c.currentBook.libraryItemId) : undefined}

@@ -376,7 +376,7 @@ function SearchResults({
         columnWrapperStyle={{ gap: GUTTER }}
         contentContainerStyle={{ padding: GUTTER, paddingBottom: contentInset, gap: spacing.xs }}
         keyboardShouldPersistTaps="handled"
-        renderItem={({ item }) => <BookTile item={item} width={tileWidth} />}
+        renderItem={({ item }) => <BookTile item={item} width={tileWidth} from="library" />}
       />
     </Animated.View>
   )
@@ -604,11 +604,14 @@ function BooksView({
   const captureCols = useCallback(() => {
     pinchBase.current = colsRef.current
   }, [])
-  const applyPinch = useCallback((scale: number) => {
-    manualGridCols.current = true
-    const next = Math.max(2, Math.min(maxGridCols, Math.round(pinchBase.current / scale)))
-    setGridCols((prev) => (prev === next ? prev : next))
-  }, [maxGridCols])
+  const applyPinch = useCallback(
+    (scale: number) => {
+      manualGridCols.current = true
+      const next = Math.max(2, Math.min(maxGridCols, Math.round(pinchBase.current / scale)))
+      setGridCols((prev) => (prev === next ? prev : next))
+    },
+    [maxGridCols],
+  )
   const pinchGesture = useMemo(
     () =>
       Gesture.Pinch()
@@ -757,6 +760,7 @@ function BooksView({
               <BookTile
                 item={item}
                 width={tileWidth}
+                from="library"
                 selecting={selection.selecting}
                 selected={selection.isSelected(item.id)}
                 onLongPress={() => selection.begin(item.id)}
@@ -1053,7 +1057,7 @@ function BookListRow({
   return (
     <Touchable
       style={[styles.listRow, selected && styles.listRowSelected]}
-      onPress={() => (selecting ? onToggle?.() : router.push(`/item/${item.id}`))}
+      onPress={() => (selecting ? onToggle?.() : router.push(`/item/${item.id}?from=library`))}
       onLongPress={onLongPress}
     >
       {selecting ? (
@@ -1268,8 +1272,8 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
             onPress={() =>
               router.push(
                 mode === 'series'
-                  ? `/series/${encodeURIComponent(item.key)}?libraryId=${encodeURIComponent(libraryId)}`
-                  : `/group/${mode}/${encodeURIComponent(item.key)}?libraryId=${encodeURIComponent(libraryId)}&name=${encodeURIComponent(item.name)}`,
+                  ? `/series/${encodeURIComponent(item.key)}?libraryId=${encodeURIComponent(libraryId)}&from=library`
+                  : `/group/${mode}/${encodeURIComponent(item.key)}?libraryId=${encodeURIComponent(libraryId)}&name=${encodeURIComponent(item.name)}&from=library`,
               )
             }
           >

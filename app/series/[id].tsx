@@ -53,7 +53,7 @@ import {
   Touchable,
   icons,
 } from '@/ui/primitives'
-import { AppTabBar } from '@/ui/AppTabBar'
+import { AppTabBar, tabFromParam } from '@/ui/AppTabBar'
 import { NotOwnedSheet } from '@/ui/NotOwnedSheet'
 import { CoverGlow } from '@/ui/CoverGlow'
 import { BookSelectionToolbar } from '@/ui/BookSelectionToolbar'
@@ -79,7 +79,12 @@ export default function SeriesDetailScreen() {
   useSheetBackHandler()
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
-  const { id, libraryId } = useLocalSearchParams<{ id: string; libraryId: string }>()
+  const { id, libraryId, from } = useLocalSearchParams<{
+    id: string
+    libraryId: string
+    from?: string
+  }>()
+  const active = tabFromParam(from, 'library')
   const [series, setSeries] = useState<ABSSeries | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [marking, setMarking] = useState(false)
@@ -336,7 +341,7 @@ export default function SeriesDetailScreen() {
               selecting={selection.selecting}
               selected={selection.isSelected(b.id)}
               onPress={() =>
-                selection.selecting ? selection.toggle(b.id) : router.push(`/item/${b.id}`)
+                selection.selecting ? selection.toggle(b.id) : router.push(`/item/${b.id}?from=${active}`)
               }
               onLongPress={() => selection.begin(b.id)}
               onToggle={() => selection.toggle(b.id)}
@@ -349,7 +354,7 @@ export default function SeriesDetailScreen() {
         </View>
       </ScrollView>
 
-      <AppTabBar activeName={null} onPressTab={goToTab} />
+      <AppTabBar activeName={active} onPressTab={goToTab} />
     </Screen>
   )
 }

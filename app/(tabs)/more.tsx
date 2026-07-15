@@ -222,7 +222,7 @@ export default function MoreScreen() {
               icon="groups"
               title="Book Clubs"
               desc={`${clubCount} ${clubCount === 1 ? 'club' : 'clubs'} you're in.`}
-              onPress={() => router.push('/club')}
+              onPress={() => router.push('/club?from=more')}
               last
             />
           </SettingsGroup>

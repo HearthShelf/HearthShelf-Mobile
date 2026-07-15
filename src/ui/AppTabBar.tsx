@@ -31,6 +31,17 @@ export const TABS: TabDef[] = [
   { name: 'more', label: 'More', icon: 'more' },
 ]
 
+/**
+ * Resolve a pushed screen's `from` route param to the tab route name that should
+ * read as active while that screen is open (D-NAV). Callers pass a human tab name
+ * (e.g. 'home', 'library') matching the tab they navigated from; 'home' maps to
+ * the router's 'index' route. Unknown/missing values fall back to `fallback`.
+ */
+export function tabFromParam(from: string | undefined, fallback: string): string {
+  const v = from ?? fallback
+  return v === 'home' ? 'index' : v
+}
+
 export function AppTabBar({
   activeName,
   onPressTab,

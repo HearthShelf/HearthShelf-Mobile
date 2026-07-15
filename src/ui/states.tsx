@@ -49,11 +49,7 @@ export function Skeleton({
   const colors = useColors()
   const x = useSharedValue(-1)
   useEffect(() => {
-    x.value = withRepeat(
-      withTiming(1, { duration: SHIMMER_MS, easing: Easing.linear }),
-      -1,
-      false,
-    )
+    x.value = withRepeat(withTiming(1, { duration: SHIMMER_MS, easing: Easing.linear }), -1, false)
   }, [x])
   const sweep = useAnimatedStyle(() => ({
     transform: [{ translateX: `${x.value * 100}%` }],
@@ -61,7 +57,14 @@ export function Skeleton({
   return (
     <View
       style={[
-        { width, height, aspectRatio, borderRadius: r, backgroundColor: colors.fill, overflow: 'hidden' },
+        {
+          width,
+          height,
+          aspectRatio,
+          borderRadius: r,
+          backgroundColor: colors.fill,
+          overflow: 'hidden',
+        },
         style,
       ]}
     >

@@ -395,7 +395,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
       case 'notes':
         return notesRef.current?.present()
       case 'details':
-        router.push(`/item/${nowPlaying.itemId}`)
+        router.push(`/item/${nowPlaying.itemId}?from=now`)
         return
     }
   }
@@ -524,7 +524,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                 name={icons.club}
                 size={19}
                 color="#fff"
-                onPress={() => router.push(`/club/${encodeURIComponent(activeClub!.id)}`)}
+                onPress={() => router.push(`/club/${encodeURIComponent(activeClub!.id)}?from=now`)}
                 style={styles.clubBtn}
               />
             )}

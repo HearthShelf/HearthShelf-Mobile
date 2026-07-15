@@ -62,7 +62,7 @@ import {
   icons,
 } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
-import { AppTabBar } from '@/ui/AppTabBar'
+import { AppTabBar, tabFromParam } from '@/ui/AppTabBar'
 import { Toast, useToast } from '@/ui/Toast'
 import { haptics } from '@/ui/haptics'
 import { confirm } from '@/ui/confirm'
@@ -83,7 +83,16 @@ export default function ClubRoomScreen() {
   // `note` is an optional deep-link param (hearthshelf://club/:id?note=:noteId),
   // set by Phase 7 note-pop notifications - see docs/social.md. On open, the
   // thread scrolls to and highlights that note (see scrollToDeepLink below).
-  const { id, note: deepLinkNoteId } = useLocalSearchParams<{ id: string; note?: string }>()
+  const {
+    id,
+    note: deepLinkNoteId,
+    from,
+  } = useLocalSearchParams<{
+    id: string
+    note?: string
+    from?: string
+  }>()
+  const active = tabFromParam(from, 'home')
   const { message, show } = useToast()
   const meId = getMeId()
 
@@ -346,7 +355,7 @@ export default function ClubRoomScreen() {
             This club isn't available.
           </AppText>
         </Centered>
-        <AppTabBar activeName={null} onPressTab={goToTab} />
+        <AppTabBar activeName={active} onPressTab={goToTab} />
       </Screen>
     )
   }
@@ -393,7 +402,9 @@ export default function ClubRoomScreen() {
       >
         {viewedBook ? (
           <View style={styles.bookHeader}>
-            <Touchable onPress={() => router.push(`/item/${viewedBook.libraryItemId}`)}>
+            <Touchable
+              onPress={() => router.push(`/item/${viewedBook.libraryItemId}?from=${active}`)}
+            >
               <Cover
                 uri={coverUrl(viewedBook.libraryItemId)}
                 itemId={viewedBook.libraryItemId}
@@ -464,7 +475,7 @@ export default function ClubRoomScreen() {
             </AppText>
             {detail.queue.map((b) => (
               <View key={b.libraryItemId} style={styles.queueRow}>
-                <Touchable onPress={() => router.push(`/item/${b.libraryItemId}`)}>
+                <Touchable onPress={() => router.push(`/item/${b.libraryItemId}?from=${active}`)}>
                   <Cover
                     uri={coverUrl(b.libraryItemId)}
                     itemId={b.libraryItemId}
@@ -633,7 +644,7 @@ export default function ClubRoomScreen() {
         ) : null}
       </KeyboardAvoidingView>
 
-      <AppTabBar activeName={null} onPressTab={goToTab} />
+      <AppTabBar activeName={active} onPressTab={goToTab} />
 
       {/* Members sheet (with kick for the owner). */}
       <Sheet ref={membersSheetRef} title="Members" snapPoints={['60%']}>

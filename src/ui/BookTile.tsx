@@ -27,6 +27,7 @@ export function BookTile({
   progress,
   finished = false,
   onQuickPlay,
+  from,
   onLongPress,
   onToggle,
 }: {
@@ -41,6 +42,8 @@ export function BookTile({
   /** When set AND the book is in progress, a play chip appears bottom-right of
    *  the cover. Tapping it plays without opening detail. */
   onQuickPlay?: () => void
+  /** Owning tab, forwarded to the item screen so it keeps the right tab lit. */
+  from?: string
   onLongPress?: () => void
   onToggle?: () => void
 }) {
@@ -50,10 +53,11 @@ export function BookTile({
   const title = itemTitle(item)
   const inProgress = progress != null && progress > 0 && progress < 1
   const showChip = !selecting && !!onQuickPlay && inProgress
+  const openDetail = () => router.push(from ? `/item/${item.id}?from=${from}` : `/item/${item.id}`)
   return (
     <SpringPressable
       style={[styles.tile, { width }]}
-      onPress={() => (selecting ? onToggle?.() : router.push(`/item/${item.id}`))}
+      onPress={() => (selecting ? onToggle?.() : openDetail())}
       onLongPress={onLongPress}
       delayLongPress={300}
     >
@@ -105,7 +109,10 @@ export function BookTile({
       {inProgress ? (
         <View style={[styles.track, { backgroundColor: colors.fillStrong }]}>
           <View
-            style={[styles.trackFill, { width: `${progress! * 100}%`, backgroundColor: colors.accent }]}
+            style={[
+              styles.trackFill,
+              { width: `${progress! * 100}%`, backgroundColor: colors.accent },
+            ]}
           />
         </View>
       ) : null}

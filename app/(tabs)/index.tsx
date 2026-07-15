@@ -139,8 +139,7 @@ export default function HomeScreen() {
   const scrollRef = useRef<ScrollView>(null)
   // Re-tapping the Home tab while already on it scrolls back to the top.
   useEffect(
-    () =>
-      onTabReselect('index', () => scrollRef.current?.scrollTo({ y: 0, animated: true })),
+    () => onTabReselect('index', () => scrollRef.current?.scrollTo({ y: 0, animated: true })),
     [],
   )
   const lastPlaybackItemRef = useRef<string | null>(null)
@@ -305,7 +304,8 @@ export default function HomeScreen() {
         })
         if (csEntries.length) {
           const seriesByItemId: Record<string, { id: string; name: string }> = {}
-          for (const e of csEntries) seriesByItemId[e.nextBook.id] = { id: e.series.id, name: e.series.name }
+          for (const e of csEntries)
+            seriesByItemId[e.nextBook.id] = { id: e.series.id, name: e.series.name }
           continueShelves.push({
             id: 'continue-series',
             label: 'Continue Series',
@@ -434,7 +434,11 @@ export default function HomeScreen() {
   )
 
   const openActions = useCallback(
-    (item: ABSLibraryItem, source: BookActionsSource = 'browse', series?: { id: string; name: string }) => {
+    (
+      item: ABSLibraryItem,
+      source: BookActionsSource = 'browse',
+      series?: { id: string; name: string },
+    ) => {
       haptics.longPress()
       actionsRef.current?.present(
         item,
@@ -524,7 +528,7 @@ export default function HomeScreen() {
                 await playItemById(hero.id)
                 router.push('/player')
               } catch {
-                router.push(`/item/${hero.id}`)
+                router.push(`/item/${hero.id}?from=home`)
               }
             }}
             onLongPress={() => openActions(hero)}
@@ -950,7 +954,7 @@ function Shelf({
           <Animated.View entering={FadeInDown.delay(Math.min(index, 6) * 40).duration(DUR.slow)}>
             <Touchable
               style={{ width: tileWidth }}
-              onPress={() => router.push(`/item/${item.id}`)}
+              onPress={() => router.push(`/item/${item.id}?from=home`)}
               onLongPress={() => onLongPressItem(item, source, seriesByItemId?.[item.id])}
             >
               <Cover
@@ -992,7 +996,7 @@ function Shelf({
               style={{ width: sheetTileWidth }}
               onPress={() => {
                 sheetRef.current?.dismiss()
-                router.push(`/item/${item.id}`)
+                router.push(`/item/${item.id}?from=home`)
               }}
             >
               <Cover

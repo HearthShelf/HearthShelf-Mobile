@@ -9,7 +9,7 @@
  */
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import { ScrollView, StyleSheet, View } from 'react-native'
-import { useFocusEffect, useRouter } from 'expo-router'
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import type { HSClub } from '@hearthshelf/core'
 import { coverHue } from '@hearthshelf/core'
 import { getClubs } from '@/api/clubs'
@@ -17,7 +17,7 @@ import { coverUrl } from '@/api/abs'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { AppText, Centered, Cover, IconButton, Loading, Screen, Touchable } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
-import { AppTabBar } from '@/ui/AppTabBar'
+import { AppTabBar, tabFromParam } from '@/ui/AppTabBar'
 import { useContentInset } from '@/ui/useContentInset'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
@@ -27,6 +27,8 @@ export default function MyClubsScreen() {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const contentInset = useContentInset()
+  const { from } = useLocalSearchParams<{ from?: string }>()
+  const active = tabFromParam(from, 'home')
   const { clubsEnabled } = useSyncExternalStore(subscribeSettings, getSettingsState)
 
   const [clubs, setClubs] = useState<HSClub[] | null>(null)
@@ -87,7 +89,7 @@ export default function MyClubsScreen() {
             <Touchable
               key={c.id}
               style={styles.row}
-              onPress={() => router.push(`/club/${encodeURIComponent(c.id)}`)}
+              onPress={() => router.push(`/club/${encodeURIComponent(c.id)}?from=${active}`)}
             >
               {c.currentBook ? (
                 <Cover
@@ -119,7 +121,7 @@ export default function MyClubsScreen() {
         </ScrollView>
       )}
 
-      <AppTabBar activeName={null} onPressTab={goToTab} />
+      <AppTabBar activeName={active} onPressTab={goToTab} />
     </Screen>
   )
 }

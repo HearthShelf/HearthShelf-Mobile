@@ -30,9 +30,12 @@ import { useColors } from '@/ui/ThemeProvider'
 export function ClubCard({
   libraryItemId,
   onToast,
+  from = 'library',
 }: {
   libraryItemId: string
   onToast?: (message: string) => void
+  /** Owning tab, forwarded to the club room so it keeps the right tab lit. */
+  from?: string
 }) {
   const router = useRouter()
   const colors = useColors()
@@ -65,7 +68,7 @@ export function ClubCard({
   }, [load])
 
   const openClub = (id: string) => {
-    router.push(`/club/${encodeURIComponent(id)}`)
+    router.push(`/club/${encodeURIComponent(id)}?from=${from}`)
   }
 
   const join = async (club: HSClub) => {

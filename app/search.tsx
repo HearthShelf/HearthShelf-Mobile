@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { FlatList, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native'
 import type { BottomSheetModal } from '@gorhom/bottom-sheet'
 import Animated, { FadeIn } from 'react-native-reanimated'
-import { useRouter } from 'expo-router'
+import { useLocalSearchParams, useRouter } from 'expo-router'
 import type { ABSLibraryItem, HSAudibleSearchResult } from '@hearthshelf/core'
 import { coverHue } from '@hearthshelf/core'
 import { getLibraries, searchLibrary, itemAuthor, itemTitle } from '@/api/abs'
@@ -22,7 +22,7 @@ import {
 import { BookTile } from '@/ui/BookTile'
 import { NotOwnedSheet } from '@/ui/NotOwnedSheet'
 import { useSheetBackHandler } from '@/ui/useBackHandler'
-import { AppTabBar } from '@/ui/AppTabBar'
+import { AppTabBar, tabFromParam } from '@/ui/AppTabBar'
 import { DUR } from '@/ui/motion'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useContentInset } from '@/ui/useContentInset'
@@ -36,6 +36,8 @@ export default function SearchScreen() {
   // Hardware back closes an open sheet first; only with none open does it pop
   // the route (dismiss() returns false, letting the default back proceed).
   useSheetBackHandler()
+  const { from } = useLocalSearchParams<{ from?: string }>()
+  const active = tabFromParam(from, 'library')
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const { width } = useWindowDimensions()
@@ -163,7 +165,7 @@ export default function SearchScreen() {
               gap: spacing.xs,
             }}
             keyboardShouldPersistTaps="handled"
-            renderItem={({ item }) => <BookTile item={item} width={tileWidth} />}
+            renderItem={({ item }) => <BookTile item={item} width={tileWidth} from={active} />}
             ListFooterComponent={
               externalOn && external.length > 0 ? (
                 <View style={styles.extSection}>
@@ -195,7 +197,7 @@ export default function SearchScreen() {
         onDismiss={() => setSelected(null)}
       />
 
-      <AppTabBar activeName={null} onPressTab={goToTab} />
+      <AppTabBar activeName={active} onPressTab={goToTab} />
     </Screen>
   )
 }

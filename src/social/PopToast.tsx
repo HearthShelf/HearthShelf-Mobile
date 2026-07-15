@@ -38,7 +38,7 @@ export function PopToast() {
   const open = () => {
     setVisible(false)
     clearPopToast()
-    if (pop.clubId) router.push(`/club/${encodeURIComponent(pop.clubId)}`)
+    if (pop.clubId) router.push(`/club/${encodeURIComponent(pop.clubId)}?from=home`)
   }
 
   return (

@@ -76,7 +76,7 @@ import {
 import { Icon } from '@/ui/icons'
 import { DeviceKindIcon } from '@/ui/DeviceKindIcon'
 import { useSheetBackHandler } from '@/ui/useBackHandler'
-import { AppTabBar } from '@/ui/AppTabBar'
+import { AppTabBar, tabFromParam } from '@/ui/AppTabBar'
 import { CoverGlow } from '@/ui/CoverGlow'
 import { CoverLightbox } from '@/ui/CoverLightbox'
 import { EmberBurst } from '@/ui/EmberBurst'
@@ -114,7 +114,8 @@ export default function ItemDetailScreen() {
   useSheetBackHandler()
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
-  const { id } = useLocalSearchParams<{ id: string }>()
+  const { id, from } = useLocalSearchParams<{ id: string; from?: string }>()
+  const active = tabFromParam(from, 'library')
   const { message, show } = useToast()
   const miniInset = useMiniPlayerInset()
 
@@ -344,14 +345,14 @@ export default function ItemDetailScreen() {
     const author = meta.authors?.[0]
     if (!author) return
     router.push(
-      `/group/authors/${encodeURIComponent(author.id)}?libraryId=${encodeURIComponent(detail.libraryId)}&name=${encodeURIComponent(author.name)}`,
+      `/group/authors/${encodeURIComponent(author.id)}?libraryId=${encodeURIComponent(detail.libraryId)}&name=${encodeURIComponent(author.name)}&from=${active}`,
     )
   }
 
   const openNarrator = () => {
     if (!narratorName) return
     router.push(
-      `/group/narrators/${encodeURIComponent(narratorName)}?libraryId=${encodeURIComponent(detail.libraryId)}&name=${encodeURIComponent(narratorName)}`,
+      `/group/narrators/${encodeURIComponent(narratorName)}?libraryId=${encodeURIComponent(detail.libraryId)}&name=${encodeURIComponent(narratorName)}&from=${active}`,
     )
   }
 
@@ -445,7 +446,7 @@ export default function ItemDetailScreen() {
         <ListeningNowSection key="listeningNow" users={listeningNow} />
       ) : null,
     notes: <NotesSection key="notes" onOpen={() => notesSheetRef.current?.present()} />,
-    club: <ClubCard key="club" libraryItemId={detail.id} onToast={show} />,
+    club: <ClubCard key="club" libraryItemId={detail.id} onToast={show} from={active} />,
     series: series ? (
       <SeriesCard
         key="series"
@@ -453,7 +454,7 @@ export default function ItemDetailScreen() {
         highlight={isFinished}
         onPress={() =>
           router.push(
-            `/series/${encodeURIComponent(series.id)}?libraryId=${encodeURIComponent(detail.libraryId)}`,
+            `/series/${encodeURIComponent(series.id)}?libraryId=${encodeURIComponent(detail.libraryId)}&from=${active}`,
           )
         }
       />
@@ -507,7 +508,7 @@ export default function ItemDetailScreen() {
 
       {/* Pushed above the tabs navigator, so it renders its own copy of the bar
           (see player.tsx) rather than inheriting the tabs layout's. */}
-      <AppTabBar activeName={null} onPressTab={goToTab} />
+      <AppTabBar activeName={active} onPressTab={goToTab} />
 
       <Sheet ref={chaptersSheetRef} title="Chapters" snapPoints={['70%']}>
         <BottomSheetScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }}>

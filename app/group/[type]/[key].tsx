@@ -12,15 +12,10 @@ import { useEffect, useState } from 'react'
 import { FlatList, StyleSheet, View, useWindowDimensions } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type { ABSLibraryItem } from '@hearthshelf/core'
-import {
-  getAuthorDetail,
-  getLibraryItemsPage,
-  getLibrarySeries,
-  itemNarrator,
-} from '@/api/abs'
+import { getAuthorDetail, getLibraryItemsPage, getLibrarySeries, itemNarrator } from '@/api/abs'
 import { AppText, Centered, IconButton, Loading, Screen, icons } from '@/ui/primitives'
 import { BookTile } from '@/ui/BookTile'
-import { AppTabBar } from '@/ui/AppTabBar'
+import { AppTabBar, tabFromParam } from '@/ui/AppTabBar'
 import { spacing } from '@/ui/theme'
 import { useContentInset } from '@/ui/useContentInset'
 import { useColors } from '@/ui/ThemeProvider'
@@ -37,12 +32,14 @@ const KIND_LABEL: Record<GroupType, string> = {
 export default function GroupDrilldown() {
   const router = useRouter()
   const colors = useColors()
-  const { type, key, libraryId, name } = useLocalSearchParams<{
+  const { type, key, libraryId, name, from } = useLocalSearchParams<{
     type: GroupType
     key: string
     libraryId: string
     name: string
+    from?: string
   }>()
+  const active = tabFromParam(from, 'library')
 
   const [books, setBooks] = useState<ABSLibraryItem[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -109,16 +106,16 @@ export default function GroupDrilldown() {
           <AppText variant="meta" color={colors.textMuted} style={styles.sub}>
             {books.length} {books.length === 1 ? 'title' : 'titles'}
           </AppText>
-          <GroupGrid books={books} />
+          <GroupGrid books={books} from={active} />
         </>
       )}
 
-      <AppTabBar activeName={null} onPressTab={goToTab} />
+      <AppTabBar activeName={active} onPressTab={goToTab} />
     </Screen>
   )
 }
 
-function GroupGrid({ books }: { books: ABSLibraryItem[] }) {
+function GroupGrid({ books, from }: { books: ABSLibraryItem[]; from: string }) {
   const { width } = useWindowDimensions()
   const cols = adaptiveGridColumns({ width, minTile: 128, maxCols: 5, gutter: spacing.md })
   const cardWidth = adaptiveGridTileWidth({ width, cols, gutter: spacing.md })
@@ -132,7 +129,7 @@ function GroupGrid({ books }: { books: ABSLibraryItem[] }) {
       numColumns={cols}
       columnWrapperStyle={{ gap: spacing.md }}
       contentContainerStyle={{ padding: spacing.lg, paddingBottom: contentInset, gap: spacing.lg }}
-      renderItem={({ item }) => <BookTile item={item} width={cardWidth} />}
+      renderItem={({ item }) => <BookTile item={item} width={cardWidth} from={from} />}
     />
   )
 }

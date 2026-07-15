@@ -277,7 +277,7 @@ export default function StatsTab() {
               mostListened={stats.mostListened}
               styles={styles}
               colors={colors}
-              onOpen={(id) => router.push(`/item/${id}`)}
+              onOpen={(id) => router.push(`/item/${id}?from=stats`)}
             />
 
             <BarChart
