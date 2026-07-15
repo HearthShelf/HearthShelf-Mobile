@@ -593,13 +593,45 @@ function BooksView({
       {selection.selecting ? (
         <BookSelectionToolbar selection={selection} books={sorted} libraryId={libraryId} />
       ) : (
-        <View style={[styles.controlsRow, showAzRail && { paddingRight: 30 }]}>
-          <AppText variant="caption" color={colors.textMuted}>
-            {sorted.length} {sorted.length === 1 ? 'title' : 'titles'}
-          </AppText>
-          <Touchable style={styles.controlBtn} onPress={() => openSheet('sort')}>
-            <IconButton name={icons.tune} size={16} color={colors.text} />
-            <AppText variant="caption">Filter · Sort · View</AppText>
+        // Persistent control bar: sort chip (tap flips direction, chevron opens
+        // the sheet), filter chip with an active-count badge, and grid/list +
+        // Select buttons. The full Display/Sort/Filter sheet stays behind these.
+        <View style={[styles.controlBar, showAzRail && { paddingRight: 28 }]}>
+          <Touchable style={styles.ctrlChip} onPress={() => chooseSort(sort)}>
+            <Icon
+              name={desc ? icons.arrowDownward : icons.arrowUpward}
+              size={15}
+              color={colors.accent}
+            />
+            <AppText variant="caption">{sort}</AppText>
+            <Touchable onPress={() => openSheet('sort')} hitSlop={8}>
+              <Icon name={icons.collapse} size={15} color={colors.textMuted} />
+            </Touchable>
+          </Touchable>
+          <Touchable style={styles.ctrlChip} onPress={() => openSheet('filter')}>
+            <Icon name={icons.filter} size={15} color={colors.text} />
+            <AppText variant="caption">Filters</AppText>
+            {filter !== 'all' ? (
+              <View style={styles.ctrlBadge}>
+                <AppText variant="caption" color={colors.onAccent} style={styles.ctrlBadgeText}>
+                  1
+                </AppText>
+              </View>
+            ) : null}
+          </Touchable>
+          <View style={{ flex: 1 }} />
+          <Touchable
+            style={styles.ctrlIconBtn}
+            onPress={() => setDisplay((d) => (d === 'grid' ? 'list' : 'grid'))}
+          >
+            <Icon
+              name={display === 'grid' ? icons.viewList : icons.viewGrid}
+              size={19}
+              color={colors.text}
+            />
+          </Touchable>
+          <Touchable style={styles.ctrlIconBtn} onPress={() => selection.begin()}>
+            <Icon name={icons.checklist} size={19} color={colors.text} />
           </Touchable>
         </View>
       )}
@@ -1118,7 +1150,7 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
 
   return (
     <Animated.View entering={FadeIn.duration(DUR.base)} style={{ flex: 1 }}>
-      <View style={[styles.controlsRow, showAzRail && { paddingRight: 30 }]}>
+      <View style={[styles.groupControlRow, showAzRail && { paddingRight: 30 }]}>
         <AppText variant="caption" color={colors.textMuted}>
           {sorted.length} {mode === 'series' ? 'series' : mode}
         </AppText>
@@ -1338,21 +1370,50 @@ const makeStyles = (colors: Palette) =>
     },
     // Holds up to 3 overlapping 46px covers (46 + 2*16 = 78 wide).
     groupCovers: { width: 78, height: 46 },
-    controlsRow: {
+    // GroupsView's own Name/count sort row.
+    groupControlRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.sm,
     },
-    controlBtn: {
+    // Persistent control bar: sort/filter chips + layout & select icon buttons.
+    controlBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+    },
+    ctrlChip: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 5,
-      paddingLeft: spacing.sm,
-      paddingRight: spacing.sm,
-      paddingVertical: 5,
+      paddingLeft: spacing.md - 2,
+      paddingRight: spacing.md - 2,
+      paddingVertical: 7,
       borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    ctrlBadge: {
+      minWidth: 17,
+      height: 17,
+      paddingHorizontal: 4,
+      borderRadius: 9,
+      backgroundColor: colors.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    ctrlBadgeText: { fontSize: 10, fontWeight: '700', lineHeight: 14 },
+    ctrlIconBtn: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      alignItems: 'center',
+      justifyContent: 'center',
       backgroundColor: colors.fill,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.hairline,

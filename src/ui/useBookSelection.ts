@@ -15,8 +15,9 @@ export interface BookSelection {
   selected: Set<string>
   count: number
   isSelected: (id: string) => boolean
-  /** Enter select mode (via long-press) and select this book. */
-  begin: (id: string) => void
+  /** Enter select mode. With an id (long-press), selects that book; without
+   *  one (the Library "Select" button), enters with nothing selected yet. */
+  begin: (id?: string) => void
   toggle: (id: string) => void
   selectAll: (ids: string[]) => void
   clear: () => void
@@ -37,9 +38,10 @@ export function useBookSelection(): BookSelection {
     })
   }, [])
 
-  const begin = useCallback((id: string) => {
+  const begin = useCallback((id?: string) => {
     haptics.longPress()
     setSelecting(true)
+    if (id === undefined) return
     setSelected((s) => {
       const next = new Set(s)
       next.add(id)
