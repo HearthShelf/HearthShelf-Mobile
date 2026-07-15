@@ -9,7 +9,7 @@
  * The book data comes from the followed-subscription (if any) so it renders
  * instantly; otherwise it's fetched by ASIN. Both carry the full display payload.
  */
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Linking, ScrollView, StyleSheet, View } from 'react-native'
 import Animated, { FadeIn } from 'react-native-reanimated'
 import { useLocalSearchParams, useRouter } from 'expo-router'
@@ -39,6 +39,7 @@ import {
   icons,
 } from '@/ui/primitives'
 import { CoverLightbox } from '@/ui/CoverLightbox'
+import { CoverGlow } from '@/ui/CoverGlow'
 import { Icon } from '@/ui/icons'
 import { DUR } from '@/ui/motion'
 import { haptics } from '@/ui/haptics'
@@ -124,7 +125,9 @@ export default function UpcomingBookScreen() {
     )
   }
 
-  const now = Date.now()
+  // A live clock so the countdown actually ticks down instead of lying after
+  // midnight: re-derive every 60s, or every 1s in the final hour before release.
+  const now = useTickingNow(book)
   const followed = !!findSubscription({ kind: 'book', asin: book.asin })
   const upcoming = isUpcoming(book, now)
   const days = daysUntilRelease(book, now)
@@ -171,8 +174,13 @@ export default function UpcomingBookScreen() {
     book.narrator ? `Narrated by ${book.narrator}` : null,
   ].filter(Boolean)
 
+  const canGoBack = router.canGoBack()
+
   return (
     <Screen>
+      <View style={StyleSheet.absoluteFill}>
+        <CoverGlow hue={hue} height={320} />
+      </View>
       <Header onBack={() => router.back()} />
       <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }}>
         <Animated.View entering={FadeIn.duration(DUR.base)} style={styles.hero}>
@@ -252,6 +260,29 @@ export default function UpcomingBookScreen() {
           </Touchable>
         </View>
 
+        {/* Series context: where this book sits in its series. Taps back to the
+            series screen when we arrived from it (the common path). */}
+        {seriesLine ? (
+          <Touchable
+            style={styles.seriesRow}
+            onPress={canGoBack ? () => router.back() : undefined}
+            disabled={!canGoBack}
+          >
+            <Icon name={icons.book} size={18} color={colors.textMuted} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <AppText variant="eyebrow" color={colors.textMuted}>
+                Part of a series
+              </AppText>
+              <AppText variant="label" numberOfLines={1} style={{ marginTop: 2 }}>
+                {seriesLine}
+              </AppText>
+            </View>
+            {canGoBack ? (
+              <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />
+            ) : null}
+          </Touchable>
+        ) : null}
+
         {book.description ? (
           <View style={styles.descBlock}>
             <AppText variant="body" color={colors.textMuted}>
@@ -271,6 +302,40 @@ export default function UpcomingBookScreen() {
       />
     </Screen>
   )
+}
+
+/**
+ * A `Date.now()` that re-renders on an interval so the countdown stays honest.
+ * Ticks every 60s normally, every 1s inside the final hour before release, and
+ * stops entirely once the book is out (no point re-rendering a static "Out
+ * today"). Cleans its timer up on unmount and re-arms when the release changes.
+ */
+function useTickingNow(book: UpcomingBook | null): number {
+  const [now, setNow] = useState(() => Date.now())
+  const releaseAt = useMemo(() => {
+    const raw = book?.publicationDatetime || book?.releaseDate
+    if (!raw) return null
+    const t = Date.parse(raw)
+    return Number.isNaN(t) ? null : t
+  }, [book?.publicationDatetime, book?.releaseDate])
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    if (timer.current) clearInterval(timer.current)
+    // Already released: nothing to tick.
+    if (releaseAt == null || Date.now() >= releaseAt) {
+      setNow(Date.now())
+      return
+    }
+    const withinHour = releaseAt - Date.now() < 60 * 60 * 1000
+    timer.current = setInterval(() => setNow(Date.now()), withinHour ? 1000 : 60000)
+    return () => {
+      if (timer.current) clearInterval(timer.current)
+    }
+    // Re-arm when we cross into the final hour (now advances past the boundary).
+  }, [releaseAt, now])
+
+  return now
 }
 
 function Header({ onBack }: { onBack: () => void }) {
@@ -344,6 +409,18 @@ const makeStyles = (colors: Palette) =>
       paddingVertical: spacing.md,
       borderRadius: radius.card,
       backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    seriesRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      marginHorizontal: spacing.xl,
+      marginTop: spacing.xl,
+      padding: spacing.md,
+      borderRadius: radius.card,
+      backgroundColor: colors.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.hairline,
     },
