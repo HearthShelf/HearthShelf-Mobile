@@ -501,6 +501,17 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         {settings.playerBg === 'gradient' ? <CoverGlow hue={hue} height={430} breathe /> : null}
       </View>
 
+      {/* Focus view: a visible X to leave (swipe-down still works). */}
+      {immersive && (
+        <Animated.View
+          entering={FadeIn.duration(DUR.base)}
+          exiting={FadeOut.duration(DUR.fast)}
+          style={styles.focusExit}
+        >
+          <IconButton name={icons.close} size={24} color={colors.textMuted} onPress={exit} />
+        </Animated.View>
+      )}
+
       {!immersive && (
         <Animated.View entering={FadeIn.duration(DUR.base)} exiting={FadeOut.duration(DUR.fast)}>
           <View style={styles.header}>
@@ -1456,6 +1467,11 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       alignItems: 'center',
       paddingHorizontal: spacing.lg,
       paddingVertical: spacing.sm,
+    },
+    focusExit: {
+      alignItems: 'flex-end',
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.sm,
     },
     carChip: {
       flexDirection: 'row',
