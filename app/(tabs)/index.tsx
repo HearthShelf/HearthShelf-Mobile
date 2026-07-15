@@ -18,7 +18,6 @@ import type { ABSLibraryItem, ABSShelf, ABSSeries, HSListeningStats } from '@hea
 import {
   coverHue,
   formatDuration,
-  formatTimestamp,
   buildDiscoverShelves,
   rankDiscoverShelves,
   continueSeriesShelf,
@@ -29,15 +28,7 @@ import { clearAudibleCache } from '@/api/absAudible'
 import { clearSubscriptions } from '@/player/subscriptions'
 import { resetPushRegistration } from '@/player/pushRegister'
 import { useConnection } from '@/api/ConnectionProvider'
-import {
-  clearTrack,
-  getState,
-  subscribe,
-  togglePlay,
-  jumpBy,
-  requestSeek,
-  currentChapter,
-} from '@/player/store'
+import { clearTrack, getState, subscribe, togglePlay, jumpBy, currentChapter } from '@/player/store'
 import { getSettingsState, subscribeSettings, COVER_ASPECT_RATIO } from '@/store/settings'
 import { clearAutoSession, setAutoDiscover } from '@/player/autoBridge'
 import { stopQueueSync } from '@/player/queueSync'
@@ -54,13 +45,16 @@ import {
 } from '@/api/abs'
 import { getProgressState, subscribeProgress, refreshProgress } from '@/store/progress'
 import { playItemById } from '@/player/playback'
-import { setAutoDownloadContinueListening } from '@/player/downloads'
+import {
+  setAutoDownloadContinueListening,
+  getDownloadsState,
+  subscribeDownloads,
+} from '@/player/downloads'
 import { catalogHomeShelves } from '@/player/offlineCatalog'
 import {
   AppText,
   Cover,
   Loading,
-  ProgressBar,
   Screen,
   SectionHeader,
   Sheet,
@@ -72,7 +66,6 @@ import { BottomSheetFlatList } from '@gorhom/bottom-sheet'
 import { Icon, type IconName } from '@/ui/icons'
 import { DUR } from '@/ui/motion'
 import { onTabReselect } from '@/ui/tabReselect'
-import { Scrubber } from '@/player/Scrubber'
 import { SkipButton } from '@/player/SkipButton'
 import {
   BookActionsSheet,
@@ -132,6 +125,7 @@ export default function HomeScreen() {
   const [inProgress, setInProgress] = useState<ABSLibraryItem[]>([])
   const [shelves, setShelves] = useState<HomeShelf[]>([])
   const [stats, setStats] = useState<HSListeningStats | null>(null)
+  const [libraryName, setLibraryName] = useState<string | null>(null)
   // Shared per-item progress; mark-finished anywhere updates tiles here live.
   const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
   const { message: toast, show: showToast } = useToast()
@@ -246,6 +240,7 @@ export default function HomeScreen() {
     // so it always produces rows - content on first run, no QuestGiver needed.
     const libs = await getLibraries()
     const firstBookLib = libs.find((l) => l.mediaType === 'book') ?? libs[0]
+    setLibraryName(firstBookLib?.name ?? null)
     if (firstBookLib) {
       // Taste-engine recommendation shelves from the full library (limit=0 so
       // genres/narrator survive). Best-effort: a fetch failure just skips them.
@@ -508,19 +503,18 @@ export default function HomeScreen() {
           />
         }
       >
+        <HomeHeader firstName={firstName} libraryName={libraryName} />
         {nowPlaying ? (
           <PlayerHero
             nowPlaying={nowPlaying}
             isPlaying={isPlaying}
             position={position}
-            greeting={<Greeting firstName={firstName} nowPlayingTitle={nowPlaying.title} />}
             onOpen={() => router.push('/player')}
           />
         ) : hero ? (
           <ContinueHero
             item={hero}
             progress={progressById.get(hero.id)?.progress ?? 0}
-            greeting={<Greeting firstName={firstName} />}
             onResume={async () => {
               try {
                 // playItemById resolves the resume position itself (play session,
@@ -533,11 +527,7 @@ export default function HomeScreen() {
             }}
             onLongPress={() => openActions(hero)}
           />
-        ) : (
-          <View style={styles.topBar}>
-            <Greeting firstName={firstName} />
-          </View>
-        )}
+        ) : null}
         {stats ? <HomeStatsStrip stats={stats} /> : null}
         <ReleaseCountdownBanner />
         <HomeClubShelf />
@@ -557,55 +547,91 @@ export default function HomeScreen() {
   )
 }
 
-/** Two-line personalized greeting: "Hello <name>" + a time-of-day subtext that
- *  nods to what's playing when there is something. Deterministic per render (no
- *  Math.random in the hot path - a small rotation keyed off the hour). */
-function Greeting({
+/**
+ * Header utility row above the hero: time-of-day greeting with the active
+ * server/library context under it (tap opens the server switcher), plus
+ * Downloads (accent activity dot while anything is in-flight) and Search on the
+ * right edge. Deterministic per render (no Math.random in the hot path).
+ */
+function HomeHeader({
   firstName,
-  nowPlayingTitle,
+  libraryName,
 }: {
   firstName: string | null
-  nowPlayingTitle?: string
+  libraryName: string | null
 }) {
   const colors = useColors()
+  const styles = useStyles()
+  const router = useRouter()
+  const { serverName } = useConnection()
+  const downloads = useSyncExternalStore(subscribeDownloads, getDownloadsState)
+  let downloading = false
+  for (const e of downloads.byId.values()) {
+    if (e.status === 'downloading' || e.status === 'queued') {
+      downloading = true
+      break
+    }
+  }
   const h = new Date().getHours()
   const partOfDay =
     h < 5 ? 'night' : h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 21 ? 'evening' : 'night'
-  const hello = firstName ? `Hello ${firstName}` : 'Hello'
-  const subs =
-    partOfDay === 'morning'
-      ? ['Good morning', 'A fresh chapter awaits', 'Coffee and a good book?']
-      : partOfDay === 'afternoon'
-        ? ['Good afternoon', 'Pick up where you left off', 'A little listening break?']
-        : partOfDay === 'evening'
-          ? ['Good evening', 'Wind down with a chapter', 'Settle in by the hearth']
-          : ['Burning the midnight oil', 'A late-night listen', 'The hearth is still warm']
-  const sub = nowPlayingTitle ? `Still on ${nowPlayingTitle}` : subs[h % subs.length]
+  const hello = firstName ? `Good ${partOfDay}, ${firstName}` : `Good ${partOfDay}`
+  const context = [serverName, libraryName].filter(Boolean).join(' · ')
   return (
-    <View>
-      <AppText variant="hero">{hello}</AppText>
-      <AppText variant="meta" color={colors.textMuted} numberOfLines={1}>
-        {sub}
-      </AppText>
+    <View style={styles.header}>
+      <Touchable
+        onPress={() => router.push('/settings/servers')}
+        style={{ flex: 1, minWidth: 0 }}
+      >
+        <AppText variant="label" numberOfLines={1}>
+          {hello}
+        </AppText>
+        {context ? (
+          <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
+            {context}
+          </AppText>
+        ) : null}
+      </Touchable>
+      <View style={styles.headerBtns}>
+        <Touchable
+          onPress={() => router.push('/settings/storage')}
+          style={styles.headerBtn}
+        >
+          <Icon name={icons.download} size={19} color={colors.text} />
+          {downloading ? <View style={styles.headerDot} /> : null}
+        </Touchable>
+        <Touchable
+          onPress={() => router.push('/search?from=home')}
+          style={styles.headerBtn}
+        >
+          <Icon name={icons.search} size={19} color={colors.text} />
+        </Touchable>
+      </View>
     </View>
   )
 }
 
+// Text and track colors used over the heroes' scrimmed artwork. The art is
+// always dark-scrimmed regardless of theme, so these are content-anchored
+// constants, not theme tokens.
+const HERO_TEXT = 'rgba(255,255,255,0.98)'
+const HERO_TEXT_DIM = 'rgba(255,255,255,0.78)'
+const HERO_EYEBROW = 'rgba(255,255,255,0.75)'
+const HERO_TRACK = 'rgba(255,255,255,0.22)'
+
 /**
- * Continue-listening spotlight hero: the book's artwork blown up as the
- * background, fading down to the scaffold just below the Resume button and
- * running up off the top of the screen (behind the greeting). Borderless.
+ * Compact continue-listening hero card (~190px): the book's artwork fills a
+ * rounded band with a bottom-heavy scrim; title/progress/Resume sit in the
+ * thumb-friendly lower half. Tap resumes, long-press opens actions.
  */
 function ContinueHero({
   item,
   progress,
-  greeting,
   onResume,
   onLongPress,
 }: {
   item: ABSLibraryItem
   progress: number
-  greeting: React.ReactNode
   onResume: () => void
   onLongPress: () => void
 }) {
@@ -616,55 +642,51 @@ function ContinueHero({
   const pct = Math.round(Math.max(0, Math.min(1, progress)) * 100)
   const started = progress > 0
   const heroArt = coverUrl(item.id)
+  const duration = (item.media as { duration?: number }).duration
+  const left =
+    started && duration && duration > 0 ? `${formatDuration(duration * (1 - progress))} left` : null
   return (
-    <View style={styles.hero}>
-      {/* Blown-up artwork background; the gradient fades it down to the scaffold
-          and up off the top so it reads as a borderless spotlight, not a card.
-          Skip the source when there's no art (mid server-switch) - an empty uri
-          warns and shows nothing anyway; the gradient carries the look. */}
-      <ImageBackground
-        source={heroArt ? { uri: heroArt } : undefined}
-        style={styles.heroBg}
-        imageStyle={styles.heroBgImg}
+    <View style={styles.heroWrap}>
+      <Pressable
+        onPress={onResume}
+        onLongPress={onLongPress}
+        delayLongPress={350}
+        style={[styles.heroCard, styles.heroCardShort, { maxWidth: contentMaxWidth }]}
       >
-        <LinearGradient
-          colors={['rgba(27,26,24,0.35)', 'rgba(27,26,24,0.55)', colors.scaffold]}
-          locations={[0, 0.55, 1]}
+        <ImageBackground
+          source={heroArt ? { uri: heroArt } : undefined}
           style={StyleSheet.absoluteFill}
-        />
-      </ImageBackground>
+          imageStyle={styles.heroBgImg}
+        >
+          <LinearGradient
+            colors={['rgba(0,0,0,0.08)', 'rgba(15,11,8,0.62)']}
+            locations={[0, 0.8]}
+            style={StyleSheet.absoluteFill}
+          />
+        </ImageBackground>
 
-      {/* DS "spotlight 2c": greeting, a gap so the art breathes, then a text-only
-          meta block over the art (no duplicate cover thumbnail), progress, and a
-          compact Resume pill - matching HearthShelf Android - Material.dc.html. */}
-      <View style={[styles.heroContent, { maxWidth: contentMaxWidth, width: '100%' }]}>
-        <View style={styles.heroGreeting}>{greeting}</View>
-        <View style={styles.heroGap} />
-        <Pressable style={styles.heroMeta} onLongPress={onLongPress} delayLongPress={350}>
-          <AppText variant="eyebrow" color={colors.accent}>
+        <View style={styles.heroBody}>
+          <AppText variant="eyebrow" color={HERO_EYEBROW}>
             {started ? 'Continue' : 'Up next'}
           </AppText>
-          <AppText variant="title" numberOfLines={2} style={{ marginTop: 6 }}>
+          <AppText variant="title" color={HERO_TEXT} numberOfLines={1} style={{ marginTop: 5 }}>
             {itemTitle(item)}
           </AppText>
-          <AppText
-            variant="meta"
-            color={colors.textMuted}
-            numberOfLines={1}
-            style={{ marginTop: 4 }}
-          >
-            {itemAuthor(item)}
+          <AppText variant="meta" color={HERO_TEXT_DIM} numberOfLines={1} style={{ marginTop: 3 }}>
+            {[itemAuthor(item), left].filter(Boolean).join(' · ')}
           </AppText>
+        </View>
 
-          {started && (
-            <View style={styles.heroProgress}>
-              <ProgressBar progress={progress} style={{ flex: 1 }} />
-              <AppText variant="mono" color={colors.textMuted}>
-                {pct}%
-              </AppText>
+        {started && (
+          <View style={[styles.heroTrackRow, { bottom: 56 }]}>
+            <View style={styles.heroTrack}>
+              <View style={[styles.heroTrackFill, { width: `${pct}%` }]} />
             </View>
-          )}
-        </Pressable>
+            <AppText variant="mono" color={HERO_TEXT_DIM}>
+              {pct}%
+            </AppText>
+          </View>
+        )}
 
         <Touchable onPress={onResume} style={styles.heroResume}>
           <Icon name={icons.play} size={20} color={colors.onAccent} />
@@ -672,167 +694,121 @@ function ContinueHero({
             {started ? 'Resume' : 'Start listening'}
           </AppText>
         </Touchable>
-      </View>
+      </Pressable>
     </View>
   )
 }
 
 /**
- * Live-player hero: shown in place of the Resume hero whenever something is
- * playing. The now-playing artwork fills the spotlight (same treatment as the
- * Continue hero), the Resume pill becomes a round play/pause, and the flat
- * progress bar becomes the real draggable Scrubber - chapter- or book-relative
- * per the user's scrubber setting, matching the full player. Skip buttons sit in
- * the bottom-right, using the configured skip amounts. Tapping the cover opens
- * the full player.
+ * Compact live-player hero card (~238px playing / ~190px paused): now-playing
+ * artwork fills the band; title, chapter, display-only progress, and the
+ * transport sit in the lower half (scrubbing stays in the full player). Tapping
+ * anywhere opens the full player.
  */
 function PlayerHero({
   nowPlaying,
   isPlaying,
   position,
-  greeting,
   onOpen,
 }: {
   nowPlaying: NonNullable<ReturnType<typeof getState>['nowPlaying']>
   isPlaying: boolean
   position: number
-  greeting: React.ReactNode
   onOpen: () => void
 }) {
   const colors = useColors()
   const styles = useStyles()
   const { width } = useWindowDimensions()
   const contentMaxWidth = adaptiveContentMaxWidth(width)
-  const { scrubber, skipForward, skipBack } = useSyncExternalStore(
-    subscribeSettings,
-    getSettingsState,
-  )
-  const [previewRatio, setPreviewRatio] = useState<number | null>(null)
+  const { skipForward, skipBack } = useSyncExternalStore(subscribeSettings, getSettingsState)
 
   const duration = nowPlaying.duration
-  const hasChapters = nowPlaying.chapters.length > 0
-  const chapterScope = scrubber === 'chapter' && hasChapters
-  const chapter = currentChapter()
-
   const bookProgress = duration > 0 ? Math.min(1, Math.max(0, position / duration)) : 0
-
-  // Chapter-relative when the setting asks for it (and chapters exist), else
-  // whole-book. Mirrors the full player's math so the two never disagree.
-  const chStart = chapter?.start ?? 0
-  const chEnd = chapter?.end ?? duration
-  const chSpan = Math.max(1, chEnd - chStart)
-  const shownPos = previewRatio !== null ? chStart + previewRatio * chSpan : position
-  const chPos = Math.max(0, shownPos - chStart)
-  const ratio = chapterScope ? Math.min(1, chPos / chSpan) : bookProgress
-  const elapsed = formatTimestamp(chapterScope ? chPos : shownPos)
-  const remain = formatTimestamp(Math.max(0, chapterScope ? chSpan - chPos : duration - shownPos))
-
-  const seekToRatio = (r: number) => {
-    if (chapterScope) requestSeek(chStart + r * chSpan)
-    else if (duration > 0) requestSeek(r * duration)
-  }
+  const pct = Math.round(bookProgress * 100)
+  const chapter = currentChapter()
+  const meta = [nowPlaying.author, chapter?.title].filter(Boolean).join(' · ')
 
   const heroArt = coverUrl(nowPlaying.itemId)
   return (
-    <View style={styles.hero}>
-      <ImageBackground
-        source={heroArt ? { uri: heroArt } : undefined}
-        style={styles.heroBg}
-        imageStyle={styles.heroBgImg}
+    <View style={styles.heroWrap}>
+      <Pressable
+        onPress={onOpen}
+        style={[
+          styles.heroCard,
+          isPlaying ? styles.heroCardTall : styles.heroCardShort,
+          { maxWidth: contentMaxWidth },
+        ]}
       >
-        <LinearGradient
-          colors={['rgba(27,26,24,0.35)', 'rgba(27,26,24,0.55)', colors.scaffold]}
-          locations={[0, 0.55, 1]}
+        <ImageBackground
+          source={heroArt ? { uri: heroArt } : undefined}
           style={StyleSheet.absoluteFill}
-        />
-      </ImageBackground>
+          imageStyle={styles.heroBgImg}
+        >
+          <LinearGradient
+            colors={['rgba(0,0,0,0.08)', 'rgba(15,11,8,0.62)']}
+            locations={[0, 0.8]}
+            style={StyleSheet.absoluteFill}
+          />
+        </ImageBackground>
 
-      <View style={[styles.heroContent, { maxWidth: contentMaxWidth, width: '100%' }]}>
-        <Pressable style={styles.heroGreeting} onPress={onOpen}>
-          {greeting}
-        </Pressable>
-        <View style={styles.heroGap} />
-        <Pressable style={styles.heroMeta} onPress={onOpen}>
-          <AppText variant="eyebrow" color={colors.accent}>
+        <View style={styles.heroBody}>
+          <AppText variant="eyebrow" color={HERO_EYEBROW}>
             {isPlaying ? 'Now playing' : 'Continue'}
           </AppText>
-          <AppText variant="title" numberOfLines={2} style={{ marginTop: 6 }}>
+          <AppText variant="title" color={HERO_TEXT} numberOfLines={1} style={{ marginTop: 5 }}>
             {nowPlaying.title}
           </AppText>
-          <AppText
-            variant="meta"
-            color={colors.textMuted}
-            numberOfLines={1}
-            style={{ marginTop: 4 }}
-          >
-            {nowPlaying.author}
+          <AppText variant="meta" color={HERO_TEXT_DIM} numberOfLines={1} style={{ marginTop: 3 }}>
+            {meta}
           </AppText>
-          {isPlaying && chapterScope && chapter?.title ? (
-            <AppText
-              variant="caption"
-              color={colors.textMuted}
-              numberOfLines={1}
-              style={{ marginTop: 2 }}
-            >
-              {chapter.title}
-            </AppText>
-          ) : null}
-        </Pressable>
+        </View>
+
+        <View style={[styles.heroTrackRow, { bottom: isPlaying ? 76 : 56 }]}>
+          <View style={styles.heroTrack}>
+            <View style={[styles.heroTrackFill, { width: `${pct}%` }]} />
+          </View>
+          <AppText variant="mono" color={HERO_TEXT_DIM}>
+            {pct}%
+          </AppText>
+        </View>
 
         {isPlaying ? (
           <>
-            {/* Live player: draggable scrubber + transport, shown only while
-                audio is advancing. Paused, the hero reverts to the Resume look. */}
-            <View style={styles.heroScrub}>
-              <Scrubber
-                ratio={ratio}
-                playing={isPlaying}
-                elapsed={elapsed}
-                remain={remain}
-                onDrag={setPreviewRatio}
-                onSeek={seekToRatio}
-              />
-            </View>
-
-            <View style={styles.heroPlayerRow}>
-              <Touchable onPress={togglePlay} style={styles.heroPlayBtn}>
-                <Icon name={icons.pause} size={28} color={colors.onAccent} />
-              </Touchable>
-              <View style={{ flex: 1 }} />
+            <View style={styles.heroTransport}>
               <SkipButton
                 dir={-1}
                 seconds={skipBack}
-                size={30}
-                color={colors.text}
+                size={26}
+                color={HERO_TEXT}
                 onPress={() => jumpBy(-skipBack)}
               />
+              <Touchable onPress={togglePlay} style={styles.heroPlayBtn}>
+                <Icon name={icons.pause} size={28} color={colors.onAccent} />
+              </Touchable>
               <SkipButton
                 dir={1}
                 seconds={skipForward}
-                size={30}
-                color={colors.text}
+                size={26}
+                color={HERO_TEXT}
                 onPress={() => jumpBy(skipForward)}
               />
             </View>
+            <View style={styles.heroOpenHint}>
+              <AppText variant="caption" color={HERO_TEXT_DIM}>
+                Player
+              </AppText>
+              <Icon name={icons.chevronRight} size={16} color={HERO_TEXT_DIM} />
+            </View>
           </>
         ) : (
-          <>
-            <View style={styles.heroProgress}>
-              <ProgressBar progress={bookProgress} style={{ flex: 1 }} />
-              <AppText variant="mono" color={colors.textMuted}>
-                {Math.round(bookProgress * 100)}%
-              </AppText>
-            </View>
-
-            <Touchable onPress={togglePlay} style={styles.heroResume}>
-              <Icon name={icons.play} size={20} color={colors.onAccent} />
-              <AppText variant="label" color={colors.onAccent}>
-                Resume
-              </AppText>
-            </Touchable>
-          </>
+          <Touchable onPress={togglePlay} style={styles.heroResume}>
+            <Icon name={icons.play} size={20} color={colors.onAccent} />
+            <AppText variant="label" color={colors.onAccent}>
+              Resume
+            </AppText>
+          </Touchable>
         )}
-      </View>
+      </Pressable>
     </View>
   )
 }
@@ -1023,75 +999,109 @@ function Shelf({
 
 const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow']) =>
   StyleSheet.create({
-    topBar: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: spacing.lg,
-      paddingVertical: spacing.sm,
-    },
-    // Borderless spotlight: the artwork background bleeds up past the top of the
-    // screen (negative top margin under the safe area) and fades to scaffold below.
-    hero: {
-      marginTop: -60,
-      paddingTop: 60,
-      position: 'relative',
-    },
-    heroBg: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      height: 340,
-    },
-    heroBgImg: { resizeMode: 'cover' },
-    heroContent: {
-      alignSelf: 'center',
-      paddingHorizontal: spacing.xl,
-      paddingTop: spacing.sm,
-      // Gap below the Resume pill so the art's fade-out is visible before the
-      // stats, matching the DS (not overly busy).
-      paddingBottom: spacing.lg,
-    },
-    heroGreeting: {},
-    // DS: 44px of breathing room between the greeting and the title block so the
-    // spotlight art reads before the text starts.
-    heroGap: { height: 44 },
-    heroMeta: {},
-    heroProgress: {
+    // Header utility row: greeting + server context left, 44px icon targets right.
+    header: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.sm,
-      marginTop: 14,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.sm,
+      paddingBottom: spacing.xs,
     },
-    // Compact auto-width Resume pill (DS: padding 13/26, radius 16), NOT full-width.
-    heroResume: {
-      alignSelf: 'flex-start',
+    headerBtns: { flexDirection: 'row', gap: spacing.sm },
+    headerBtn: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor: colors.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    headerDot: {
+      position: 'absolute',
+      top: 6,
+      right: 6,
+      width: 7,
+      height: 7,
+      borderRadius: 4,
+      backgroundColor: colors.accent,
+      borderWidth: 1.5,
+      borderColor: colors.scaffold,
+    },
+    // Compact hearth hero: a rounded card band (~238px playing / ~190px paused)
+    // with the artwork filling it and content in the thumb-friendly lower half.
+    heroWrap: { paddingHorizontal: spacing.md, marginTop: spacing.sm },
+    heroCard: {
+      alignSelf: 'center',
+      width: '100%',
+      borderRadius: 20,
+      overflow: 'hidden',
+      backgroundColor: colors.card,
+    },
+    heroCardTall: { height: 238 },
+    heroCardShort: { height: 190 },
+    heroBgImg: { resizeMode: 'cover' },
+    heroBody: { paddingTop: 15, paddingHorizontal: 18 },
+    heroTrackRow: {
+      position: 'absolute',
+      left: 18,
+      right: 18,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 9,
-      marginTop: spacing.lg,
-      paddingVertical: 13,
-      paddingHorizontal: 26,
-      borderRadius: 16,
+      gap: spacing.sm,
+    },
+    heroTrack: {
+      flex: 1,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: HERO_TRACK,
+      overflow: 'hidden',
+    },
+    heroTrackFill: {
+      height: '100%',
+      borderRadius: 2,
+      backgroundColor: colors.accent,
+    },
+    // Compact auto-width Resume pill anchored bottom-left in the card.
+    heroResume: {
+      position: 'absolute',
+      left: 18,
+      bottom: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 10,
+      paddingHorizontal: 22,
+      borderRadius: 14,
       backgroundColor: colors.accent,
       ...shadow.accentGlow,
     },
-    heroScrub: { marginTop: 18 },
-    heroPlayerRow: {
+    heroTransport: {
+      position: 'absolute',
+      left: 18,
+      bottom: 12,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.sm,
-      marginTop: spacing.lg,
+      gap: spacing.lg,
     },
     heroPlayBtn: {
-      width: 56,
-      height: 56,
-      borderRadius: 28,
+      width: 52,
+      height: 52,
+      borderRadius: 26,
       backgroundColor: colors.accent,
       alignItems: 'center',
       justifyContent: 'center',
       ...shadow.accentGlow,
+    },
+    heroOpenHint: {
+      position: 'absolute',
+      right: 14,
+      bottom: 24,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 2,
     },
     seeAll: { flexDirection: 'row', alignItems: 'center', gap: 1 },
     // Reserve space for both text lines so the entrance animation can't clip the
