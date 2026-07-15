@@ -51,5 +51,10 @@ export function MiniPlayerDock() {
   const vertical = hasTabBar && floatingNav && orientation === 'vertical'
   const offset = (hasTabBar && !vertical ? TAB_BAR_HEIGHT : 0) + insets.bottom
   const rightInset = vertical ? VNAV_WIDTH + spacing.md : 0
-  return <MiniPlayer bottomOffset={offset} rightInset={rightInset} />
+  // With the floating pill nav, the mini player becomes a rounded floating card
+  // (side margins + shadow) to match; with the classic docked tab bar it stays
+  // flush and square-topped, sitting directly on the bar.
+  return (
+    <MiniPlayer bottomOffset={offset} rightInset={rightInset} floating={floatingNav && hasTabBar} />
+  )
 }

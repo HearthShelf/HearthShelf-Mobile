@@ -1004,7 +1004,10 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
           stays controllable (swipe to skip, tap the transport). It sits just
           above the tab bar (pushed route) or the screen bottom (embedded). */}
       {browsing && (
-        <MiniPlayer bottomOffset={embedded ? insets.bottom : insets.bottom + TAB_BAR_HEIGHT} />
+        <MiniPlayer
+          bottomOffset={embedded ? insets.bottom : insets.bottom + TAB_BAR_HEIGHT}
+          floating={settings.floatingNav}
+        />
       )}
 
       {/* Nav stays visible unless immersive. */}

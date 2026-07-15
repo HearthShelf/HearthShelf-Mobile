@@ -16,7 +16,7 @@ import { CoverDownloadOverlay } from '@/ui/CoverDownloadOverlay'
 import { SkipButton } from '@/player/SkipButton'
 import { DUR, SpringPressable } from '@/ui/motion'
 import { haptics } from '@/ui/haptics'
-import { spacing, type Palette } from '@/ui/theme'
+import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { getState, subscribe, togglePlay, jumpBy, currentChapter } from './store'
@@ -28,10 +28,14 @@ export const MINI_PLAYER_HEIGHT = 60
 export function MiniPlayer({
   bottomOffset = 0,
   rightInset = 0,
+  floating = false,
 }: {
   bottomOffset?: number
   /** Extra right padding so the bar clears a bottom-right vertical nav column. */
   rightInset?: number
+  /** Rounded floating card (side margins + shadow) instead of the flush docked
+   *  bar - used with the floating pill nav. */
+  floating?: boolean
 }) {
   const router = useRouter()
   const colors = useColors()
@@ -67,6 +71,7 @@ export function MiniPlayer({
     <MiniPlayerBar
       bottomOffset={bottomOffset}
       rightInset={rightInset}
+      floating={floating}
       progress={progress}
       bookProgress={bookProgress}
       subtitle={subtitle}
@@ -77,12 +82,14 @@ export function MiniPlayer({
 function MiniPlayerBar({
   bottomOffset,
   rightInset,
+  floating,
   progress,
   bookProgress,
   subtitle,
 }: {
   bottomOffset: number
   rightInset: number
+  floating: boolean
   progress: number
   bookProgress: number
   subtitle: string
@@ -125,12 +132,13 @@ function MiniPlayerBar({
       style={[styles.wrap, { bottom: bottomOffset, right: rightInset }]}
       pointerEvents="box-none"
     >
-      {/* Thin whole-book progress strip across the top of the dock. */}
-      <View style={styles.progTrack}>
-        <View style={[styles.progFill, { width: `${Math.max(0, Math.min(1, bookProgress)) * 100}%` }]} />
-      </View>
-      <GestureDetector gesture={swipe}>
-        <View style={styles.bar}>
+      <View style={floating ? styles.card : undefined}>
+        {/* Thin whole-book progress strip across the top of the dock. */}
+        <View style={styles.progTrack}>
+          <View style={[styles.progFill, { width: `${Math.max(0, Math.min(1, bookProgress)) * 100}%` }]} />
+        </View>
+        <GestureDetector gesture={swipe}>
+          <View style={styles.bar}>
           <Pressable style={styles.tap} onPress={() => router.push('/player')}>
             {/* Round cover inside a round chapter-progress ring. */}
             <View style={styles.ringWrap}>
@@ -190,8 +198,9 @@ function MiniPlayerBar({
               </AppText>
             </Animated.View>
           )}
-        </View>
-      </GestureDetector>
+          </View>
+        </GestureDetector>
+      </View>
     </Animated.View>
   )
 }
@@ -237,6 +246,21 @@ const makeStyles = (colors: Palette) =>
       position: 'absolute',
       left: 0,
       right: 0,
+    },
+    // Floating variant: a rounded card with side margins, a hairline, and a
+    // lift shadow - to match the floating pill nav. Clips the strip's top round.
+    card: {
+      marginHorizontal: spacing.md,
+      borderRadius: radius.card,
+      overflow: 'hidden',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.popover,
+      elevation: 12,
+      shadowColor: '#000',
+      shadowOpacity: 0.35,
+      shadowRadius: 16,
+      shadowOffset: { width: 0, height: 8 },
     },
     progTrack: { height: 2, backgroundColor: colors.fillStrong },
     progFill: { height: 2, backgroundColor: colors.accent },
