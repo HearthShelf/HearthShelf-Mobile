@@ -99,6 +99,7 @@ export const icons = {
   expandLess: 'expand-less',
   arrowUpward: 'arrow-upward',
   nothingQueued: 'do-not-disturb-on',
+  sparkle: 'auto-awesome',
   // Nav / actions
   search: 'search',
   back: 'arrow-back',

@@ -80,6 +80,7 @@ import {
   type BookActionsHandle,
   type BookActionsSource,
 } from '@/ui/BookActionsSheet'
+import { BookTile } from '@/ui/BookTile'
 import { getServerQueue } from '@/api/queue'
 import {
   setQueueItems,
@@ -115,10 +116,12 @@ import {
 // A Home shelf: ABS's shape plus optional dismiss context. `source` picks the
 // long-press actions; `seriesByItemId` maps a Continue-Series tile (rendered as
 // its next book) to the series it stands for, so "Hide this series" dismisses
-// the right series id.
+// the right series id. `icon` is the shelf's declared leading icon - no
+// label-string guessing.
 type HomeShelf = ABSShelf & {
   source?: BookActionsSource
   seriesByItemId?: Record<string, { id: string; name: string }>
+  icon?: IconName
 }
 
 export default function HomeScreen() {
@@ -274,6 +277,7 @@ export default function HomeScreen() {
           label: s.label,
           type: 'book',
           entities: s.items,
+          icon: icons.sparkle,
         }))
         carShelves = ranked.map((s) => ({ id: s.id, label: s.label, items: s.items }))
       } catch {
@@ -300,8 +304,9 @@ export default function HomeScreen() {
           if (s.type !== 'book' || s.entities.length === 0) continue
           if (s.id === 'continue-listening') {
             const entities = s.entities.filter((e) => finished.get(e.id)?.isFinished !== true)
-            if (entities.length) continueShelves.push({ ...s, source: 'listening', entities })
-          } else if (s.id === 'recently-added') addedShelf = s
+            if (entities.length)
+              continueShelves.push({ ...s, source: 'listening', entities, icon: icons.recent })
+          } else if (s.id === 'recently-added') addedShelf = { ...s, icon: icons.add } as HomeShelf
         }
       } catch {
         // Personalized is best-effort; the taste engine still carries Home.
@@ -325,6 +330,7 @@ export default function HomeScreen() {
             entities: csEntries.map((e) => e.nextBook),
             source: 'series',
             seriesByItemId,
+            icon: icons.book,
           })
         }
       } catch {
@@ -929,16 +935,6 @@ function DashboardRow({
   )
 }
 
-/** A small leading icon per home section, keyed off its label. */
-function sectionIcon(label: string): IconName {
-  const l = label.toLowerCase()
-  if (l.includes('continue') || l.includes('listen again')) return icons.recent
-  if (l.includes('recent') || l.includes('added') || l.includes('newest')) return icons.add
-  if (l.includes('discover')) return icons.flame
-  if (l.includes('series')) return icons.book
-  return icons.library
-}
-
 function Shelf({
   shelf,
   onLongPressItem,
@@ -955,6 +951,9 @@ function Shelf({
   const router = useRouter()
   const { width } = useWindowDimensions()
   const { coverAspect } = useSyncExternalStore(subscribeSettings, getSettingsState)
+  // Per-item progress drives the tiles' progress bars, finished badges, and
+  // whether the quick-play chip shows.
+  const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
   // Hide dismissed series/books from this shelf live (the dismiss action re-pulls
   // Home, but this keeps the tile from lingering between the write and reload).
   useSyncExternalStore(subscribeDismissals, getDismissalsState)
@@ -987,7 +986,7 @@ function Shelf({
     <View style={{ marginTop: spacing.lg }}>
       <SectionHeader
         title={shelf.label}
-        icon={sectionIcon(shelf.label)}
+        icon={shelf.icon ?? icons.library}
         onPress={openAll}
         action={
           <Touchable onPress={openAll} hitSlop={8} style={styles.seeAll}>
@@ -1004,37 +1003,39 @@ function Shelf({
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.md }}
-        renderItem={({ item, index }) => (
-          // Staggered entrance, capped so deep-scroll mounts don't lag behind
-          // their own appearance.
-          <Animated.View entering={FadeInDown.delay(Math.min(index, 6) * 40).duration(DUR.slow)}>
-            <Touchable
-              style={{ width: tileWidth }}
-              onPress={() => router.push(`/item/${item.id}?from=home`)}
-              onLongPress={() => onLongPressItem(item, source, seriesByItemId?.[item.id])}
+        renderItem={({ item, index }) => {
+          const p = progressById.get(item.id)
+          const quickPlay = async () => {
+            haptics.transport()
+            try {
+              await playItemById(item.id)
+              router.push('/player')
+            } catch {
+              router.push(`/item/${item.id}?from=home`)
+            }
+          }
+          return (
+            // Staggered entrance, capped so deep-scroll mounts don't lag behind
+            // their own appearance. minHeight reserves the tile's full frame
+            // (cover + two meta lines) so the index-0 FadeInDown (delay 0)
+            // can't snapshot before layout and clip the meta - the bug that
+            // dropped the first author in every row.
+            <Animated.View
+              entering={FadeInDown.delay(Math.min(index, 6) * 40).duration(DUR.slow)}
+              style={{ minHeight: tileWidth / COVER_ASPECT_RATIO[coverAspect] + 56 }}
             >
-              <Cover
-                uri={coverUrl(item.id)}
-                itemId={item.id}
+              <BookTile
+                item={item}
                 width={tileWidth}
-                aspectRatio={COVER_ASPECT_RATIO[coverAspect]}
-                showDownloadBadge
+                from="home"
+                progress={p?.progress}
+                finished={p?.isFinished === true}
+                onQuickPlay={() => void quickPlay()}
+                onLongPress={() => onLongPressItem(item, source, seriesByItemId?.[item.id])}
               />
-              {/* Title + author in a fixed-height column. The minHeight reserves
-                  both lines up front so the index-0 tile's FadeInDown (delay 0)
-                  can't snapshot the frame before the author line has laid out and
-                  clip it - the bug that dropped the first author in every row. */}
-              <View style={[styles.tileMeta, { width: tileWidth }]}>
-                <AppText variant="meta" numberOfLines={1}>
-                  {itemTitle(item)}
-                </AppText>
-                <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
-                  {itemAuthor(item)}
-                </AppText>
-              </View>
-            </Touchable>
-          </Animated.View>
-        )}
+            </Animated.View>
+          )
+        }}
       />
 
       {/* "See all" opens the section's OWN items in a tray (a 3-col grid) rather
@@ -1184,9 +1185,6 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
       gap: 2,
     },
     seeAll: { flexDirection: 'row', alignItems: 'center', gap: 1 },
-    // Reserve space for both text lines so the entrance animation can't clip the
-    // author off the first tile (see the renderItem comment).
-    tileMeta: { minHeight: 38, marginTop: spacing.xs },
     // Dashboard row: Up-next queue peek + streak/this-week tile. minHeight
     // reserves the band before stats/queue data lands (no layout shift).
     dashRow: {
