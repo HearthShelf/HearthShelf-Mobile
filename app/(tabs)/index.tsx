@@ -59,18 +59,8 @@ import {
   subscribeDownloads,
 } from '@/player/downloads'
 import { catalogHomeShelves } from '@/player/offlineCatalog'
-import {
-  AppText,
-  Cover,
-  Loading,
-  Screen,
-  SectionHeader,
-  Sheet,
-  type SheetRef,
-  Touchable,
-  icons,
-} from '@/ui/primitives'
-import { BottomSheetFlatList } from '@gorhom/bottom-sheet'
+import { publishHomeShelves } from '@/store/homeShelves'
+import { AppText, Cover, Loading, Screen, SectionHeader, Touchable, icons } from '@/ui/primitives'
 import { Icon, type IconName } from '@/ui/icons'
 import { DUR } from '@/ui/motion'
 import { onTabReselect } from '@/ui/tabReselect'
@@ -122,6 +112,23 @@ type HomeShelf = ABSShelf & {
   source?: BookActionsSource
   seriesByItemId?: Record<string, { id: string; name: string }>
   icon?: IconName
+}
+
+// Book shelves only, in the shape the pushed /shelf/[key] screen reads.
+function toPublishedShelves(shelves: HomeShelf[]) {
+  return shelves.flatMap((s) =>
+    s.type === 'book'
+      ? [
+          {
+            id: s.id,
+            label: s.label,
+            entities: s.entities,
+            source: s.source,
+            seriesByItemId: s.seriesByItemId,
+          },
+        ]
+      : [],
+  )
 }
 
 export default function HomeScreen() {
@@ -346,6 +353,8 @@ export default function HomeScreen() {
         ...(addedShelf ? [addedShelf] : []),
       ]
       setShelves(bookShelves)
+      // Expose the shelves to the pushed /shelf/[key] See-all screen.
+      publishHomeShelves(toPublishedShelves(bookShelves))
 
       // Publish the taste-engine recommendation shelves as the car's Discover
       // feed (the car can't run the engine itself, so it browses this snapshot).
@@ -374,6 +383,7 @@ export default function HomeScreen() {
     )
     setInProgress(ip)
     setShelves(sh)
+    publishHomeShelves(toPublishedShelves(sh))
     setStats(null)
     setLoading(false)
   }, [])
@@ -957,7 +967,6 @@ function Shelf({
   // Hide dismissed series/books from this shelf live (the dismiss action re-pulls
   // Home, but this keeps the tile from lingering between the write and reload).
   useSyncExternalStore(subscribeDismissals, getDismissalsState)
-  const sheetRef = useRef<SheetRef>(null)
   if (shelf.type !== 'book') return null
   const source = shelf.source ?? 'browse'
   const seriesByItemId = shelf.seriesByItemId
@@ -969,19 +978,10 @@ function Shelf({
     return true
   })
   if (entities.length === 0) return null
-  const openAll = () => sheetRef.current?.present()
+  // "See all" pushes a real shelf screen (same grid engine as Library); the
+  // back gesture works and Home stays lit via from=home.
+  const openAll = () => router.push(`/shelf/${encodeURIComponent(shelf.id)}?from=home`)
   const tileWidth = adaptiveShelfTileWidth(width)
-  const sheetCols = adaptiveGridColumns({
-    width,
-    minTile: 104,
-    maxCols: 5,
-    gutter: spacing.md,
-  })
-  const sheetTileWidth = adaptiveGridTileWidth({
-    width,
-    cols: sheetCols,
-    gutter: spacing.md,
-  })
   return (
     <View style={{ marginTop: spacing.lg }}>
       <SectionHeader
@@ -1038,42 +1038,6 @@ function Shelf({
         }}
       />
 
-      {/* "See all" opens the section's OWN items in a tray (a 3-col grid) rather
-          than a Library-filtered view, which mis-mapped some shelves. */}
-      <Sheet ref={sheetRef} title={shelf.label} snapPoints={['85%']}>
-        <BottomSheetFlatList
-          data={shelf.entities}
-          keyExtractor={(it) => it.id}
-          key={`home-sheet-${sheetCols}`}
-          numColumns={sheetCols}
-          columnWrapperStyle={{ gap: spacing.md }}
-          contentContainerStyle={{ gap: spacing.lg, paddingBottom: spacing.xl }}
-          renderItem={({ item }) => (
-            <Touchable
-              style={{ width: sheetTileWidth }}
-              onPress={() => {
-                sheetRef.current?.dismiss()
-                router.push(`/item/${item.id}?from=home`)
-              }}
-            >
-              <Cover
-                uri={coverUrl(item.id)}
-                itemId={item.id}
-                width={sheetTileWidth}
-                aspectRatio={COVER_ASPECT_RATIO[coverAspect]}
-                fallback={{
-                  hue: coverHue(item.id),
-                  initial: itemTitle(item).charAt(0).toUpperCase(),
-                }}
-                showDownloadBadge
-              />
-              <AppText variant="caption" numberOfLines={1} style={{ marginTop: spacing.xs }}>
-                {itemTitle(item)}
-              </AppText>
-            </Touchable>
-          )}
-        />
-      </Sheet>
     </View>
   )
 }
