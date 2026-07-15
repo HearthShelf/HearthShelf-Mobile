@@ -9,21 +9,19 @@
  * fetches the whole library and filters by narrator credit client-side.
  */
 import { useEffect, useState } from 'react'
-import { FlatList, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native'
+import { FlatList, StyleSheet, View, useWindowDimensions } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type { ABSLibraryItem } from '@hearthshelf/core'
-import { coverHue } from '@hearthshelf/core'
 import {
-  coverUrl,
   getAuthorDetail,
   getLibraryItemsPage,
   getLibrarySeries,
   itemNarrator,
-  itemTitle,
 } from '@/api/abs'
-import { AppText, Centered, Cover, IconButton, Loading, Screen, icons } from '@/ui/primitives'
+import { AppText, Centered, IconButton, Loading, Screen, icons } from '@/ui/primitives'
+import { BookTile } from '@/ui/BookTile'
 import { AppTabBar } from '@/ui/AppTabBar'
-import { radius, spacing } from '@/ui/theme'
+import { spacing } from '@/ui/theme'
 import { useContentInset } from '@/ui/useContentInset'
 import { useColors } from '@/ui/ThemeProvider'
 import { adaptiveGridColumns, adaptiveGridTileWidth } from '@/ui/responsive'
@@ -134,28 +132,8 @@ function GroupGrid({ books }: { books: ABSLibraryItem[] }) {
       numColumns={cols}
       columnWrapperStyle={{ gap: spacing.md }}
       contentContainerStyle={{ padding: spacing.lg, paddingBottom: contentInset, gap: spacing.lg }}
-      renderItem={({ item }) => <GroupBookCard item={item} width={cardWidth} />}
+      renderItem={({ item }) => <BookTile item={item} width={cardWidth} />}
     />
-  )
-}
-
-function GroupBookCard({ item, width }: { item: ABSLibraryItem; width: number }) {
-  const router = useRouter()
-  const title = itemTitle(item)
-  return (
-    <Pressable style={{ width }} onPress={() => router.push(`/item/${item.id}`)}>
-      <Cover
-        uri={coverUrl(item.id)}
-        itemId={item.id}
-        width={width}
-        aspectRatio={1}
-        radius={radius.card}
-        fallback={{ hue: coverHue(item.id), initial: title.charAt(0).toUpperCase(), title }}
-      />
-      <AppText variant="label" numberOfLines={1} style={{ marginTop: spacing.sm }}>
-        {title}
-      </AppText>
-    </Pressable>
   )
 }
 
