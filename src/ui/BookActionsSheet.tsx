@@ -1,13 +1,15 @@
 /**
- * Long-press action popover for a single book, reusable across browse surfaces
- * (Home shelves, the Continue hero, etc). A compact bottom sheet with the
- * actions people reach for without opening the detail page: Mark finished /
- * unfinished, Download, and Add to a list.
+ * Long-press action popover for a single book, reusable across every browse
+ * surface (Home shelves, the Continue hero, Library, See-all, Search, Author).
+ * This is the app's most-used action sheet, so it speaks the SAME language as
+ * the player's More tray (app/player.tsx MoreSheet): a 3-across grid of one-tap
+ * launch tiles on top, then a divider, then pinned rows for the stateful /
+ * destructive / drill-in actions.
  *
  * One instance serves many tiles: the parent holds a ref and calls
- * `present(item, isFinished)` from each tile's onLongPress, so the sheet always
- * targets the book that was pressed. Mark-finished reports back through
- * `onMarkedFinished` so the opener can update its own lists (e.g. drop a
+ * `present(item, isFinished, source?, series?)` from each tile's onLongPress, so
+ * the sheet always targets the book that was pressed. Mark-finished reports back
+ * through `onMarkedFinished` so the opener can update its own lists (e.g. drop a
  * newly-finished book out of Continue) without a full reload.
  */
 import {
@@ -19,10 +21,13 @@ import {
   useSyncExternalStore,
 } from 'react'
 import { StyleSheet, View } from 'react-native'
+import { useRouter } from 'expo-router'
 import type { ABSLibraryItem } from '@hearthshelf/core'
 import { coverHue } from '@hearthshelf/core'
 import { coverUrl, itemAuthor, itemTitle } from '@/api/abs'
-import { promptAndMarkItemsFinished } from '@/store/progress'
+import { markItemsFinished } from '@/store/progress'
+import { playItemById } from '@/player/playback'
+import { addToQueue, getQueueState, setManual, type QueueEntry } from '@/player/queue'
 import {
   getDownloadsState,
   subscribeDownloads,
@@ -33,11 +38,14 @@ import {
 import { AddToListSheet } from '@/player/AddToListSheet'
 import type { SheetHandle } from '@/player/sheets'
 import { AppText, Cover, Sheet, type SheetRef, Touchable } from '@/ui/primitives'
+import { SpringPressable } from '@/ui/motion'
 import { Icon, icons } from '@/ui/icons'
+import { showToast } from '@/ui/Toast'
+import { haptics } from '@/ui/haptics'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { confirm } from '@/ui/confirm'
-import { dismiss as dismissEntity } from '@/store/dismissals'
+import { dismiss as dismissEntity, restore as restoreEntity } from '@/store/dismissals'
 import { resetItemProgress } from '@/store/progress'
 
 // Where the long-press originated, so the sheet can offer the right "hide"
@@ -48,10 +56,10 @@ export type BookActionsSource = 'series' | 'listening' | 'browse'
 
 export interface BookActionsHandle {
   /** Open the sheet targeting `item`, with its current finished state so the
-   *  first row reads "Mark finished" vs "Mark unfinished" correctly. `source`
-   *  controls the dismiss / reset-progress rows. For a Continue-Series tile pass
-   *  `series` ({id,name}) so "Hide this series" dismisses the right series (the
-   *  minified item carries only a series name, not an id). */
+   *  Finish tile reads correctly. `source` controls the dismiss / reset-progress
+   *  rows. For a Continue-Series tile pass `series` ({id,name}) so "Hide this
+   *  series" and "View series" target the right series (the minified item carries
+   *  only a flat series name, not an id). */
   present: (
     item: ABSLibraryItem,
     isFinished: boolean,
@@ -74,6 +82,7 @@ export const BookActionsSheet = forwardRef<
 >(function BookActionsSheet({ onMarkedFinished, onDismissed, onToast }, ref) {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
+  const router = useRouter()
   const sheetRef = useRef<SheetRef>(null)
   const addSheetRef = useRef<SheetHandle>(null)
   const [target, setTarget] = useState<{
@@ -94,30 +103,75 @@ export const BookActionsSheet = forwardRef<
   const item = target?.item
   const finished = target?.finished ?? false
   const source = target?.source ?? 'browse'
-  // The series this tile stands for (Continue-Series), if any - drives the
-  // "Hide this series" action. Passed in explicitly by the caller.
   const seriesRef = target?.series
   const { byId } = useSyncExternalStore(subscribeDownloads, getDownloadsState)
   const dl = item ? byId.get(item.id) : undefined
+
+  // A short toast helper that routes through the global host (so actions like
+  // Undo are tappable) but also notifies the opener when it wants to react.
+  const toast = (msg: string) => {
+    showToast(msg)
+    onToast?.(msg)
+  }
+
+  const close = () => sheetRef.current?.dismiss()
+
+  const play = async () => {
+    if (!item) return
+    close()
+    haptics.transport()
+    await playItemById(item.id)
+    router.push('/player')
+  }
+
+  const entryFor = (it: ABSLibraryItem): QueueEntry => ({
+    libraryItemId: it.id,
+    title: itemTitle(it),
+    author: itemAuthor(it),
+  })
+
+  const playNext = () => {
+    if (!item) return
+    close()
+    // Play next = jump to the front of the manual queue (deduped).
+    const q = getQueueState()
+    const rest = q.manual.filter((i) => i.libraryItemId !== item.id)
+    setManual([entryFor(item), ...rest])
+    haptics.select()
+    toast('Playing next')
+  }
+
+  const queueLast = () => {
+    if (!item) return
+    close()
+    addToQueue(entryFor(item))
+    haptics.select()
+    toast('Added to queue')
+  }
 
   const markFinished = async () => {
     if (!item || busy) return
     const next = !finished
     setBusy(true)
-    // Close right away - the finish-date prompt (or the optimistic flip on the
-    // screen behind) takes over; holding the tray open on a wait feels stuck.
-    sheetRef.current?.dismiss()
+    close()
     try {
-      // Finishing asks "when did you finish?"; unfinishing is instant.
-      const ok = await promptAndMarkItemsFinished(
-        [{ id: item.id, duration: item.media.duration ?? 0 }],
-        next,
-      )
-      if (!ok) return // dismissed the prompt
+      // D-FINISH: one tap. Mark now; the date is editable from the toast, not a
+      // blocking prompt. Undo reverts.
+      await markItemsFinished([{ id: item.id, duration: item.media.duration ?? 0 }], next)
       onMarkedFinished?.(item, next)
-      onToast?.(next ? 'Marked finished' : 'Marked not finished')
+      if (next) {
+        haptics.success()
+        showToast('Finished', {
+          action: {
+            label: 'Undo',
+            onPress: () => void markItemsFinished([{ id: item.id }], false),
+          },
+        })
+      } else {
+        showToast('Marked not finished')
+      }
     } catch {
-      onToast?.('Could not update')
+      toast('Could not update')
     } finally {
       setBusy(false)
     }
@@ -133,36 +187,44 @@ export const BookActionsSheet = forwardRef<
       })
       if (!ok) return
       void deleteDownload(item.id)
-      onToast?.('Download removed')
+      toast('Download removed')
     } else if (dl?.status === 'downloading' || dl?.status === 'queued') {
       void cancelDownload(item.id)
-      onToast?.('Download cancelled')
+      toast('Download cancelled')
     } else {
       void downloadItem(item.id, itemTitle(item), itemAuthor(item))
-      onToast?.('Downloading for offline')
+      toast('Downloading for offline')
     }
-    sheetRef.current?.dismiss()
+    close()
   }
-
-  const downloadLabel =
-    dl?.status === 'done'
-      ? 'Remove download'
-      : dl?.status === 'downloading' || dl?.status === 'queued'
-        ? `Cancel download (${Math.round((dl.progress ?? 0) * 100)}%)`
-        : 'Download for offline'
-  const downloadIcon = dl?.status === 'done' ? icons.downloadDone : icons.download
 
   const addToList = () => {
     // Layer the add-to-list sheet on top of this one, then close this.
     addSheetRef.current?.present()
-    sheetRef.current?.dismiss()
+    close()
+  }
+
+  const shareBook = () => {
+    if (!item) return
+    close()
+    void import('react-native').then(({ Share }) =>
+      Share.share({ message: `${itemTitle(item)} by ${itemAuthor(item) || 'Unknown author'}` }),
+    )
+  }
+
+  const viewSeries = () => {
+    if (!item || !seriesRef) return
+    close()
+    router.push(
+      `/series/${encodeURIComponent(seriesRef.id)}?libraryId=${encodeURIComponent(item.libraryId)}`,
+    )
   }
 
   // Hide a series (Continue-Series) or a book (Continue-Listening) from Auto
-  // sources. Optimistic via the dismissals store; the opener gets an Undo.
+  // sources. Optimistic via the dismissals store; reversible from the Undo toast.
   const dismissTarget = async () => {
     if (!item || busy) return
-    sheetRef.current?.dismiss()
+    close()
     const kind: 'series' | 'item' = source === 'series' ? 'series' : 'item'
     const entityId = source === 'series' ? seriesRef?.id : item.id
     if (!entityId) return
@@ -170,38 +232,73 @@ export const BookActionsSheet = forwardRef<
     try {
       await dismissEntity(kind, entityId, label)
       onDismissed?.(`Hid "${label}"`)
+      showToast(`Hid "${label}"`, {
+        action: { label: 'Undo', onPress: () => void restoreEntity(kind, entityId) },
+      })
     } catch {
-      onToast?.('Could not hide that')
+      toast('Could not hide that')
     }
   }
 
-  // Reset a Continue-Listening book to the start AND hide it from the shelf
-  // (per the product decision: reset to 0 and remove from the list).
+  // Reset a book to the start. From a Continue-Listening tile it also hides the
+  // book from the shelf (the product decision); elsewhere it just resets.
   const resetProgress = async () => {
     if (!item || busy) return
-    sheetRef.current?.dismiss()
+    close()
+    const hideAfter = source === 'listening'
     const ok = await confirm({
       title: 'Reset progress',
-      message: `Start "${itemTitle(item)}" over from the beginning and remove it from Continue Listening?`,
+      message: hideAfter
+        ? `Start "${itemTitle(item)}" over from the beginning and remove it from Continue Listening?`
+        : `Start "${itemTitle(item)}" over from the beginning?`,
       confirmLabel: 'Reset',
     })
     if (!ok) return
     try {
       await resetItemProgress(item.id)
-      await dismissEntity('item', item.id, itemTitle(item))
+      if (hideAfter) await dismissEntity('item', item.id, itemTitle(item))
       onDismissed?.(`Reset "${itemTitle(item)}"`)
+      toast('Progress reset')
     } catch {
-      onToast?.('Could not reset progress')
+      toast('Could not reset progress')
     }
   }
 
   const canDismiss = source === 'series' ? !!seriesRef : source === 'listening'
+  const canReset = source === 'listening'
+  const canViewSeries = !!seriesRef
+
+  // The six peer one-tap launches (D-ACTIONS): frequency-ordered, Play is the
+  // accent-filled tile. Download encodes its tri-state in color.
+  const downloadTile = {
+    key: 'download',
+    icon:
+      dl?.status === 'done'
+        ? icons.downloadDone
+        : dl?.status === 'downloading' || dl?.status === 'queued'
+          ? icons.close
+          : icons.download,
+    label:
+      dl?.status === 'done'
+        ? 'Downloaded'
+        : dl?.status === 'downloading' || dl?.status === 'queued'
+          ? `${Math.round((dl.progress ?? 0) * 100)}%`
+          : 'Download',
+    active: dl?.status === 'done',
+    onPress: () => void download(),
+  }
 
   return (
     <>
       <Sheet ref={sheetRef} stackBehavior="push">
         {item ? (
-          <View style={styles.header}>
+          <Touchable
+            style={styles.header}
+            onPress={() => {
+              close()
+              router.push(`/item/${item.id}`)
+            }}
+          >
             <Cover
               uri={coverUrl(item.id)}
               itemId={item.id}
@@ -220,28 +317,45 @@ export const BookActionsSheet = forwardRef<
                 {itemAuthor(item)}
               </AppText>
             </View>
-          </View>
+            <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />
+          </Touchable>
         ) : null}
 
-        <ActionRow
-          icon={finished ? icons.removeDone : icons.taskAlt}
-          label={finished ? 'Mark not finished' : 'Mark finished'}
-          disabled={busy}
-          onPress={() => void markFinished()}
-        />
-        <ActionRow icon={icons.addList} label="Add to list" onPress={addToList} />
-        <ActionRow icon={downloadIcon} label={downloadLabel} onPress={() => void download()} />
-        {source === 'listening' && (
+        {/* 3-across launch grid: the peer one-tap actions, Play accent-filled. */}
+        <View style={styles.grid}>
+          <GridTile icon={icons.play} label="Play" accent onPress={() => void play()} />
+          <GridTile icon={icons.skipNext} label="Play next" onPress={playNext} />
+          <GridTile icon={icons.queue} label="Add to queue" onPress={queueLast} />
+          <GridTile icon={icons.addList} label="Add to list" onPress={addToList} />
+          <GridTile {...downloadTile} />
+          <GridTile
+            icon={finished ? icons.removeDone : icons.taskAlt}
+            label={finished ? 'Unfinish' : 'Finish'}
+            active={finished}
+            onPress={() => void markFinished()}
+          />
+        </View>
+
+        {/* Pinned rows: stateful / destructive / drill-in - deliberately below
+            the fold, out of one-tap-by-accident range. */}
+        <View style={styles.divider} />
+        {canViewSeries && (
+          <ActionRow icon={icons.book} label="View series" onPress={viewSeries} chevron />
+        )}
+        <ActionRow icon={icons.share} label="Share" onPress={shareBook} />
+        {canReset && (
           <ActionRow
             icon={icons.replay}
             label="Reset progress"
+            destructive
             onPress={() => void resetProgress()}
           />
         )}
         {canDismiss && (
           <ActionRow
             icon={icons.hidden}
-            label={source === 'series' ? 'Hide this series' : 'Not right now'}
+            label={source === 'series' ? 'Not right now (hide series)' : 'Not right now'}
+            destructive
             onPress={() => void dismissTarget()}
           />
         )}
@@ -252,30 +366,74 @@ export const BookActionsSheet = forwardRef<
           ref={addSheetRef}
           libraryId={item.libraryId}
           libraryItemId={item.id}
-          onAdded={(message) => onToast?.(message)}
+          onAdded={(message) => toast(message)}
         />
       ) : null}
     </>
   )
 })
 
+function GridTile({
+  icon,
+  label,
+  accent,
+  active,
+  onPress,
+}: {
+  icon: (typeof icons)[keyof typeof icons]
+  label: string
+  /** The most-tapped action (Play) - filled with the accent. */
+  accent?: boolean
+  /** Live-state (finished / downloaded) - accent wash + accent glyph. */
+  active?: boolean
+  onPress: () => void
+}) {
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
+  const iconColor = accent ? colors.onAccent : active ? colors.accent : colors.text
+  return (
+    <SpringPressable
+      style={[styles.tile, accent && styles.tileAccent, active && styles.tileActive]}
+      scaleTo={0.94}
+      onPress={onPress}
+    >
+      <Icon name={icon} size={24} color={iconColor} />
+      <AppText
+        variant="caption"
+        numberOfLines={1}
+        color={accent ? colors.onAccent : active ? colors.accent : colors.textMuted}
+      >
+        {label}
+      </AppText>
+    </SpringPressable>
+  )
+}
+
 function ActionRow({
   icon,
   label,
+  destructive,
+  chevron,
   disabled,
   onPress,
 }: {
   icon: (typeof icons)[keyof typeof icons]
   label: string
+  destructive?: boolean
+  chevron?: boolean
   disabled?: boolean
   onPress: () => void
 }) {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
+  const tint = destructive ? colors.destructive : undefined
   return (
     <Touchable style={styles.row} onPress={onPress} disabled={disabled}>
-      <Icon name={icon} size={21} color={colors.textMuted} />
-      <AppText variant="body">{label}</AppText>
+      <Icon name={icon} size={21} color={tint ?? colors.textMuted} />
+      <AppText variant="body" color={tint} style={{ flex: 1 }}>
+        {label}
+      </AppText>
+      {chevron ? <Icon name={icons.chevronRight} size={20} color={colors.textMuted} /> : null}
     </Touchable>
   )
 }
@@ -287,9 +445,34 @@ const makeStyles = (colors: Palette) =>
       alignItems: 'center',
       gap: spacing.md,
       paddingBottom: spacing.md,
-      marginBottom: spacing.xs,
+      marginBottom: spacing.md,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.hairline,
+    },
+    grid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.sm,
+    },
+    tile: {
+      // Three per row: (100% - 2 gaps) / 3.
+      width: '31.5%',
+      aspectRatio: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.xs,
+      borderRadius: radius.card,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    tileAccent: { backgroundColor: colors.accent, borderColor: colors.accent },
+    tileActive: { backgroundColor: colors.accentWash, borderColor: colors.accent },
+    divider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: colors.hairline,
+      marginTop: spacing.lg,
+      marginBottom: spacing.xs,
     },
     row: {
       flexDirection: 'row',
