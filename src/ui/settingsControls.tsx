@@ -12,18 +12,26 @@ import { AppText } from './primitives'
 import { Icon, type IconName } from './icons'
 import { radius, spacing, type Palette } from './theme'
 import { useColors } from './ThemeProvider'
+import { useMiniPlayerInset } from './useContentInset'
 import { haptics } from './haptics'
 
 // ---- SettingsPanel: scroll container for a drill-down settings screen ----
 
 /** Standard scroll wrapper for a settings detail screen (under the native header
- *  from app/settings/_layout.tsx). Consistent padding + gap between groups. */
+ *  from app/settings/_layout.tsx). Consistent padding + gap between groups. The
+ *  bottom padding clears the AppTabBar sibling: enough on its own in floating
+ *  mode (the bar reserves nothing), where useMiniPlayerInset adds the clearance. */
 export function SettingsPanel({ children }: { children: React.ReactNode }) {
-  return <ScrollView contentContainerStyle={panelStyles.content}>{children}</ScrollView>
+  const bottomInset = useMiniPlayerInset()
+  return (
+    <ScrollView contentContainerStyle={[panelStyles.content, { paddingBottom: bottomInset }]}>
+      {children}
+    </ScrollView>
+  )
 }
 
 const panelStyles = StyleSheet.create({
-  content: { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md },
+  content: { padding: spacing.lg, gap: spacing.md },
 })
 
 // ---- SectionAccordion: a top-level My Settings section (Appearance, Listening, ...) ----

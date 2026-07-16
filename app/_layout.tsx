@@ -32,6 +32,7 @@ import { ensureNotificationChannels } from '@/lib/notifications'
 import { mountNoteForegroundHandler } from '@/social/noteEvents'
 import { mountPushHandlers } from '@/player/pushHandlers'
 import { ThemeProvider, useColors, useTheme } from '@/ui/ThemeProvider'
+import { AppBlurTargetProvider } from '@/ui/BlurTarget'
 import { flushPriorCrash, mountCrashLifecycle } from '@/lib/crashReporter'
 
 // Hold the OS splash until the hearth splash has painted (see hideOsSplash).
@@ -316,7 +317,9 @@ export default function RootLayout() {
             <BottomSheetModalProvider>
               <ThemedStatusBar />
               <AuthGate>
-                <ThemedStack />
+                <AppBlurTargetProvider>
+                  <ThemedStack />
+                </AppBlurTargetProvider>
                 {/* Route-aware mini player over every screen (hides itself on
                     player surfaces and settings). Inside the gate so the boot
                     splash still covers it. */}

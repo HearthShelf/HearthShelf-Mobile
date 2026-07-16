@@ -9,6 +9,8 @@ import { Stack } from 'expo-router'
 import { usePathname, useRouter } from 'expo-router'
 import { StyleSheet, View } from 'react-native'
 import { AppTabBar } from '@/ui/AppTabBar'
+import { BlurTargetView } from 'expo-blur'
+import { useScreenBlurTarget } from '@/ui/BlurTarget'
 import { useTheme } from '@/ui/ThemeProvider'
 import { fonts } from '@/ui/theme'
 
@@ -17,6 +19,7 @@ export default function SettingsLayout() {
   const router = useRouter()
   const pathname = usePathname()
   const hideTabs = pathname.startsWith('/settings/admin')
+  const blurTarget = useScreenBlurTarget()
 
   const goToTab = (name: string) => {
     router.dismissAll?.()
@@ -25,7 +28,7 @@ export default function SettingsLayout() {
 
   return (
     <View style={styles.root}>
-      <View style={styles.stack}>
+      <BlurTargetView ref={blurTarget} style={styles.stack}>
         <Stack
           screenOptions={{
             headerShown: true,
@@ -53,7 +56,7 @@ export default function SettingsLayout() {
           {/* TEMP diagnostics dump - remove with app/settings/diagnostics.tsx */}
           <Stack.Screen name="diagnostics" options={{ title: 'Diagnostics' }} />
         </Stack>
-      </View>
+      </BlurTargetView>
       {hideTabs ? null : <AppTabBar activeName="more" onPressTab={goToTab} />}
     </View>
   )

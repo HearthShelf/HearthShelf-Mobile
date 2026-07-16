@@ -100,59 +100,64 @@ export default function MyClubsScreen() {
   }
 
   return (
-    <Screen>
-      <View style={styles.header}>
-        <IconButton name={icons.back} onPress={() => router.back()} style={styles.headerBtn} />
-        <AppText variant="label" style={{ flex: 1, marginHorizontal: spacing.sm }}>
-          My Book Clubs
-        </AppText>
-        {clubsEnabled && (clubs?.length ?? 0) > 0 ? (
-          <IconButton name={icons.add} onPress={() => newClubRef.current?.present()} style={styles.headerBtn} />
-        ) : null}
-      </View>
-
-      {!clubsEnabled ? (
-        <EmptyState
-          icon={icons.club}
-          iconColor={colors.textMuted}
-          title="Book clubs are off"
-          body="Turn book clubs on in Settings to read along with others."
-        />
-      ) : clubs === null ? (
-        <ClubsSkeleton styles={styles} />
-      ) : clubs.length === 0 ? (
-        <EmptyState
-          icon={icons.club}
-          title="No clubs yet"
-          body="Start a club to read along with others, or open a book and start one from there."
-          cta="New club"
-          onCta={() => newClubRef.current?.present()}
-        />
-      ) : (
-        <ScrollView
-          contentContainerStyle={{
-            padding: spacing.lg,
-            paddingBottom: contentInset,
-            gap: spacing.sm,
-          }}
-        >
-          {clubs.map((c) => (
-            <ClubRow
-              key={c.id}
-              club={c}
-              unread={unread[c.id] ?? 0}
-              styles={styles}
-              colors={colors}
-              onPress={() => router.push(`/club/${encodeURIComponent(c.id)}?from=${active}`)}
+    <>
+      <Screen>
+        <View style={styles.header}>
+          <IconButton name={icons.back} onPress={() => router.back()} style={styles.headerBtn} />
+          <AppText variant="label" style={{ flex: 1, marginHorizontal: spacing.sm }}>
+            My Book Clubs
+          </AppText>
+          {clubsEnabled && (clubs?.length ?? 0) > 0 ? (
+            <IconButton
+              name={icons.add}
+              onPress={() => newClubRef.current?.present()}
+              style={styles.headerBtn}
             />
-          ))}
-        </ScrollView>
-      )}
+          ) : null}
+        </View>
 
-      <NewClubSheet ref={newClubRef} onCreate={createNewClub} styles={styles} colors={colors} />
+        {!clubsEnabled ? (
+          <EmptyState
+            icon={icons.club}
+            iconColor={colors.textMuted}
+            title="Book clubs are off"
+            body="Turn book clubs on in Settings to read along with others."
+          />
+        ) : clubs === null ? (
+          <ClubsSkeleton styles={styles} />
+        ) : clubs.length === 0 ? (
+          <EmptyState
+            icon={icons.club}
+            title="No clubs yet"
+            body="Start a club to read along with others, or open a book and start one from there."
+            cta="New club"
+            onCta={() => newClubRef.current?.present()}
+          />
+        ) : (
+          <ScrollView
+            contentContainerStyle={{
+              padding: spacing.lg,
+              paddingBottom: contentInset,
+              gap: spacing.sm,
+            }}
+          >
+            {clubs.map((c) => (
+              <ClubRow
+                key={c.id}
+                club={c}
+                unread={unread[c.id] ?? 0}
+                styles={styles}
+                colors={colors}
+                onPress={() => router.push(`/club/${encodeURIComponent(c.id)}?from=${active}`)}
+              />
+            ))}
+          </ScrollView>
+        )}
 
+        <NewClubSheet ref={newClubRef} onCreate={createNewClub} styles={styles} colors={colors} />
+      </Screen>
       <AppTabBar activeName={active} onPressTab={goToTab} />
-    </Screen>
+    </>
   )
 }
 

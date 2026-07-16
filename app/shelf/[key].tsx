@@ -61,73 +61,75 @@ export default function ShelfScreen() {
   )
 
   return (
-    <Screen>
-      <View style={styles.header}>
-        <IconButton name={icons.back} onPress={() => router.back()} />
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <AppText variant="hero" numberOfLines={1}>
-            {shelf?.label ?? 'Shelf'}
-          </AppText>
-          {shelf ? (
-            <AppText variant="caption" color={colors.textMuted}>
-              {shelf.entities.length} {shelf.entities.length === 1 ? 'book' : 'books'}
+    <>
+      <Screen>
+        <View style={styles.header}>
+          <IconButton name={icons.back} onPress={() => router.back()} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <AppText variant="hero" numberOfLines={1}>
+              {shelf?.label ?? 'Shelf'}
             </AppText>
-          ) : null}
+            {shelf ? (
+              <AppText variant="caption" color={colors.textMuted}>
+                {shelf.entities.length} {shelf.entities.length === 1 ? 'book' : 'books'}
+              </AppText>
+            ) : null}
+          </View>
         </View>
-      </View>
 
-      {!shelf ? (
-        // The published shelves reset when Home reloads; if this key is gone
-        // (e.g. after a server switch) there is nothing to render.
-        <Centered>
-          <AppText variant="meta" color={colors.textMuted}>
-            This shelf is no longer available.
-          </AppText>
-        </Centered>
-      ) : (
-        <FlatList
-          data={shelf.entities}
-          keyExtractor={(it) => it.id}
-          key={`shelf-${cols}`}
-          numColumns={cols}
-          columnWrapperStyle={{ gap: spacing.md }}
-          contentContainerStyle={{
-            paddingHorizontal: spacing.lg,
-            paddingBottom: contentInset,
-            gap: spacing.sm,
-          }}
-          renderItem={({ item }) => {
-            const p = progressById.get(item.id)
-            const quickPlay = async () => {
-              haptics.transport()
-              try {
-                await playItemById(item.id)
-                router.push('/player')
-              } catch {
-                router.push(`/item/${item.id}?from=${active}`)
-              }
-            }
-            return (
-              <BookTile
-                item={item}
-                width={tileWidth}
-                from={active}
-                progress={p?.progress}
-                finished={p?.isFinished === true}
-                onQuickPlay={() => void quickPlay()}
-                onLongPress={() =>
-                  openActions(item, shelf.source ?? 'browse', shelf.seriesByItemId?.[item.id])
+        {!shelf ? (
+          // The published shelves reset when Home reloads; if this key is gone
+          // (e.g. after a server switch) there is nothing to render.
+          <Centered>
+            <AppText variant="meta" color={colors.textMuted}>
+              This shelf is no longer available.
+            </AppText>
+          </Centered>
+        ) : (
+          <FlatList
+            data={shelf.entities}
+            keyExtractor={(it) => it.id}
+            key={`shelf-${cols}`}
+            numColumns={cols}
+            columnWrapperStyle={{ gap: spacing.md }}
+            contentContainerStyle={{
+              paddingHorizontal: spacing.lg,
+              paddingBottom: contentInset,
+              gap: spacing.sm,
+            }}
+            renderItem={({ item }) => {
+              const p = progressById.get(item.id)
+              const quickPlay = async () => {
+                haptics.transport()
+                try {
+                  await playItemById(item.id)
+                  router.push('/player')
+                } catch {
+                  router.push(`/item/${item.id}?from=${active}`)
                 }
-              />
-            )
-          }}
-        />
-      )}
+              }
+              return (
+                <BookTile
+                  item={item}
+                  width={tileWidth}
+                  from={active}
+                  progress={p?.progress}
+                  finished={p?.isFinished === true}
+                  onQuickPlay={() => void quickPlay()}
+                  onLongPress={() =>
+                    openActions(item, shelf.source ?? 'browse', shelf.seriesByItemId?.[item.id])
+                  }
+                />
+              )
+            }}
+          />
+        )}
 
-      <BookActionsSheet ref={actionsRef} onToast={showToast} />
-      <Toast message={toast} />
+        <BookActionsSheet ref={actionsRef} onToast={showToast} />
+        <Toast message={toast} />
+      </Screen>
       <AppTabBar activeName={active} onPressTab={goToTab} />
-    </Screen>
+    </>
   )
 }
 

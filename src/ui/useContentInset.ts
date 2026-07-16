@@ -10,18 +10,29 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { getState, subscribe } from '@/player/store'
 import { MINI_PLAYER_HEIGHT } from '@/player/MiniPlayer'
 import { miniPlayerHiddenOn, hasBottomTabBar } from '@/player/MiniPlayerDock'
+import { FLOATING_PILL_CLEARANCE, useNavMode } from './AppTabBar'
 import { spacing } from './theme'
 
 export function useContentInset(): number {
   const pathname = usePathname()
   const insets = useSafeAreaInsets()
   const { nowPlaying } = useSyncExternalStore(subscribe, getState)
+  const mode = useNavMode()
+  const onTabScreen = hasBottomTabBar(pathname)
   const miniVisible = nowPlaying !== null && !miniPlayerHiddenOn(pathname)
-  return (
-    spacing.xl +
-    (miniVisible ? MINI_PLAYER_HEIGHT + spacing.sm : 0) +
-    (hasBottomTabBar(pathname) ? 0 : insets.bottom)
-  )
+
+  // Classic reserves its bar via the navigator (scene is already inset), so
+  // content only adds a comfortable margin + mini-player clearance. Floating
+  // modes reserve nothing, so content must clear the safe area itself, plus the
+  // horizontal pill's floating footprint (the vertical column sits to the side).
+  const floating = onTabScreen && mode !== 'classic'
+  const navClearance = floating
+    ? insets.bottom + (mode === 'floating-horizontal' ? FLOATING_PILL_CLEARANCE : 0)
+    : onTabScreen
+      ? 0
+      : insets.bottom
+
+  return spacing.xl + (miniVisible ? MINI_PLAYER_HEIGHT + spacing.sm : 0) + navClearance
 }
 
 /**
@@ -32,7 +43,16 @@ export function useContentInset(): number {
  */
 export function useMiniPlayerInset(): number {
   const pathname = usePathname()
+  const insets = useSafeAreaInsets()
   const { nowPlaying } = useSyncExternalStore(subscribe, getState)
+  const mode = useNavMode()
   const miniVisible = nowPlaying !== null && !miniPlayerHiddenOn(pathname)
-  return spacing.xl + (miniVisible ? MINI_PLAYER_HEIGHT + spacing.sm : 0)
+  // These routes mount their own AppTabBar sibling. Classic reserves a laid-out
+  // band (already stops the scroll); floating modes float over content, so clear
+  // the safe area + the horizontal pill's footprint here.
+  const navClearance =
+    mode === 'classic'
+      ? 0
+      : insets.bottom + (mode === 'floating-horizontal' ? FLOATING_PILL_CLEARANCE : 0)
+  return spacing.xl + (miniVisible ? MINI_PLAYER_HEIGHT + spacing.sm : 0) + navClearance
 }

@@ -295,7 +295,9 @@ export function subscribeSettings(fn: () => void): () => void {
 // Apply a state patch and, for any catalogued key in the patch, stamp its
 // updatedAt so the sync layer knows it changed locally. `stampMeta` is false when
 // adopting server values (they carry their own updatedAt, applied via meta arg).
-function set(patch: Partial<SettingsState>, stampMeta = true): void {
+// `persistDevice` is false only while hydrating device settings (we just read
+// them - re-writing would be redundant).
+function set(patch: Partial<SettingsState>, stampMeta = true, persistDevice = true): void {
   state = { ...state, ...patch }
   if (stampMeta) {
     const now = Date.now()
@@ -305,6 +307,7 @@ function set(patch: Partial<SettingsState>, stampMeta = true): void {
     }
     meta = next
   }
+  if (persistDevice && patchTouchesDeviceKeys(patch)) persistDeviceSettings()
   listeners.forEach((l) => l())
 }
 
@@ -421,6 +424,62 @@ export function storedSettings(): Record<string, { value: SettingValue; updatedA
   return out
 }
 
+// --- device-scoped settings persistence ------------------------------------
+// Keys NOT in SETTINGS_CATALOG never sync to the server and so had no persistence
+// at all - they reset to defaults on every launch. These are device-local prefs,
+// so we persist them to AsyncStorage here: written on change, hydrated at boot.
+
+const DEVICE_SETTINGS_KEY = 'hs.deviceSettings'
+
+/** The device-scoped setting keys (everything not in SETTINGS_CATALOG that a user
+ *  can change). Persisted locally to AsyncStorage, never synced to the server. */
+const DEVICE_KEYS = [
+  'floatingNav',
+  'floatingNavOrientation',
+  'notePops',
+  'noteDefaultVisibility',
+  'useSharedSettings',
+] as const satisfies readonly (keyof SettingsState)[]
+
+/** True if any key in the patch is a device-scoped key (so we should re-persist). */
+function patchTouchesDeviceKeys(patch: Partial<SettingsState>): boolean {
+  return DEVICE_KEYS.some((k) => k in patch)
+}
+
+/** Persist the current device-scoped slice. Best-effort, fire-and-forget. */
+function persistDeviceSettings(): void {
+  const slice: Record<string, unknown> = {}
+  const s = state as unknown as Record<string, unknown>
+  for (const k of DEVICE_KEYS) slice[k] = s[k]
+  void AsyncStorage.setItem(DEVICE_SETTINGS_KEY, JSON.stringify(slice)).catch(() => {})
+}
+
+let deviceSettingsReady: Promise<void> | null = null
+
+/** Load persisted device-scoped settings into state. Idempotent; call once at
+ *  boot (before the first render that reads them, ideally). Safe to await. */
+export function hydrateDeviceSettings(): Promise<void> {
+  if (!deviceSettingsReady) {
+    deviceSettingsReady = (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(DEVICE_SETTINGS_KEY)
+        if (!raw) return
+        const saved = JSON.parse(raw) as Record<string, unknown>
+        const patch: Record<string, unknown> = {}
+        for (const k of DEVICE_KEYS) {
+          if (k in saved && saved[k] !== undefined) patch[k] = saved[k]
+        }
+        // Adopt without stamping sync meta (these keys aren't catalogued anyway)
+        // and without re-persisting (we just read them).
+        if (Object.keys(patch).length) set(patch as Partial<SettingsState>, false, false)
+      } catch {
+        // Storage unavailable or corrupt - keep in-code defaults.
+      }
+    })()
+  }
+  return deviceSettingsReady
+}
+
 // --- deviceId (per-install id for device-scoped settings) ------------------
 // Not a secret, so AsyncStorage (not SecureStore). Generated once, persisted,
 // and awaited before the first settings pull so device-scoped keys round-trip.
@@ -455,3 +514,9 @@ export function ensureDeviceId(): Promise<string> {
   }
   return deviceIdReady
 }
+
+// Kick off device-settings hydration as soon as the store module loads, before
+// the first render reads floatingNav etc. It applies via set() the moment it
+// resolves (a few ms, behind the launch splash), switching the nav treatment
+// without a classic->floating flash. RootLayout also awaits it defensively.
+void hydrateDeviceSettings()

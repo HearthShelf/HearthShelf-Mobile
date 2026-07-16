@@ -25,15 +25,7 @@ import {
 } from '@/api/abs'
 import { getProgressState, subscribeProgress } from '@/store/progress'
 import { playItemById } from '@/player/playback'
-import {
-  AppText,
-  Avatar,
-  Centered,
-  IconButton,
-  Screen,
-  Touchable,
-  icons,
-} from '@/ui/primitives'
+import { AppText, Avatar, Centered, IconButton, Screen, Touchable, icons } from '@/ui/primitives'
 import { BookTile } from '@/ui/BookTile'
 import { EmptyState, Skeleton, SkeletonTile } from '@/ui/states'
 import { Icon } from '@/ui/icons'
@@ -220,128 +212,129 @@ export default function GroupDrilldown() {
   }
 
   return (
-    <Screen>
-      <View style={styles.headerRow}>
-        <IconButton name={icons.back} onPress={() => router.back()} />
-      </View>
+    <>
+      <Screen>
+        <View style={styles.headerRow}>
+          <IconButton name={icons.back} onPress={() => router.back()} />
+        </View>
 
-      {error ? (
-        <Centered>
-          <AppText variant="meta" color={colors.destructive}>
-            {error}
-          </AppText>
-        </Centered>
-      ) : !books ? (
-        <GroupSkeleton tileWidth={tileWidth} />
-      ) : books.length === 0 ? (
-        <EmptyState
-          icon={type === 'narrators' ? icons.voice : icons.person}
-          iconColor={colors.textMuted}
-          title={`Nothing by this ${type === 'narrators' ? 'narrator' : 'author'} yet`}
-          body="Their books left your library or were hidden."
-          cta="Back to Library"
-          onCta={() => goToTab('library')}
-        />
-      ) : (
-        <ScrollView
-          contentContainerStyle={{ paddingBottom: contentInset }}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Hero */}
-          <View style={styles.hero}>
-            <Avatar
-              size={76}
-              name={displayName}
-              icon={type === 'narrators' ? icons.voice : undefined}
-            />
-            <AppText variant="eyebrow" color={colors.textMuted} style={{ marginTop: spacing.md }}>
-              {KIND_EYEBROW[type]}
+        {error ? (
+          <Centered>
+            <AppText variant="meta" color={colors.destructive}>
+              {error}
             </AppText>
-            <AppText variant="hero" style={{ marginTop: 3, textAlign: 'center' }}>
-              {displayName}
-            </AppText>
-            <AppText variant="meta" color={colors.textMuted} style={{ marginTop: 4 }}>
-              {countLine(books.length, seriesCount, finishedCount)}
-            </AppText>
-          </View>
-
-          {/* Sort control */}
-          <View style={styles.controlRow}>
-            <Touchable style={styles.sortChip} onPress={() => setDesc((d) => !d)}>
-              <Icon
-                name={desc ? icons.arrowDownward : icons.arrowUpward}
-                size={15}
-                color={colors.accent}
+          </Centered>
+        ) : !books ? (
+          <GroupSkeleton tileWidth={tileWidth} />
+        ) : books.length === 0 ? (
+          <EmptyState
+            icon={type === 'narrators' ? icons.voice : icons.person}
+            iconColor={colors.textMuted}
+            title={`Nothing by this ${type === 'narrators' ? 'narrator' : 'author'} yet`}
+            body="Their books left your library or were hidden."
+            cta="Back to Library"
+            onCta={() => goToTab('library')}
+          />
+        ) : (
+          <ScrollView
+            contentContainerStyle={{ paddingBottom: contentInset }}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Hero */}
+            <View style={styles.hero}>
+              <Avatar
+                size={76}
+                name={displayName}
+                icon={type === 'narrators' ? icons.voice : undefined}
               />
-              <AppText variant="caption">{SORTS.find((s) => s.v === sort)?.label}</AppText>
-              <Touchable onPress={chooseSort} hitSlop={8}>
-                <Icon name={icons.collapse} size={15} color={colors.textMuted} />
-              </Touchable>
-            </Touchable>
-            <View style={{ flex: 1 }} />
-            <AppText variant="caption" color={colors.textMuted}>
-              {books.length} {books.length === 1 ? 'book' : 'books'}
-            </AppText>
-          </View>
-
-          {/* Groups */}
-          {groups.map((g, gi) => (
-            <View key={g.seriesName ?? `flat-${gi}`} style={{ marginTop: spacing.md }}>
-              {g.seriesName ? (
-                <Touchable
-                  style={styles.groupHead}
-                  disabled={!g.seriesId}
-                  onPress={() =>
-                    g.seriesId &&
-                    router.push(
-                      `/series/${encodeURIComponent(g.seriesId)}?libraryId=${encodeURIComponent(libraryId)}&from=${active}`,
-                    )
-                  }
-                >
-                  <AppText variant="label" color={colors.brandHearth} numberOfLines={1}>
-                    {g.seriesName}
-                  </AppText>
-                  <AppText variant="caption" color={colors.textMuted}>
-                    · {g.books.length} {g.books.length === 1 ? 'book' : 'books'}
-                  </AppText>
-                  <View style={{ flex: 1 }} />
-                  {g.seriesId ? (
-                    <Icon name={icons.chevronRight} size={18} color={colors.brandHearth} />
-                  ) : null}
-                </Touchable>
-              ) : groups.length > 1 ? (
-                <View style={styles.groupHead}>
-                  <AppText variant="label" color={colors.textMuted}>
-                    Standalone
-                  </AppText>
-                  <AppText variant="caption" color={colors.textMuted}>
-                    · {g.books.length} {g.books.length === 1 ? 'book' : 'books'}
-                  </AppText>
-                </View>
-              ) : null}
-              <View style={styles.grid}>
-                {g.books.map((item) => {
-                  const p = progressById.get(item.id)
-                  return (
-                    <BookTile
-                      key={item.id}
-                      item={item}
-                      width={tileWidth}
-                      from={active}
-                      progress={p?.progress}
-                      finished={p?.isFinished === true}
-                      onQuickPlay={() => void quickPlay(item.id)}
-                    />
-                  )
-                })}
-              </View>
+              <AppText variant="eyebrow" color={colors.textMuted} style={{ marginTop: spacing.md }}>
+                {KIND_EYEBROW[type]}
+              </AppText>
+              <AppText variant="hero" style={{ marginTop: 3, textAlign: 'center' }}>
+                {displayName}
+              </AppText>
+              <AppText variant="meta" color={colors.textMuted} style={{ marginTop: 4 }}>
+                {countLine(books.length, seriesCount, finishedCount)}
+              </AppText>
             </View>
-          ))}
-        </ScrollView>
-      )}
 
+            {/* Sort control */}
+            <View style={styles.controlRow}>
+              <Touchable style={styles.sortChip} onPress={() => setDesc((d) => !d)}>
+                <Icon
+                  name={desc ? icons.arrowDownward : icons.arrowUpward}
+                  size={15}
+                  color={colors.accent}
+                />
+                <AppText variant="caption">{SORTS.find((s) => s.v === sort)?.label}</AppText>
+                <Touchable onPress={chooseSort} hitSlop={8}>
+                  <Icon name={icons.collapse} size={15} color={colors.textMuted} />
+                </Touchable>
+              </Touchable>
+              <View style={{ flex: 1 }} />
+              <AppText variant="caption" color={colors.textMuted}>
+                {books.length} {books.length === 1 ? 'book' : 'books'}
+              </AppText>
+            </View>
+
+            {/* Groups */}
+            {groups.map((g, gi) => (
+              <View key={g.seriesName ?? `flat-${gi}`} style={{ marginTop: spacing.md }}>
+                {g.seriesName ? (
+                  <Touchable
+                    style={styles.groupHead}
+                    disabled={!g.seriesId}
+                    onPress={() =>
+                      g.seriesId &&
+                      router.push(
+                        `/series/${encodeURIComponent(g.seriesId)}?libraryId=${encodeURIComponent(libraryId)}&from=${active}`,
+                      )
+                    }
+                  >
+                    <AppText variant="label" color={colors.brandHearth} numberOfLines={1}>
+                      {g.seriesName}
+                    </AppText>
+                    <AppText variant="caption" color={colors.textMuted}>
+                      · {g.books.length} {g.books.length === 1 ? 'book' : 'books'}
+                    </AppText>
+                    <View style={{ flex: 1 }} />
+                    {g.seriesId ? (
+                      <Icon name={icons.chevronRight} size={18} color={colors.brandHearth} />
+                    ) : null}
+                  </Touchable>
+                ) : groups.length > 1 ? (
+                  <View style={styles.groupHead}>
+                    <AppText variant="label" color={colors.textMuted}>
+                      Standalone
+                    </AppText>
+                    <AppText variant="caption" color={colors.textMuted}>
+                      · {g.books.length} {g.books.length === 1 ? 'book' : 'books'}
+                    </AppText>
+                  </View>
+                ) : null}
+                <View style={styles.grid}>
+                  {g.books.map((item) => {
+                    const p = progressById.get(item.id)
+                    return (
+                      <BookTile
+                        key={item.id}
+                        item={item}
+                        width={tileWidth}
+                        from={active}
+                        progress={p?.progress}
+                        finished={p?.isFinished === true}
+                        onQuickPlay={() => void quickPlay(item.id)}
+                      />
+                    )
+                  })}
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+        )}
+      </Screen>
       <AppTabBar activeName={active} onPressTab={goToTab} />
-    </Screen>
+    </>
   )
 }
 

@@ -8,14 +8,14 @@
  *  - Classic: the full-width bar with all five tabs (default).
  *  - Floating pill: a glass icon pill (Home / Now / Library / More) - an
  *    icon-focused A/B test. Stats loses its pinned spot and lives under More.
- * Both reserve the same layout footprint (TAB_BAR_HEIGHT + safe area), so the
- * mini player and content insets are identical either way - the pill just floats
- * inside that band instead of filling it.
+ * Classic reserves a layout footprint; floating modes overlay the scene. Screens
+ * that need collision avoidance (notably the player) reserve their own clearance.
  */
 import { useEffect, useRef, useState } from 'react'
-import { Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
+import { Platform, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
 import { useSyncExternalStore } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { BlurView } from 'expo-blur'
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -23,7 +23,6 @@ import Animated, {
   withTiming,
   Easing,
 } from 'react-native-reanimated'
-import { LinearGradient } from 'expo-linear-gradient'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { Icon, iconFor, icons } from './icons'
 import { emitTabReselect } from './tabReselect'
@@ -31,6 +30,7 @@ import { haptics } from './haptics'
 import { POP_SPRING } from './motion'
 import { fonts, MAX_FONT_SCALE, radius, spacing, withAlpha, type Palette } from './theme'
 import { useColors } from './ThemeProvider'
+import { useActiveBlurTarget } from './BlurTarget'
 
 // Apple "liquid glass" glide: a softer, more fluid spring than the app's POP so
 // the active lozenge flows between destinations instead of snapping. Slightly
@@ -43,6 +43,27 @@ export const TAB_BAR_HEIGHT = 60
 /** Width the vertical floating column reserves along the right edge, so the mini
  *  player can inset its right side and sit beside the column without overlap. */
 export const VNAV_WIDTH = 64
+
+/** Vertical space the horizontal floating pill occupies above the bottom edge.
+ *  Content clears this (plus a margin) since the pill floats over the scene
+ *  rather than reserving a laid-out band. */
+export const FLOATING_PILL_CLEARANCE = 52
+
+/** The nav treatment in effect, derived from the two device settings. 'classic'
+ *  reserves a laid-out bar; the floating modes float over content. */
+export type NavMode = 'classic' | 'floating-horizontal' | 'floating-vertical'
+
+/** Reactively resolve the current nav mode from settings. Shared by the tabs
+ *  shell (to drop the reserved band) and content-inset math (to clear the pill). */
+export function useNavMode(): NavMode {
+  const floatingNav = useSyncExternalStore(subscribeSettings, () => getSettingsState().floatingNav)
+  const orientation = useSyncExternalStore(
+    subscribeSettings,
+    () => getSettingsState().floatingNavOrientation,
+  )
+  if (!floatingNav) return 'classic'
+  return orientation === 'vertical' ? 'floating-vertical' : 'floating-horizontal'
+}
 
 export interface TabDef {
   name: string
@@ -86,13 +107,9 @@ export function AppTabBar({
   activeName: string | null
   onPressTab: (name: string) => void
 }) {
-  const floatingNav = useSyncExternalStore(subscribeSettings, () => getSettingsState().floatingNav)
-  const orientation = useSyncExternalStore(
-    subscribeSettings,
-    () => getSettingsState().floatingNavOrientation
-  )
-  if (!floatingNav) return <ClassicTabBar activeName={activeName} onPressTab={onPressTab} />
-  return orientation === 'vertical' ? (
+  const mode = useNavMode()
+  if (mode === 'classic') return <ClassicTabBar activeName={activeName} onPressTab={onPressTab} />
+  return mode === 'floating-vertical' ? (
     <VerticalPillNav activeName={activeName} onPressTab={onPressTab} />
   ) : (
     <FloatingPillNav activeName={activeName} onPressTab={onPressTab} />
@@ -224,14 +241,10 @@ function FloatingPillNav({
       pointerEvents="box-none"
     >
       <View style={styles.pill}>
-        {/* Frosted-glass sheen: a soft top-to-bottom specular highlight over the
-            translucent base, so the slab reads as glass, not a flat card. */}
-        <LinearGradient
-          pointerEvents="none"
-          colors={[withAlpha('#ffffff', 0.14), 'transparent', withAlpha('#000000', 0.06)]}
-          locations={[0, 0.55, 1]}
-          style={styles.sheen}
-        />
+        {/* Real backdrop blur: whatever scrolls behind the pill is frosted (glass).
+            The ember tint overlays the blurred result; both clip to the pill's
+            rounded corners via its overflow:hidden. */}
+        <GlassBackdrop tintStyle={styles.glassTint} />
         {/* The gliding active lozenge, drawn beneath the items. */}
         <Animated.View pointerEvents="none" style={[styles.indicator, indicator]} />
         {PILL_TABS.map((meta) => {
@@ -308,24 +321,11 @@ function VerticalPillNav({
   }))
 
   return (
-    // Reserves the same footprint as the classic bar / horizontal pill (so
-    // content insets stay identical), but pins its column to the bottom-right
-    // corner instead of centering it. The column overflows upward out of the
-    // band, floating over content above the bottom edge.
-    <View
-      style={[
-        styles.vband,
-        { height: TAB_BAR_HEIGHT + insets.bottom, paddingBottom: insets.bottom },
-      ]}
-      pointerEvents="box-none"
-    >
+    // Floats over content (absolute, reserves nothing), pinning its column to the
+    // bottom-right corner. Content clears only the mini player, not an empty band.
+    <View style={styles.vband} pointerEvents="box-none">
       <View style={[styles.vcolumn, { bottom: insets.bottom }]}>
-        <LinearGradient
-          pointerEvents="none"
-          colors={[withAlpha('#ffffff', 0.14), 'transparent', withAlpha('#000000', 0.06)]}
-          locations={[0, 0.55, 1]}
-          style={styles.sheen}
-        />
+        <GlassBackdrop tintStyle={styles.glassTint} />
         <Animated.View pointerEvents="none" style={[styles.vindicator, indicator]} />
         {PILL_TABS.map((meta) => {
           const focused = meta.name === activeName
@@ -342,6 +342,24 @@ function VerticalPillNav({
         })}
       </View>
     </View>
+  )
+}
+
+/** Shared backdrop so both floating orientations use the same supported blur
+ * configuration. The tint remains as a readable fallback if native blur is off. */
+function GlassBackdrop({ tintStyle }: { tintStyle: object }) {
+  const blurTarget = useActiveBlurTarget()
+  return (
+    <BlurView
+      pointerEvents="none"
+      intensity={70}
+      tint="systemUltraThinMaterialDark"
+      blurTarget={blurTarget ?? undefined}
+      blurMethod={Platform.OS === 'android' && blurTarget ? 'dimezisBlurView' : undefined}
+      style={StyleSheet.absoluteFill}
+    >
+      <View style={tintStyle} />
+    </BlurView>
   )
 }
 
@@ -369,7 +387,7 @@ function VerticalPillItem({
     }
   }, [focused, scale])
   const iconStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }))
-  const tint = focused ? colors.accent : colors.textFaint
+  const tint = focused ? colors.accent : colors.textMuted
   return (
     <Pressable onPress={onPress} hitSlop={4} onLayout={onLayout}>
       <View style={styles.vitem}>
@@ -417,7 +435,7 @@ function PillItem({
     opacity: on.value,
     transform: [{ translateX: (1 - on.value) * -6 }],
   }))
-  const tint = focused ? colors.accent : colors.textFaint
+  const tint = focused ? colors.accent : colors.textMuted
   return (
     <Pressable onPress={onPress} hitSlop={4} onLayout={onLayout}>
       <View style={styles.item}>
@@ -506,24 +524,31 @@ const ITEM_V_PAD = spacing.sm + 2
 
 const makePillStyles = (colors: Palette) =>
   StyleSheet.create({
-    // Fills the same footprint as the classic bar, but is transparent and lets
-    // touches through except on the pill; the pill is centered along the bottom.
+    // Floats over content (absolute) rather than reserving a laid-out band, so
+    // wherever AppTabBar is mounted - the tabs shell, or as a sibling in the
+    // settings/detail/player layouts - it never pushes content up. Transparent
+    // and box-none so only the centered pill takes touches.
     band: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
       alignItems: 'center',
       justifyContent: 'center',
     },
-    // MUI-3 floating toolbar: a compact, fully-rounded slab, lifted off the
-    // content with a soft shadow and a hairline edge; overflow-clipped so the
-    // sheen + gliding lozenge stay inside its rounded corners.
+    // Frosted-glass floating toolbar: a compact, fully-rounded slab. The fill is
+    // kept semi-transparent (content tints through for a glass feel - a middle
+    // ground, not full liquid glass), lifted with a soft shadow and a brighter
+    // hairline rim so the edge still reads crisply against the blur-through.
     pill: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.xs,
       padding: PILL_PAD,
       borderRadius: radius.pill,
-      backgroundColor: withAlpha(colors.elevated, 0.92),
+      backgroundColor: 'transparent',
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: withAlpha('#ffffff', 0.12),
+      borderColor: withAlpha('#ffffff', 0.2),
       overflow: 'hidden',
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 14 },
@@ -531,13 +556,15 @@ const makePillStyles = (colors: Palette) =>
       shadowRadius: 30,
       elevation: 14,
     },
-    // Specular glass highlight across the whole slab.
-    sheen: {
+    // Ember tint laid over the backdrop blur: enough to color the frosted glass
+    // and keep icon contrast, light enough that the blurred content shows through.
+    glassTint: {
       position: 'absolute',
       top: 0,
       left: 0,
       right: 0,
       bottom: 0,
+      backgroundColor: withAlpha(colors.elevated, 0.16),
     },
     // The gliding active lozenge: an ember-wash chip that flows between items.
     // left/top/bottom match the item box so it sits exactly behind the active
@@ -560,9 +587,13 @@ const makePillStyles = (colors: Palette) =>
       paddingVertical: ITEM_V_PAD,
       borderRadius: radius.pill,
     },
-    // Transparent band matching the classic-bar footprint; the column is pinned
-    // to its bottom-right and overflows upward (overflow visible) over content.
+    // Absolute, zero-footprint band pinned to the bottom; the column floats at its
+    // bottom-right. overflow visible so the taller column shows above the edge.
     vband: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
       overflow: 'visible',
     },
     // Same ember-glass slab as the horizontal pill, stacked into a column, pinned
@@ -575,9 +606,9 @@ const makePillStyles = (colors: Palette) =>
       gap: spacing.xs,
       padding: PILL_PAD,
       borderRadius: radius.pill,
-      backgroundColor: withAlpha(colors.elevated, 0.92),
+      backgroundColor: 'transparent',
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: withAlpha('#ffffff', 0.12),
+      borderColor: withAlpha('#ffffff', 0.2),
       overflow: 'hidden',
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 14 },

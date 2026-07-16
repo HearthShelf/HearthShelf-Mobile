@@ -546,157 +546,161 @@ export default function ItemDetailScreen() {
   }
 
   return (
-    <Screen>
-      <View style={StyleSheet.absoluteFill}>
-        <CoverGlow hue={hue} height={320} />
-      </View>
+    <>
+      <Screen>
+        <View style={StyleSheet.absoluteFill}>
+          <CoverGlow hue={hue} height={320} />
+        </View>
 
-      <Header
-        onBack={() => router.back()}
-        bookmarkCount={bookmarks.length}
-        onBookmarks={() => bookmarksSheetRef.current?.present()}
-        onOverflow={() => overflowSheetRef.current?.present()}
-      />
-
-      <Animated.ScrollView
-        entering={FadeIn.duration(DUR.base)}
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: miniInset }}
-        showsVerticalScrollIndicator={false}
-      >
-        {offline && (
-          <View style={styles.offlineChip}>
-            <Icon name={icons.cloudOff} size={14} color={colors.brandHearth} />
-            <AppText variant="caption" color={colors.textMuted}>
-              Offline · showing your downloaded copy
-            </AppText>
-          </View>
-        )}
-        <Hero
-          detail={detail}
-          title={title}
-          authorName={authorName}
-          hue={hue}
-          duration={duration}
-          chapterCount={chapters.length}
-          onZoom={() => setZoomed(true)}
-          onAuthor={meta.authors?.[0] ? openAuthor : undefined}
+        <Header
+          onBack={() => router.back()}
+          bookmarkCount={bookmarks.length}
+          onBookmarks={() => bookmarksSheetRef.current?.present()}
+          onOverflow={() => overflowSheetRef.current?.present()}
         />
-        {sectionOrder.map((k) => sections[k])}
-      </Animated.ScrollView>
 
-      {/* Pushed above the tabs navigator, so it renders its own copy of the bar
-          (see player.tsx) rather than inheriting the tabs layout's. */}
-      <AppTabBar activeName={active} onPressTab={goToTab} />
-
-      <Sheet ref={chaptersSheetRef} title="Chapters" snapPoints={['70%']}>
-        <BottomSheetScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }}>
-          {chapters.map((c, i) => (
-            <ChapterRow
-              key={c.id ?? i}
-              chapter={c}
-              index={i}
-              current={i === currentChapterIndex}
-              finished={isFinished || (isInProgress && c.end <= currentTime)}
-              currentTime={currentTime}
-              onPress={() => void playFrom(i === currentChapterIndex ? currentTime : c.start)}
-            />
-          ))}
-        </BottomSheetScrollView>
-      </Sheet>
-
-      <Sheet ref={overflowSheetRef} title={title}>
-        <SheetRow icon={icons.share} label="Share" onPress={() => void shareBook()} />
-        <SheetRow
-          icon={icons.addList}
-          label="Add to queue, collection, or playlist"
-          onPress={() => {
-            overflowSheetRef.current?.dismiss()
-            addToListRef.current?.present()
-          }}
-        />
-        <SheetRow
-          icon={icons.recent}
-          label="Recent Listens"
-          onPress={() => {
-            overflowSheetRef.current?.dismiss()
-            sessionsSheetRef.current?.present()
-          }}
-        />
-        {(isInProgress || isFinished) && (
-          <SheetRow
-            icon={icons.replay}
-            label="Reset progress"
-            destructive
-            onPress={() => void resetProgress()}
-          />
-        )}
-        <SheetRow
-          icon={icons.hidden}
-          label={series ? 'Not right now (hide series)' : 'Not right now (hide book)'}
-          destructive
-          onPress={() => void hideBook()}
-        />
-        <FileInfoLine detail={detail} />
-      </Sheet>
-
-      <Sheet ref={bookmarksSheetRef} title="Bookmarks">
-        {bookmarks.length === 0 ? (
-          <AppText variant="meta" color={colors.textMuted} style={{ paddingVertical: spacing.lg }}>
-            No bookmarks yet. Add them from the player.
-          </AppText>
-        ) : (
-          bookmarks.map((b) => (
-            <View key={b.time} style={styles.bookmarkRow}>
-              <Touchable style={styles.bookmarkTap} onPress={() => void playFrom(b.time)}>
-                <Icon name={icons.bookmarkFilled} size={20} color={colors.brandHearth} />
-                <AppText variant="meta" numberOfLines={1} style={{ flex: 1 }}>
-                  {b.title || 'Bookmark'}
-                </AppText>
-                <AppText variant="mono" color={colors.textMuted}>
-                  {formatTimestamp(b.time)}
-                </AppText>
-              </Touchable>
-              <IconButton
-                name={icons.close}
-                size={18}
-                color={colors.textFaint}
-                onPress={() => void removeBookmark(b)}
-              />
+        <Animated.ScrollView
+          entering={FadeIn.duration(DUR.base)}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: miniInset }}
+          showsVerticalScrollIndicator={false}
+        >
+          {offline && (
+            <View style={styles.offlineChip}>
+              <Icon name={icons.cloudOff} size={14} color={colors.brandHearth} />
+              <AppText variant="caption" color={colors.textMuted}>
+                Offline · showing your downloaded copy
+              </AppText>
             </View>
-          ))
-        )}
-      </Sheet>
+          )}
+          <Hero
+            detail={detail}
+            title={title}
+            authorName={authorName}
+            hue={hue}
+            duration={duration}
+            chapterCount={chapters.length}
+            onZoom={() => setZoomed(true)}
+            onAuthor={meta.authors?.[0] ? openAuthor : undefined}
+          />
+          {sectionOrder.map((k) => sections[k])}
+        </Animated.ScrollView>
 
-      <SessionsSheet ref={sessionsSheetRef} itemId={detail.id} onJump={playFrom} />
+        <Sheet ref={chaptersSheetRef} title="Chapters" snapPoints={['70%']}>
+          <BottomSheetScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }}>
+            {chapters.map((c, i) => (
+              <ChapterRow
+                key={c.id ?? i}
+                chapter={c}
+                index={i}
+                current={i === currentChapterIndex}
+                finished={isFinished || (isInProgress && c.end <= currentTime)}
+                currentTime={currentTime}
+                onPress={() => void playFrom(i === currentChapterIndex ? currentTime : c.start)}
+              />
+            ))}
+          </BottomSheetScrollView>
+        </Sheet>
 
-      <AddToListSheet
-        ref={addToListRef}
-        libraryId={detail.libraryId}
-        libraryItemId={detail.id}
-        queueEntries={[{ libraryItemId: detail.id, title, author: authorName }]}
-        onAdded={show}
-      />
+        <Sheet ref={overflowSheetRef} title={title}>
+          <SheetRow icon={icons.share} label="Share" onPress={() => void shareBook()} />
+          <SheetRow
+            icon={icons.addList}
+            label="Add to queue, collection, or playlist"
+            onPress={() => {
+              overflowSheetRef.current?.dismiss()
+              addToListRef.current?.present()
+            }}
+          />
+          <SheetRow
+            icon={icons.recent}
+            label="Recent Listens"
+            onPress={() => {
+              overflowSheetRef.current?.dismiss()
+              sessionsSheetRef.current?.present()
+            }}
+          />
+          {(isInProgress || isFinished) && (
+            <SheetRow
+              icon={icons.replay}
+              label="Reset progress"
+              destructive
+              onPress={() => void resetProgress()}
+            />
+          )}
+          <SheetRow
+            icon={icons.hidden}
+            label={series ? 'Not right now (hide series)' : 'Not right now (hide book)'}
+            destructive
+            onPress={() => void hideBook()}
+          />
+          <FileInfoLine detail={detail} />
+        </Sheet>
 
-      <NotesSheet
-        ref={notesSheetRef}
-        libraryItemId={detail.id}
-        position={currentTime}
-        finished={isFinished}
-        onToast={show}
-      />
+        <Sheet ref={bookmarksSheetRef} title="Bookmarks">
+          {bookmarks.length === 0 ? (
+            <AppText
+              variant="meta"
+              color={colors.textMuted}
+              style={{ paddingVertical: spacing.lg }}
+            >
+              No bookmarks yet. Add them from the player.
+            </AppText>
+          ) : (
+            bookmarks.map((b) => (
+              <View key={b.time} style={styles.bookmarkRow}>
+                <Touchable style={styles.bookmarkTap} onPress={() => void playFrom(b.time)}>
+                  <Icon name={icons.bookmarkFilled} size={20} color={colors.brandHearth} />
+                  <AppText variant="meta" numberOfLines={1} style={{ flex: 1 }}>
+                    {b.title || 'Bookmark'}
+                  </AppText>
+                  <AppText variant="mono" color={colors.textMuted}>
+                    {formatTimestamp(b.time)}
+                  </AppText>
+                </Touchable>
+                <IconButton
+                  name={icons.close}
+                  size={18}
+                  color={colors.textFaint}
+                  onPress={() => void removeBookmark(b)}
+                />
+              </View>
+            ))
+          )}
+        </Sheet>
 
-      <CoverLightbox
-        visible={zoomed}
-        uri={coverUrl(detail.id)}
-        title={title}
-        author={authorName}
-        hue={hue}
-        onClose={() => setZoomed(false)}
-      />
+        <SessionsSheet ref={sessionsSheetRef} itemId={detail.id} onJump={playFrom} />
 
-      <Toast message={message} />
-    </Screen>
+        <AddToListSheet
+          ref={addToListRef}
+          libraryId={detail.libraryId}
+          libraryItemId={detail.id}
+          queueEntries={[{ libraryItemId: detail.id, title, author: authorName }]}
+          onAdded={show}
+        />
+
+        <NotesSheet
+          ref={notesSheetRef}
+          libraryItemId={detail.id}
+          position={currentTime}
+          finished={isFinished}
+          onToast={show}
+        />
+
+        <CoverLightbox
+          visible={zoomed}
+          uri={coverUrl(detail.id)}
+          title={title}
+          author={authorName}
+          hue={hue}
+          onClose={() => setZoomed(false)}
+        />
+
+        <Toast message={message} />
+      </Screen>
+      {/* Sibling of the blur target: floating overlays it; classic lays out below. */}
+      <AppTabBar activeName={active} onPressTab={goToTab} />
+    </>
   )
 }
 

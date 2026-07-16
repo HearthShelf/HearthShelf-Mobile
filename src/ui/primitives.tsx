@@ -24,6 +24,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { BlurTargetView } from 'expo-blur'
 import {
   BottomSheetModal,
   BottomSheetBackdrop,
@@ -38,6 +39,7 @@ import { Icon, icons, type IconName } from './icons'
 import { TypesetCover } from './TypesetCover'
 import { MAX_FONT_SCALE, radius, spacing, type as typeScale, type Palette } from './theme'
 import { useColors, useTheme } from './ThemeProvider'
+import { useScreenBlurTarget } from './BlurTarget'
 
 // ---- Screen ----
 
@@ -51,10 +53,13 @@ export function Screen({
   edges?: ('top' | 'bottom' | 'left' | 'right')[]
 }) {
   const styles = useStyles()
+  const blurTarget = useScreenBlurTarget()
   return (
-    <SafeAreaView style={[styles.screen, style]} edges={edges}>
-      {children}
-    </SafeAreaView>
+    <BlurTargetView ref={blurTarget} style={[styles.screen, style]}>
+      <SafeAreaView style={styles.screen} edges={edges}>
+        {children}
+      </SafeAreaView>
+    </BlurTargetView>
   )
 }
 

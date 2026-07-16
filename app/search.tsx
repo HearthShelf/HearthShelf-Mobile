@@ -13,11 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { BottomSheetModal } from '@gorhom/bottom-sheet'
 import Animated, { FadeIn } from 'react-native-reanimated'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import type {
-  ABSLibraryItem,
-  ABSSearchResponse,
-  HSAudibleSearchResult,
-} from '@hearthshelf/core'
+import type { ABSLibraryItem, ABSSearchResponse, HSAudibleSearchResult } from '@hearthshelf/core'
 import { coverHue } from '@hearthshelf/core'
 import { getLibraries, searchLibraryAll, itemAuthor, itemTitle, coverUrl } from '@/api/abs'
 import { searchAudible } from '@/api/absAudible'
@@ -41,10 +37,7 @@ import {
 } from '@/ui/primitives'
 import { EmptyState, ErrorState, Skeleton, SkeletonRow } from '@/ui/states'
 import { SettingsToggle } from '@/ui/settingsControls'
-import {
-  BookActionsSheet,
-  type BookActionsHandle,
-} from '@/ui/BookActionsSheet'
+import { BookActionsSheet, type BookActionsHandle } from '@/ui/BookActionsSheet'
 import { NotOwnedSheet } from '@/ui/NotOwnedSheet'
 import { useSheetBackHandler } from '@/ui/useBackHandler'
 import { AppTabBar, tabFromParam } from '@/ui/AppTabBar'
@@ -132,19 +125,16 @@ export default function SearchScreen() {
     setRecents(next)
     void AsyncStorage.setItem(RECENTS_KEY, JSON.stringify(next))
   }, [])
-  const rememberQuery = useCallback(
-    (q: string) => {
-      const trimmed = q.trim()
-      if (!trimmed) return
-      setRecents((cur) => {
-        const next = [trimmed, ...cur.filter((r) => r.toLowerCase() !== trimmed.toLowerCase())]
-        const capped = next.slice(0, RECENTS_MAX)
-        void AsyncStorage.setItem(RECENTS_KEY, JSON.stringify(capped))
-        return capped
-      })
-    },
-    [],
-  )
+  const rememberQuery = useCallback((q: string) => {
+    const trimmed = q.trim()
+    if (!trimmed) return
+    setRecents((cur) => {
+      const next = [trimmed, ...cur.filter((r) => r.toLowerCase() !== trimmed.toLowerCase())]
+      const capped = next.slice(0, RECENTS_MAX)
+      void AsyncStorage.setItem(RECENTS_KEY, JSON.stringify(capped))
+      return capped
+    })
+  }, [])
 
   // ---- library resolution ----
   const libraryIdRef = useRef<string | null>(null)
@@ -183,7 +173,12 @@ export default function SearchScreen() {
             itemTitle(it).toLowerCase().includes(needle) ||
             itemAuthor(it).toLowerCase().includes(needle),
         )
-        setResults({ book: matches.map((libraryItem) => ({ libraryItem })), series: [], authors: [], narrators: [] })
+        setResults({
+          book: matches.map((libraryItem) => ({ libraryItem })),
+          series: [],
+          authors: [],
+          narrators: [],
+        })
         setExternal([])
         setSearched(true)
         setLoading(false)
@@ -291,348 +286,351 @@ export default function SearchScreen() {
   const trimmed = query.trim()
 
   return (
-    <Screen>
-      {/* Header: back · search pill (clear ×) · gear */}
-      <View style={styles.header}>
-        <IconButton name={icons.back} onPress={() => router.back()} />
-        <View style={styles.searchBox}>
-          <Icon name={icons.search} size={19} color={colors.accent} />
-          <TextInput
-            ref={inputRef}
-            style={styles.input}
-            value={query}
-            onChangeText={setQuery}
-            placeholder={SCOPE_PLACEHOLDER[scope]}
-            placeholderTextColor={colors.textFaint}
-            autoCorrect={false}
-            autoCapitalize="none"
-            autoFocus
-            returnKeyType="search"
-          />
-          {query.length > 0 ? (
-            <IconButton
-              name={icons.close}
-              size={19}
-              color={colors.textMuted}
+    <>
+      <Screen>
+        {/* Header: back · search pill (clear ×) · gear */}
+        <View style={styles.header}>
+          <IconButton name={icons.back} onPress={() => router.back()} />
+          <View style={styles.searchBox}>
+            <Icon name={icons.search} size={19} color={colors.accent} />
+            <TextInput
+              ref={inputRef}
+              style={styles.input}
+              value={query}
+              onChangeText={setQuery}
+              placeholder={SCOPE_PLACEHOLDER[scope]}
+              placeholderTextColor={colors.textFaint}
+              autoCorrect={false}
+              autoCapitalize="none"
+              autoFocus
+              returnKeyType="search"
+            />
+            {query.length > 0 ? (
+              <IconButton
+                name={icons.close}
+                size={19}
+                color={colors.textMuted}
+                onPress={() => {
+                  setQuery('')
+                  inputRef.current?.focus()
+                }}
+              />
+            ) : null}
+          </View>
+          <IconButton name={icons.tune} onPress={() => gearRef.current?.present()} />
+        </View>
+
+        {/* Scope chips */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ flexGrow: 0 }}
+          contentContainerStyle={styles.chips}
+          keyboardShouldPersistTaps="handled"
+        >
+          {SCOPES.map((s) => (
+            <Chip
+              key={s.v}
+              label={s.label}
+              active={scope === s.v}
               onPress={() => {
-                setQuery('')
-                inputRef.current?.focus()
+                haptics.select()
+                setScope(s.v)
               }}
             />
-          ) : null}
-        </View>
-        <IconButton name={icons.tune} onPress={() => gearRef.current?.present()} />
-      </View>
-
-      {/* Scope chips */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={{ flexGrow: 0 }}
-        contentContainerStyle={styles.chips}
-        keyboardShouldPersistTaps="handled"
-      >
-        {SCOPES.map((s) => (
-          <Chip
-            key={s.v}
-            label={s.label}
-            active={scope === s.v}
-            onPress={() => {
-              haptics.select()
-              setScope(s.v)
-            }}
-          />
-        ))}
-      </ScrollView>
-
-      {offline ? (
-        <View style={styles.offlineChip}>
-          <Icon name={icons.cloudOff} size={14} color={colors.brandHearth} />
-          <AppText variant="caption" color={colors.textMuted}>
-            Offline · searching downloads
-          </AppText>
-        </View>
-      ) : null}
-
-      {!trimmed ? (
-        // ---- default: recent searches + beyond-library status card ----
-        <ScrollView
-          contentContainerStyle={{ paddingBottom: contentInset }}
-          keyboardShouldPersistTaps="handled"
-        >
-          {recents.length > 0 ? (
-            <>
-              <View style={styles.recentHead}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-                  <Icon name={icons.recent} size={17} color={colors.textMuted} />
-                  <AppText variant="label">Recent</AppText>
-                </View>
-                <Touchable
-                  hitSlop={8}
-                  onPress={() => {
-                    const prev = recents
-                    saveRecents([])
-                    showToast('History cleared', {
-                      action: { label: 'Undo', onPress: () => saveRecents(prev) },
-                    })
-                  }}
-                >
-                  <AppText variant="caption" color={colors.textMuted}>
-                    Clear all
-                  </AppText>
-                </Touchable>
-              </View>
-              <View style={{ paddingHorizontal: spacing.lg }}>
-                {recents.map((r) => (
-                  <View key={r} style={styles.recentRow}>
-                    <Icon name={icons.recent} size={19} color={colors.textFaint} />
-                    <Touchable style={{ flex: 1 }} onPress={() => setQuery(r)}>
-                      <AppText variant="meta">{r}</AppText>
-                    </Touchable>
-                    <IconButton
-                      name={icons.close}
-                      size={17}
-                      color={colors.textFaint}
-                      onPress={() => saveRecents(recents.filter((x) => x !== r))}
-                    />
-                  </View>
-                ))}
-              </View>
-            </>
-          ) : null}
-          {!offline ? (
-            <View style={styles.extCard}>
-              <Icon name={icons.language} size={20} color={colors.brandHearth} />
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <AppText variant="label">
-                  {externalOn ? 'Beyond your library is on' : 'Beyond your library is off'}
-                </AppText>
-                <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
-                  {externalOn
-                    ? 'Audible matches appear under your own results.'
-                    : 'Only your own library is searched.'}
-                </AppText>
-              </View>
-              <SettingsToggle
-                on={externalOn}
-                onChange={(v) => setSetting('searchExternalSources', v)}
-              />
-            </View>
-          ) : null}
-        </ScrollView>
-      ) : loading ? (
-        // ---- typing skeleton: row-shaped shimmer ----
-        <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
-          <SkeletonRow width={90} height={11} />
-          {[0, 1, 2, 3].map((i) => (
-            <View key={i} style={styles.skelRow}>
-              <Skeleton width={40} height={60} radius={8} />
-              <View style={{ flex: 1, gap: 7 }}>
-                <SkeletonRow width={`${80 - i * 8}%`} height={12} />
-                <SkeletonRow width={`${55 - i * 5}%`} height={9} />
-              </View>
-            </View>
           ))}
-        </View>
-      ) : searchError ? (
-        // ---- error: failed requests finally say so ----
-        <ErrorState
-          title="Search didn't go through"
-          message="The server didn't answer. Your library is fine."
-          retryLabel="Retry"
-          onRetry={() => void runSearch(query)}
-        />
-      ) : searched && visibleCount === 0 ? (
-        // ---- no results (+ beyond-library suggestion when the toggle is off) ----
-        <EmptyState
-          icon={icons.search}
-          iconColor={colors.textMuted}
-          title={`No matches for "${trimmed}"`}
-          body={
-            offline
-              ? 'Nothing in your downloads. Beyond-your-library results resume when you are back online.'
-              : externalOn
-                ? 'Nothing in your library or on Audible.'
-                : 'Nothing in your library. Want to look further?'
-          }
-          cta={!offline && !externalOn ? 'Search beyond your library' : undefined}
-          onCta={
-            !offline && !externalOn
-              ? () => {
-                  setSetting('searchExternalSources', true)
-                  void runSearch(query)
-                }
-              : undefined
-          }
-        />
-      ) : (
-        // ---- results, sectioned under scope Everything ----
-        <Animated.ScrollView
-          entering={FadeIn.duration(DUR.base)}
-          contentContainerStyle={{ paddingBottom: contentInset }}
-          keyboardShouldPersistTaps="handled"
-        >
-          {showBooks && ownedBooks.length > 0 ? (
-            <>
-              <SectionHead icon={icons.book} label={`Books · ${ownedBooks.length}`} />
-              {ownedBooks.map((item) => (
-                <BookRow
-                  key={item.id}
-                  item={item}
-                  progress={progressById.get(item.id)?.progress}
-                  finished={progressById.get(item.id)?.isFinished === true}
-                  onPress={() => router.push(`/item/${item.id}?from=${active}`)}
-                  onLongPress={() => {
-                    haptics.longPress()
-                    actionsRef.current?.present(
-                      item,
-                      progressById.get(item.id)?.isFinished === true,
-                      'browse',
-                    )
-                  }}
-                  onQuickPlay={() => void quickPlay(item.id)}
-                />
-              ))}
-            </>
-          ) : null}
+        </ScrollView>
 
-          {showSeries && series.length > 0 ? (
-            <>
-              <SectionHead icon={icons.library} label={`Series · ${series.length}`} />
-              {series.map((s) => (
-                <Touchable
-                  key={s.series.id}
-                  style={styles.row}
-                  onPress={() => void pushGroup('series', s.series.id, s.series.name)}
-                >
-                  <View style={styles.seriesCovers}>
-                    {s.books.slice(0, 2).map((b, i) => (
-                      <View key={b.id} style={[styles.seriesCover, i > 0 && styles.seriesCoverBack]}>
-                        <Cover
-                          uri={coverUrl(b.id)}
-                          itemId={b.id}
-                          width={38}
-                          aspectRatio={2 / 3}
-                          fallback={{
-                            hue: coverHue(b.id),
-                            initial: itemTitle(b).charAt(0).toUpperCase(),
-                          }}
-                        />
-                      </View>
-                    ))}
-                  </View>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <AppText variant="label" numberOfLines={1}>
-                      {s.series.name}
-                    </AppText>
-                    <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
-                      {s.books.length} {s.books.length === 1 ? 'book' : 'books'}
-                    </AppText>
-                  </View>
-                  <Icon name={icons.chevronRight} size={20} color={colors.textFaint} />
-                </Touchable>
-              ))}
-            </>
-          ) : null}
-
-          {showAuthors && authors.length > 0 ? (
-            <>
-              <SectionHead icon={icons.person} label={`Authors · ${authors.length}`} />
-              {authors.map((a) => (
-                <Touchable
-                  key={a.id}
-                  style={styles.row}
-                  onPress={() => void pushGroup('authors', a.id, a.name)}
-                >
-                  <Avatar size={44} name={a.name} hue={coverHue(a.id)} />
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <AppText variant="label" numberOfLines={1}>
-                      {a.name}
-                    </AppText>
-                    <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
-                      {a.numBooks} {a.numBooks === 1 ? 'book' : 'books'}
-                    </AppText>
-                  </View>
-                  <Icon name={icons.chevronRight} size={20} color={colors.textFaint} />
-                </Touchable>
-              ))}
-            </>
-          ) : null}
-
-          {showNarrators && narrators.length > 0 ? (
-            <>
-              <SectionHead icon={icons.voice} label={`Narrators · ${narrators.length}`} />
-              {narrators.map((n) => (
-                <Touchable
-                  key={n.name}
-                  style={styles.row}
-                  onPress={() => void pushGroup('narrators', n.name, n.name)}
-                >
-                  <Avatar size={44} name={n.name} hue={coverHue(n.name)} />
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <AppText variant="label" numberOfLines={1}>
-                      {n.name}
-                    </AppText>
-                    <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
-                      {n.numBooks} {n.numBooks === 1 ? 'book' : 'books'}
-                    </AppText>
-                  </View>
-                  <Icon name={icons.chevronRight} size={20} color={colors.textFaint} />
-                </Touchable>
-              ))}
-            </>
-          ) : null}
-
-          {showBooks && externalOn && externalDeduped.length > 0 ? (
-            <>
-              <SectionHead
-                icon={icons.language}
-                iconColor={colors.brandHearth}
-                label={`Beyond your library · ${externalDeduped.length}`}
-              />
-              {externalDeduped.map((b) => (
-                <ExternalRow
-                  key={b.asin}
-                  book={b}
-                  rmabEnabled={rmabEnabled}
-                  onPress={() => {
-                    setSelected(b)
-                    notOwnedRef.current?.present()
-                  }}
-                />
-              ))}
-            </>
-          ) : null}
-        </Animated.ScrollView>
-      )}
-
-      {/* Gear: inline search settings (the relocated beyond-library toggle). */}
-      <Sheet ref={gearRef} title="Search settings">
-        <View style={styles.gearRow}>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <AppText variant="label">Search beyond your library</AppText>
-            <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
-              Show Audible matches under your own results, with a request or buy
-              link.
+        {offline ? (
+          <View style={styles.offlineChip}>
+            <Icon name={icons.cloudOff} size={14} color={colors.brandHearth} />
+            <AppText variant="caption" color={colors.textMuted}>
+              Offline · searching downloads
             </AppText>
           </View>
-          <SettingsToggle
-            on={externalOn}
-            onChange={(v) => setSetting('searchExternalSources', v)}
+        ) : null}
+
+        {!trimmed ? (
+          // ---- default: recent searches + beyond-library status card ----
+          <ScrollView
+            contentContainerStyle={{ paddingBottom: contentInset }}
+            keyboardShouldPersistTaps="handled"
+          >
+            {recents.length > 0 ? (
+              <>
+                <View style={styles.recentHead}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                    <Icon name={icons.recent} size={17} color={colors.textMuted} />
+                    <AppText variant="label">Recent</AppText>
+                  </View>
+                  <Touchable
+                    hitSlop={8}
+                    onPress={() => {
+                      const prev = recents
+                      saveRecents([])
+                      showToast('History cleared', {
+                        action: { label: 'Undo', onPress: () => saveRecents(prev) },
+                      })
+                    }}
+                  >
+                    <AppText variant="caption" color={colors.textMuted}>
+                      Clear all
+                    </AppText>
+                  </Touchable>
+                </View>
+                <View style={{ paddingHorizontal: spacing.lg }}>
+                  {recents.map((r) => (
+                    <View key={r} style={styles.recentRow}>
+                      <Icon name={icons.recent} size={19} color={colors.textFaint} />
+                      <Touchable style={{ flex: 1 }} onPress={() => setQuery(r)}>
+                        <AppText variant="meta">{r}</AppText>
+                      </Touchable>
+                      <IconButton
+                        name={icons.close}
+                        size={17}
+                        color={colors.textFaint}
+                        onPress={() => saveRecents(recents.filter((x) => x !== r))}
+                      />
+                    </View>
+                  ))}
+                </View>
+              </>
+            ) : null}
+            {!offline ? (
+              <View style={styles.extCard}>
+                <Icon name={icons.language} size={20} color={colors.brandHearth} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <AppText variant="label">
+                    {externalOn ? 'Beyond your library is on' : 'Beyond your library is off'}
+                  </AppText>
+                  <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
+                    {externalOn
+                      ? 'Audible matches appear under your own results.'
+                      : 'Only your own library is searched.'}
+                  </AppText>
+                </View>
+                <SettingsToggle
+                  on={externalOn}
+                  onChange={(v) => setSetting('searchExternalSources', v)}
+                />
+              </View>
+            ) : null}
+          </ScrollView>
+        ) : loading ? (
+          // ---- typing skeleton: row-shaped shimmer ----
+          <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
+            <SkeletonRow width={90} height={11} />
+            {[0, 1, 2, 3].map((i) => (
+              <View key={i} style={styles.skelRow}>
+                <Skeleton width={40} height={60} radius={8} />
+                <View style={{ flex: 1, gap: 7 }}>
+                  <SkeletonRow width={`${80 - i * 8}%`} height={12} />
+                  <SkeletonRow width={`${55 - i * 5}%`} height={9} />
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : searchError ? (
+          // ---- error: failed requests finally say so ----
+          <ErrorState
+            title="Search didn't go through"
+            message="The server didn't answer. Your library is fine."
+            retryLabel="Retry"
+            onRetry={() => void runSearch(query)}
           />
-        </View>
-      </Sheet>
+        ) : searched && visibleCount === 0 ? (
+          // ---- no results (+ beyond-library suggestion when the toggle is off) ----
+          <EmptyState
+            icon={icons.search}
+            iconColor={colors.textMuted}
+            title={`No matches for "${trimmed}"`}
+            body={
+              offline
+                ? 'Nothing in your downloads. Beyond-your-library results resume when you are back online.'
+                : externalOn
+                  ? 'Nothing in your library or on Audible.'
+                  : 'Nothing in your library. Want to look further?'
+            }
+            cta={!offline && !externalOn ? 'Search beyond your library' : undefined}
+            onCta={
+              !offline && !externalOn
+                ? () => {
+                    setSetting('searchExternalSources', true)
+                    void runSearch(query)
+                  }
+                : undefined
+            }
+          />
+        ) : (
+          // ---- results, sectioned under scope Everything ----
+          <Animated.ScrollView
+            entering={FadeIn.duration(DUR.base)}
+            contentContainerStyle={{ paddingBottom: contentInset }}
+            keyboardShouldPersistTaps="handled"
+          >
+            {showBooks && ownedBooks.length > 0 ? (
+              <>
+                <SectionHead icon={icons.book} label={`Books · ${ownedBooks.length}`} />
+                {ownedBooks.map((item) => (
+                  <BookRow
+                    key={item.id}
+                    item={item}
+                    progress={progressById.get(item.id)?.progress}
+                    finished={progressById.get(item.id)?.isFinished === true}
+                    onPress={() => router.push(`/item/${item.id}?from=${active}`)}
+                    onLongPress={() => {
+                      haptics.longPress()
+                      actionsRef.current?.present(
+                        item,
+                        progressById.get(item.id)?.isFinished === true,
+                        'browse',
+                      )
+                    }}
+                    onQuickPlay={() => void quickPlay(item.id)}
+                  />
+                ))}
+              </>
+            ) : null}
 
-      <NotOwnedSheet
-        ref={notOwnedRef}
-        book={selected}
-        rmabEnabled={rmabEnabled}
-        onDismiss={() => setSelected(null)}
-      />
-      <BookActionsSheet ref={actionsRef} />
+            {showSeries && series.length > 0 ? (
+              <>
+                <SectionHead icon={icons.library} label={`Series · ${series.length}`} />
+                {series.map((s) => (
+                  <Touchable
+                    key={s.series.id}
+                    style={styles.row}
+                    onPress={() => void pushGroup('series', s.series.id, s.series.name)}
+                  >
+                    <View style={styles.seriesCovers}>
+                      {s.books.slice(0, 2).map((b, i) => (
+                        <View
+                          key={b.id}
+                          style={[styles.seriesCover, i > 0 && styles.seriesCoverBack]}
+                        >
+                          <Cover
+                            uri={coverUrl(b.id)}
+                            itemId={b.id}
+                            width={38}
+                            aspectRatio={2 / 3}
+                            fallback={{
+                              hue: coverHue(b.id),
+                              initial: itemTitle(b).charAt(0).toUpperCase(),
+                            }}
+                          />
+                        </View>
+                      ))}
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <AppText variant="label" numberOfLines={1}>
+                        {s.series.name}
+                      </AppText>
+                      <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
+                        {s.books.length} {s.books.length === 1 ? 'book' : 'books'}
+                      </AppText>
+                    </View>
+                    <Icon name={icons.chevronRight} size={20} color={colors.textFaint} />
+                  </Touchable>
+                ))}
+              </>
+            ) : null}
 
+            {showAuthors && authors.length > 0 ? (
+              <>
+                <SectionHead icon={icons.person} label={`Authors · ${authors.length}`} />
+                {authors.map((a) => (
+                  <Touchable
+                    key={a.id}
+                    style={styles.row}
+                    onPress={() => void pushGroup('authors', a.id, a.name)}
+                  >
+                    <Avatar size={44} name={a.name} hue={coverHue(a.id)} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <AppText variant="label" numberOfLines={1}>
+                        {a.name}
+                      </AppText>
+                      <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
+                        {a.numBooks} {a.numBooks === 1 ? 'book' : 'books'}
+                      </AppText>
+                    </View>
+                    <Icon name={icons.chevronRight} size={20} color={colors.textFaint} />
+                  </Touchable>
+                ))}
+              </>
+            ) : null}
+
+            {showNarrators && narrators.length > 0 ? (
+              <>
+                <SectionHead icon={icons.voice} label={`Narrators · ${narrators.length}`} />
+                {narrators.map((n) => (
+                  <Touchable
+                    key={n.name}
+                    style={styles.row}
+                    onPress={() => void pushGroup('narrators', n.name, n.name)}
+                  >
+                    <Avatar size={44} name={n.name} hue={coverHue(n.name)} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <AppText variant="label" numberOfLines={1}>
+                        {n.name}
+                      </AppText>
+                      <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
+                        {n.numBooks} {n.numBooks === 1 ? 'book' : 'books'}
+                      </AppText>
+                    </View>
+                    <Icon name={icons.chevronRight} size={20} color={colors.textFaint} />
+                  </Touchable>
+                ))}
+              </>
+            ) : null}
+
+            {showBooks && externalOn && externalDeduped.length > 0 ? (
+              <>
+                <SectionHead
+                  icon={icons.language}
+                  iconColor={colors.brandHearth}
+                  label={`Beyond your library · ${externalDeduped.length}`}
+                />
+                {externalDeduped.map((b) => (
+                  <ExternalRow
+                    key={b.asin}
+                    book={b}
+                    rmabEnabled={rmabEnabled}
+                    onPress={() => {
+                      setSelected(b)
+                      notOwnedRef.current?.present()
+                    }}
+                  />
+                ))}
+              </>
+            ) : null}
+          </Animated.ScrollView>
+        )}
+
+        {/* Gear: inline search settings (the relocated beyond-library toggle). */}
+        <Sheet ref={gearRef} title="Search settings">
+          <View style={styles.gearRow}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <AppText variant="label">Search beyond your library</AppText>
+              <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
+                Show Audible matches under your own results, with a request or buy link.
+              </AppText>
+            </View>
+            <SettingsToggle
+              on={externalOn}
+              onChange={(v) => setSetting('searchExternalSources', v)}
+            />
+          </View>
+        </Sheet>
+
+        <NotOwnedSheet
+          ref={notOwnedRef}
+          book={selected}
+          rmabEnabled={rmabEnabled}
+          onDismiss={() => setSelected(null)}
+        />
+        <BookActionsSheet ref={actionsRef} />
+      </Screen>
       <AppTabBar activeName={active} onPressTab={goToTab} />
-    </Screen>
+    </>
   )
 }
 
@@ -703,7 +701,12 @@ function BookRow({
         <AppText variant="label" numberOfLines={1}>
           {itemTitle(item)}
         </AppText>
-        <AppText variant="caption" color={colors.textMuted} numberOfLines={1} style={{ marginTop: 2 }}>
+        <AppText
+          variant="caption"
+          color={colors.textMuted}
+          numberOfLines={1}
+          style={{ marginTop: 2 }}
+        >
           {sub}
         </AppText>
         {inProgress ? (
