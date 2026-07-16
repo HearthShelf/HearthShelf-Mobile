@@ -5,19 +5,18 @@
  * inline `Loading` spinner in primitives.tsx (used mid-app for list fetches), this
  * is the first frame a user sees, so it leans into the brand: a warm radial glow
  * breathing behind the flame logo, the logo flickering like a live flame, and a
- * field of randomly-generated embers rising and fading like sparks off coals.
+ * procedural Skia hearth burning across the bottom edge.
  *
- * Embers are drawn in SVG with a radial-alpha fill so each reads as a soft floating
- * glow rather than a hard dot; a subset is stretched vertically into oblong streaks
- * like a spark caught mid-flight. All motion is Reanimated (worklets), no JS-thread
- * timers. The field is seeded once at mount so no two boots look alike.
+ * A single GPU shader draws the connected flame body, its pooled light, and sparse
+ * sparks. Reanimated still owns the logo/glow timing and the static reduced-motion
+ * path, so startup never depends on JS-thread timers or fire motion alone.
  */
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { AppState, Dimensions, Pressable, StyleSheet, Text, View } from 'react-native'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { AppState, Pressable, StyleSheet, Text, View } from 'react-native'
 import { getSplashDebug, subscribeSplashDebug, dismissForcedSplash } from '@/lib/splashDebug'
 import * as Device from 'expo-device'
 import { LinearGradient } from 'expo-linear-gradient'
-import Svg, { Circle, Defs, Ellipse, G, RadialGradient, Stop } from 'react-native-svg'
+import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg'
 import Animated, {
   cancelAnimation,
   Easing,
@@ -25,7 +24,6 @@ import Animated, {
   useAnimatedProps,
   useAnimatedStyle,
   useSharedValue,
-  withDelay,
   withRepeat,
   withSequence,
   withTiming,
@@ -33,28 +31,22 @@ import Animated, {
 } from 'react-native-reanimated'
 import { useReducedMotion } from './motion'
 import { FlameLogo } from './FlameLogo'
+import { HearthFire } from './HearthFire'
 import { colors, fonts, shadow, spacing } from './theme'
 
-const AnimatedG = Animated.createAnimatedComponent(G)
 const AnimatedCircle = Animated.createAnimatedComponent(Circle)
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window')
-
-// Device-tier the particle count: a low-RAM phone can't afford 24 individually
-// animated SVG nodes at cold boot (the worst time to drop frames), so drop to a
-// lean field. Above ~3GB keeps the full field. Read once at module load.
+// Low-RAM devices keep the static hearth. Cold boot is the worst time to ask a
+// constrained GPU to compile and run a procedural shader, and the static path
+// is already the correct reduced-motion fallback. Read once at module load.
 const LOW_MEM = (() => {
   const bytes = Device.totalMemory ?? 0
   return bytes > 0 && bytes < 3 * 1024 * 1024 * 1024
 })()
-const EMBER_COUNT = LOW_MEM ? 12 : 24
 
-// A deterministic-per-mount pseudo-random. Seeded from the ember index so the
-// field is varied but stable across re-renders within a single boot.
-function seeded(i: number, salt: number): number {
-  const x = Math.sin(i * 12.9898 + salt * 78.233) * 43758.5453
-  return x - Math.floor(x)
-}
+// Art-direction control for the procedural fire. 0 removes flying embers while
+// 1 creates a busy shower; it does not change the flame body itself.
+const SPLASH_SPARK_INTENSITY = 0.9
 
 // --- Anti-banding base ramp -------------------------------------------------
 // Three anchor colors (deep coal -> warm charcoal -> ember-warm), expanded into
@@ -95,127 +87,6 @@ const _ramp = buildRamp(24)
 // expo-linear-gradient types want a non-empty tuple; the ramp always has >=2.
 const BASE_RAMP = _ramp.colors as [string, string, ...string[]]
 const BASE_LOCATIONS = _ramp.locations as [number, number, ...number[]]
-
-type EmberSpec = {
-  startX: number // launch x, px from left
-  vx: number // horizontal velocity, px/s (signed - left or right)
-  vy0: number // initial upward velocity, px/s
-  gravity: number // downward accel, px/s^2 (embers arc and fall back)
-  radius: number // hot-core radius in px (the glow halo is a multiple of this)
-  stretch: number // elongation of the streak (1 = round spark, >1 = oblong)
-  streaky: boolean // whether this ember draws as a velocity-aligned streak
-  duration: number // s for one full life (launch -> burn out)
-  delay: number // ms before first appearance
-  hue: 'coral' | 'amber' | 'cream'
-}
-
-const EMBER_COLORS: Record<EmberSpec['hue'], string> = {
-  coral: colors.accent,
-  amber: colors.brandHearth,
-  cream: colors.brandCream,
-}
-
-const EMBER_FIELD_BOTTOM = SCREEN_H * 0.9 // launch height (the coal bed) in SVG space
-
-function makeEmbers(): EmberSpec[] {
-  return Array.from({ length: EMBER_COUNT }, (_, i) => {
-    const r = (salt: number) => seeded(i + 1, salt)
-    const hueRoll = r(5)
-    // Roughly half the embers are lively "poppers" that shoot sideways and arc;
-    // the rest drift up lazily like heat-borne sparks.
-    const popper = r(10) < 0.55
-    const dir = r(2) < 0.5 ? -1 : 1
-    const streaky = r(8) < 0.45
-    return {
-      startX: (0.15 + r(1) * 0.7) * SCREEN_W,
-      // Poppers get real lateral speed; drifters just wander a little.
-      vx: dir * (popper ? 30 + r(3) * 130 : 6 + r(3) * 30),
-      // Upward launch speed sets how high it jumps before gravity wins.
-      vy0: popper ? 150 + r(4) * 190 : 90 + r(4) * 90,
-      gravity: 55 + r(11) * 70,
-      radius: 1.1 + r(6) * 1.7,
-      stretch: streaky ? 2.2 + r(9) * 2.4 : 1.15,
-      streaky,
-      duration: 2.6 + r(7) * 3.4,
-      delay: r(12) * 4200,
-      hue: hueRoll < 0.5 ? 'coral' : hueRoll < 0.85 ? 'amber' : 'cream',
-    }
-  })
-}
-
-function Ember({ spec, gradId }: { spec: EmberSpec; gradId: string }) {
-  // t: 0 -> 1 is one full life, looped forever. Multiplied by `duration` inside
-  // the worklet to get elapsed seconds for the ballistic integration.
-  const t = useSharedValue(0)
-
-  useMemo(() => {
-    t.value = withDelay(
-      spec.delay,
-      withRepeat(
-        withTiming(1, { duration: spec.duration * 1000, easing: Easing.linear }),
-        -1,
-        false,
-      ),
-    )
-    // Run once on mount; t is a stable shared value.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Glow halo radius; the radial-alpha fill fades it out so there's no hard edge.
-  const glow = spec.radius * 3.4
-  // Streak geometry: an ellipse whose long axis (local Y) is the stretch factor.
-  // The G transform rotates local-Y to point along the ember's velocity, so a
-  // fast sideways spark reads as a sideways streak, not a vertical one.
-  const rx = glow
-  const ry = glow * spec.stretch
-
-  const animatedProps = useAnimatedProps(() => {
-    const secs = t.value * spec.duration
-    // Ballistic path: constant vx, vy under gravity. Origin at the coal bed.
-    const x = spec.startX + spec.vx * secs
-    const y = EMBER_FIELD_BOTTOM - (spec.vy0 * secs - 0.5 * spec.gravity * secs * secs)
-
-    // Instantaneous velocity, to point the streak along the direction of travel.
-    const vyNow = spec.vy0 - spec.gravity * secs // +up
-    // atan2 in worklet: angle of motion from vertical, in degrees. The ellipse's
-    // long axis is its local Y, so rotate so local-Y aligns with (vx, -vyNow).
-    const angleRad = Math.atan2(spec.vx, vyNow) // 0 = straight up
-    const rotation = (angleRad * 180) / Math.PI
-
-    // Fade in fast, hold, burn out. Also cool (shrink) toward the end of life.
-    const p = t.value
-    const opacity = interpolate(p, [0, 0.1, 0.65, 1], [0, 1, 0.75, 0])
-    const cool = interpolate(p, [0, 0.25, 1], [0.55, 1, 0.4])
-
-    return {
-      opacity,
-      // Reanimated animates the G transform via these props.
-      transform: [
-        { translateX: x },
-        { translateY: y },
-        { rotate: `${rotation}deg` },
-        { scale: cool },
-      ],
-    }
-  })
-
-  return (
-    <AnimatedG animatedProps={animatedProps}>
-      <Ellipse cx={0} cy={0} rx={rx} ry={ry} fill={`url(#${gradId})`} />
-    </AnimatedG>
-  )
-}
-
-// Radial-alpha gradient per hue: hot near-white core -> ember color -> transparent.
-function EmberGradient({ id, color }: { id: string; color: string }) {
-  return (
-    <RadialGradient id={id} cx="50%" cy="50%" r="50%">
-      <Stop offset="0" stopColor="#fff6e8" stopOpacity={0.95} />
-      <Stop offset="0.35" stopColor={color} stopOpacity={0.9} />
-      <Stop offset="1" stopColor={color} stopOpacity={0} />
-    </RadialGradient>
-  )
-}
 
 // The bloom behind the flame: two soft radial-gradient halos (amber outer, coral
 // inner) that fade smoothly to transparent - a real color bloom, not a filled
@@ -293,8 +164,6 @@ export function SplashScreen({
   // determinate bar + text, never by fire motion alone (D-A11Y).
   const reduced = useReducedMotion()
   const staticMode = reduced || LOW_MEM
-
-  const embers = useMemo(() => (staticMode ? [] : makeEmbers()), [staticMode])
 
   // One shared clock drives both glows (they read it at different phases) and
   // the logo flicker, so everything breathes off the same fire.
@@ -389,7 +258,11 @@ export function SplashScreen({
     if (!staticMode) return
     if (phase.kind === 'connecting') {
       progress.value = 0.08
-      progress.value = withRepeat(withTiming(0.9, { duration: 3200, easing: Easing.out(Easing.quad) }), -1, true)
+      progress.value = withRepeat(
+        withTiming(0.9, { duration: 3200, easing: Easing.out(Easing.quad) }),
+        -1,
+        true,
+      )
     } else {
       cancelAnimation(progress)
     }
@@ -428,19 +301,13 @@ export function SplashScreen({
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
-      {/* Rising embers, behind the logo so the glow sits on top of them. */}
-      <Animated.View style={[StyleSheet.absoluteFill, igniteStyle]} pointerEvents="none">
-        <Svg style={StyleSheet.absoluteFill}>
-          <Defs>
-            <EmberGradient id="ember-coral" color={EMBER_COLORS.coral} />
-            <EmberGradient id="ember-amber" color={EMBER_COLORS.amber} />
-            <EmberGradient id="ember-cream" color={EMBER_COLORS.cream} />
-          </Defs>
-          {embers.map((spec, i) => (
-            <Ember key={i} spec={spec} gradId={`ember-${spec.hue}`} />
-          ))}
-        </Svg>
-      </Animated.View>
+      {/* One procedural fire source replaces the detached SVG particle field.
+          Reduced-motion and low-memory devices keep the static coal wash. */}
+      {!staticMode ? (
+        <Animated.View style={[StyleSheet.absoluteFill, igniteStyle]} pointerEvents="none">
+          <HearthFire sparkIntensity={SPLASH_SPARK_INTENSITY} />
+        </Animated.View>
+      ) : null}
 
       <View style={styles.center}>
         <View style={styles.hearth}>
@@ -484,8 +351,8 @@ export function SplashScreen({
                 No AudiobookShelf server is linked to your account yet.
               </Text>
               <Text style={styles.helpText}>
-                Ask a server owner for an invite link, then open it on this phone to link
-                up. You can also link one from Settings → My servers.
+                Ask a server owner for an invite link, then open it on this phone to link up. You
+                can also link one from Settings → My servers.
               </Text>
             </>
           ) : null}
