@@ -37,6 +37,7 @@ import { useBookmarks } from './useBookmarks'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { AppText, Sheet, type SheetRef, Touchable } from '@/ui/primitives'
 import { AppSlider } from '@/ui/AppSlider'
+import { numberChapters } from './chapterNumbering'
 import { SpringPressable } from '@/ui/motion'
 import { haptics } from '@/ui/haptics'
 import { showToast } from '@/ui/Toast'
@@ -74,6 +75,9 @@ export const ChaptersSheet = forwardRef<SheetHandle>(function ChaptersSheet(_pro
   const active = currentChapter()
   const chapters = nowPlaying?.chapters ?? []
   const activeIndex = active ? chapters.indexOf(active) : -1
+  // Smart display labels: adds a chapter number only when the book doesn't
+  // already number its chapters, and skips front matter (intro, credits, ...).
+  const labels = useMemo(() => numberChapters(chapters.map((c) => c.title)), [chapters])
 
   // Auto-scroll to the current chapter (centered) when the sheet opens.
   useImperativeHandle(ref, () => ({
@@ -160,7 +164,7 @@ export const ChaptersSheet = forwardRef<SheetHandle>(function ChaptersSheet(_pro
                   color={isActive ? colors.accent : isDone ? colors.textMuted : colors.text}
                   numberOfLines={1}
                 >
-                  {c.title}
+                  {labels[i] ?? c.title}
                 </AppText>
                 {isActive ? (
                   <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
