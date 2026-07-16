@@ -1436,21 +1436,31 @@ const MoreSheet = forwardRef<
         ))}
       </View>
 
-      {/* Pinned rows (a different category from the launch grid: they carry a
-          chevron into a sub-surface). */}
+      {/* Pinned rows: card-style buttons that drill into a sub-surface, set off
+          from the launch grid by a divider. */}
       <View style={moreStyles.divider} />
-      <Touchable style={moreStyles.row} onPress={onSettings}>
-        <Icon name={icons.tune} size={22} color={colors.accent} />
-        <AppText variant="label" style={{ flex: 1 }}>
-          Player settings
-        </AppText>
+      <Touchable style={moreStyles.pinnedRow} onPress={onSettings}>
+        <View style={[moreStyles.pinnedIcon, { backgroundColor: colors.accentWash }]}>
+          <Icon name={icons.tune} size={20} color={colors.accent} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <AppText variant="label">Player settings</AppText>
+          <AppText variant="caption" color={colors.textMuted}>
+            Speed, skips, sleep, and more
+          </AppText>
+        </View>
         <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />
       </Touchable>
-      <Touchable style={moreStyles.row} onPress={onEdit}>
-        <Icon name={icons.dragHandle} size={22} color={colors.textMuted} />
-        <AppText variant="label" style={{ flex: 1 }} color={colors.textMuted}>
-          Edit these buttons
-        </AppText>
+      <Touchable style={moreStyles.pinnedRow} onPress={onEdit}>
+        <View style={moreStyles.pinnedIcon}>
+          <Icon name={icons.dragHandle} size={20} color={colors.textMuted} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <AppText variant="label">Edit these buttons</AppText>
+          <AppText variant="caption" color={colors.textMuted}>
+            Choose what shows on the player
+          </AppText>
+        </View>
         <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />
       </Touchable>
     </Sheet>
@@ -1465,9 +1475,10 @@ const makeMoreStyles = (colors: Palette) =>
       gap: spacing.sm,
     },
     tile: {
-      // Three per row: (100% - 2 gaps) / 3.
+      // Three per row: (100% - 2 gaps) / 3. Compact fixed height (not a full
+      // square) so the grid doesn't tower and leave dead vertical space.
       width: '31.5%',
-      aspectRatio: 1,
+      height: 78,
       alignItems: 'center',
       justifyContent: 'center',
       gap: spacing.xs,
@@ -1490,17 +1501,31 @@ const makeMoreStyles = (colors: Palette) =>
       justifyContent: 'center',
     },
     badgeText: { fontSize: 10, fontWeight: '700', lineHeight: 15 },
-    row: {
+    pinnedRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.md,
-      paddingVertical: spacing.md,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.md,
+      marginBottom: spacing.sm,
+      borderRadius: radius.card,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    pinnedIcon: {
+      width: 38,
+      height: 38,
+      borderRadius: radius.row,
+      backgroundColor: colors.elevated,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     divider: {
       height: StyleSheet.hairlineWidth,
       backgroundColor: colors.hairline,
       marginTop: spacing.lg,
-      marginBottom: spacing.sm,
+      marginBottom: spacing.md,
     },
   })
 
@@ -1667,17 +1692,21 @@ const RecentSheet = forwardRef<
             const accent = r.synced ? colors.success : colors.accent
             const live = r.kind === 'live'
             const started = new Date(r.startedAt)
-            const jump = (sec: number) => {
-              onSeek(sec)
-              sheetRef.current?.dismiss()
-            }
             return (
               <Touchable
                 key={r.key}
                 style={[recentStyles.row, live && recentStyles.liveRow]}
-                // Tapping the row picks up where this session ENDED (the natural
-                // "keep going" spot). The two timecodes below jump to either end.
-                onPress={() => jump(r.currentTime)}
+                // Tapping the row opens a small popover to choose Start over vs
+                // Resume (session end) - no more three crammed tap targets. The
+                // live "Now" row isn't a jump target.
+                onPress={
+                  live
+                    ? undefined
+                    : () => {
+                        setOverflow({ start: r.startTime, end: r.currentTime })
+                        overflowRef.current?.present()
+                      }
+                }
               >
                 <View style={{ flex: 1, gap: 3 }}>
                   <View style={recentStyles.durationRow}>
@@ -1723,23 +1752,8 @@ const RecentSheet = forwardRef<
                     </AppText>
                   )}
                 </View>
-                {/* One primary tap (resume at session end) + a "…" overflow for
-                    the rarer jump-to-start / jump-to-end. */}
-                {!live && (
-                  <>
-                    <Icon name={icons.play} size={20} color={accent} />
-                    <Pressable
-                      hitSlop={10}
-                      onPress={(e) => {
-                        e.stopPropagation()
-                        setOverflow({ start: r.startTime, end: r.currentTime })
-                        overflowRef.current?.present()
-                      }}
-                    >
-                      <Icon name={icons.more} size={20} color={colors.textMuted} />
-                    </Pressable>
-                  </>
-                )}
+                {/* The whole row opens the Start-over / Resume popover. */}
+                {!live && <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />}
               </Touchable>
             )
           })}
@@ -1747,30 +1761,43 @@ const RecentSheet = forwardRef<
       )}
     </Sheet>
 
-    {/* Per-row overflow: the rarer jump-to-start / jump-to-end. */}
-    <Sheet ref={overflowRef} title="Jump to" stackBehavior="push">
-      <View style={{ paddingBottom: spacing.md }}>
+    {/* Compact popover: pick where to pick this session up. Start over restarts
+        from the session's beginning; Resume drops you at where it ended. */}
+    <Sheet ref={overflowRef} kicker="This session" stackBehavior="push">
+      <View style={recentStyles.popover}>
         <Touchable
-          style={recentStyles.overflowRow}
+          style={recentStyles.popoverBtn}
           onPress={() => {
             if (overflow) onSeek(overflow.start)
             overflowRef.current?.dismiss()
             sheetRef.current?.dismiss()
           }}
         >
-          <Icon name={icons.skipPrev} size={22} color={colors.text} />
-          <AppText variant="body">Jump to session start</AppText>
+          <Icon name={icons.replay} size={24} color={colors.text} />
+          <View style={{ flex: 1 }}>
+            <AppText variant="label">Start over</AppText>
+            <AppText variant="caption" color={colors.textMuted}>
+              From {overflow ? formatTimestamp(shownPos(overflow.start)) : ''}
+            </AppText>
+          </View>
         </Touchable>
         <Touchable
-          style={recentStyles.overflowRow}
+          style={[recentStyles.popoverBtn, recentStyles.popoverBtnPrimary]}
           onPress={() => {
             if (overflow) onSeek(overflow.end)
             overflowRef.current?.dismiss()
             sheetRef.current?.dismiss()
           }}
         >
-          <Icon name={icons.skipNext} size={22} color={colors.text} />
-          <AppText variant="body">Jump to session end</AppText>
+          <Icon name={icons.play} size={24} color={colors.onAccent} />
+          <View style={{ flex: 1 }}>
+            <AppText variant="label" color={colors.onAccent}>
+              Resume
+            </AppText>
+            <AppText variant="caption" color={colors.onAccent} style={{ opacity: 0.85 }}>
+              At {overflow ? formatTimestamp(shownPos(overflow.end)) : ''}
+            </AppText>
+          </View>
         </Touchable>
       </View>
     </Sheet>
@@ -1797,12 +1824,20 @@ const makeRecentStyles = (colors: Palette) =>
     },
     durationRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
     timecodeRow: { flexDirection: 'row', alignItems: 'center' },
-    overflowRow: {
+    // Compact popover: two stacked choice buttons, not a full row list.
+    popover: { gap: spacing.sm, paddingBottom: spacing.md },
+    popoverBtn: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.md,
       paddingVertical: spacing.md,
+      paddingHorizontal: spacing.lg,
+      borderRadius: radius.card,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
     },
+    popoverBtnPrimary: { backgroundColor: colors.accent, borderColor: colors.accent },
   })
 
 const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
