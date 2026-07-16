@@ -4,9 +4,17 @@
  * type-a-name-to-create) - the real feature, replacing the design mock's
  * single hardcoded "Want to listen" watchlist assumption.
  */
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native'
-import type { ABSCollection, ABSPlaylist } from '@hearthshelf/core'
+import type { ABSCollection, ABSPlaylist, QueueEntry } from '@hearthshelf/core'
 import {
   addBookToCollection,
   addBooksToCollection,
@@ -17,13 +25,14 @@ import {
   getLibraryCollections,
   getLibraryPlaylists,
 } from '@/api/abs'
+import { addToQueue, getQueueState, subscribeQueue } from './queue'
 import { AppText, IconButton, Sheet, type SheetRef } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import type { SheetHandle } from './sheets'
 
-type Tab = 'collection' | 'playlist'
+type Tab = 'queue' | 'collection' | 'playlist'
 
 export const AddToListSheet = forwardRef<
   SheetHandle,
@@ -32,11 +41,16 @@ export const AddToListSheet = forwardRef<
     /** A single book, or several for a bulk add. Exactly one of these is set. */
     libraryItemId?: string
     libraryItemIds?: string[]
+    /** When provided, a "Queue" tab appears that adds these to the up-next
+     *  manual queue. Carries title/author so the queue entry is self-contained;
+     *  callers that can't supply them omit this and the Queue tab is hidden. */
+    queueEntries?: QueueEntry[]
     onAdded: (message: string) => void
   }
->(function AddToListSheet({ libraryId, libraryItemId, libraryItemIds, onAdded }, ref) {
+>(function AddToListSheet({ libraryId, libraryItemId, libraryItemIds, queueEntries, onAdded }, ref) {
   // Normalize single/bulk callers to one id list.
   const ids = libraryItemIds ?? (libraryItemId ? [libraryItemId] : [])
+  const canQueue = (queueEntries?.length ?? 0) > 0
   const sheetRef = useRef<SheetRef>(null)
   useImperativeHandle(ref, () => ({
     present: () => sheetRef.current?.present(),
@@ -45,7 +59,12 @@ export const AddToListSheet = forwardRef<
 
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
-  const [tab, setTab] = useState<Tab>('collection')
+  const [tab, setTab] = useState<Tab>(canQueue ? 'queue' : 'collection')
+  const queue = useSyncExternalStore(subscribeQueue, getQueueState)
+  const queuedIds = useMemo(
+    () => new Set(queue.manual.map((m) => m.libraryItemId)),
+    [queue.manual],
+  )
   const [collections, setCollections] = useState<ABSCollection[] | null>(null)
   const [playlists, setPlaylists] = useState<ABSPlaylist[] | null>(null)
   const [newName, setNewName] = useState('')
@@ -66,6 +85,21 @@ export const AddToListSheet = forwardRef<
   }
 
   const suffix = ids.length > 1 ? ` (${ids.length})` : ''
+
+  const addToUpNext = () => {
+    const entries = queueEntries ?? []
+    let added = 0
+    for (const e of entries) {
+      if (queuedIds.has(e.libraryItemId)) continue
+      addToQueue(e)
+      added += 1
+    }
+    finish(
+      added === 0
+        ? 'Already in your queue'
+        : `Added to up next${added > 1 ? ` (${added})` : ''}`,
+    )
+  }
 
   const addToCollection = async (id: string, name: string) => {
     if (!ids.length) return
@@ -114,7 +148,7 @@ export const AddToListSheet = forwardRef<
   return (
     <Sheet ref={sheetRef} title="Add to list" snapPoints={['70%']}>
       <View style={styles.segFull}>
-        {(['collection', 'playlist'] as Tab[]).map((t) => (
+        {(canQueue ? (['queue', 'collection', 'playlist'] as Tab[]) : (['collection', 'playlist'] as Tab[])).map((t) => (
           <Pressable
             key={t}
             style={[styles.seg, tab === t && styles.segOn]}
@@ -125,12 +159,31 @@ export const AddToListSheet = forwardRef<
               color={tab === t ? colors.text : colors.textMuted}
               style={{ textTransform: 'capitalize' }}
             >
-              {t}s
+              {t === 'queue' ? 'Queue' : `${t}s`}
             </AppText>
           </Pressable>
         ))}
       </View>
 
+      {tab === 'queue' ? (
+        <View>
+          <AppText variant="meta" color={colors.textMuted} style={{ marginBottom: spacing.md }}>
+            Add {ids.length > 1 ? `these ${ids.length} books` : 'this book'} to your up-next
+            queue. In Auto mode they play after your Auto picks.
+          </AppText>
+          <Pressable
+            style={[styles.queueBtn, busy && { opacity: 0.5 }]}
+            disabled={busy}
+            onPress={addToUpNext}
+          >
+            <Icon name={icons.queue} size={18} color={colors.onAccent} />
+            <AppText variant="label" color={colors.onAccent}>
+              Add to up next
+            </AppText>
+          </Pressable>
+        </View>
+      ) : (
+        <>
       <View style={styles.createRow}>
         <TextInput
           style={styles.input}
@@ -190,6 +243,8 @@ export const AddToListSheet = forwardRef<
           ))}
         </View>
       )}
+        </>
+      )}
     </Sheet>
   )
 })
@@ -223,6 +278,15 @@ const makeStyles = (colors: Palette) =>
     gap: spacing.xs,
     paddingHorizontal: spacing.md,
     borderRadius: radius.row,
+    backgroundColor: colors.accent,
+  },
+  queueBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    borderRadius: radius.card,
     backgroundColor: colors.accent,
   },
   row: {

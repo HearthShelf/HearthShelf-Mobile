@@ -609,7 +609,7 @@ export default function ItemDetailScreen() {
         <SheetRow icon={icons.share} label="Share" onPress={() => void shareBook()} />
         <SheetRow
           icon={icons.addList}
-          label="Add to collection or playlist"
+          label="Add to queue, collection, or playlist"
           onPress={() => {
             overflowSheetRef.current?.dismiss()
             addToListRef.current?.present()
@@ -674,6 +674,7 @@ export default function ItemDetailScreen() {
         ref={addToListRef}
         libraryId={detail.libraryId}
         libraryItemId={detail.id}
+        queueEntries={[{ libraryItemId: detail.id, title, author: authorName }]}
         onAdded={show}
       />
 
