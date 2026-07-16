@@ -32,6 +32,7 @@ import { useColors } from '@/ui/ThemeProvider'
 import { windowClass, adaptiveLibraryColumns } from '@/ui/responsive'
 import { getSession } from '@/api/session'
 import { showToast } from '@/ui/Toast'
+import { testGoalCelebration } from '@/lib/goalCelebration'
 
 /** Build the diagnostics text. Pure + synchronous so it can be regenerated on tap. */
 function buildDump(args: {
@@ -179,6 +180,7 @@ export default function DiagnosticsScreen() {
             <PrimaryButton label="Refresh" onPress={() => setNonce((n) => n + 1)} />
           </View>
         </View>
+        <PrimaryButton label="Test goal celebration" onPress={() => void testGoalCelebration()} />
       </View>
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingTop: 0 }}

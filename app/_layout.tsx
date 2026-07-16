@@ -13,7 +13,9 @@ import { PlayerHost } from '@/player/PlayerHost'
 import { MiniPlayerDock } from '@/player/MiniPlayerDock'
 import { PopToast } from '@/social/PopToast'
 import { ToastHost } from '@/ui/Toast'
+import { GoalCelebrationHost } from '@/ui/GoalCelebration'
 import { FinishDateHost } from '@/ui/FinishDatePrompt'
+import { checkGoalCelebration } from '@/lib/goalCelebration'
 import { SplashScreen as HearthSplash, type SplashPhase } from '@/ui/SplashScreen'
 import { OfflineBanner } from '@/ui/OfflineBanner'
 import { ConnectionProvider, useConnection } from '@/api/ConnectionProvider'
@@ -185,6 +187,22 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
   // Lets the user step out to the servers screen while still not connected.
   const [peekingServers, setPeekingServers] = useState(false)
 
+  // The moment the app is fully connected, check whether the user has just hit
+  // their yearly reading goal and, if so, greet them with the celebration. Runs
+  // once per connect (guard resets when we leave `ready`); the check self-gates
+  // on the already-celebrated flag so a reconnect won't re-fire it.
+  const goalChecked = useRef(false)
+  useEffect(() => {
+    if (status.phase === 'ready') {
+      if (!goalChecked.current) {
+        goalChecked.current = true
+        void checkGoalCelebration()
+      }
+    } else {
+      goalChecked.current = false
+    }
+  }, [status.phase])
+
   const handleLogout = useCallback(async () => {
     clearTrack()
     clearAutoSession()
@@ -308,6 +326,9 @@ export default function RootLayout() {
                 {/* Single app-wide confirmation toast, positioned in the
                     mini-player band above all screens. */}
                 <ToastHost />
+                {/* Full-screen reading-goal celebration, fired on the first app
+                    open after the yearly goal is reached. */}
+                <GoalCelebrationHost />
               </AuthGate>
               {/* Persistent audio engine - mounted once, never unmounted. */}
               <PlayerHost />
