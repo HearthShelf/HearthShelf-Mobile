@@ -690,8 +690,19 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
               ) : null}
               {browsing ? (
                 <MiniPlayer
+                  // Offset from THIS surface's bottom edge to the top of the nav.
+                  // Embedded + classic: the tabs navigator already lays the bar out
+                  // below the scene, so the scene's bottom IS the bar's top - no
+                  // clearance needed (adding insets.bottom here left a gap on
+                  // gesture-nav devices). Every floating mode, and the pushed
+                  // route's classic bar, reach the physical bottom, so they clear
+                  // the safe area (+ the bar band when one occupies it).
                   bottomOffset={
-                    embedded || verticalNavVisible ? insets.bottom : insets.bottom + TAB_BAR_HEIGHT
+                    embedded && navMode === 'classic'
+                      ? 0
+                      : verticalNavVisible
+                        ? insets.bottom
+                        : insets.bottom + TAB_BAR_HEIGHT
                   }
                   rightInset={verticalNavVisible ? VNAV_WIDTH + spacing.md : 0}
                   floating={settings.floatingNav}
