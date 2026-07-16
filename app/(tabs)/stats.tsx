@@ -14,7 +14,15 @@
  * sections rather than a wall of zeros or empty frames.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native'
+import {
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
+  useWindowDimensions,
+  type LayoutChangeEvent,
+} from 'react-native'
 import Animated, { FadeIn } from 'react-native-reanimated'
 import Svg, { Circle } from 'react-native-svg'
 import {
@@ -52,6 +60,7 @@ import { radius, spacing, fonts, type Palette } from '@/ui/theme'
 import { useTheme } from '@/ui/ThemeProvider'
 import { Icon, icons } from '@/ui/icons'
 import { DUR } from '@/ui/motion'
+import { haptics } from '@/ui/haptics'
 import { onTabReselect } from '@/ui/tabReselect'
 import { useContentInset } from '@/ui/useContentInset'
 import { useBackHandler } from '@/ui/useBackHandler'
@@ -157,6 +166,9 @@ export default function StatsTab() {
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   const [status, setStatus] = useState<Status>({ phase: 'loading' })
   const [dowMode, setDowMode] = useState<DowMode>('last7')
+  const [refreshing, setRefreshing] = useState(false)
+  // Measured y-offset of each jump target, so the chip row can scroll to it.
+  const sectionY = useRef<Record<string, number>>({})
   const contentInset = useContentInset()
   const { width } = useWindowDimensions()
   const contentMaxWidth = adaptiveContentMaxWidth(width)
@@ -198,6 +210,36 @@ export default function StatsTab() {
     void load()
   }, [load])
 
+  const refresh = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      const [statsRes, historyRes] = await Promise.all([
+        getHSStats(),
+        getStatsHistory('year').catch(() => ({ available: false, days: [], months: [] })),
+      ])
+      setStatus({ phase: 'ready', stats: vmFromHs(statsRes), history: historyRes })
+    } catch {
+      // Keep the current data on a failed pull-to-refresh; the initial load owns
+      // the error state.
+    } finally {
+      setRefreshing(false)
+    }
+  }, [])
+
+  const registerSection = useCallback(
+    (key: string) => (e: LayoutChangeEvent) => {
+      sectionY.current[key] = e.nativeEvent.layout.y
+    },
+    [],
+  )
+  const jumpTo = useCallback((key: string) => {
+    const y = sectionY.current[key]
+    if (y != null) {
+      haptics.select()
+      scrollRef.current?.scrollTo({ y: Math.max(0, y - spacing.md), animated: true })
+    }
+  }, [])
+
   if (status.phase === 'loading') {
     return (
       <Screen>
@@ -236,6 +278,9 @@ export default function StatsTab() {
           gap: spacing.lg,
         }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />
+        }
       >
         <View>
           <AppText variant="eyebrow" color={colors.textMuted}>
@@ -244,9 +289,15 @@ export default function StatsTab() {
           <AppText variant="hero">Your stats</AppText>
         </View>
 
+        {hasAnyListening && (
+          <JumpChips onJump={jumpTo} styles={styles} colors={colors} />
+        )}
+
         {hasAnyListening ? (
           <>
-            <HeroTotal stats={stats} styles={styles} colors={colors} />
+            <View onLayout={registerSection('overview')}>
+              <HeroTotal stats={stats} styles={styles} colors={colors} />
+            </View>
             <StatTiles stats={stats} styles={styles} colors={colors} />
           </>
         ) : (
@@ -262,13 +313,15 @@ export default function StatsTab() {
           </View>
         )}
 
-        <GoalCard
-          goal={yearlyBookGoal}
-          booksThisYear={stats.booksThisYear}
-          onSetGoal={(n) => setSetting('yearlyBookGoal', n)}
-          styles={styles}
-          colors={colors}
-        />
+        <View onLayout={registerSection('goal')}>
+          <GoalCard
+            goal={yearlyBookGoal}
+            booksThisYear={stats.booksThisYear}
+            onSetGoal={(n) => setSetting('yearlyBookGoal', n)}
+            styles={styles}
+            colors={colors}
+          />
+        </View>
 
         {hasAnyListening && (
           <>
@@ -280,13 +333,15 @@ export default function StatsTab() {
               onOpen={(id) => router.push(`/item/${id}?from=stats`)}
             />
 
-            <BarChart
-              stats={stats}
-              mode={dowMode}
-              onMode={setDowMode}
-              styles={styles}
-              colors={colors}
-            />
+            <View onLayout={registerSection('charts')}>
+              <BarChart
+                stats={stats}
+                mode={dowMode}
+                onMode={setDowMode}
+                styles={styles}
+                colors={colors}
+              />
+            </View>
 
             <Heatmap stats={stats} history={history} styles={styles} colors={colors} />
 
@@ -294,17 +349,57 @@ export default function StatsTab() {
               <MonthCard months={history.months ?? []} styles={styles} colors={colors} />
             )}
 
-            <CompareCard styles={styles} colors={colors} />
+            <View onLayout={registerSection('compare')}>
+              <CompareCard styles={styles} colors={colors} />
+            </View>
           </>
         )}
 
-        <Leaderboard styles={styles} colors={colors} />
+        <View onLayout={registerSection('leaderboard')}>
+          <Leaderboard styles={styles} colors={colors} />
+        </View>
       </Animated.ScrollView>
     </Screen>
   )
 }
 
 type Styles = ReturnType<typeof makeStyles>
+
+// A horizontal row of section-jump chips that scroll the page to each block, so
+// a long stats page is navigable without a marathon scroll.
+const JUMP_TARGETS: { key: string; label: string }[] = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'goal', label: 'Goal' },
+  { key: 'charts', label: 'Charts' },
+  { key: 'compare', label: 'Compare' },
+  { key: 'leaderboard', label: 'Leaderboard' },
+]
+
+function JumpChips({
+  onJump,
+  styles,
+  colors,
+}: {
+  onJump: (key: string) => void
+  styles: Styles
+  colors: Palette
+}) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ gap: spacing.sm }}
+    >
+      {JUMP_TARGETS.map((t) => (
+        <Touchable key={t.key} style={styles.jumpChip} onPress={() => onJump(t.key)}>
+          <AppText variant="caption" color={colors.textMuted}>
+            {t.label}
+          </AppText>
+        </Touchable>
+      ))}
+    </ScrollView>
+  )
+}
 
 // Heads a section with a small icon + title, matching the web section-head.
 function SectionHead({
@@ -375,19 +470,40 @@ function StatTiles({ stats, styles, colors }: { stats: StatsVM; styles: Styles; 
     accent: todayMin > 0,
   })
 
+  // An odd tile count leaves the last one alone on its row; span it full-width
+  // with a horizontal layout so the grid never ends on a lonely half-tile.
+  const orphanIndex = tiles.length % 2 === 1 ? tiles.length - 1 : -1
+
   return (
     <View style={styles.tileGrid}>
-      {tiles.map((t, i) => (
-        <View key={`${t.label}-${i}`} style={[styles.card, styles.tile]}>
-          <View style={[styles.tileIcon, t.accent && styles.tileIconAccent]}>
-            <Icon name={icons[t.icon]} size={18} color={t.accent ? colors.accent : colors.text} />
+      {tiles.map((t, i) => {
+        const orphan = i === orphanIndex
+        return (
+          <View
+            key={`${t.label}-${i}`}
+            style={[styles.card, orphan ? styles.tileWide : styles.tile]}
+          >
+            <View style={[styles.tileIcon, t.accent && styles.tileIconAccent]}>
+              <Icon name={icons[t.icon]} size={18} color={t.accent ? colors.accent : colors.text} />
+            </View>
+            {orphan ? (
+              <View style={{ flex: 1 }}>
+                <AppText variant="caption" color={colors.textMuted}>
+                  {t.label}
+                </AppText>
+                <AppText style={styles.tileNum}>{t.value}</AppText>
+              </View>
+            ) : (
+              <>
+                <AppText style={styles.tileNum}>{t.value}</AppText>
+                <AppText variant="caption" color={colors.textMuted}>
+                  {t.label}
+                </AppText>
+              </>
+            )}
           </View>
-          <AppText style={styles.tileNum}>{t.value}</AppText>
-          <AppText variant="caption" color={colors.textMuted}>
-            {t.label}
-          </AppText>
-        </View>
-      ))}
+        )
+      })}
     </View>
   )
 }
@@ -1395,6 +1511,14 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
     heroNum: { fontFamily: fonts.mono, fontSize: 40, fontWeight: '700', color: colors.text },
     heroUnit: { fontFamily: fonts.sans, fontSize: 20, fontWeight: '600', color: colors.textMuted },
 
+    jumpChip: {
+      paddingHorizontal: spacing.md,
+      paddingVertical: 6,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
     tileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
     tile: {
       // Two per row: (100% - gap) / 2. flexBasis handles the wrap.
@@ -1402,6 +1526,14 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
       flexBasis: '46%',
       alignItems: 'flex-start',
       gap: spacing.xs,
+      padding: spacing.md,
+    },
+    // The odd last tile: full width, icon beside the value/label pair.
+    tileWide: {
+      width: '100%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
       padding: spacing.md,
     },
     tileIcon: {
