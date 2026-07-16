@@ -93,6 +93,7 @@ export default function PlaybackPanel() {
             'playerBg',
             'tapArtworkTogglesPlay',
             'skipHotspots',
+            'hideMiniPlayer',
             'carMode',
           ])
         }
@@ -205,6 +206,16 @@ export default function PlaybackPanel() {
           title="Player buttons"
           desc="Choose which action buttons show on the player, tuck into More, or hide."
           onPress={() => router.push('/settings/player-buttons')}
+        />
+        <SettingsRow
+          title="Hide mini player"
+          desc="Turn off the little bar above the tabs that shows what's playing. Open the full player from the Now tab or a book's Play button."
+          control={
+            <SettingsToggle
+              on={s.hideMiniPlayer}
+              onChange={(v) => setSetting('hideMiniPlayer', v)}
+            />
+          }
         />
         <SettingsRow
           title="Car mode"

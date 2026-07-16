@@ -136,6 +136,9 @@ export interface SettingsState {
   playerBg: PlayerBg
   tapArtworkTogglesPlay: boolean
   skipHotspots: boolean
+  // Hide the docked mini player app-wide. The full player stays reachable from
+  // the Now Playing tab and a book's Play button. Off (default) keeps the bar.
+  hideMiniPlayer: boolean
   // Delete a book's local download automatically once you finish it, to free up
   // space. Applies to any download (manual or auto). Account-scoped.
   removeDownloadOnFinish: boolean
@@ -230,6 +233,7 @@ let state: SettingsState = {
   playerBg: 'blurred',
   tapArtworkTogglesPlay: false,
   skipHotspots: true,
+  hideMiniPlayer: false,
   removeDownloadOnFinish: true,
   haptics: 'minimal',
   hapticIntensity: 'light',

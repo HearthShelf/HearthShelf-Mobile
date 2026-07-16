@@ -39,11 +39,15 @@ export function MiniPlayerDock() {
   const { nowPlaying } = useSyncExternalStore(subscribe, getState)
   const immersive = useSyncExternalStore(subscribeImmersive, getImmersive)
   const floatingNav = useSyncExternalStore(subscribeSettings, () => getSettingsState().floatingNav)
+  const hideMiniPlayer = useSyncExternalStore(
+    subscribeSettings,
+    () => getSettingsState().hideMiniPlayer
+  )
   const orientation = useSyncExternalStore(
     subscribeSettings,
     () => getSettingsState().floatingNavOrientation
   )
-  if (!nowPlaying || immersive || miniPlayerHiddenOn(pathname)) return null
+  if (!nowPlaying || immersive || hideMiniPlayer || miniPlayerHiddenOn(pathname)) return null
   const hasTabBar = hasBottomTabBar(pathname)
   // With a vertical floating column, the nav hugs the bottom-right instead of
   // spanning the width, so the mini player drops to the bottom and only insets

@@ -8,6 +8,7 @@ import { useSyncExternalStore } from 'react'
 import { usePathname } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { getState, subscribe } from '@/player/store'
+import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { MINI_PLAYER_HEIGHT } from '@/player/MiniPlayer'
 import { miniPlayerHiddenOn, hasBottomTabBar } from '@/player/MiniPlayerDock'
 import { FLOATING_PILL_CLEARANCE, useNavMode } from './AppTabBar'
@@ -17,9 +18,13 @@ export function useContentInset(): number {
   const pathname = usePathname()
   const insets = useSafeAreaInsets()
   const { nowPlaying } = useSyncExternalStore(subscribe, getState)
+  const hideMiniPlayer = useSyncExternalStore(
+    subscribeSettings,
+    () => getSettingsState().hideMiniPlayer
+  )
   const mode = useNavMode()
   const onTabScreen = hasBottomTabBar(pathname)
-  const miniVisible = nowPlaying !== null && !miniPlayerHiddenOn(pathname)
+  const miniVisible = nowPlaying !== null && !hideMiniPlayer && !miniPlayerHiddenOn(pathname)
 
   // Classic reserves its bar via the navigator (scene is already inset), so
   // content only adds a comfortable margin + mini-player clearance. Floating
@@ -45,8 +50,12 @@ export function useMiniPlayerInset(): number {
   const pathname = usePathname()
   const insets = useSafeAreaInsets()
   const { nowPlaying } = useSyncExternalStore(subscribe, getState)
+  const hideMiniPlayer = useSyncExternalStore(
+    subscribeSettings,
+    () => getSettingsState().hideMiniPlayer
+  )
   const mode = useNavMode()
-  const miniVisible = nowPlaying !== null && !miniPlayerHiddenOn(pathname)
+  const miniVisible = nowPlaying !== null && !hideMiniPlayer && !miniPlayerHiddenOn(pathname)
   // These routes mount their own AppTabBar sibling. Classic reserves a laid-out
   // band (already stops the scroll); floating modes float over content, so clear
   // the safe area + the horizontal pill's footprint here.
