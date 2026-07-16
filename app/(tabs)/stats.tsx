@@ -1030,6 +1030,22 @@ function BarChart({
 
 // --- 6. Heatmap ------------------------------------------------------------
 
+// One day in the heatmap model: its date, listening seconds, and (when durable
+// history is available) recorded sessions / books finished for the week detail.
+interface HeatDay {
+  key: string
+  date: Date
+  secs: number
+  sessions: number
+  books: number
+  ratio: number
+  month: number
+}
+
+const CELL = 11
+const CELL_GAP = 3
+const COL_W = CELL + CELL_GAP
+
 function Heatmap({
   stats,
   history,
@@ -1041,33 +1057,47 @@ function Heatmap({
   styles: Styles
   colors: Palette
 }) {
+  const [selectedWeek, setSelectedWeek] = useState<number | null>(null)
+  const [view, setView] = useState<'grid' | 'list'>('grid')
+
   // Full-year from durable history when available; else the trailing 26 weeks
   // from byDay. Both render as week columns (Sun..Sat top to bottom).
   const model = useMemo(() => {
     const now = new Date()
     const useYear = history.available && history.days.length > 0
-    const byDate = new Map<string, number>()
+    const byDate = new Map<string, { secs: number; sessions: number; books: number }>()
     let start: Date
     if (useYear) {
-      for (const d of history.days) byDate.set(d.date, d.secondsListened)
+      for (const d of history.days)
+        byDate.set(d.date, { secs: d.secondsListened, sessions: d.sessions, books: d.booksFinished })
       start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7 * 52)
     } else {
-      for (const [k, v] of Object.entries(stats.byDay)) byDate.set(k, v)
+      for (const [k, v] of Object.entries(stats.byDay))
+        byDate.set(k, { secs: v, sessions: 0, books: 0 })
       start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7 * 26)
     }
     // Back up to the Sunday on/before start so each column is a whole week.
     start.setDate(start.getDate() - start.getDay())
-    const cells: { key: string; mins: number; ratio: number; month: number }[] = []
+    const cells: HeatDay[] = []
     let max = 1
     const cur = new Date(start)
     while (cur <= now) {
       const key = dayKey(cur)
-      const mins = Math.round((byDate.get(key) ?? 0) / 60)
+      const rec = byDate.get(key)
+      const mins = Math.round((rec?.secs ?? 0) / 60)
       max = Math.max(max, mins)
-      cells.push({ key, mins, ratio: 0, month: cur.getMonth() })
+      cells.push({
+        key,
+        date: new Date(cur),
+        secs: rec?.secs ?? 0,
+        sessions: rec?.sessions ?? 0,
+        books: rec?.books ?? 0,
+        ratio: 0,
+        month: cur.getMonth(),
+      })
       cur.setDate(cur.getDate() + 1)
     }
-    for (const c of cells) c.ratio = c.mins / max
+    for (const c of cells) c.ratio = Math.round(c.secs / 60) / max
     const weeks = Math.ceil(cells.length / 7)
     // Month labels at the first column landing in a new month.
     const monthCols: { col: number; label: string }[] = []
@@ -1079,36 +1109,209 @@ function Heatmap({
         lastMonth = first.month
       }
     }
-    return { cells, weeks, monthCols, title: useYear ? 'This year' : 'Last 6 months' }
+    return {
+      cells,
+      weeks,
+      monthCols,
+      hasDetail: useYear,
+      title: useYear ? 'This year' : 'Last 6 months',
+    }
   }, [stats, history])
 
   const cellColor = (ratio: number) =>
     ratio > 0 ? mixAccent(colors, Math.round(18 + ratio * 82)) : colors.fill
 
+  const weekDays = (col: number): HeatDay[] =>
+    model.cells.slice(col * 7, col * 7 + 7).filter((d) => d.date <= new Date())
+
+  const selectedDays = selectedWeek != null ? weekDays(selectedWeek) : []
+
   return (
     <View style={styles.card}>
-      <SectionHead icon="monthView" title={model.title} colors={colors} />
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={{ marginTop: spacing.md }}
-        contentContainerStyle={{ gap: 3 }}
-      >
-        {Array.from({ length: model.weeks }).map((_, col) => (
-          <View key={col} style={{ gap: 3 }}>
-            {Array.from({ length: 7 }).map((_, row) => {
-              const c = model.cells[col * 7 + row]
-              if (!c) return <View key={row} style={styles.heatCell} />
-              return (
-                <View
-                  key={row}
-                  style={[styles.heatCell, { backgroundColor: cellColor(c.ratio) }]}
-                />
-              )
-            })}
+      <View style={styles.heatHeader}>
+        <SectionHead icon="monthView" title={model.title} colors={colors} />
+        <Seg
+          value={view}
+          onChange={(v) => setView(v as 'grid' | 'list')}
+          options={[
+            { value: 'grid', label: 'Grid' },
+            { value: 'list', label: 'List' },
+          ]}
+        />
+      </View>
+
+      {view === 'grid' ? (
+        <View style={{ flexDirection: 'row', marginTop: spacing.md }}>
+          {/* Weekday rail down the left (S M T W T F S). */}
+          <View style={{ marginRight: 6, gap: CELL_GAP, paddingTop: 16 }}>
+            {DAY_SHORT.map((d, i) => (
+              <View key={i} style={{ height: CELL, justifyContent: 'center' }}>
+                <AppText variant="caption" color={colors.textFaint} style={{ fontSize: 9 }}>
+                  {d}
+                </AppText>
+              </View>
+            ))}
           </View>
-        ))}
-      </ScrollView>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View>
+              {/* Month axis across the top. */}
+              <View style={{ height: 16, flexDirection: 'row' }}>
+                {model.monthCols.map((m) => (
+                  <AppText
+                    key={m.col}
+                    variant="caption"
+                    color={colors.textMuted}
+                    style={{ position: 'absolute', left: m.col * COL_W, fontSize: 10 }}
+                  >
+                    {m.label}
+                  </AppText>
+                ))}
+              </View>
+              <View style={{ flexDirection: 'row', gap: CELL_GAP }}>
+                {Array.from({ length: model.weeks }).map((_, col) => {
+                  const on = selectedWeek === col
+                  return (
+                    <Touchable
+                      key={col}
+                      onPress={() => {
+                        haptics.select()
+                        setSelectedWeek(on ? null : col)
+                      }}
+                      // The whole ~48px column is the tap target, not a 12px cell.
+                      style={[styles.heatCol, on && styles.heatColOn]}
+                    >
+                      {Array.from({ length: 7 }).map((_, row) => {
+                        const c = model.cells[col * 7 + row]
+                        if (!c) return <View key={row} style={styles.heatCell} />
+                        return (
+                          <View
+                            key={row}
+                            style={[styles.heatCell, { backgroundColor: cellColor(c.ratio) }]}
+                          />
+                        )
+                      })}
+                    </Touchable>
+                  )
+                })}
+              </View>
+            </View>
+          </ScrollView>
+        </View>
+      ) : (
+        <WeekList
+          days={selectedWeek != null ? selectedDays : weekDays(model.weeks - 1)}
+          hasDetail={model.hasDetail}
+          styles={styles}
+          colors={colors}
+        />
+      )}
+
+      {/* Selected-week detail card, below the grid (never a bubble under the
+          finger). Shown in grid view once a week is tapped. */}
+      {view === 'grid' && selectedWeek != null && selectedDays.length > 0 && (
+        <WeekDetail days={selectedDays} hasDetail={model.hasDetail} styles={styles} colors={colors} />
+      )}
+    </View>
+  )
+}
+
+/** Roll a week's days up into the summary shown in the detail card. */
+function weekSummary(days: HeatDay[]) {
+  const totalSecs = days.reduce((s, d) => s + d.secs, 0)
+  const activeDays = days.filter((d) => d.secs > 0).length
+  const sessions = days.reduce((s, d) => s + d.sessions, 0)
+  const books = days.reduce((s, d) => s + d.books, 0)
+  const busiest = days.reduce<HeatDay | null>((b, d) => (!b || d.secs > b.secs ? d : b), null)
+  return { totalSecs, activeDays, sessions, books, busiest }
+}
+
+const WEEKDAY_LONG = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+function WeekDetail({
+  days,
+  hasDetail,
+  styles,
+  colors,
+}: {
+  days: HeatDay[]
+  hasDetail: boolean
+  styles: Styles
+  colors: Palette
+}) {
+  const s = weekSummary(days)
+  const first = days[0]?.date
+  const last = days[days.length - 1]?.date
+  const range =
+    first && last
+      ? `${MONTH_LABELS[first.getMonth()]} ${first.getDate()} - ${MONTH_LABELS[last.getMonth()]} ${last.getDate()}`
+      : ''
+  const stat = (value: string, label: string) => (
+    <View style={{ flex: 1 }}>
+      <AppText style={styles.weekStatNum}>{value}</AppText>
+      <AppText variant="caption" color={colors.textMuted}>
+        {label}
+      </AppText>
+    </View>
+  )
+  return (
+    <View style={styles.weekDetail}>
+      <AppText variant="label">{range}</AppText>
+      <View style={{ flexDirection: 'row', marginTop: spacing.sm }}>
+        {stat(hmLabel(s.totalSecs), 'Total')}
+        {stat(`${s.activeDays}`, 'Active days')}
+        {hasDetail ? stat(`${s.books}`, 'Books done') : stat(`${s.sessions || '-'}`, 'Sessions')}
+        {stat(
+          s.busiest && s.busiest.secs > 0 ? WEEKDAY_LONG[s.busiest.date.getDay()] : '-',
+          'Busiest',
+        )}
+      </View>
+    </View>
+  )
+}
+
+// The list-view equivalent of the grid: seven dated day rows a screen reader can
+// read linearly. Empty days read "No listening" so the week is complete.
+function WeekList({
+  days,
+  hasDetail,
+  styles,
+  colors,
+}: {
+  days: HeatDay[]
+  hasDetail: boolean
+  styles: Styles
+  colors: Palette
+}) {
+  return (
+    <View style={{ marginTop: spacing.md }}>
+      {days.map((d) => {
+        const mins = Math.round(d.secs / 60)
+        const label = `${WEEKDAY_LONG[d.date.getDay()]} ${String(d.date.getDate()).padStart(2, '0')}`
+        const detail =
+          mins > 0
+            ? hasDetail && d.books > 0
+              ? `${hmLabel(d.secs)} · ${d.books} book${d.books === 1 ? '' : 's'}`
+              : hmLabel(d.secs)
+            : 'No listening'
+        return (
+          <View key={d.key} style={styles.weekRow}>
+            <AppText variant="meta" style={{ width: 64 }}>
+              {label}
+            </AppText>
+            <View style={[styles.weekRowBar, { flex: 1 }]}>
+              <View
+                style={[
+                  styles.weekRowFill,
+                  { width: `${Math.min(100, d.ratio * 100)}%`, opacity: mins > 0 ? 1 : 0 },
+                ]}
+              />
+            </View>
+            <AppText variant="caption" color={mins > 0 ? colors.text : colors.textFaint}>
+              {detail}
+            </AppText>
+          </View>
+        )
+      })}
     </View>
   )
 }
@@ -1614,7 +1817,43 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
     barTrack: { width: '100%', flex: 1, justifyContent: 'flex-end' },
     barFill: { width: '100%', borderRadius: 6, minHeight: 3 },
 
+    heatHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.md,
+    },
     heatCell: { width: 11, height: 11, borderRadius: 2, backgroundColor: colors.fill },
+    // The tappable week column: 7 stacked cells with padding so the hit target
+    // is ~48px wide, and a wash + ring when selected.
+    heatCol: {
+      gap: 3,
+      paddingHorizontal: 3,
+      paddingVertical: 3,
+      marginHorizontal: -3,
+      borderRadius: 4,
+    },
+    heatColOn: { backgroundColor: colors.accentWash },
+    weekDetail: {
+      marginTop: spacing.md,
+      padding: spacing.md,
+      borderRadius: radius.card,
+      backgroundColor: colors.fill,
+    },
+    weekStatNum: { fontFamily: fonts.mono, fontSize: 18, fontWeight: '700', color: colors.text },
+    weekRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingVertical: spacing.xs,
+    },
+    weekRowBar: {
+      height: 6,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+      overflow: 'hidden',
+    },
+    weekRowFill: { height: '100%', backgroundColor: colors.accent, borderRadius: radius.pill },
 
     monthAvgNum: { fontFamily: fonts.mono, fontSize: 22, fontWeight: '700', color: colors.text },
 
