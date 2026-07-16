@@ -304,7 +304,7 @@ export default function StatsTab() {
           padding: spacing.lg,
           paddingBottom: contentInset,
           width: '100%',
-          gap: spacing.lg,
+          gap: spacing.md,
         }}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -1891,14 +1891,16 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.hairline,
     },
-    tileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
+    tileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
     tile: {
-      // Two per row: (100% - gap) / 2. flexBasis handles the wrap.
+      // Two per row: (100% - gap) / 2. flexBasis handles the wrap. Content is
+      // compact and top-aligned; the tile hugs it (no dead space).
       flexGrow: 1,
       flexBasis: '46%',
       alignItems: 'flex-start',
-      gap: spacing.xs,
-      padding: spacing.md,
+      gap: 2,
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.md,
     },
     // The odd last tile: full width, icon beside the value/label pair.
     tileWide: {
@@ -1906,15 +1908,17 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.md,
-      padding: spacing.md,
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.md,
     },
     tileIcon: {
-      width: 34,
-      height: 34,
+      width: 30,
+      height: 30,
       borderRadius: radius.tile,
       backgroundColor: colors.fill,
       alignItems: 'center',
       justifyContent: 'center',
+      marginBottom: spacing.xs,
     },
     tileIconAccent: { backgroundColor: colors.accentWash },
     tileNum: {
@@ -1922,7 +1926,6 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
       fontSize: 22,
       fontWeight: '700',
       color: colors.text,
-      marginTop: 2,
     },
 
     goalInput: {
