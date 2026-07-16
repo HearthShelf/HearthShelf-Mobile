@@ -2,11 +2,11 @@
  * Playback panel: speed, skip amounts, progress bar, hearth background, the
  * player-button editor link, and the up-next queue behaviour.
  */
-import { useEffect, useState, useSyncExternalStore } from 'react'
-import { View } from 'react-native'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { Pressable, StyleSheet, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import { AppText } from '@/ui/primitives'
-import { spacing } from '@/ui/theme'
+import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import {
   SettingsPanel,
@@ -18,7 +18,16 @@ import {
   ChipRow,
   SettingsSlider,
 } from '@/ui/settingsControls'
-import { getSettingsState, subscribeSettings, setSetting, setQueueMode } from '@/store/settings'
+import {
+  getSettingsState,
+  subscribeSettings,
+  setSetting,
+  setQueueMode,
+  resetSettings,
+  restoreSettings,
+} from '@/store/settings'
+import { showToast } from '@/ui/Toast'
+import { haptics } from '@/ui/haptics'
 import { getLibraries, getLibraryPlaylists } from '@/api/abs'
 import type { ABSPlaylist } from '@hearthshelf/core'
 import { QUEUE_MODES, QUEUE_MODE_SUB } from '@/player/queue'
@@ -29,8 +38,21 @@ const SPEED_OPTIONS = [0.75, 1, 1.5, 2] as const
 export default function PlaybackPanel() {
   const router = useRouter()
   const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   const s = useSyncExternalStore(subscribeSettings, getSettingsState)
   const q = useSyncExternalStore(subscribeQueue, getQueueState)
+
+  const resetSection = (label: string, keys: Parameters<typeof resetSettings>[0]) => {
+    const prev = resetSettings(keys)
+    haptics.select()
+    if (Object.keys(prev).length === 0) {
+      showToast(`${label} already at defaults`)
+      return
+    }
+    showToast(`${label} reset`, {
+      action: { label: 'Undo', onPress: () => restoreSettings(prev) },
+    })
+  }
   const [playlists, setPlaylists] = useState<ABSPlaylist[]>([])
   const [playlistLoading, setPlaylistLoading] = useState(false)
 
@@ -59,6 +81,24 @@ export default function PlaybackPanel() {
 
   return (
     <SettingsPanel>
+      <SettingsLabel
+        onReset={() =>
+          resetSection('Transport', [
+            'defaultSpeed',
+            'skipForward',
+            'skipForwardCustom',
+            'skipBack',
+            'skipBackCustom',
+            'scrubber',
+            'playerBg',
+            'tapArtworkTogglesPlay',
+            'skipHotspots',
+            'carMode',
+          ])
+        }
+      >
+        Transport
+      </SettingsLabel>
       <SettingsGroup>
         <SettingsRow title="Default speed" desc="The rate a fresh book starts at." stacked>
           <ChipRow
@@ -69,20 +109,12 @@ export default function PlaybackPanel() {
           />
         </SettingsRow>
         <SettingsRow title="Skip forward" desc="How far the forward button jumps." stacked>
-          <ChipRow
-            value={s.skipForward}
-            options={[15, 30, 60]}
-            onChange={(v) => {
-              setSetting('skipForwardCustom', v)
-              setSetting('skipForward', v)
-            }}
-            unit="s"
-          />
           <SettingsSlider
             value={s.skipForward}
             min={5}
             max={300}
             step={5}
+            ticks={[15, 30, 60]}
             onChange={(v) => {
               setSetting('skipForwardCustom', v)
               setSetting('skipForward', v)
@@ -91,20 +123,12 @@ export default function PlaybackPanel() {
           />
         </SettingsRow>
         <SettingsRow title="Skip back" desc="How far the back button jumps." stacked>
-          <ChipRow
-            value={s.skipBack}
-            options={[10, 15, 30]}
-            onChange={(v) => {
-              setSetting('skipBackCustom', v)
-              setSetting('skipBack', v)
-            }}
-            unit="s"
-          />
           <SettingsSlider
             value={s.skipBack}
             min={5}
             max={300}
             step={5}
+            ticks={[15, 30, 60]}
             onChange={(v) => {
               setSetting('skipBackCustom', v)
               setSetting('skipBack', v)
@@ -159,6 +183,24 @@ export default function PlaybackPanel() {
             <SettingsToggle on={s.skipHotspots} onChange={(v) => setSetting('skipHotspots', v)} />
           }
         />
+        {s.skipHotspots ? (
+          <View style={styles.conflict}>
+            <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
+              Heads up: the player also swipes sideways to change books, so a stray
+              double-tap near the edge can land on a swipe. Turn this off if it fights
+              your swipes.
+            </AppText>
+            <Pressable
+              onPress={() => setSetting('skipHotspots', false)}
+              hitSlop={6}
+              style={({ pressed }) => [styles.conflictBtn, pressed && { opacity: 0.7 }]}
+            >
+              <AppText variant="caption" color={colors.accent}>
+                Turn off
+              </AppText>
+            </Pressable>
+          </View>
+        ) : null}
         <SettingsRow
           title="Player buttons"
           desc="Choose which action buttons show on the player, tuck into More, or hide."
@@ -246,3 +288,23 @@ export default function PlaybackPanel() {
     </SettingsPanel>
   )
 }
+
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
+    conflict: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      marginHorizontal: spacing.lg,
+      marginBottom: spacing.md,
+      padding: spacing.md,
+      borderRadius: radius.card,
+      backgroundColor: colors.accentWash,
+    },
+    conflictBtn: {
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+    },
+  })

@@ -5,7 +5,16 @@
 import { useState, useSyncExternalStore } from 'react'
 import { Platform, View } from 'react-native'
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
-import { getSettingsState, subscribeSettings, setSetting, type BeepSound } from '@/store/settings'
+import {
+  getSettingsState,
+  subscribeSettings,
+  setSetting,
+  resetSettings,
+  restoreSettings,
+  type BeepSound,
+} from '@/store/settings'
+import { showToast } from '@/ui/Toast'
+import { haptics } from '@/ui/haptics'
 import {
   SettingsPanel,
   SettingsGroup,
@@ -141,10 +150,22 @@ export default function SleepPanel() {
   const s = useSyncExternalStore(subscribeSettings, getSettingsState)
   const colors = useColors()
 
+  const resetSection = (label: string, keys: Parameters<typeof resetSettings>[0]) => {
+    const prev = resetSettings(keys)
+    haptics.select()
+    if (Object.keys(prev).length === 0) {
+      showToast(`${label} already at defaults`)
+      return
+    }
+    showToast(`${label} reset`, {
+      action: { label: 'Undo', onPress: () => restoreSettings(prev) },
+    })
+  }
+
   return (
     <SettingsPanel>
       <View>
-        <SettingsLabel>General</SettingsLabel>
+        <SettingsLabel>Rewind</SettingsLabel>
         <SettingsGroup>
           <SettingsRow
             title="Auto rewind"
@@ -172,7 +193,8 @@ export default function SleepPanel() {
           />
         </SettingsGroup>
 
-        <SettingsGroup style={{ marginTop: spacing.lg }}>
+        <SettingsLabel>Fade out</SettingsLabel>
+        <SettingsGroup>
           <SettingsRow
             title="Fade out"
             desc="Gradually lower the volume before the timer pauses."
@@ -194,7 +216,21 @@ export default function SleepPanel() {
           )}
         </SettingsGroup>
 
-        <SettingsGroup style={{ marginTop: spacing.lg }}>
+        <SettingsLabel
+          onReset={() =>
+            resetSection('Warning beeps', [
+              'sleepChime',
+              'sleepBeepAt2min',
+              'sleepBeepAt1min',
+              'sleepBeepFinal',
+              'sleepBeepSound',
+              'sleepBeepVolume',
+            ])
+          }
+        >
+          Warning beeps
+        </SettingsLabel>
+        <SettingsGroup>
           <SettingsRow
             title="Warning beeps"
             desc="Play a soft beep before the timer ends, so you get a heads-up before the audio goes quiet."
@@ -260,7 +296,8 @@ export default function SleepPanel() {
           )}
         </SettingsGroup>
 
-        <SettingsGroup style={{ marginTop: spacing.lg }}>
+        <SettingsLabel>Shake to extend</SettingsLabel>
+        <SettingsGroup>
           <SettingsRow
             title="Shake to extend"
             desc="Shake your phone while the timer runs to add more time. Pauses itself after several shakes in a row (e.g. carrying your phone on a walk) and never extends past 3 hours."

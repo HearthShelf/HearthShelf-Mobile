@@ -266,6 +266,7 @@ export function SettingsSlider({
   step = 1,
   onChange,
   formatLabel,
+  ticks,
 }: {
   value: number
   min: number
@@ -273,8 +274,30 @@ export function SettingsSlider({
   step?: number
   onChange: (v: number) => void
   formatLabel: (v: number) => string
+  /** Preset values to mark on the track with labels (e.g. [15, 30, 60]). When
+   *  set, the current value shows once above the track and the min/max ends are
+   *  dropped in favor of the tick labels below. */
+  ticks?: number[]
 }) {
   const colors = useColors()
+  if (ticks) {
+    return (
+      <View style={{ gap: spacing.xs }}>
+        <AppText variant="mono" color={colors.accent} style={{ alignSelf: 'flex-end' }}>
+          {formatLabel(value)}
+        </AppText>
+        <AppSlider
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={onChange}
+          ticks={ticks}
+          formatTick={formatLabel}
+        />
+      </View>
+    )
+  }
   return (
     <View style={{ gap: spacing.xs }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
