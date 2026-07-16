@@ -81,11 +81,15 @@ export const ChaptersSheet = forwardRef<SheetHandle>(function ChaptersSheet(_pro
       setQuery('')
       innerRef.current?.present()
       if (activeIndex > 0) {
+        // Land the current chapter a few rows down from the top, so ~4 chapters
+        // of lead-in are visible above it (not centered) - you see where you are
+        // plus the recent context.
+        const target = Math.max(0, activeIndex - 4)
         // Defer past the sheet's open animation so the list is laid out.
         setTimeout(() => {
           listRef.current?.scrollToIndex({
-            index: activeIndex,
-            viewPosition: 0.5,
+            index: target,
+            viewPosition: 0,
             animated: false,
           })
         }, 260)
@@ -124,7 +128,7 @@ export const ChaptersSheet = forwardRef<SheetHandle>(function ChaptersSheet(_pro
         keyExtractor={({ i }) => String(i)}
         onScrollToIndexFailed={({ index }) => {
           setTimeout(
-            () => listRef.current?.scrollToIndex({ index, viewPosition: 0.5, animated: false }),
+            () => listRef.current?.scrollToIndex({ index, viewPosition: 0, animated: false }),
             120,
           )
         }}
@@ -146,13 +150,9 @@ export const ChaptersSheet = forwardRef<SheetHandle>(function ChaptersSheet(_pro
               ) : isDone ? (
                 <Icon name={icons.checkCircle} size={18} color={colors.success} />
               ) : (
-                <AppText
-                  variant="caption"
-                  color={colors.textFaint}
-                  style={{ width: 18, textAlign: 'center' }}
-                >
-                  {i + 1}
-                </AppText>
+                <View style={{ width: 18, alignItems: 'center' }}>
+                  <Icon name={icons.play} size={16} color={colors.textFaint} />
+                </View>
               )}
               <View style={{ flex: 1, minWidth: 0 }}>
                 <AppText
@@ -160,7 +160,7 @@ export const ChaptersSheet = forwardRef<SheetHandle>(function ChaptersSheet(_pro
                   color={isActive ? colors.accent : isDone ? colors.textMuted : colors.text}
                   numberOfLines={1}
                 >
-                  {i + 1} · {c.title}
+                  {c.title}
                 </AppText>
                 {isActive ? (
                   <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
@@ -259,7 +259,7 @@ export const SpeedSheet = forwardRef<SheetHandle>(function SpeedSheet(_props, re
       <AppSlider
         min={0.5}
         max={3}
-        step={0.05}
+        step={0.25}
         value={rate}
         onChange={setRate}
         ticks={[0.5, 1, 1.5, 2, 3]}
@@ -267,9 +267,8 @@ export const SpeedSheet = forwardRef<SheetHandle>(function SpeedSheet(_props, re
       />
       <View style={[styles.grid, { marginTop: spacing.lg }]}>
         {SPEED_PRESETS.map((s) => {
-          // Widened so a preset still highlights when the slider lands on it
-          // (the slider steps by 0.05).
-          const on = Math.abs(s - rate) < 0.025
+          // The slider steps by 0.25, so an exact-ish match highlights the preset.
+          const on = Math.abs(s - rate) < 0.125
           return (
             <Touchable
               key={s}
