@@ -86,6 +86,10 @@ ITEMS='[]'
 while IFS= read -r subject; do
   [ -z "$subject" ] && continue
   section="$(categorize "$subject")"
+  # Only commits that match a known prefix/verb get a changelog entry. Anything
+  # that falls through to "other" (e.g. "Script update", "CICD Updates",
+  # "Dependency bump") is intentionally skipped so it doesn't pollute the log.
+  [ "$section" = other ] && continue
   text="$(clean_subject "$subject")"
   [ -z "$text" ] && continue
   tags_json="$(extract_tags "$subject" | jq -R . | jq -sc .)"

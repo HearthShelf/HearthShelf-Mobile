@@ -34,10 +34,10 @@ echo "Uploading $COUNT items for version $VERSION" >&2
 {
   echo "# HearthShelf Mobile $VERSION"
   echo
-  for section in breaking feature fix change docs other; do
+  for section in breaking feature fix change docs; do
     label="$(jq -r --arg s "$section" '
       {breaking:"### Breaking Changes",feature:"### Features",fix:"### Fixes",
-       change:"### Changes",docs:"### Documentation",other:"### Other"}[$s]' <<<'{}')"
+       change:"### Changes",docs:"### Documentation"}[$s]' <<<'{}')"
     rows="$(jq -r --arg s "$section" '.items[]|select(.section==$s)|
       "- " + .text + (if (.tags|length)>0 then " (" + (.tags|join(", ")) + ")" else "" end)' \
       <<<"$PAYLOAD")"
