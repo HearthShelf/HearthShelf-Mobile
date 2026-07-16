@@ -94,7 +94,11 @@ import {
 import { useToast, Toast } from '@/ui/Toast'
 import { radius, spacing, withAlpha, type Palette } from '@/ui/theme'
 import { useColors, useTheme, type ActiveTheme } from '@/ui/ThemeProvider'
-import { adaptiveContentMaxWidth, adaptivePlayerCoverMaxWidth } from '@/ui/responsive'
+import {
+  adaptiveContentMaxWidth,
+  adaptivePlayerCoverMaxWidth,
+  adaptivePlayerPlaySize,
+} from '@/ui/responsive'
 import { Scrubber } from '@/player/Scrubber'
 import { Marquee } from '@/ui/Marquee'
 import { PlayerCoverCarousel } from '@/player/PlayerCoverCarousel'
@@ -548,6 +552,12 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // The carousel page is inset by the content padding; its side gutters (where
   // the double-tap skip hotspots live) sit beside the centered cover.
   const carouselHotspotWidth = Math.max(0, (width - spacing.xl * 2 - coverWidth) / 2)
+  // Play button sized so the five-button transport row keeps real gaps on
+  // small-dp windows (display size "large"); the glyph and buffering ring track
+  // it. Focus view keeps the full size - big in-car targets outrank density.
+  const transportRowWidth =
+    Math.min(width, contentMaxWidth) - spacing.xl * 2 - spacing.lg * 2 - controlsRightInset
+  const playSize = immersive ? 84 : adaptivePlayerPlaySize(transportRowWidth)
 
   const goToTab = (name: string) => {
     // The player already IS the now-playing surface; tapping that tab is a no-op.
@@ -998,6 +1008,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                     ? formatChapterLabel(browsedChapter.title, browsedChapter.num)
                     : null
                 }
+                playSize={playSize}
                 onPlay={() => deckPlayRef.current()}
               />
             ) : (
@@ -1041,13 +1052,26 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                 {/* In immersive (Car Mode) the chapter-skip buttons drop to a second row
             beneath the play button, leaving the top row an evenly spaced
             rewind / play / forward trio for easy in-car reach. */}
-                <View style={[styles.transport, immersive && styles.transportImmersive]}>
+                <View
+                  style={[
+                    styles.transport,
+                    // Narrow rows trade the side padding for inter-button gaps
+                    // (space-between spends padding at the edges, gaps between).
+                    playSize < 84 && { paddingHorizontal: spacing.sm },
+                    immersive && styles.transportImmersive,
+                  ]}
+                >
                   {/* Chapter-prev is gated on chapters existing; the rewind skip button
               always renders (a chapterless book still needs to skip back). */}
                   {!immersive ? (
                     <>
                       {hasChapters ? (
-                        <TransportBtn icon={icons.skipPrev} ghost onPress={() => skipChapter(-1)} />
+                        <TransportBtn
+                          icon={icons.skipPrev}
+                          ghost
+                          compact={playSize < 84}
+                          onPress={() => skipChapter(-1)}
+                        />
                       ) : null}
                       <SkipButton
                         dir={-1}
@@ -1058,8 +1082,15 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                     </>
                   ) : null}
                   <View style={styles.playWrap}>
-                    {buffering && <BufferingRing />}
-                    <SpringPressable onPress={togglePlay} style={styles.play} scaleTo={0.9}>
+                    {buffering && <BufferingRing size={playSize + 12} />}
+                    <SpringPressable
+                      onPress={togglePlay}
+                      style={[
+                        styles.play,
+                        { width: playSize, height: playSize, borderRadius: playSize / 2 },
+                      ]}
+                      scaleTo={0.9}
+                    >
                       {/* Keyed remount so the pause/play glyph fades in rather than snapping. */}
                       <Animated.View
                         key={isPlaying ? 'pause' : 'play'}
@@ -1067,7 +1098,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                       >
                         <Icon
                           name={isPlaying ? icons.pause : icons.play}
-                          size={44}
+                          size={Math.round(playSize * (44 / 84))}
                           color={colors.onAccent}
                         />
                       </Animated.View>
@@ -1082,7 +1113,12 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                         onPress={() => skipBy(1, settings.skipForward)}
                       />
                       {hasChapters ? (
-                        <TransportBtn icon={icons.skipNext} ghost onPress={() => skipChapter(1)} />
+                        <TransportBtn
+                          icon={icons.skipNext}
+                          ghost
+                          compact={playSize < 84}
+                          onPress={() => skipChapter(1)}
+                        />
                       ) : null}
                     </>
                   ) : null}
@@ -1334,6 +1370,7 @@ function DeckControls({
   finished,
   leftSec,
   chapterLabel,
+  playSize,
   onPlay,
 }: {
   progress: number
@@ -1342,6 +1379,8 @@ function DeckControls({
   leftSec: number | null
   /** Chapter left off on, e.g. "Ch 23 · Career Moves" (null until fetched). */
   chapterLabel: string | null
+  /** Diameter of the big Play, matching the live transport's. */
+  playSize: number
   onPlay: () => void
 }) {
   const { colors, shadow } = useTheme()
@@ -1380,8 +1419,16 @@ function DeckControls({
 
       {/* Big Play switches to this book. */}
       <View style={styles.deckPlayRow}>
-        <SpringPressable onPress={onPlay} style={styles.play} scaleTo={0.9}>
-          <Icon name={finished ? icons.replay : icons.play} size={40} color={colors.onAccent} />
+        <SpringPressable
+          onPress={onPlay}
+          style={[styles.play, { width: playSize, height: playSize, borderRadius: playSize / 2 }]}
+          scaleTo={0.9}
+        >
+          <Icon
+            name={finished ? icons.replay : icons.play}
+            size={Math.round(playSize * (40 / 84))}
+            color={colors.onAccent}
+          />
         </SpringPressable>
       </View>
       <AppText variant="caption" color={colors.textMuted} style={styles.deckPlayHint}>
@@ -1392,7 +1439,7 @@ function DeckControls({
 }
 
 /** A thin accent ring that spins around the play button while buffering. */
-function BufferingRing() {
+function BufferingRing({ size }: { size: number }) {
   const { colors } = useTheme()
   const spin = useSharedValue(0)
   useEffect(() => {
@@ -1406,9 +1453,9 @@ function BufferingRing() {
       style={[
         {
           position: 'absolute',
-          width: 96,
-          height: 96,
-          borderRadius: 48,
+          width: size,
+          height: size,
+          borderRadius: size / 2,
           borderWidth: 2.5,
           borderColor: withAlpha(colors.accent, 0.25),
           borderTopColor: colors.accent,
@@ -1426,15 +1473,23 @@ function TransportBtn({
   icon,
   onPress,
   ghost,
+  compact,
 }: {
   icon: (typeof icons)[keyof typeof icons]
   onPress: () => void
   ghost?: boolean
+  /** Narrow transport rows: shrink the box (hitSlop keeps the touch target). */
+  compact?: boolean
 }) {
   const { colors, shadow } = useTheme()
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   return (
-    <SpringPressable onPress={onPress} hitSlop={10} style={styles.transportBtn} scaleTo={0.85}>
+    <SpringPressable
+      onPress={onPress}
+      hitSlop={compact ? 14 : 10}
+      style={[styles.transportBtn, compact && { width: 44, height: 44 }]}
+      scaleTo={0.85}
+    >
       <Icon name={icon} size={ghost ? 30 : 34} color={ghost ? colors.textMuted : colors.text} />
     </SpringPressable>
   )
@@ -2204,10 +2259,8 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
     },
     playWrap: { alignItems: 'center', justifyContent: 'center' },
     bufferCaption: { alignItems: 'center', marginTop: spacing.sm },
+    // Diameter comes inline from adaptivePlayerPlaySize (height-responsive).
     play: {
-      width: 84,
-      height: 84,
-      borderRadius: 42,
       backgroundColor: colors.accent,
       alignItems: 'center',
       justifyContent: 'center',

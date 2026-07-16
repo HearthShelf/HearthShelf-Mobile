@@ -79,6 +79,24 @@ export function adaptiveShelfTileWidth(width: number): number {
   }
 }
 
+/**
+ * Play-button diameter for the player transport, sized so the five-button row
+ * (chapter-prev, rewind, play, forward, chapter-next) keeps real gaps between
+ * buttons instead of jamming edge-to-edge. Fixed 84dp overflowed the row on
+ * small-dp windows (display size "large": ~350-400dp wide), pushing the outer
+ * buttons to the screen edge.
+ *
+ * `rowWidth` is the transport row's inner width (after the control rail's
+ * padding and any vertical-nav inset). The other four buttons total ~228dp;
+ * the play button only gives up size once four ~10dp minimum gaps no longer
+ * fit around the full 84, clamped to a 56dp floor.
+ */
+export function adaptivePlayerPlaySize(rowWidth: number): number {
+  const siblings = 60 + 54 + 54 + 60 // chapter btns (60) + skip btns (34 * 1.6)
+  const minGaps = 4 * 10
+  return Math.round(Math.max(56, Math.min(84, rowWidth - siblings - minGaps)))
+}
+
 export function adaptivePlayerCoverMaxWidth(width: number, immersive: boolean): number {
   if (immersive) return Math.max(0, width - spacing.xl * 2)
   // Compact: no fixed cap - the side gutters and the measured cover-area height
