@@ -8,14 +8,18 @@ import { useSignInWithGoogle } from '@clerk/expo/google'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useEffect, useState } from 'react'
 import * as WebBrowser from 'expo-web-browser'
+import { LinearGradient } from 'expo-linear-gradient'
 import Svg, { Path } from 'react-native-svg'
-import { APPLE_ENABLED, NATIVE_GOOGLE_ENABLED } from '@/lib/config'
+import { APPLE_ENABLED, CLERK_PUBLISHABLE_KEY, NATIVE_GOOGLE_ENABLED } from '@/lib/config'
 import { fonts } from '@/ui/theme'
+import { MaterialIcons } from '@expo/vector-icons'
 import {
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -25,6 +29,53 @@ import {
 
 // Required so the OAuth browser tab closes and hands control back to the app.
 WebBrowser.maybeCompleteAuthSession()
+
+// The sign-in screen is intentionally DARK regardless of the app theme (it's a
+// brand moment over the hearth photo, before the theme system is even in play),
+// so it uses a fixed ink palette rather than useColors(). Centralized here so
+// there are no scattered magic hexes. Values mirror the brand tokens in theme.ts.
+const INK = {
+  bg: '#0e0d0c',
+  hearth: '#bd863f',
+  shelf: '#f0e6d6',
+  accent: '#e0654a',
+  onAccent: '#fffaf6',
+  text: '#f4f1ea',
+  muted: '#aba498',
+  faint: '#6f6557',
+  line: '#383530',
+  field: 'rgba(42,40,37,0.85)',
+  glass: 'rgba(28,26,23,0.6)',
+  dangerBg: 'rgba(224,101,74,0.16)',
+}
+
+// The Clerk account-portal origin, decoded from the publishable key's frontend
+// API domain (pk_live_<base64("clerk.example.com$")>). Used for the hosted
+// forgot-password flow, which Clerk owns.
+function accountPortalUrl(path: string): string {
+  try {
+    const b64 = CLERK_PUBLISHABLE_KEY.replace(/^pk_(test|live)_/, '')
+    // atob isn't in RN; decode base64 manually via Buffer-free approach.
+    const decoded = decodeBase64(b64).replace(/\$$/, '') // "clerk.hearthshelf.com"
+    const domain = decoded.replace(/^clerk\./, '') // "hearthshelf.com"
+    return `https://accounts.${domain}${path}`
+  } catch {
+    return `https://accounts.hearthshelf.com${path}`
+  }
+}
+
+function decodeBase64(input: string): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+  let str = input.replace(/=+$/, '')
+  let output = ''
+  for (let bc = 0, bs = 0, buffer, i = 0; (buffer = str.charAt(i++)); ) {
+    buffer = chars.indexOf(buffer)
+    if (buffer === -1) continue
+    bs = bc % 4 ? bs * 64 + buffer : buffer
+    if (bc++ % 4) output += String.fromCharCode(255 & (bs >> ((-2 * bc) & 6)))
+  }
+  return output
+}
 
 // Brand marks rendered inline so no extra image assets are needed.
 function GoogleLogo() {
@@ -67,17 +118,13 @@ function DiscordLogo() {
 }
 
 /**
- * Clerk sign-in. Primary path is "Continue with Google":
- *   - When the Google client IDs are provisioned (NATIVE_GOOGLE_ENABLED), this
- *     uses Clerk's native Android Credential Manager account-picker sheet via
- *     useSignInWithGoogle() - one tap, no browser.
- *   - Otherwise it falls back to the browser-tab OAuth flow via useSSO().
- * "Continue with Discord" always uses the browser-tab OAuth flow - Clerk has no
- * native Discord hook, so there is no account-picker sheet for it on any
- * platform.
- * Email/password is kept as a secondary fallback. Either way the result is a
- * real Clerk session, which the control plane verifies for the grant ->
- * /hs/hosted/connect -> ABS token handshake.
+ * Clerk sign-in. Primary path is "Continue with Google" (see completeFlow).
+ * Email/password is a full secondary flow: sign-in, a real second-factor code
+ * step when the account has 2FA, a hosted forgot-password link, and the OAuth
+ * "choose a username" step for new Apple/Google users.
+ *
+ * Bottom-aligned auth block over the hearth photo (thumb zone), wordmark in the
+ * upper third, a bottom scrim for legibility. The screen stays dark by design.
  */
 export default function SignInScreen() {
   const { signIn, setActive, isLoaded } = useSignIn()
@@ -87,12 +134,15 @@ export default function SignInScreen() {
   const { reason } = useLocalSearchParams<{ reason?: string }>()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [emailMode, setEmailMode] = useState(false)
   const [busy, setBusy] = useState(false)
+  // A pending second-factor challenge: after signIn.create returns
+  // needs_second_factor, we collect the code here and attempt it.
+  const [twoFactor, setTwoFactor] = useState(false)
+  const [code, setCode] = useState('')
   // When an OAuth sign-up completes everything except a required username, we
   // hold the in-progress sign-up here and show the "choose a username" step.
-  // `pendingSetActive` is the flow's own setActive, used once the sign-up
-  // completes into a session.
   const [pendingSignUp, setPendingSignUp] = useState<SignUpResource | null>(null)
   const [pendingSetActive, setPendingSetActive] = useState<SetActive | null>(null)
   const [username, setUsername] = useState('')
@@ -100,7 +150,6 @@ export default function SignInScreen() {
     reason === 'expired' ? 'Your session expired. Please sign in again.' : null,
   )
 
-  // Warm up the browser on Android so the OAuth tab opens snappily.
   useEffect(() => {
     void WebBrowser.warmUpAsync()
     return () => {
@@ -108,17 +157,6 @@ export default function SignInScreen() {
     }
   }, [])
 
-  // Completes a flow that returns a created session id + its own setActive (the
-  // native Google hook and useSSO share this shape). `label` phrases the
-  // cancel/failure messages.
-  //
-  // A session id can arrive three ways: top-level `createdSessionId` (an
-  // existing user signing in), or on the `signUp`/`signIn` resource when the
-  // OAuth transfer created/matched an account. When the provider gives a
-  // verified email but no username (Apple and Google both do this), Clerk's
-  // sign-up lands on `missing_requirements` with `username` outstanding - there
-  // is no hosted UI for that step in the native flow, so we collect it in-app
-  // (see the username step) and complete the sign-up.
   async function completeFlow(
     label: string,
     run: () => Promise<{
@@ -143,17 +181,6 @@ export default function SignInScreen() {
         return
       }
 
-      // Sign-up needs a username before it can complete. Verified email + only
-      // `username` outstanding is the expected Apple/Google new-user case (same
-      // wall on both the native account-picker and browser-tab flows).
-      //
-      // Be lenient about how Clerk reports the outstanding username: on an OAuth
-      // transfer sign-up it can surface in `missingFields` OR `requiredFields`
-      // (and the status isn't always the literal `missing_requirements`). The
-      // reliable signal is: the sign-up hasn't produced a session, no username is
-      // set yet, and username is required. Matching only `missing_requirements +
-      // missingFields` let real new-user sign-ups fall through to the dead-end
-      // "did not complete" error.
       const su = res.signUp
       const usernameOutstanding =
         !!su &&
@@ -163,56 +190,33 @@ export default function SignInScreen() {
       if (su && usernameOutstanding && flowSetActive) {
         setPendingSignUp(su)
         setPendingSetActive(() => flowSetActive)
-        // Seed a suggestion from the email local-part so the field isn't empty.
         setUsername(su.emailAddress ? su.emailAddress.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '') : '')
         return
       }
 
       if (res.authSessionResult && res.authSessionResult.type !== 'success') {
-        // The browser tab closed without a successful redirect - user cancelled.
         setError(`${label} sign-in was cancelled`)
       } else {
         setError(`${label} sign-in did not complete`)
       }
     } catch (e) {
-      // Clerk's short `message` is often just "is invalid"; `longMessage` names
-      // the offending parameter (e.g. "strategy is invalid"), which is what
-      // actually tells you the provider/redirect isn't configured.
-      const clerkErr = (e as { errors?: Array<{ message?: string; longMessage?: string }> })
-        ?.errors?.[0]
-      const msg =
-        clerkErr?.longMessage || clerkErr?.message || (e as Error).message || `${label} sign-in failed`
-      setError(msg)
+      setError(clerkMessage(e, `${label} sign-in failed`))
     } finally {
       setBusy(false)
     }
   }
 
   function onGoogle() {
-    // Native account-picker sheet (Android Credential Manager / iOS
-    // ASAuthorization) when the Google client IDs are provisioned; otherwise
-    // the browser-tab OAuth flow.
-    //
-    // Let useSSO build its own redirect (scheme + 'sso-callback' path) so it
-    // matches Clerk's native flow exactly. Passing a custom one (e.g. '/home')
-    // caused a redirect-url mismatch. The value to allowlist in the Clerk
-    // dashboard is `hearthshelf://sso-callback`.
     return completeFlow('Google', () =>
       NATIVE_GOOGLE_ENABLED
         ? startGoogleAuthenticationFlow()
         : startSSOFlow({ strategy: 'oauth_google' }),
     )
   }
-
   function onApple() {
-    // Apple's button is iOS-only (gated by APPLE_ENABLED). Runs through the
-    // browser-tab OAuth flow; the value to allowlist in Clerk is the same
-    // `hearthshelf://sso-callback` redirect the Google fallback uses.
     return completeFlow('Apple', () => startSSOFlow({ strategy: 'oauth_apple' }))
   }
-
   function onDiscord() {
-    // Discord has no native Clerk hook - always the browser-tab OAuth flow.
     return completeFlow('Discord', () => startSSOFlow({ strategy: 'oauth_discord' }))
   }
 
@@ -225,24 +229,67 @@ export default function SignInScreen() {
       if (attempt.status === 'complete') {
         await setActive({ session: attempt.createdSessionId })
         router.replace('/(tabs)')
+      } else if (attempt.status === 'needs_second_factor') {
+        // Account has 2FA. Prepare a code challenge (phone code where set up;
+        // TOTP apps need no prepare) and switch to the code-entry step.
+        try {
+          await signIn.prepareSecondFactor({ strategy: 'phone_code' })
+        } catch {
+          // TOTP / no preparable factor - the user reads the code from their app.
+        }
+        setTwoFactor(true)
       } else {
-        // e.g. needs 2FA / email code - out of scope for the spike.
-        setError(`Sign-in needs another step: ${attempt.status}`)
+        setError(`This account needs another step to sign in (${attempt.status}).`)
       }
     } catch (e) {
-      const msg =
-        (e as { errors?: Array<{ message?: string }> })?.errors?.[0]?.message ||
-        (e as Error).message ||
-        'Sign-in failed'
-      setError(msg)
+      setError(clerkMessage(e, 'Sign-in failed'))
     } finally {
       setBusy(false)
     }
   }
 
-  // Completes the held OAuth sign-up by attaching the chosen username. On
-  // success Clerk mints the session and we activate it with the flow's own
-  // setActive (captured when we entered this step).
+  async function onSubmitCode() {
+    if (!isLoaded || busy) return
+    const value = code.trim()
+    if (!value) {
+      setError('Enter the code from your authenticator or text.')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      // Try TOTP first (authenticator app), then fall back to a phone code.
+      let attempt
+      try {
+        attempt = await signIn.attemptSecondFactor({ strategy: 'totp', code: value })
+      } catch {
+        attempt = await signIn.attemptSecondFactor({ strategy: 'phone_code', code: value })
+      }
+      if (attempt.status === 'complete') {
+        await setActive({ session: attempt.createdSessionId })
+        router.replace('/(tabs)')
+      } else {
+        setError('That code was not accepted. Try again.')
+      }
+    } catch (e) {
+      setError(clerkMessage(e, 'That code was not accepted.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onForgotPassword() {
+    // Clerk owns password reset; open its hosted account portal.
+    try {
+      const url = accountPortalUrl(
+        `/sign-in?redirect_url=hearthshelf://sso-callback${email ? `&email_address=${encodeURIComponent(email)}` : ''}`,
+      )
+      await WebBrowser.openBrowserAsync(url)
+    } catch {
+      setError('Could not open the password reset page.')
+    }
+  }
+
   async function onSubmitUsername() {
     if (!pendingSignUp || !pendingSetActive || busy) return
     const value = username.trim()
@@ -260,20 +307,21 @@ export default function SignInScreen() {
         setPendingSetActive(null)
         router.replace('/(tabs)')
       } else {
-        // Still incomplete (another required field, or username rejected). Show
-        // what's outstanding rather than silently stalling.
         setError(`Sign-up still needs: ${updated.missingFields.join(', ') || updated.status}`)
       }
     } catch (e) {
-      const clerkErr = (e as { errors?: Array<{ message?: string; longMessage?: string }> })
-        ?.errors?.[0]
-      const msg =
-        clerkErr?.longMessage || clerkErr?.message || (e as Error).message || 'Could not set username'
-      setError(msg)
+      setError(clerkMessage(e, 'Could not set username'))
     } finally {
       setBusy(false)
     }
   }
+
+  const errorBanner = error ? (
+    <View style={styles.errorBanner}>
+      <MaterialIcons name="error-outline" size={18} color={INK.accent} />
+      <Text style={styles.errorBannerText}>{error}</Text>
+    </View>
+  ) : null
 
   return (
     <View style={styles.bg}>
@@ -282,185 +330,247 @@ export default function SignInScreen() {
         style={styles.bgImage}
         resizeMode="cover"
       />
+      {/* Bottom-heavy scrim so the auth block stays legible over the fire. */}
+      <LinearGradient
+        colors={['transparent', 'rgba(10,9,8,0.35)', 'rgba(10,9,8,0.92)']}
+        locations={[0, 0.45, 1]}
+        style={styles.scrim}
+        pointerEvents="none"
+      />
+
+      {/* Wordmark anchored in the upper third. */}
+      <View style={styles.heroTop} pointerEvents="none">
+        <Text style={styles.brand}>
+          <Text style={styles.brandHearth}>Hearth</Text>
+          <Text style={styles.brandShelf}>Shelf</Text>
+        </Text>
+      </View>
+
       <KeyboardAvoidingView
         style={styles.content}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
       >
-        <View style={styles.hero}>
-          <Text style={styles.brand}>
-            <Text style={styles.brandHearth}>Hearth</Text>
-            <Text style={styles.brandShelf}>Shelf</Text>
-          </Text>
-        </View>
-        <View style={styles.spacer} />
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          <View style={styles.authBlock}>
+            {pendingSignUp ? (
+              <View style={styles.formCard}>
+                <Text style={styles.stepTitle}>Choose a username</Text>
+                <Text style={styles.stepHint}>This is how you'll show up in HearthShelf.</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Username"
+                  placeholderTextColor={INK.faint}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  value={username}
+                  onChangeText={setUsername}
+                />
+                {errorBanner}
+                <TouchableOpacity style={styles.primaryButton} onPress={onSubmitUsername} disabled={busy}>
+                  {busy ? (
+                    <ActivityIndicator color={INK.onAccent} />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Continue</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            ) : twoFactor ? (
+              <View style={styles.formCard}>
+                <Text style={styles.stepTitle}>Enter your code</Text>
+                <Text style={styles.stepHint}>
+                  Open your authenticator app (or check your texts) for the 6-digit code.
+                </Text>
+                <TextInput
+                  style={[styles.input, styles.codeInput]}
+                  placeholder="123456"
+                  placeholderTextColor={INK.faint}
+                  keyboardType="number-pad"
+                  autoFocus
+                  value={code}
+                  onChangeText={setCode}
+                  maxLength={8}
+                />
+                {errorBanner}
+                <TouchableOpacity style={styles.primaryButton} onPress={onSubmitCode} disabled={busy}>
+                  {busy ? (
+                    <ActivityIndicator color={INK.onAccent} />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Verify</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.backLink}
+                  onPress={() => {
+                    setTwoFactor(false)
+                    setCode('')
+                    setError(null)
+                  }}
+                  disabled={busy}
+                >
+                  <Text style={styles.backLinkText}>Back</Text>
+                </TouchableOpacity>
+              </View>
+            ) : emailMode ? (
+              <View style={styles.formCard}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Email"
+                  placeholderTextColor={INK.faint}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  value={email}
+                  onChangeText={setEmail}
+                />
+                <View style={styles.passwordRow}>
+                  <TextInput
+                    style={[styles.input, { flex: 1 }]}
+                    placeholder="Password"
+                    placeholderTextColor={INK.faint}
+                    secureTextEntry={!showPassword}
+                    value={password}
+                    onChangeText={setPassword}
+                  />
+                  <Pressable
+                    onPress={() => setShowPassword((v) => !v)}
+                    hitSlop={10}
+                    style={styles.eyeBtn}
+                  >
+                    <MaterialIcons
+                      name={showPassword ? 'visibility-off' : 'visibility'}
+                      size={22}
+                      color={INK.muted}
+                    />
+                  </Pressable>
+                </View>
 
-        <View style={styles.authBlock}>
-          {pendingSignUp ? (
-            <View style={styles.formCard}>
-              <Text style={styles.stepTitle}>Choose a username</Text>
-              <Text style={styles.stepHint}>This is how you'll show up in HearthShelf.</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Username"
-                placeholderTextColor="#6f6557"
-                autoCapitalize="none"
-                autoCorrect={false}
-                value={username}
-                onChangeText={setUsername}
-              />
+                <TouchableOpacity onPress={() => void onForgotPassword()} style={styles.forgot}>
+                  <Text style={styles.forgotText}>Forgot password?</Text>
+                </TouchableOpacity>
 
-              {error ? <Text style={styles.error}>{error}</Text> : null}
+                {errorBanner}
 
-              <TouchableOpacity
-                style={styles.primaryButton}
-                onPress={onSubmitUsername}
-                disabled={busy}
-              >
-                {busy ? (
-                  <ActivityIndicator color="#fffaf6" />
-                ) : (
-                  <Text style={styles.primaryButtonText}>Continue</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          ) : emailMode ? (
-            <View style={styles.formCard}>
-              <TextInput
-                style={styles.input}
-                placeholder="Email"
-                placeholderTextColor="#6f6557"
-                autoCapitalize="none"
-                keyboardType="email-address"
-                value={email}
-                onChangeText={setEmail}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                placeholderTextColor="#6f6557"
-                secureTextEntry
-                value={password}
-                onChangeText={setPassword}
-              />
+                <TouchableOpacity style={styles.primaryButton} onPress={onSignIn} disabled={busy}>
+                  {busy ? (
+                    <ActivityIndicator color={INK.onAccent} />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Sign in</Text>
+                  )}
+                </TouchableOpacity>
 
-              {error ? <Text style={styles.error}>{error}</Text> : null}
+                <TouchableOpacity
+                  style={styles.backLink}
+                  onPress={() => {
+                    setEmailMode(false)
+                    setError(null)
+                  }}
+                  disabled={busy}
+                >
+                  <Text style={styles.backLinkText}>Back to all sign-in options</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.providers}>
+                <TouchableOpacity style={styles.google} onPress={onGoogle} disabled={busy}>
+                  {busy ? (
+                    <ActivityIndicator color="#1f1f1f" />
+                  ) : (
+                    <>
+                      <GoogleLogo />
+                      <Text style={styles.googleText}>Continue with Google</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
 
-              <TouchableOpacity style={styles.primaryButton} onPress={onSignIn} disabled={busy}>
-                {busy ? (
-                  <ActivityIndicator color="#fffaf6" />
-                ) : (
-                  <Text style={styles.primaryButtonText}>Sign in</Text>
-                )}
-              </TouchableOpacity>
+                {APPLE_ENABLED ? (
+                  <TouchableOpacity style={styles.apple} onPress={onApple} disabled={busy}>
+                    {busy ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <>
+                        <AppleLogo />
+                        <Text style={styles.appleText}>Continue with Apple</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                ) : null}
 
-              <TouchableOpacity
-                style={styles.backLink}
-                onPress={() => {
-                  setEmailMode(false)
-                  setError(null)
-                }}
-                disabled={busy}
-              >
-                <Text style={styles.backLinkText}>Back to all sign-in options</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.providers}>
-              <TouchableOpacity style={styles.google} onPress={onGoogle} disabled={busy}>
-                {busy ? (
-                  <ActivityIndicator color="#1f1f1f" />
-                ) : (
-                  <>
-                    <GoogleLogo />
-                    <Text style={styles.googleText}>Continue with Google</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-
-              {APPLE_ENABLED ? (
-                <TouchableOpacity style={styles.apple} onPress={onApple} disabled={busy}>
+                <TouchableOpacity style={styles.discord} onPress={onDiscord} disabled={busy}>
                   {busy ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
                     <>
-                      <AppleLogo />
-                      <Text style={styles.appleText}>Continue with Apple</Text>
+                      <DiscordLogo />
+                      <Text style={styles.discordText}>Continue with Discord</Text>
                     </>
                   )}
                 </TouchableOpacity>
-              ) : null}
 
-              <TouchableOpacity style={styles.discord} onPress={onDiscord} disabled={busy}>
-                {busy ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <>
-                    <DiscordLogo />
-                    <Text style={styles.discordText}>Continue with Discord</Text>
-                  </>
-                )}
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.emailButton}
+                  onPress={() => setEmailMode(true)}
+                  disabled={busy}
+                >
+                  <Text style={styles.emailButtonText}>Sign in with email</Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.emailButton}
-                onPress={() => setEmailMode(true)}
-                disabled={busy}
+                {errorBanner}
+              </View>
+            )}
+
+            <Text style={styles.footer}>
+              By continuing you agree to the{' '}
+              <Text
+                style={styles.footerLink}
+                onPress={() => void WebBrowser.openBrowserAsync('https://hearthshelf.com/terms')}
               >
-                <Text style={styles.emailButtonText}>Sign in with email</Text>
-              </TouchableOpacity>
-
-              {error ? <Text style={styles.error}>{error}</Text> : null}
-            </View>
-          )}
-
-          <Text style={styles.footer}>
-            By continuing you agree to the Terms & Privacy Policy
-          </Text>
-        </View>
+                Terms
+              </Text>{' '}
+              &{' '}
+              <Text
+                style={styles.footerLink}
+                onPress={() => void WebBrowser.openBrowserAsync('https://hearthshelf.com/privacy')}
+              >
+                Privacy Policy
+              </Text>
+              .
+            </Text>
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </View>
   )
 }
 
+/** Clerk's short `message` is often "is invalid"; `longMessage` names the
+ *  offending parameter, which actually tells you what's wrong. */
+function clerkMessage(e: unknown, fallback: string): string {
+  const clerkErr = (e as { errors?: Array<{ message?: string; longMessage?: string }> })?.errors?.[0]
+  return clerkErr?.longMessage || clerkErr?.message || (e as Error)?.message || fallback
+}
+
 const styles = StyleSheet.create({
-  bg: { flex: 1, backgroundColor: '#0e0d0c' },
-  bgImage: {
+  bg: { flex: 1, backgroundColor: INK.bg },
+  bgImage: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, width: '100%', height: '100%' },
+  scrim: { position: 'absolute', left: 0, right: 0, bottom: 0, top: 0 },
+  heroTop: {
     position: 'absolute',
-    top: 0,
-    bottom: 0,
+    top: '18%',
     left: 0,
     right: 0,
-    width: '100%',
-    height: '100%',
-  },
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(13,11,9,0.72)',
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 30,
-    paddingBottom: 40,
-  },
-  hero: { height: 300, alignItems: 'center', justifyContent: 'center' },
-  spacer: { flex: 1 },
-  authBlock: {},
-  logoBadge: {
-    width: 88,
-    height: 88,
-    borderRadius: 26,
-    backgroundColor: 'rgba(189,134,63,0.20)',
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  logoImg: { width: 54, height: 54 },
-  brand: { marginTop: 26, fontSize: 34, textAlign: 'center', fontFamily: fonts.brand },
-  brandHearth: { color: '#bd863f', fontFamily: fonts.brand },
-  brandShelf: { color: '#f0e6d6', fontFamily: fonts.brand, fontWeight: '700' },
+  content: { flex: 1 },
+  scroll: { flexGrow: 1, justifyContent: 'flex-end', paddingHorizontal: 30, paddingBottom: 40 },
+  authBlock: {},
+  brand: { fontSize: 36, textAlign: 'center', fontFamily: fonts.brand },
+  brandHearth: { color: INK.hearth, fontFamily: fonts.brand },
+  brandShelf: { color: INK.shelf, fontFamily: fonts.brand, fontWeight: '700' },
 
   providers: { gap: 12 },
   google: {
@@ -497,49 +607,75 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 16,
-    paddingVertical: 7,
+    paddingVertical: 13,
     borderWidth: 1,
-    borderColor: '#383530',
-    backgroundColor: 'transparent',
+    borderColor: INK.line,
+    backgroundColor: INK.glass,
   },
-  emailButtonText: { color: '#f4f1ea', fontSize: 14.5, fontWeight: '600' },
+  emailButtonText: { color: INK.text, fontSize: 14.5, fontWeight: '600' },
 
   formCard: { gap: 12 },
-  stepTitle: { color: '#f4f1ea', fontSize: 20, fontWeight: '700', textAlign: 'center' },
-  stepHint: { color: '#aba498', fontSize: 13.5, textAlign: 'center', marginBottom: 4 },
+  stepTitle: { color: INK.text, fontSize: 20, fontWeight: '700', textAlign: 'center' },
+  stepHint: { color: INK.muted, fontSize: 13.5, textAlign: 'center', marginBottom: 4, lineHeight: 19 },
   input: {
-    backgroundColor: 'rgba(42,40,37,0.85)',
-    color: '#f4f1ea',
+    backgroundColor: INK.field,
+    color: INK.text,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#383530',
+    borderColor: INK.line,
     paddingHorizontal: 16,
     paddingVertical: 15,
     fontSize: 15,
   },
+  codeInput: { textAlign: 'center', letterSpacing: 8, fontSize: 22, fontWeight: '700' },
+  passwordRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  eyeBtn: {
+    width: 48,
+    height: 52,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: INK.line,
+    backgroundColor: INK.field,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  forgot: { alignSelf: 'flex-end', paddingVertical: 2 },
+  forgotText: { color: INK.muted, fontSize: 13, fontWeight: '600' },
+
   primaryButton: {
-    backgroundColor: '#e0654a',
+    backgroundColor: INK.accent,
     borderRadius: 16,
     paddingVertical: 15,
     alignItems: 'center',
   },
-  primaryButtonText: { color: '#fffaf6', fontSize: 15, fontWeight: '700' },
+  primaryButtonText: { color: INK.onAccent, fontSize: 15, fontWeight: '700' },
   backLink: {
     alignItems: 'center',
     paddingVertical: 10,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#383530',
+    borderColor: INK.line,
     backgroundColor: 'transparent',
   },
-  backLinkText: { color: '#aba498', fontSize: 13.5, fontWeight: '600' },
+  backLinkText: { color: INK.muted, fontSize: 13.5, fontWeight: '600' },
 
-  error: { color: '#e0654a', fontSize: 13, textAlign: 'center' },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: INK.dangerBg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: INK.accent,
+  },
+  errorBannerText: { color: INK.text, fontSize: 13, flex: 1, lineHeight: 18 },
   footer: {
     textAlign: 'center',
-    color: '#aba498',
-    fontSize: 10,
+    color: INK.muted,
+    fontSize: 11,
     lineHeight: 18,
-    marginTop: 8,
+    marginTop: 14,
   },
+  footerLink: { color: INK.hearth, fontWeight: '600' },
 })
