@@ -63,12 +63,29 @@ function hasActiveSession(): boolean {
 // Adopt a server queue into the local store without re-pushing it. Shared by
 // the plain pull (cheap GET) and the recompute path (POST). bump=false so
 // adopting the server's state doesn't look like a new local write.
-function adoptServerQueue(server: { items: QueueEntry[]; manual: QueueEntry[]; playlistId: string | null }): void {
+//
+// `items`/`playlistId` are server-authoritative in Auto/Playlist, so they're
+// always taken from the server. `manual` is DIFFERENT: it's the client-authored
+// hand-queued list in every mode. If we have a local manual edit that hasn't
+// been pushed+stored yet (local updatedAt is ahead of what we last adopted), a
+// racing pull/recompute must NOT overwrite it with the server's older manual -
+// that's the bug where a book you just added in the tray vanishes because a
+// recompute adopts a manual list computed before the add landed. Keep the local
+// manual in that case; the pending push will reconcile it to the server.
+function adoptServerQueue(server: {
+  items: QueueEntry[]
+  manual: QueueEntry[]
+  playlistId: string | null
+}): void {
   hydratingQueue = true
+  const hasPendingLocalEdit = getQueueState().updatedAt > adoptedUpdatedAt
   setQueueItems(server.items, false)
-  setQueueManual(server.manual, false)
+  if (!hasPendingLocalEdit) setQueueManual(server.manual, false)
   setQueuePlaylistId(server.playlistId, false)
-  adoptedUpdatedAt = getQueueState().updatedAt
+  // Only rebaseline the adopt marker when we fully took the server's state.
+  // Keeping the old baseline while a local manual edit is pending ensures the
+  // pushQueue guard still recognizes it as an un-pushed change.
+  if (!hasPendingLocalEdit) adoptedUpdatedAt = getQueueState().updatedAt
   hydratingQueue = false
 }
 
@@ -151,12 +168,20 @@ function pushQueue(): void {
           setQueuePlaylistId(res.playlistId, false)
           adoptedUpdatedAt = getQueueState().updatedAt
           hydratingQueue = false
-        } else if (res.applied !== false && getSettingsState().queueMode === 'auto') {
-          // A hand-edit to the manual list landed, but in Auto mode the server
-          // stores manual separately and only splices it into the computed
-          // `items` on a recompute. Trigger one so the merged up-next list shows
-          // the change now instead of on the next play-cooldown / foreground.
-          void recomputeQueue()
+        } else if (res.applied !== false) {
+          // Our write landed. Rebaseline the adopt marker to the pushed
+          // updatedAt so a following adopt (from the recompute below, or a
+          // racing pull) is no longer seen as racing a pending local edit - the
+          // edit is now the server's truth. Without this the manual-preserve
+          // guard in adoptServerQueue would keep re-firing pushQueue forever.
+          adoptedUpdatedAt = updatedAt
+          if (getSettingsState().queueMode === 'auto') {
+            // In Auto mode the server stores manual separately and only splices
+            // it into the computed `items` on a recompute. Trigger one so the
+            // merged up-next list shows the change now instead of on the next
+            // play-cooldown / foreground.
+            void recomputeQueue()
+          }
         }
       })
       .catch(() => {
