@@ -35,11 +35,14 @@
   plugins/hearthshelf-auto (native Kotlin) or the app config. Not needed for JS-only edits.
 
 .PARAMETER Clean
-  Remove the worklets / reanimated / expo-modules-core / app .cxx build caches
-  before building. Use when the build fails with a stale-CMake ninja error:
-  either "ninja: error '...libworklets.so' ... missing and no known rule", or a
-  reanimated "fatal error: file '...sysroot/.../algorithm' has been modified since
-  the precompiled header ... was built" (stale PCH after an NDK mtime change).
+  Remove the worklets / reanimated / expo-modules-core / react-native-screens /
+  react-native-gesture-handler / app .cxx build caches before building. Use when
+  the build fails with a stale-CMake ninja error: "ninja: error '...libworklets.so'
+  ... missing and no known rule"; a reanimated "fatal error: file
+  '...sysroot/.../algorithm' has been modified since the precompiled header ... was
+  built" (stale PCH after an NDK mtime change); or "ninja: error: rebuilding
+  'build.ninja': subcommand failed ... CreateProcess failed: The system cannot find
+  the file specified" (a corrupted .cxx, e.g. after two builds ran concurrently).
 
   You normally don't need to pass this up front: the build step recognizes both
   error signatures itself, clears the caches, and retries the build once
@@ -330,6 +333,10 @@ function Clear-NativeCaches {
     'node_modules\react-native-reanimated\android\.cxx'
     'node_modules\expo-modules-core\android\build'
     'node_modules\expo-modules-core\android\.cxx'
+    'node_modules\react-native-screens\android\build'
+    'node_modules\react-native-screens\android\.cxx'
+    'node_modules\react-native-gesture-handler\android\build'
+    'node_modules\react-native-gesture-handler\android\.cxx'
     'android\app\.cxx'
   )
   foreach ($p in $paths) {
