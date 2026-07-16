@@ -13,10 +13,11 @@ import { formatTimestamp } from '@hearthshelf/core'
 import { AppText, icons } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
 import { CoverDownloadOverlay } from '@/ui/CoverDownloadOverlay'
+import { GlassBackdrop } from '@/ui/GlassBackdrop'
 import { SkipButton } from '@/player/SkipButton'
 import { DUR, SpringPressable } from '@/ui/motion'
 import { haptics } from '@/ui/haptics'
-import { radius, spacing, type Palette } from '@/ui/theme'
+import { radius, spacing, withAlpha, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { getState, subscribe, togglePlay, jumpBy, currentChapter } from './store'
@@ -135,6 +136,7 @@ function MiniPlayerBar({
       pointerEvents="box-none"
     >
       <View style={floating ? styles.card : styles.docked}>
+        {floating ? <GlassBackdrop tintColor={withAlpha(colors.elevated, 0.16)} /> : null}
         {/* Thin whole-book progress strip across the top of the dock. */}
         <View style={styles.progTrack}>
           <View
@@ -142,7 +144,7 @@ function MiniPlayerBar({
           />
         </View>
         <GestureDetector gesture={swipe}>
-          <View style={styles.bar}>
+          <View style={[styles.bar, floating && styles.floatingBar]}>
             <Pressable style={styles.tap} onPress={() => router.push('/player')}>
               {/* Round cover inside a round chapter-progress ring. */}
               <View style={styles.ringWrap}>
@@ -270,7 +272,7 @@ const makeStyles = (colors: Palette) =>
       overflow: 'hidden',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
-      backgroundColor: colors.popover,
+      backgroundColor: 'transparent',
       elevation: 12,
       shadowColor: '#000',
       shadowOpacity: 0.35,
@@ -288,6 +290,7 @@ const makeStyles = (colors: Palette) =>
       paddingVertical: spacing.sm,
       backgroundColor: colors.popover,
     },
+    floatingBar: { backgroundColor: 'transparent' },
     tap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md, minWidth: 0 },
     // Round cover in a round ring; ringWrap reserves the 40px cover footprint.
     ringWrap: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },

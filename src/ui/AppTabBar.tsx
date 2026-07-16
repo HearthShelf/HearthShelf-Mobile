@@ -12,10 +12,9 @@
  * that need collision avoidance (notably the player) reserve their own clearance.
  */
 import { useEffect, useRef, useState } from 'react'
-import { Platform, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
+import { Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
 import { useSyncExternalStore } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { BlurView } from 'expo-blur'
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -30,7 +29,7 @@ import { haptics } from './haptics'
 import { POP_SPRING } from './motion'
 import { fonts, MAX_FONT_SCALE, radius, spacing, withAlpha, type Palette } from './theme'
 import { useColors } from './ThemeProvider'
-import { useActiveBlurTarget } from './BlurTarget'
+import { GlassBackdrop } from './GlassBackdrop'
 
 // Apple "liquid glass" glide: a softer, more fluid spring than the app's POP so
 // the active lozenge flows between destinations instead of snapping. Slightly
@@ -244,7 +243,7 @@ function FloatingPillNav({
         {/* Real backdrop blur: whatever scrolls behind the pill is frosted (glass).
             The ember tint overlays the blurred result; both clip to the pill's
             rounded corners via its overflow:hidden. */}
-        <GlassBackdrop tintStyle={styles.glassTint} />
+        <GlassBackdrop tintColor={withAlpha(colors.elevated, 0.16)} />
         {/* The gliding active lozenge, drawn beneath the items. */}
         <Animated.View pointerEvents="none" style={[styles.indicator, indicator]} />
         {PILL_TABS.map((meta) => {
@@ -325,7 +324,7 @@ function VerticalPillNav({
     // bottom-right corner. Content clears only the mini player, not an empty band.
     <View style={styles.vband} pointerEvents="box-none">
       <View style={[styles.vcolumn, { bottom: insets.bottom }]}>
-        <GlassBackdrop tintStyle={styles.glassTint} />
+        <GlassBackdrop tintColor={withAlpha(colors.elevated, 0.16)} />
         <Animated.View pointerEvents="none" style={[styles.vindicator, indicator]} />
         {PILL_TABS.map((meta) => {
           const focused = meta.name === activeName
@@ -342,24 +341,6 @@ function VerticalPillNav({
         })}
       </View>
     </View>
-  )
-}
-
-/** Shared backdrop so both floating orientations use the same supported blur
- * configuration. The tint remains as a readable fallback if native blur is off. */
-function GlassBackdrop({ tintStyle }: { tintStyle: object }) {
-  const blurTarget = useActiveBlurTarget()
-  return (
-    <BlurView
-      pointerEvents="none"
-      intensity={70}
-      tint="systemUltraThinMaterialDark"
-      blurTarget={blurTarget ?? undefined}
-      blurMethod={Platform.OS === 'android' && blurTarget ? 'dimezisBlurView' : undefined}
-      style={StyleSheet.absoluteFill}
-    >
-      <View style={tintStyle} />
-    </BlurView>
   )
 }
 
@@ -555,16 +536,6 @@ const makePillStyles = (colors: Palette) =>
       shadowOpacity: 0.5,
       shadowRadius: 30,
       elevation: 14,
-    },
-    // Ember tint laid over the backdrop blur: enough to color the frosted glass
-    // and keep icon contrast, light enough that the blurred content shows through.
-    glassTint: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: withAlpha(colors.elevated, 0.16),
     },
     // The gliding active lozenge: an ember-wash chip that flows between items.
     // left/top/bottom match the item box so it sits exactly behind the active

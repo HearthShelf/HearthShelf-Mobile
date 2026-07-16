@@ -319,11 +319,10 @@ export default function RootLayout() {
               <AuthGate>
                 <AppBlurTargetProvider>
                   <ThemedStack />
+                  {/* Keep the floating mini player outside each screen's native
+                      blur target, while sharing that target through this provider. */}
+                  <MiniPlayerDock />
                 </AppBlurTargetProvider>
-                {/* Route-aware mini player over every screen (hides itself on
-                    player surfaces and settings). Inside the gate so the boot
-                    splash still covers it. */}
-                <MiniPlayerDock />
                 {/* Note-pop toasts fired by the club watcher (notePops.ts). */}
                 <PopToast />
                 {/* Single app-wide confirmation toast, positioned in the

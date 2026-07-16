@@ -257,144 +257,137 @@ export default function SeriesDetailScreen() {
   }
 
   return (
-    <>
-      <Screen>
-        <View style={StyleSheet.absoluteFill}>
-          <CoverGlow hue={hue} height={340} />
+    <Screen tabBar={<AppTabBar activeName={active} onPressTab={goToTab} />}>
+      <View style={StyleSheet.absoluteFill}>
+        <CoverGlow hue={hue} height={340} />
+      </View>
+
+      <Header
+        onBack={() => router.back()}
+        allFinished={allSeriesFinished}
+        marking={marking}
+        onMarkSeries={() => void markSeries()}
+      />
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: miniInset }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Hero */}
+        <View style={styles.hero}>
+          <HeroCovers books={books} />
+          <AppText variant="eyebrow" color={colors.textMuted} style={{ marginTop: spacing.lg }}>
+            Series
+          </AppText>
+          <AppText variant="hero" style={styles.title}>
+            {series.name}
+          </AppText>
+          {author ? (
+            <Touchable onPress={openAuthor} hitSlop={6}>
+              <AppText variant="label" color={colors.accent}>
+                {author}
+              </AppText>
+            </Touchable>
+          ) : null}
+
+          <View style={styles.statStrip}>
+            <StatCell value={String(books.length)} label={books.length === 1 ? 'book' : 'books'} />
+            <View style={styles.statDivider} />
+            <StatCell value={`${totalHours.toFixed(0)}h`} label="total" />
+            <View style={styles.statDivider} />
+            <StatCell value={`${done}/${completion.totalCount}`} label="finished" />
+          </View>
         </View>
 
-        <Header
-          onBack={() => router.back()}
-          allFinished={allSeriesFinished}
-          marking={marking}
-          onMarkSeries={() => void markSeries()}
-        />
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: miniInset }}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Hero */}
-          <View style={styles.hero}>
-            <HeroCovers books={books} />
-            <AppText variant="eyebrow" color={colors.textMuted} style={{ marginTop: spacing.lg }}>
-              Series
+        {/* Progress widget */}
+        <View style={styles.progCard}>
+          <View style={styles.progTop}>
+            <AppText variant="hero" color={colors.accent}>
+              {Math.round(pct * 100)}%
             </AppText>
-            <AppText variant="hero" style={styles.title}>
-              {series.name}
+            <AppText variant="meta" color={colors.textMuted} style={{ flex: 1 }}>
+              {done} of {completion.totalCount} finished · {listenedHours.toFixed(0)}h of{' '}
+              {totalHours.toFixed(0)}h
+              {completion.missingCount > 0 ? ` · ${completion.missingCount} not in library` : ''}
             </AppText>
-            {author ? (
-              <Touchable onPress={openAuthor} hitSlop={6}>
-                <AppText variant="label" color={colors.accent}>
-                  {author}
-                </AppText>
-              </Touchable>
-            ) : null}
-
-            <View style={styles.statStrip}>
-              <StatCell
-                value={String(books.length)}
-                label={books.length === 1 ? 'book' : 'books'}
-              />
-              <View style={styles.statDivider} />
-              <StatCell value={`${totalHours.toFixed(0)}h`} label="total" />
-              <View style={styles.statDivider} />
-              <StatCell value={`${done}/${completion.totalCount}`} label="finished" />
-            </View>
           </View>
-
-          {/* Progress widget */}
-          <View style={styles.progCard}>
-            <View style={styles.progTop}>
-              <AppText variant="hero" color={colors.accent}>
-                {Math.round(pct * 100)}%
-              </AppText>
-              <AppText variant="meta" color={colors.textMuted} style={{ flex: 1 }}>
-                {done} of {completion.totalCount} finished · {listenedHours.toFixed(0)}h of{' '}
-                {totalHours.toFixed(0)}h
-                {completion.missingCount > 0 ? ` · ${completion.missingCount} not in library` : ''}
+          <SegmentTrack books={books} progressById={progressById} missingCount={missing.length} />
+          {/* Micro-legend so the segmented track is readable at a glance. */}
+          <View style={styles.legend}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: colors.accent }]} />
+              <AppText variant="caption" color={colors.textMuted}>
+                finished
               </AppText>
             </View>
-            <SegmentTrack books={books} progressById={progressById} missingCount={missing.length} />
-            {/* Micro-legend so the segmented track is readable at a glance. */}
-            <View style={styles.legend}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: colors.accent }]} />
-                <AppText variant="caption" color={colors.textMuted}>
-                  finished
-                </AppText>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, styles.legendDotPartial]} />
-                <AppText variant="caption" color={colors.textMuted}>
-                  in progress
-                </AppText>
-              </View>
-              {missing.length > 0 ? (
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, styles.legendDotMissing]} />
-                  <AppText variant="caption" color={colors.textMuted}>
-                    not owned
-                  </AppText>
-                </View>
-              ) : null}
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, styles.legendDotPartial]} />
+              <AppText variant="caption" color={colors.textMuted}>
+                in progress
+              </AppText>
             </View>
-          </View>
-
-          {/* Series actions */}
-          <View style={styles.actions}>
-            {nextUp ? (
-              <PrimaryButton
-                label={`Continue · Book ${nextUpNum}`}
-                icon={icons.play}
-                onPress={() => play(nextUp.id)}
-                style={{ flex: 1 }}
-              />
+            {missing.length > 0 ? (
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, styles.legendDotMissing]} />
+                <AppText variant="caption" color={colors.textMuted}>
+                  not owned
+                </AppText>
+              </View>
             ) : null}
           </View>
-          {/* List head / selection toolbar. Long-press a book to start selecting. */}
-          {selection.selecting ? (
-            <BookSelectionToolbar selection={selection} books={books} libraryId={libraryId} />
-          ) : (
-            <View style={styles.listHead}>
-              <View style={styles.listHeadTitle}>
-                <IconButton name={icons.listNumbered} size={20} color={colors.accent} />
-                <AppText variant="title">In reading order</AppText>
-              </View>
-            </View>
-          )}
+        </View>
 
-          {/* Book list */}
-          <View style={styles.list}>
-            {books.map((b, i) => (
-              <BookRow
-                key={b.id}
-                book={b}
-                index={i}
-                progress={progressById.get(b.id) ?? null}
-                selecting={selection.selecting}
-                selected={selection.isSelected(b.id)}
-                onPress={() =>
-                  selection.selecting
-                    ? selection.toggle(b.id)
-                    : router.push(`/item/${b.id}?from=${active}`)
-                }
-                onLongPress={() => selection.begin(b.id)}
-                onToggle={() => selection.toggle(b.id)}
-                onPlay={() => play(b.id)}
-              />
-            ))}
-          </View>
-
-          {/* Unowned books collapse into their own section so the reading-order
-            list stays pure (owned books only). */}
-          {!selection.selecting && missing.length > 0 ? (
-            <MissingBooks books={missing} startSeq={books.length} rmabEnabled={rmabEnabled} />
+        {/* Series actions */}
+        <View style={styles.actions}>
+          {nextUp ? (
+            <PrimaryButton
+              label={`Continue · Book ${nextUpNum}`}
+              icon={icons.play}
+              onPress={() => play(nextUp.id)}
+              style={{ flex: 1 }}
+            />
           ) : null}
-        </ScrollView>
-      </Screen>
-      <AppTabBar activeName={active} onPressTab={goToTab} />
-    </>
+        </View>
+        {/* List head / selection toolbar. Long-press a book to start selecting. */}
+        {selection.selecting ? (
+          <BookSelectionToolbar selection={selection} books={books} libraryId={libraryId} />
+        ) : (
+          <View style={styles.listHead}>
+            <View style={styles.listHeadTitle}>
+              <IconButton name={icons.listNumbered} size={20} color={colors.accent} />
+              <AppText variant="title">In reading order</AppText>
+            </View>
+          </View>
+        )}
+
+        {/* Book list */}
+        <View style={styles.list}>
+          {books.map((b, i) => (
+            <BookRow
+              key={b.id}
+              book={b}
+              index={i}
+              progress={progressById.get(b.id) ?? null}
+              selecting={selection.selecting}
+              selected={selection.isSelected(b.id)}
+              onPress={() =>
+                selection.selecting ? selection.toggle(b.id) : router.push(`/item/${b.id}?from=${active}`)
+              }
+              onLongPress={() => selection.begin(b.id)}
+              onToggle={() => selection.toggle(b.id)}
+              onPlay={() => play(b.id)}
+            />
+          ))}
+        </View>
+
+        {/* Unowned books collapse into their own section so the reading-order
+            list stays pure (owned books only). */}
+        {!selection.selecting && missing.length > 0 ? (
+          <MissingBooks books={missing} startSeq={books.length} rmabEnabled={rmabEnabled} />
+        ) : null}
+      </ScrollView>
+
+    </Screen>
   )
 }
 

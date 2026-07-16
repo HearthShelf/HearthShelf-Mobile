@@ -55,24 +55,8 @@ function TabBar({ state, navigation }: BottomTabBarProps) {
 }
 
 export default function TabsLayout() {
-  // In floating mode the nav floats over content, so the navigator must NOT
-  // reserve a laid-out band (that empty gap is what pushed Home/Library/etc. up).
-  // Absolute positioning makes the scene fill to the bottom; the custom tab bar
-  // still keeps a real hit-test height so the floating buttons remain tappable.
-  // Content clears the pill via useContentInset. Classic keeps the normal bar.
-  const floating = useNavMode() !== 'classic'
-  const tabBarStyle = floating
-    ? {
-        position: 'absolute' as const,
-        borderTopWidth: 0,
-        backgroundColor: 'transparent',
-      }
-    : undefined
   return (
-    <Tabs
-      tabBar={(props) => <TabBar {...props} />}
-      screenOptions={{ headerShown: false, tabBarStyle }}
-    >
+    <Tabs tabBar={(props) => <TabBar {...props} />} screenOptions={{ headerShown: false }}>
       <Tabs.Screen name="index" />
       <Tabs.Screen name="library" />
       <Tabs.Screen name="now" />

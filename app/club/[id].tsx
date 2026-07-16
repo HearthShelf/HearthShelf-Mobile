@@ -370,17 +370,14 @@ export default function ClubRoomScreen() {
 
   if (loadError) {
     return (
-      <>
-        <Screen>
-          <Header title="Book Club" onBack={() => router.back()} />
-          <Centered>
-            <AppText variant="meta" color={colors.textMuted}>
-              This club isn't available.
-            </AppText>
-          </Centered>
-        </Screen>
-        <AppTabBar activeName={active} onPressTab={goToTab} />
-      </>
+      <Screen tabBar={<AppTabBar activeName={active} onPressTab={goToTab} />}>
+        <Header title="Book Club" onBack={() => router.back()} />
+        <Centered>
+          <AppText variant="meta" color={colors.textMuted}>
+            This club isn't available.
+          </AppText>
+        </Centered>
+      </Screen>
     )
   }
 
@@ -407,350 +404,99 @@ export default function ClubRoomScreen() {
   }
 
   return (
-    <>
-      <Screen>
-        <Header
-          title={detail.club.name}
-          subtitle={`${detail.members.length} ${detail.members.length === 1 ? 'member' : 'members'}`}
-          onBack={() => router.back()}
-          onMembers={() => membersSheetRef.current?.present()}
-          onOverflow={isMember ? () => ownerSheetRef.current?.present() : undefined}
-        />
+    <Screen tabBar={<AppTabBar activeName={active} onPressTab={goToTab} />}>
+      <Header
+        title={detail.club.name}
+        subtitle={`${detail.members.length} ${detail.members.length === 1 ? 'member' : 'members'}`}
+        onBack={() => router.back()}
+        onMembers={() => membersSheetRef.current?.present()}
+        onOverflow={isMember ? () => ownerSheetRef.current?.present() : undefined}
+      />
 
-        <ScrollView
-          ref={scrollRef}
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: spacing.xxl }}
-          showsVerticalScrollIndicator={false}
-          onScroll={onScroll}
-          scrollEventThrottle={200}
-        >
-          {viewedBook ? (
-            <View style={styles.bookHeader}>
-              <Touchable
-                onPress={() => router.push(`/item/${viewedBook.libraryItemId}?from=${active}`)}
-              >
-                <Cover
-                  uri={coverUrl(viewedBook.libraryItemId)}
-                  itemId={viewedBook.libraryItemId}
-                  size={54}
-                  radius={radius.tile}
-                  fallback={{
-                    hue: coverHue(viewedBook.libraryItemId),
-                    initial: (viewedBook.title || '?').charAt(0),
-                  }}
-                />
-              </Touchable>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <AppText variant="eyebrow" color={colors.textMuted}>
-                  {isCurrentView ? 'Reading now' : 'Past book'}
-                </AppText>
-                <AppText variant="label" numberOfLines={1} style={{ marginTop: 2 }}>
-                  {viewedBook.title || 'Untitled'}
-                </AppText>
-                {viewedBook.author ? (
-                  <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
-                    {viewedBook.author}
-                  </AppText>
-                ) : null}
-              </View>
-              {pastBooks.length > 0 || !isCurrentView ? (
-                <Touchable
-                  style={styles.historyBtn}
-                  onPress={() => historySheetRef.current?.present()}
-                >
-                  <Icon name={icons.recent} size={18} color={colors.accent} />
-                </Touchable>
-              ) : null}
-            </View>
-          ) : (
-            <View style={styles.bookHeader}>
-              <AppText variant="meta" color={colors.textMuted}>
-                This club hasn't picked a book yet.
-              </AppText>
-            </View>
-          )}
-
-          {/* Progress race for the viewed book. */}
-          {viewedBook ? (
-            <View style={styles.raceSection}>
-              <AppText
-                variant="eyebrow"
-                color={colors.textMuted}
-                style={{ marginBottom: spacing.sm }}
-              >
-                Where everyone is
-              </AppText>
-              {sortedMembers.map((m) => (
-                <MemberRace key={m.userId} member={m} isMe={m.userId === meId} />
-              ))}
-            </View>
-          ) : null}
-
-          {/* Up next queue. Everyone sees what's lined up; the owner can start the
-            next book now or remove one. Only shown on the current-book view. */}
-          {isCurrentView && detail.queue.length > 0 ? (
-            <View style={styles.queueSection}>
-              <AppText
-                variant="eyebrow"
-                color={colors.textMuted}
-                style={{ marginBottom: spacing.sm }}
-              >
-                Up next
-              </AppText>
-              {detail.queue.map((b) => (
-                <View key={b.libraryItemId} style={styles.queueRow}>
-                  <Touchable onPress={() => router.push(`/item/${b.libraryItemId}?from=${active}`)}>
-                    <Cover
-                      uri={coverUrl(b.libraryItemId)}
-                      itemId={b.libraryItemId}
-                      size={40}
-                      radius={radius.tile}
-                      fallback={{
-                        hue: coverHue(b.libraryItemId),
-                        initial: (b.title || '?').charAt(0),
-                      }}
-                    />
-                  </Touchable>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <AppText variant="meta" numberOfLines={1}>
-                      {b.title || 'Untitled'}
-                    </AppText>
-                    {b.author ? (
-                      <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
-                        {b.author}
-                      </AppText>
-                    ) : null}
-                  </View>
-                  {isOwner ? (
-                    <>
-                      <Touchable
-                        hitSlop={8}
-                        disabled={busy}
-                        onPress={() => void dropQueued(b)}
-                        style={{ padding: spacing.xs }}
-                      >
-                        <Icon name={icons.close} size={16} color={colors.textMuted} />
-                      </Touchable>
-                      <Touchable
-                        style={styles.queueStartBtn}
-                        disabled={busy}
-                        onPress={() => void promoteQueued(b)}
-                      >
-                        <AppText variant="caption" color={colors.onAccent}>
-                          Start
-                        </AppText>
-                      </Touchable>
-                    </>
-                  ) : null}
-                </View>
-              ))}
-            </View>
-          ) : null}
-
-          {/* Chat thread. */}
-          <View
-            style={styles.chatSection}
-            onLayout={(e) => {
-              chatSectionYRef.current = e.nativeEvent.layout.y
-              tryScrollToDeepLink()
-            }}
-          >
-            <AppText variant="title" style={{ marginBottom: spacing.sm }}>
-              Discussion
-            </AppText>
-            {detail.notes.notes.length === 0 ? (
-              <AppText
-                variant="meta"
-                color={colors.textMuted}
-                style={{ paddingVertical: spacing.lg }}
-              >
-                No notes on this book yet.
-              </AppText>
-            ) : (
-              <NoteThread
-                notes={detail.notes.notes}
-                chapters={chapters}
-                meId={meId}
-                canModerate={isOwner}
-                highlightId={highlightId ?? undefined}
-                newSinceTs={newSinceTs}
-                onReply={isMember ? (n) => setReplyTo(n) : undefined}
-                onDelete={isMember ? removeNote : undefined}
-                onNoteLayout={(_, y) => {
-                  noteYRef.current = y
-                  tryScrollToDeepLink()
+      <ScrollView
+        ref={scrollRef}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: spacing.xxl }}
+        showsVerticalScrollIndicator={false}
+        onScroll={onScroll}
+        scrollEventThrottle={200}
+      >
+        {viewedBook ? (
+          <View style={styles.bookHeader}>
+            <Touchable
+              onPress={() => router.push(`/item/${viewedBook.libraryItemId}?from=${active}`)}
+            >
+              <Cover
+                uri={coverUrl(viewedBook.libraryItemId)}
+                itemId={viewedBook.libraryItemId}
+                size={54}
+                radius={radius.tile}
+                fallback={{
+                  hue: coverHue(viewedBook.libraryItemId),
+                  initial: (viewedBook.title || '?').charAt(0),
                 }}
               />
-            )}
-            {detail.notes.hiddenAhead > 0 ? (
-              <View style={styles.teaser}>
-                <Icon name={icons.notes} size={16} color={colors.textMuted} />
-                <AppText variant="caption" color={colors.textMuted}>
-                  {detail.notes.hiddenAhead}{' '}
-                  {detail.notes.hiddenAhead === 1 ? 'note is' : 'notes are'} ahead of you. Keep
-                  listening to unlock them.
+            </Touchable>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <AppText variant="eyebrow" color={colors.textMuted}>
+                {isCurrentView ? 'Reading now' : 'Past book'}
+              </AppText>
+              <AppText variant="label" numberOfLines={1} style={{ marginTop: 2 }}>
+                {viewedBook.title || 'Untitled'}
+              </AppText>
+              {viewedBook.author ? (
+                <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
+                  {viewedBook.author}
                 </AppText>
-              </View>
+              ) : null}
+            </View>
+            {pastBooks.length > 0 || !isCurrentView ? (
+              <Touchable
+                style={styles.historyBtn}
+                onPress={() => historySheetRef.current?.present()}
+              >
+                <Icon name={icons.recent} size={18} color={colors.accent} />
+              </Touchable>
             ) : null}
           </View>
-        </ScrollView>
-
-        {/* Composer - members only, on the current book. Wrapped so the keyboard
-          lifts it and it clears the docked mini player above the tab bar. */}
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={{ paddingBottom: miniInset }}
-        >
-          {isMember && isCurrentView && viewedBook ? (
-            <View style={styles.composer}>
-              {replyTo ? (
-                <View style={styles.replyBanner}>
-                  <AppText
-                    variant="caption"
-                    color={colors.textMuted}
-                    numberOfLines={1}
-                    style={{ flex: 1 }}
-                  >
-                    Replying to {replyTo.username}
-                  </AppText>
-                  <IconButton
-                    name={icons.close}
-                    size={16}
-                    color={colors.textMuted}
-                    onPress={() => setReplyTo(null)}
-                  />
-                </View>
-              ) : null}
-              {/* Timestamp chip: shows exactly what will be attached, and its X
-                sends the note with no stamp. Only when playing this book and not
-                replying (a reply inherits its parent's gate). */}
-              {playingThisBook && !replyTo ? (
-                stampEnabled ? (
-                  <View style={styles.stampChip}>
-                    <Icon name={icons.schedule} size={14} color={colors.accent} />
-                    <AppText variant="caption" color={colors.accent} style={{ flex: 1 }}>
-                      {stampLabel(Math.round(position), chapters)}
-                    </AppText>
-                    <IconButton
-                      name={icons.close}
-                      size={14}
-                      color={colors.accent}
-                      onPress={() => setStampEnabled(false)}
-                    />
-                  </View>
-                ) : (
-                  <Touchable style={styles.stampAdd} onPress={() => setStampEnabled(true)}>
-                    <Icon name={icons.schedule} size={14} color={colors.textMuted} />
-                    <AppText variant="caption" color={colors.textMuted}>
-                      Add timestamp
-                    </AppText>
-                  </Touchable>
-                )
-              ) : null}
-              <View style={styles.composerRow}>
-                <TextInput
-                  style={styles.input}
-                  placeholder={
-                    playingThisBook
-                      ? `Note at ${formatTimestamp(position)}…`
-                      : 'Leave a note (play the book to timestamp it)…'
-                  }
-                  placeholderTextColor={colors.textFaint}
-                  value={body}
-                  onChangeText={setBody}
-                  multiline
-                  maxLength={2000}
-                />
-                <Touchable
-                  style={[styles.sendBtn, (!body.trim() || busy) && { opacity: 0.5 }]}
-                  disabled={!body.trim() || busy}
-                  onPress={() => void submit()}
-                >
-                  <Icon name={icons.send} size={18} color={colors.onAccent} />
-                </Touchable>
-              </View>
-              {!replyTo ? <SafeSwitch on={safe} onChange={setSafe} /> : null}
-            </View>
-          ) : !isMember ? (
-            <View style={styles.joinBar}>
-              <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
-                Members see your progress in this club's books.
-              </AppText>
-              <Touchable
-                style={styles.joinBtn}
-                disabled={busy}
-                onPress={async () => {
-                  setBusy(true)
-                  const ok = await setClubMembership(detail.club.id, true)
-                  setBusy(false)
-                  if (ok) await load({ markRead: true })
-                  else show('Could not join')
-                }}
-              >
-                <AppText variant="label" color={colors.onAccent}>
-                  Join club
-                </AppText>
-              </Touchable>
-            </View>
-          ) : null}
-        </KeyboardAvoidingView>
-
-        {/* Members sheet (with kick for the owner). */}
-        <Sheet ref={membersSheetRef} title="Members" snapPoints={['60%']}>
-          {sortedMembers.map((m) => (
-            <View key={m.userId} style={styles.memberRow}>
-              <Avatar
-                uri={avatarUrl(m.userId)}
-                size={34}
-                name={m.username}
-                hue={coverHue(m.userId)}
-              />
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <AppText variant="label" numberOfLines={1}>
-                  {m.username}
-                  {m.userId === meId ? ' (you)' : ''}
-                </AppText>
-                <AppText variant="caption" color={colors.textMuted}>
-                  {m.role === 'owner' ? 'Owner' : 'Member'}
-                  {m.listeningNow ? ' · listening now' : ''}
-                </AppText>
-              </View>
-              {isOwner && m.role !== 'owner' ? (
-                <Touchable hitSlop={8} onPress={() => void kick(m)}>
-                  <AppText variant="caption" color={colors.destructive}>
-                    Remove
-                  </AppText>
-                </Touchable>
-              ) : null}
-            </View>
-          ))}
-        </Sheet>
-
-        {/* Book history. */}
-        <Sheet ref={historySheetRef} title="Book history" snapPoints={['60%']}>
-          {detail.books.length === 0 ? (
-            <AppText
-              variant="meta"
-              color={colors.textMuted}
-              style={{ paddingVertical: spacing.lg }}
-            >
-              No books yet.
+        ) : (
+          <View style={styles.bookHeader}>
+            <AppText variant="meta" color={colors.textMuted}>
+              This club hasn't picked a book yet.
             </AppText>
-          ) : (
-            detail.books.map((b) => {
-              const current = b.finishedAt == null
-              const active =
-                b.libraryItemId === (viewBookId ?? detail.club.currentBook?.libraryItemId)
-              return (
-                <Touchable
-                  key={b.libraryItemId}
-                  style={styles.historyRow}
-                  onPress={() => {
-                    setViewBookId(current ? undefined : b.libraryItemId)
-                    historySheetRef.current?.dismiss()
-                  }}
-                >
+          </View>
+        )}
+
+        {/* Progress race for the viewed book. */}
+        {viewedBook ? (
+          <View style={styles.raceSection}>
+            <AppText
+              variant="eyebrow"
+              color={colors.textMuted}
+              style={{ marginBottom: spacing.sm }}
+            >
+              Where everyone is
+            </AppText>
+            {sortedMembers.map((m) => (
+              <MemberRace key={m.userId} member={m} isMe={m.userId === meId} />
+            ))}
+          </View>
+        ) : null}
+
+        {/* Up next queue. Everyone sees what's lined up; the owner can start the
+            next book now or remove one. Only shown on the current-book view. */}
+        {isCurrentView && detail.queue.length > 0 ? (
+          <View style={styles.queueSection}>
+            <AppText
+              variant="eyebrow"
+              color={colors.textMuted}
+              style={{ marginBottom: spacing.sm }}
+            >
+              Up next
+            </AppText>
+            {detail.queue.map((b) => (
+              <View key={b.libraryItemId} style={styles.queueRow}>
+                <Touchable onPress={() => router.push(`/item/${b.libraryItemId}?from=${active}`)}>
                   <Cover
                     uri={coverUrl(b.libraryItemId)}
                     itemId={b.libraryItemId}
@@ -761,64 +507,304 @@ export default function ClubRoomScreen() {
                       initial: (b.title || '?').charAt(0),
                     }}
                   />
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <AppText variant="meta" numberOfLines={1}>
-                      {b.title || 'Untitled'}
+                </Touchable>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <AppText variant="meta" numberOfLines={1}>
+                    {b.title || 'Untitled'}
+                  </AppText>
+                  {b.author ? (
+                    <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
+                      {b.author}
                     </AppText>
-                    <AppText variant="caption" color={current ? colors.accent : colors.textMuted}>
-                      {current ? 'Reading now' : 'Finished'}
-                    </AppText>
-                  </View>
-                  {active ? (
-                    <Icon name={icons.checkCircle} size={18} color={colors.accent} />
                   ) : null}
+                </View>
+                {isOwner ? (
+                  <>
+                    <Touchable
+                      hitSlop={8}
+                      disabled={busy}
+                      onPress={() => void dropQueued(b)}
+                      style={{ padding: spacing.xs }}
+                    >
+                      <Icon name={icons.close} size={16} color={colors.textMuted} />
+                    </Touchable>
+                    <Touchable
+                      style={styles.queueStartBtn}
+                      disabled={busy}
+                      onPress={() => void promoteQueued(b)}
+                    >
+                      <AppText variant="caption" color={colors.onAccent}>
+                        Start
+                      </AppText>
+                    </Touchable>
+                  </>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {/* Chat thread. */}
+        <View
+          style={styles.chatSection}
+          onLayout={(e) => {
+            chatSectionYRef.current = e.nativeEvent.layout.y
+            tryScrollToDeepLink()
+          }}
+        >
+          <AppText variant="title" style={{ marginBottom: spacing.sm }}>
+            Discussion
+          </AppText>
+          {detail.notes.notes.length === 0 ? (
+            <AppText
+              variant="meta"
+              color={colors.textMuted}
+              style={{ paddingVertical: spacing.lg }}
+            >
+              No notes on this book yet.
+            </AppText>
+          ) : (
+            <NoteThread
+              notes={detail.notes.notes}
+              chapters={chapters}
+              meId={meId}
+              canModerate={isOwner}
+              highlightId={highlightId ?? undefined}
+              newSinceTs={newSinceTs}
+              onReply={isMember ? (n) => setReplyTo(n) : undefined}
+              onDelete={isMember ? removeNote : undefined}
+              onNoteLayout={(_, y) => {
+                noteYRef.current = y
+                tryScrollToDeepLink()
+              }}
+            />
+          )}
+          {detail.notes.hiddenAhead > 0 ? (
+            <View style={styles.teaser}>
+              <Icon name={icons.notes} size={16} color={colors.textMuted} />
+              <AppText variant="caption" color={colors.textMuted}>
+                {detail.notes.hiddenAhead}{' '}
+                {detail.notes.hiddenAhead === 1 ? 'note is' : 'notes are'} ahead of you. Keep
+                listening to unlock them.
+              </AppText>
+            </View>
+          ) : null}
+        </View>
+      </ScrollView>
+
+      {/* Composer - members only, on the current book. Wrapped so the keyboard
+          lifts it and it clears the docked mini player above the tab bar. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ paddingBottom: miniInset }}
+      >
+        {isMember && isCurrentView && viewedBook ? (
+          <View style={styles.composer}>
+            {replyTo ? (
+              <View style={styles.replyBanner}>
+                <AppText
+                  variant="caption"
+                  color={colors.textMuted}
+                  numberOfLines={1}
+                  style={{ flex: 1 }}
+                >
+                  Replying to {replyTo.username}
+                </AppText>
+                <IconButton
+                  name={icons.close}
+                  size={16}
+                  color={colors.textMuted}
+                  onPress={() => setReplyTo(null)}
+                />
+              </View>
+            ) : null}
+            {/* Timestamp chip: shows exactly what will be attached, and its X
+                sends the note with no stamp. Only when playing this book and not
+                replying (a reply inherits its parent's gate). */}
+            {playingThisBook && !replyTo ? (
+              stampEnabled ? (
+                <View style={styles.stampChip}>
+                  <Icon name={icons.schedule} size={14} color={colors.accent} />
+                  <AppText variant="caption" color={colors.accent} style={{ flex: 1 }}>
+                    {stampLabel(Math.round(position), chapters)}
+                  </AppText>
+                  <IconButton
+                    name={icons.close}
+                    size={14}
+                    color={colors.accent}
+                    onPress={() => setStampEnabled(false)}
+                  />
+                </View>
+              ) : (
+                <Touchable style={styles.stampAdd} onPress={() => setStampEnabled(true)}>
+                  <Icon name={icons.schedule} size={14} color={colors.textMuted} />
+                  <AppText variant="caption" color={colors.textMuted}>
+                    Add timestamp
+                  </AppText>
                 </Touchable>
               )
-            })
-          )}
-        </Sheet>
-
-        {/* Overflow: leave (member) / archive or delete (owner). */}
-        <Sheet ref={ownerSheetRef} title={detail.club.name}>
-          {isOwner ? (
-            <>
-              {/* Archive is reversible, so it reads neutral - not the same red as
-                Delete. The caption says the history can come back. */}
-              <Touchable style={styles.sheetAction} onPress={() => void archive()}>
-                <Icon name={icons.archive} size={20} color={colors.textMuted} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <AppText variant="body">Archive this club</AppText>
-                  <AppText variant="caption" color={colors.textMuted}>
-                    Hides it from active lists. Can be restored later.
-                  </AppText>
-                </View>
+            ) : null}
+            <View style={styles.composerRow}>
+              <TextInput
+                style={styles.input}
+                placeholder={
+                  playingThisBook
+                    ? `Note at ${formatTimestamp(position)}…`
+                    : 'Leave a note (play the book to timestamp it)…'
+                }
+                placeholderTextColor={colors.textFaint}
+                value={body}
+                onChangeText={setBody}
+                multiline
+                maxLength={2000}
+              />
+              <Touchable
+                style={[styles.sendBtn, (!body.trim() || busy) && { opacity: 0.5 }]}
+                disabled={!body.trim() || busy}
+                onPress={() => void submit()}
+              >
+                <Icon name={icons.send} size={18} color={colors.onAccent} />
               </Touchable>
-              <Touchable style={styles.sheetAction} onPress={() => void removeClub()}>
-                <Icon name={icons.delete} size={20} color={colors.destructive} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <AppText variant="body" color={colors.destructive}>
-                    Delete this club
-                  </AppText>
-                  <AppText variant="caption" color={colors.textMuted}>
-                    Permanently removes members, books, and notes.
-                  </AppText>
-                </View>
-              </Touchable>
-            </>
-          ) : (
-            <Touchable style={styles.sheetAction} onPress={() => void leave()}>
-              <Icon name={icons.signOut} size={20} color={colors.destructive} />
-              <AppText variant="body" color={colors.destructive}>
-                Leave this club
+            </View>
+            {!replyTo ? <SafeSwitch on={safe} onChange={setSafe} /> : null}
+          </View>
+        ) : !isMember ? (
+          <View style={styles.joinBar}>
+            <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
+              Members see your progress in this club's books.
+            </AppText>
+            <Touchable
+              style={styles.joinBtn}
+              disabled={busy}
+              onPress={async () => {
+                setBusy(true)
+                const ok = await setClubMembership(detail.club.id, true)
+                setBusy(false)
+                if (ok) await load({ markRead: true })
+                else show('Could not join')
+              }}
+            >
+              <AppText variant="label" color={colors.onAccent}>
+                Join club
               </AppText>
             </Touchable>
-          )}
-        </Sheet>
+          </View>
+        ) : null}
+      </KeyboardAvoidingView>
 
-        <Toast message={message} />
-      </Screen>
-      <AppTabBar activeName={active} onPressTab={goToTab} />
-    </>
+
+      {/* Members sheet (with kick for the owner). */}
+      <Sheet ref={membersSheetRef} title="Members" snapPoints={['60%']}>
+        {sortedMembers.map((m) => (
+          <View key={m.userId} style={styles.memberRow}>
+            <Avatar
+              uri={avatarUrl(m.userId)}
+              size={34}
+              name={m.username}
+              hue={coverHue(m.userId)}
+            />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <AppText variant="label" numberOfLines={1}>
+                {m.username}
+                {m.userId === meId ? ' (you)' : ''}
+              </AppText>
+              <AppText variant="caption" color={colors.textMuted}>
+                {m.role === 'owner' ? 'Owner' : 'Member'}
+                {m.listeningNow ? ' · listening now' : ''}
+              </AppText>
+            </View>
+            {isOwner && m.role !== 'owner' ? (
+              <Touchable hitSlop={8} onPress={() => void kick(m)}>
+                <AppText variant="caption" color={colors.destructive}>
+                  Remove
+                </AppText>
+              </Touchable>
+            ) : null}
+          </View>
+        ))}
+      </Sheet>
+
+      {/* Book history. */}
+      <Sheet ref={historySheetRef} title="Book history" snapPoints={['60%']}>
+        {detail.books.length === 0 ? (
+          <AppText variant="meta" color={colors.textMuted} style={{ paddingVertical: spacing.lg }}>
+            No books yet.
+          </AppText>
+        ) : (
+          detail.books.map((b) => {
+            const current = b.finishedAt == null
+            const active =
+              b.libraryItemId === (viewBookId ?? detail.club.currentBook?.libraryItemId)
+            return (
+              <Touchable
+                key={b.libraryItemId}
+                style={styles.historyRow}
+                onPress={() => {
+                  setViewBookId(current ? undefined : b.libraryItemId)
+                  historySheetRef.current?.dismiss()
+                }}
+              >
+                <Cover
+                  uri={coverUrl(b.libraryItemId)}
+                  itemId={b.libraryItemId}
+                  size={40}
+                  radius={radius.tile}
+                  fallback={{ hue: coverHue(b.libraryItemId), initial: (b.title || '?').charAt(0) }}
+                />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <AppText variant="meta" numberOfLines={1}>
+                    {b.title || 'Untitled'}
+                  </AppText>
+                  <AppText variant="caption" color={current ? colors.accent : colors.textMuted}>
+                    {current ? 'Reading now' : 'Finished'}
+                  </AppText>
+                </View>
+                {active ? <Icon name={icons.checkCircle} size={18} color={colors.accent} /> : null}
+              </Touchable>
+            )
+          })
+        )}
+      </Sheet>
+
+      {/* Overflow: leave (member) / archive or delete (owner). */}
+      <Sheet ref={ownerSheetRef} title={detail.club.name}>
+        {isOwner ? (
+          <>
+            {/* Archive is reversible, so it reads neutral - not the same red as
+                Delete. The caption says the history can come back. */}
+            <Touchable style={styles.sheetAction} onPress={() => void archive()}>
+              <Icon name={icons.archive} size={20} color={colors.textMuted} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <AppText variant="body">Archive this club</AppText>
+                <AppText variant="caption" color={colors.textMuted}>
+                  Hides it from active lists. Can be restored later.
+                </AppText>
+              </View>
+            </Touchable>
+            <Touchable style={styles.sheetAction} onPress={() => void removeClub()}>
+              <Icon name={icons.delete} size={20} color={colors.destructive} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <AppText variant="body" color={colors.destructive}>
+                  Delete this club
+                </AppText>
+                <AppText variant="caption" color={colors.textMuted}>
+                  Permanently removes members, books, and notes.
+                </AppText>
+              </View>
+            </Touchable>
+          </>
+        ) : (
+          <Touchable style={styles.sheetAction} onPress={() => void leave()}>
+            <Icon name={icons.signOut} size={20} color={colors.destructive} />
+            <AppText variant="body" color={colors.destructive}>
+              Leave this club
+            </AppText>
+          </Touchable>
+        )}
+      </Sheet>
+
+      <Toast message={message} />
+    </Screen>
   )
 }
 

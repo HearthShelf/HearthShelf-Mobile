@@ -47,19 +47,25 @@ export function Screen({
   children,
   style,
   edges = ['top'],
+  tabBar,
 }: {
   children: React.ReactNode
   style?: StyleProp<ViewStyle>
   edges?: ('top' | 'bottom' | 'left' | 'right')[]
+  /** Optional navigation rendered as a sibling of the Android blur target. */
+  tabBar?: React.ReactNode
 }) {
   const styles = useStyles()
   const blurTarget = useScreenBlurTarget()
   return (
-    <BlurTargetView ref={blurTarget} style={[styles.screen, style]}>
-      <SafeAreaView style={styles.screen} edges={edges}>
-        {children}
-      </SafeAreaView>
-    </BlurTargetView>
+    <>
+      <BlurTargetView ref={blurTarget} style={[styles.screen, style]}>
+        <SafeAreaView style={styles.screen} edges={edges}>
+          {children}
+        </SafeAreaView>
+      </BlurTargetView>
+      {tabBar}
+    </>
   )
 }
 
