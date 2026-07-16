@@ -5,7 +5,7 @@
  */
 import { useMemo, useState, useSyncExternalStore } from 'react'
 import { Image, Pressable, StyleSheet, View } from 'react-native'
-import Animated, { FadeIn, FadeInUp, FadeOut, runOnJS } from 'react-native-reanimated'
+import Animated, { FadeIn, FadeOut, SlideInDown, runOnJS } from 'react-native-reanimated'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Svg, { Circle } from 'react-native-svg'
 import { useRouter } from 'expo-router'
@@ -15,7 +15,7 @@ import { Icon } from '@/ui/icons'
 import { CoverDownloadOverlay } from '@/ui/CoverDownloadOverlay'
 import { GlassBackdrop } from '@/ui/GlassBackdrop'
 import { SkipButton } from '@/player/SkipButton'
-import { DUR, SpringPressable } from '@/ui/motion'
+import { DUR, SpringPressable, useReducedMotion } from '@/ui/motion'
 import { haptics } from '@/ui/haptics'
 import { radius, spacing, withAlpha, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
@@ -25,6 +25,14 @@ import { getState, subscribe, togglePlay, jumpBy, currentChapter } from './store
 /** Rendered height of the docked bar (progress strip + 42px row + padding),
  *  for content-inset math in useContentInset. */
 export const MINI_PLAYER_HEIGHT = 60
+
+// Enter from below the viewport, then overshoot the resting edge once before
+// settling. This is deliberately softer than the small control POP_SPRING: the
+// pill travels much farther, but still finishes with the same tactile character.
+const MINI_PLAYER_ENTER = SlideInDown.springify()
+  .damping(27)
+  .stiffness(340)
+  .mass(0.9)
 
 export function MiniPlayer({
   bottomOffset = 0,
@@ -100,6 +108,7 @@ function MiniPlayerBar({
   const router = useRouter()
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
+  const reducedMotion = useReducedMotion()
   const { nowPlaying, isPlaying } = useSyncExternalStore(subscribe, getState)
   const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
   // A ± bloom shown briefly after a swipe-skip.
@@ -128,10 +137,10 @@ function MiniPlayerBar({
   if (!nowPlaying) return null
 
   return (
-    // Mounts when playback starts, so the dock rises into place rather than
-    // popping into existence.
+    // Mounts when playback starts: rise from the physical bottom edge and snap
+    // into the dock with a small spring overshoot. Reduced Motion keeps a fade.
     <Animated.View
-      entering={FadeInUp.duration(DUR.slow)}
+      entering={reducedMotion ? FadeIn.duration(DUR.base) : MINI_PLAYER_ENTER}
       style={[styles.wrap, { bottom: bottomOffset, right: rightInset }]}
       pointerEvents="box-none"
     >
