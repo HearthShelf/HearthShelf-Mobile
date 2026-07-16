@@ -3,7 +3,7 @@
  * these so colors/radii/spacing come from src/ui/theme.ts rather than per-screen
  * hardcoded hex. Bottom sheets use @gorhom/bottom-sheet (see Sheet below).
  */
-import { forwardRef, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { forwardRef, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   ActivityIndicator,
   Image,
@@ -325,6 +325,11 @@ export function SectionHeader({
 /** Typeset-fallback content for a cover, when real artwork is missing/fails. */
 export type CoverFallback = { hue: string; initial: string; kicker?: string; title?: string }
 
+/** Backoff schedule for re-attempting a failed remote cover load. After the
+ *  ramp, the last delay repeats while the cover stays mounted, so art fills in
+ *  whenever the network recovers (a slow poll; one tiny request per interval). */
+const RETRY_DELAYS = [2000, 5000, 12000, 30000]
+
 export function Cover({
   uri,
   size,
@@ -353,6 +358,8 @@ export function Cover({
 }) {
   const styles = useStyles()
   const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [measured, setMeasured] = useState(0)
   const w = size ?? width
   const dims: ImageStyle = size ? { width: size, height: size } : { width: w, aspectRatio }
@@ -364,8 +371,44 @@ export function Cover({
   )
   const src = localCover ?? uri
   // A changed source (download completed, or a recycled row rebinds a new item)
-  // deserves a fresh load attempt - clear any prior failure.
-  useEffect(() => setFailed(false), [src])
+  // deserves a fresh load attempt - clear any prior failure and retry schedule.
+  useEffect(() => {
+    setFailed(false)
+    setAttempt(0)
+    if (retryTimer.current) {
+      clearTimeout(retryTimer.current)
+      retryTimer.current = null
+    }
+  }, [src])
+  useEffect(
+    () => () => {
+      if (retryTimer.current) clearTimeout(retryTimer.current)
+    },
+    [],
+  )
+
+  // A failed network load isn't final on a slow/flaky connection - show the
+  // fallback now but quietly retry with backoff so the real art fills in once
+  // bytes arrive (fixes covers never appearing on the player under bad LTE).
+  const onImageError = () => {
+    setFailed(true)
+    const isRemote = !!src && /^https?:/i.test(src)
+    if (!isRemote) return
+    retryTimer.current = setTimeout(
+      () => {
+        retryTimer.current = null
+        setAttempt((a) => a + 1)
+        setFailed(false)
+      },
+      RETRY_DELAYS[Math.min(attempt, RETRY_DELAYS.length - 1)],
+    )
+  }
+  // A retry bumps a cache-busting param so the native image pipeline actually
+  // refetches instead of replaying its cached failure for the same URI.
+  const displaySrc =
+    src && attempt > 0 && /^https?:/i.test(src)
+      ? `${src}${src.includes('?') ? '&' : '?'}retry=${attempt}`
+      : src
 
   // The overlay needs a pixel size to scale its ring. Use the known width when
   // we have one, otherwise fall back to the measured layout width (for callers
@@ -413,8 +456,8 @@ export function Cover({
 
   const image = (
     <Image
-      source={{ uri: src }}
-      onError={() => setFailed(true)}
+      source={{ uri: displaySrc }}
+      onError={onImageError}
       style={[styles.cover, dims, { borderRadius: r }, style]}
     />
   )

@@ -4,15 +4,14 @@
  * tap to open the full player. Reads the same store the car drives.
  */
 import { useMemo, useState, useSyncExternalStore } from 'react'
-import { Image, Pressable, StyleSheet, View } from 'react-native'
+import { Pressable, StyleSheet, View } from 'react-native'
 import Animated, { FadeIn, FadeOut, SlideInDown, runOnJS } from 'react-native-reanimated'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Svg, { Circle } from 'react-native-svg'
 import { useRouter } from 'expo-router'
-import { formatTimestamp } from '@hearthshelf/core'
-import { AppText, icons } from '@/ui/primitives'
+import { coverHue, formatTimestamp } from '@hearthshelf/core'
+import { AppText, Cover, icons } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
-import { CoverDownloadOverlay } from '@/ui/CoverDownloadOverlay'
 import { GlassBackdrop } from '@/ui/GlassBackdrop'
 import { SkipButton } from '@/player/SkipButton'
 import { DUR, SpringPressable, useReducedMotion } from '@/ui/motion'
@@ -159,10 +158,18 @@ function MiniPlayerBar({
               <View style={styles.ringWrap}>
                 <CoverRing progress={progress} color={colors.accent} track={colors.fillStrong} />
                 <View style={styles.cover}>
-                  {nowPlaying.artworkUrl ? (
-                    <Image source={{ uri: nowPlaying.artworkUrl }} style={styles.coverImg} />
-                  ) : null}
-                  <CoverDownloadOverlay itemId={nowPlaying.itemId} size={40} radius={20} />
+                  {/* Cover (not a raw Image) so a failed load on a slow network
+                      shows the typeset fallback and quietly retries. */}
+                  <Cover
+                    uri={nowPlaying.artworkUrl}
+                    itemId={nowPlaying.itemId}
+                    size={40}
+                    radius={20}
+                    fallback={{
+                      hue: coverHue(nowPlaying.itemId),
+                      initial: nowPlaying.title.charAt(0).toUpperCase(),
+                    }}
+                  />
                 </View>
               </View>
               <View style={styles.meta}>
@@ -310,7 +317,6 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.high,
       overflow: 'hidden',
     },
-    coverImg: { width: 40, height: 40, borderRadius: 20 },
     meta: { flex: 1, minWidth: 0 },
     play: {
       width: 42,
