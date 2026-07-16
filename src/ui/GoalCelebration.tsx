@@ -2,12 +2,12 @@
  * Yearly reading-goal celebration - the app's loudest moment. A single host
  * (<GoalCelebrationHost>) mounted once at the root layout, fired from anywhere via
  * `celebrateGoal({ goal, done })` (module-level store, same shape as the toast
- * host). No dimming scrim: it drops a heavy rainbow confetti downpour over the
- * live screen and floats a giant glowing "65 Books!" card. The card's border is a
- * true chasing rainbow ring (distinct colors around the edge that rotate around
- * the perimeter), and a soft RGB bloom + cycling text-glow sits behind the number.
- * The bigger the goal, the denser the confetti - hit a huge number, get a
- * downpour. Tap anywhere to dismiss.
+ * host). No dimming scrim: a transparent edge glow frames the screen (brightest
+ * at the edges, clear in the center), a heavy rainbow confetti downpour falls over
+ * the live screen, and a giant "65 Books!" card floats in the middle. The card's
+ * border is a true chasing rainbow ring (distinct colors around the edge that
+ * rotate around the perimeter); the number and its glow are static so they don't
+ * strobe. The bigger the goal, the denser the confetti. Tap anywhere to dismiss.
  *
  * The trigger decision (has the user hit the goal, and haven't we already
  * celebrated this exact goal number) lives in lib/goalCelebration.ts; this file
@@ -23,7 +23,6 @@ import Animated, {
   cancelAnimation,
   Easing,
   interpolate,
-  interpolateColor,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -72,20 +71,6 @@ function getState(): GoalCelebration | null {
 // How many books "Raise the bar" adds to the current goal.
 const RAISE_STEP = 5
 
-// The full RGB spectrum, looped so the text/glow can ripple continuously. The
-// last stop repeats the first so the wrap-around has no seam.
-const SPECTRUM = [
-  '#ff0040',
-  '#ff8000',
-  '#ffe000',
-  '#40ff00',
-  '#00ffcc',
-  '#0080ff',
-  '#8000ff',
-  '#ff00c0',
-  '#ff0040',
-]
-const SPECTRUM_INPUT = SPECTRUM.map((_, i) => i / (SPECTRUM.length - 1))
 // The rainbow ring wheel: distinct hues placed around a disc that we rotate, so a
 // different color sits on each edge/corner and they chase around the perimeter.
 const WHEEL = ['#ff0040', '#ff8000', '#ffe000', '#40ff00', '#00ffcc', '#0080ff', '#8000ff', '#ff00c0']
@@ -93,6 +78,15 @@ const WHEEL = ['#ff0040', '#ff8000', '#ffe000', '#40ff00', '#00ffcc', '#0080ff',
 // (expo-linear-gradient wants a non-empty color tuple).
 const RING_A = ['#ff0040', '#ff8000', '#ffe000', '#40ff00', '#00ffcc', '#0080ff', '#8000ff', '#ff00c0', '#ff0040'] as const
 const RING_B = ['#00ffcc', '#0080ff', '#8000ff', '#ff00c0', '#ff0040', '#ff8000', '#ffe000', '#40ff00'] as const
+
+// Edge glow: an accent tint at each edge (gradient endpoints) fading to fully
+// transparent by ~a third in, so the center of the screen stays clear.
+const EDGE_GLOW = [
+  'rgba(120,90,255,0.34)',
+  'rgba(120,90,255,0.0)',
+  'rgba(120,90,255,0.0)',
+  'rgba(120,90,255,0.34)',
+] as const
 
 const BORDER = 5 // ring thickness (px)
 const RING_RADIUS = radius.card + BORDER
@@ -230,9 +224,8 @@ export function GoalCelebrationHost() {
   const colors = useColors()
   const styles = makeStyles(colors)
 
-  // Card entrance pop + a forever-looping hue driver for the RGB text/glow.
+  // Card entrance pop. The text is static; only the ring + confetti move.
   const pop = useSharedValue(0)
-  const hue = useSharedValue(0)
   // Card frame, measured on layout, to size the rainbow ring behind it.
   const [frame, setFrame] = useState<LayoutRectangle | null>(null)
 
@@ -260,32 +253,15 @@ export function GoalCelebrationHost() {
   useEffect(() => {
     if (!state) {
       pop.value = 0
-      cancelAnimation(hue)
       return
     }
     haptics.success()
     pop.value = withDelay(60, withSpring(1, { damping: 8, stiffness: 150, mass: 0.7 }))
-    hue.value = 0
-    hue.value = withRepeat(withTiming(1, { duration: 1400, easing: Easing.linear }), -1, false)
-    return () => cancelAnimation(hue)
-  }, [state, pop, hue])
+  }, [state, pop])
 
   const cardStyle = useAnimatedStyle(() => ({
     opacity: interpolate(pop.value, [0, 0.3, 1], [0, 1, 1]),
     transform: [{ scale: 0.6 + pop.value * 0.4 }, { rotateZ: `${(1 - pop.value) * -6}deg` }],
-  }))
-
-  // The big number: cycles color AND carries a fat same-color glow (text-shadow).
-  const bragStyle = useAnimatedStyle(() => {
-    const c = interpolateColor(hue.value, SPECTRUM_INPUT, SPECTRUM)
-    return { color: c, textShadowColor: c }
-  })
-  const kickerStyle = useAnimatedStyle(() => ({
-    color: interpolateColor((hue.value + 0.5) % 1, SPECTRUM_INPUT, SPECTRUM),
-  }))
-  // Radial-ish bloom behind the number, tinted with the current hue.
-  const bloomStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(hue.value, SPECTRUM_INPUT, SPECTRUM),
   }))
 
   const handleRaise = useCallback(() => {
@@ -303,6 +279,23 @@ export function GoalCelebrationHost() {
 
   return (
     <Pressable style={styles.fill} onPress={dismissCelebration}>
+      {/* Transparent edge glow: brightest at each screen edge, fading to clear
+          toward the center so it frames the screen without dimming it. */}
+      <View style={styles.fill} pointerEvents="none">
+        <LinearGradient
+          colors={EDGE_GLOW}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={styles.fill}
+        />
+        <LinearGradient
+          colors={EDGE_GLOW}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={styles.fill}
+        />
+      </View>
+
       {/* Heavy rainbow downpour over the live screen (no dimming layer). */}
       <View style={styles.fill} pointerEvents="none">
         {confetti.map((spec, i) => (
@@ -315,19 +308,16 @@ export function GoalCelebrationHost() {
           <View onLayout={(e) => setFrame(e.nativeEvent.layout)} style={styles.card}>
             {frame ? <RainbowRing frame={frame} /> : null}
 
-            <Animated.Text
-              maxFontSizeMultiplier={MAX_FONT_SCALE}
-              style={[styles.kicker, kickerStyle]}
-            >
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.kicker}>
               READING GOAL SMASHED
-            </Animated.Text>
+            </Text>
 
-            {/* Glow bloom sits behind the number. */}
+            {/* Static number with a soft fixed glow behind it. */}
             <View style={styles.bragWrap}>
-              <Animated.View style={[styles.bloom, bloomStyle]} pointerEvents="none" />
-              <Animated.Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.brag, bragStyle]}>
+              <View style={styles.bloom} pointerEvents="none" />
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.brag}>
                 {bragCount} {bragCount === 1 ? 'Book' : 'Books'}!
-              </Animated.Text>
+              </Text>
             </View>
 
             <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.body}>
@@ -382,6 +372,7 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.elevated,
     },
     kicker: {
+      color: colors.accent,
       fontSize: 13,
       fontWeight: '900',
       letterSpacing: 2,
@@ -396,14 +387,17 @@ const makeStyles = (colors: Palette) =>
       width: 220,
       height: 120,
       borderRadius: 110,
-      opacity: 0.5,
+      opacity: 0.35,
+      backgroundColor: colors.accent,
     },
     brag: {
+      color: colors.text,
       fontFamily: fonts.mono,
       fontSize: 64,
       fontWeight: '900',
       letterSpacing: -1,
       textAlign: 'center',
+      textShadowColor: colors.accent,
       textShadowOffset: { width: 0, height: 0 },
       textShadowRadius: 22,
     },
