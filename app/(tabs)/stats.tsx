@@ -1150,7 +1150,13 @@ function Heatmap({
   colors: Palette
 }) {
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null)
-  const [view, setView] = useState<'grid' | 'list'>('grid')
+  const [view, setView] = useState<'heatmap' | 'list'>('heatmap')
+  // List view drills down: null = the month list, a month index = that month's days.
+  const [openMonth, setOpenMonth] = useState<number | null>(null)
+  const gridScrollRef = useRef<ScrollView>(null)
+  // Scroll the heatmap to the latest weeks (right edge) once, not on every
+  // re-layout, so tapping a week doesn't snap the view back to the end.
+  const didScrollEnd = useRef(false)
 
   // Full-year from durable history when available; else the trailing 26 weeks
   // from byDay. Both render as week columns (Sun..Sat top to bottom).
@@ -1224,15 +1230,20 @@ function Heatmap({
         <SectionHead icon="monthView" title={model.title} colors={colors} />
         <Seg
           value={view}
-          onChange={(v) => setView(v as 'grid' | 'list')}
+          onChange={(v) => {
+            setView(v as 'heatmap' | 'list')
+            setOpenMonth(null)
+            // Re-scroll the heatmap to the newest weeks next time it mounts.
+            didScrollEnd.current = false
+          }}
           options={[
-            { value: 'grid', label: 'Grid' },
+            { value: 'heatmap', label: 'Heatmap' },
             { value: 'list', label: 'List' },
           ]}
         />
       </View>
 
-      {view === 'grid' ? (
+      {view === 'heatmap' ? (
         <View style={{ flexDirection: 'row', marginTop: spacing.md }}>
           {/* Weekday rail down the left (S M T W T F S). */}
           <View style={{ marginRight: 6, gap: CELL_GAP, paddingTop: 16 }}>
@@ -1244,7 +1255,18 @@ function Heatmap({
               </View>
             ))}
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <ScrollView
+            ref={gridScrollRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            // Open scrolled to the newest weeks (right edge), not the oldest -
+            // once, so selecting a week doesn't snap the view back.
+            onContentSizeChange={() => {
+              if (didScrollEnd.current) return
+              didScrollEnd.current = true
+              gridScrollRef.current?.scrollToEnd({ animated: false })
+            }}
+          >
             <View>
               {/* Month axis across the top. */}
               <View style={{ height: 16, flexDirection: 'row' }}>
@@ -1290,17 +1312,19 @@ function Heatmap({
           </ScrollView>
         </View>
       ) : (
-        <WeekList
-          days={selectedWeek != null ? selectedDays : weekDays(model.weeks - 1)}
+        <MonthList
+          cells={model.cells}
           hasDetail={model.hasDetail}
+          openMonth={openMonth}
+          onOpenMonth={setOpenMonth}
           styles={styles}
           colors={colors}
         />
       )}
 
-      {/* Selected-week detail card, below the grid (never a bubble under the
-          finger). Shown in grid view once a week is tapped. */}
-      {view === 'grid' && selectedWeek != null && selectedDays.length > 0 && (
+      {/* Selected-week detail card, below the heatmap (never a bubble under the
+          finger). Shown in heatmap view once a week is tapped. */}
+      {view === 'heatmap' && selectedWeek != null && selectedDays.length > 0 && (
         <WeekDetail days={selectedDays} hasDetail={model.hasDetail} styles={styles} colors={colors} />
       )}
     </View>
@@ -1361,47 +1385,124 @@ function WeekDetail({
   )
 }
 
-// The list-view equivalent of the grid: seven dated day rows a screen reader can
-// read linearly. Empty days read "No listening" so the week is complete.
-function WeekList({
-  days,
+interface HeatMonth {
+  key: number // year*12 + month, unique + sortable
+  label: string // "March 2026"
+  days: HeatDay[]
+  totalSecs: number
+  activeDays: number
+  books: number
+}
+
+/** The list view's screen-reader-friendly drill-down: a list of months, newest
+ *  first; tapping one opens its dated day rows. The non-visual equivalent of the
+ *  heatmap. */
+function MonthList({
+  cells,
   hasDetail,
+  openMonth,
+  onOpenMonth,
   styles,
   colors,
 }: {
-  days: HeatDay[]
+  cells: HeatDay[]
   hasDetail: boolean
+  openMonth: number | null
+  onOpenMonth: (key: number | null) => void
   styles: Styles
   colors: Palette
 }) {
+  const now = new Date()
+  // Group real (past/today) days by calendar month, newest month first.
+  const months = useMemo<HeatMonth[]>(() => {
+    const byKey = new Map<number, HeatMonth>()
+    for (const d of cells) {
+      if (d.date > now) continue
+      const key = d.date.getFullYear() * 12 + d.date.getMonth()
+      let m = byKey.get(key)
+      if (!m) {
+        m = {
+          key,
+          label: `${MONTH_LABELS[d.date.getMonth()]} ${d.date.getFullYear()}`,
+          days: [],
+          totalSecs: 0,
+          activeDays: 0,
+          books: 0,
+        }
+        byKey.set(key, m)
+      }
+      m.days.push(d)
+      m.totalSecs += d.secs
+      if (d.secs > 0) m.activeDays += 1
+      m.books += d.books
+    }
+    return [...byKey.values()].sort((a, b) => b.key - a.key)
+  }, [cells, now])
+
+  const open = openMonth != null ? months.find((m) => m.key === openMonth) : null
+
+  // Drilled into a month: a back row + that month's dated day rows.
+  if (open) {
+    return (
+      <View style={{ marginTop: spacing.md }}>
+        <Touchable style={styles.monthBack} onPress={() => onOpenMonth(null)}>
+          <Icon name={icons.chevronLeft} size={20} color={colors.accent} />
+          <AppText variant="label" color={colors.accent}>
+            {open.label}
+          </AppText>
+        </Touchable>
+        {open.days.map((d) => {
+          const mins = Math.round(d.secs / 60)
+          const label = `${WEEKDAY_LONG[d.date.getDay()]} ${String(d.date.getDate()).padStart(2, '0')}`
+          const detail =
+            mins > 0
+              ? hasDetail && d.books > 0
+                ? `${hmLabel(d.secs)} · ${d.books} book${d.books === 1 ? '' : 's'}`
+                : hmLabel(d.secs)
+              : 'No listening'
+          return (
+            <View key={d.key} style={styles.weekRow}>
+              <AppText variant="meta" style={{ width: 64 }}>
+                {label}
+              </AppText>
+              <View style={[styles.weekRowBar, { flex: 1 }]}>
+                <View
+                  style={[
+                    styles.weekRowFill,
+                    { width: `${Math.min(100, d.ratio * 100)}%`, opacity: mins > 0 ? 1 : 0 },
+                  ]}
+                />
+              </View>
+              <AppText variant="caption" color={mins > 0 ? colors.text : colors.textFaint}>
+                {detail}
+              </AppText>
+            </View>
+          )
+        })}
+      </View>
+    )
+  }
+
+  // Month list: one tappable row per month with its totals.
   return (
     <View style={{ marginTop: spacing.md }}>
-      {days.map((d) => {
-        const mins = Math.round(d.secs / 60)
-        const label = `${WEEKDAY_LONG[d.date.getDay()]} ${String(d.date.getDate()).padStart(2, '0')}`
-        const detail =
-          mins > 0
-            ? hasDetail && d.books > 0
-              ? `${hmLabel(d.secs)} · ${d.books} book${d.books === 1 ? '' : 's'}`
-              : hmLabel(d.secs)
+      {months.map((m) => {
+        const sub =
+          m.activeDays > 0
+            ? `${hmLabel(m.totalSecs)} · ${m.activeDays} active day${m.activeDays === 1 ? '' : 's'}${
+                hasDetail && m.books > 0 ? ` · ${m.books} book${m.books === 1 ? '' : 's'}` : ''
+              }`
             : 'No listening'
         return (
-          <View key={d.key} style={styles.weekRow}>
-            <AppText variant="meta" style={{ width: 64 }}>
-              {label}
-            </AppText>
-            <View style={[styles.weekRowBar, { flex: 1 }]}>
-              <View
-                style={[
-                  styles.weekRowFill,
-                  { width: `${Math.min(100, d.ratio * 100)}%`, opacity: mins > 0 ? 1 : 0 },
-                ]}
-              />
+          <Touchable key={m.key} style={styles.monthRow} onPress={() => onOpenMonth(m.key)}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <AppText variant="label">{m.label}</AppText>
+              <AppText variant="caption" color={m.activeDays > 0 ? colors.textMuted : colors.textFaint}>
+                {sub}
+              </AppText>
             </View>
-            <AppText variant="caption" color={mins > 0 ? colors.text : colors.textFaint}>
-              {detail}
-            </AppText>
-          </View>
+            <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />
+          </Touchable>
         )
       })}
     </View>
@@ -2026,6 +2127,21 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
       overflow: 'hidden',
     },
     weekRowFill: { height: '100%', backgroundColor: colors.accent, borderRadius: radius.pill },
+    monthRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
+    },
+    monthBack: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      paddingVertical: spacing.sm,
+      marginBottom: spacing.xs,
+    },
 
     monthAvgNum: { fontFamily: fonts.mono, fontSize: 22, fontWeight: '700', color: colors.text },
 
