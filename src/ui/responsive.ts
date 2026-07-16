@@ -81,5 +81,10 @@ export function adaptiveShelfTileWidth(width: number): number {
 
 export function adaptivePlayerCoverMaxWidth(width: number, immersive: boolean): number {
   if (immersive) return Math.max(0, width - spacing.xl * 2)
-  return windowClass(width) === 'compact' ? 360 : 440
+  // Compact: no fixed cap - the side gutters and the measured cover-area height
+  // (player.tsx coverMaxH) bound the artwork. A fixed dp cap left wide bands of
+  // dead space around the cover on low-density displays (display size set to
+  // "small"), where the same screen offers far more dp. Medium/expanded keep a
+  // cap so tablets don't show a billboard.
+  return windowClass(width) === 'compact' ? Math.max(0, width - spacing.xl * 2) : 440
 }
