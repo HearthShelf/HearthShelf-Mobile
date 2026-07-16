@@ -22,12 +22,18 @@ type TransitionSpec = NonNullable<BottomTabNavigationOptions['transitionSpec']>
  * plain RN Animated.Value that runs -1/1 (inactive) -> 0 (active), so a
  * single interpolation covers both directions. The custom tab bar and the
  * root-mounted MiniPlayerDock live outside the scenes and never move.
+ *
+ * The opacity holds at 1 through the middle of the transition (|progress|
+ * <= 0.4) so at every instant at least one scene is fully solid. Fading both
+ * scenes linearly let the dark scaffold bleed through at the midpoint, which
+ * read as the screen blinking.
  */
+const HOLD = 0.4
 const liftSceneInterpolator: SceneStyleInterpolator = ({ current }) => ({
   sceneStyle: {
     opacity: current.progress.interpolate({
-      inputRange: [-1, 0, 1],
-      outputRange: [0, 1, 0],
+      inputRange: [-1, -HOLD, 0, HOLD, 1],
+      outputRange: [0, 1, 1, 1, 0],
     }),
     transform: [
       {
@@ -46,11 +52,12 @@ const liftTransitionSpec: TransitionSpec = {
 }
 
 // Reduce Motion: zero displacement, opacity-only over the zero dose duration.
+// Same opacity hold so the fallback doesn't dip to the scaffold either.
 const fadeSceneInterpolator: SceneStyleInterpolator = ({ current }) => ({
   sceneStyle: {
     opacity: current.progress.interpolate({
-      inputRange: [-1, 0, 1],
-      outputRange: [0, 1, 0],
+      inputRange: [-1, -HOLD, 0, HOLD, 1],
+      outputRange: [0, 1, 1, 1, 0],
     }),
   },
 })

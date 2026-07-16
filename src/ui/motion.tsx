@@ -37,7 +37,8 @@ export const DUR = { fast: 120, base: 180, slow: 220 } as const
  * (zero: opacity only). Distances in px, durations in ms.
  */
 export const LIFT = {
-  micro: { distance: 8, duration: 160 },
+  // 200ms after on-device tuning: 160 read as a blink on tab swaps.
+  micro: { distance: 8, duration: 200 },
   standard: { distance: 18, duration: 240 },
   zero: { distance: 0, duration: 120 },
 } as const

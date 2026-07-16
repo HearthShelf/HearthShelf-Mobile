@@ -504,9 +504,19 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
       : null
 
   // Floating nav expands the scene, but only the full-bleed background should use
-  // that extra area. Keep artwork and controls at their classic vertical geometry.
+  // that extra area. Real layout margin (not a translate) keeps the controls clear
+  // of the floating pill, so the cover area's flex height is the true space left
+  // and the centered artwork lands where it looks - a translate shrank the cover
+  // (via the coverMaxH cap) while the area kept its full height, stranding the
+  // cover between symmetric bands of dead space.
+  // Vertical rail sits on the right edge (controls inset sideways instead), so it
+  // only needs the home-indicator inset, not a full bar height.
   const floatingNavVisible = !immersive && navMode !== 'classic'
-  const controlsBottomLift = floatingNavVisible ? TAB_BAR_HEIGHT + insets.bottom : 0
+  const controlsBottomLift = !floatingNavVisible
+    ? 0
+    : navMode === 'floating-vertical'
+      ? insets.bottom
+      : TAB_BAR_HEIGHT + insets.bottom
 
   // Cover: fill the width (up to a cap), but never taller than the space we have.
   // Honor the cover-shape setting; height = width / aspect, so cap width so the
@@ -518,9 +528,14 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // clipped by the area's overflow. Falls back to a fraction of screen height
   // for the first frame (before onLayout fires).
   const [coverAreaH, setCoverAreaH] = useState(0)
-  const measuredCoverMaxH =
-    coverAreaH > 0 ? coverAreaH - spacing.md : height * (immersive ? 0.62 : 0.52)
-  const coverMaxH = Math.max(0, measuredCoverMaxH - controlsBottomLift)
+  // The controls' bottom margin (floating nav) already shrinks the measured area,
+  // so no further subtraction here - only the first-frame fallback estimates it.
+  const coverMaxH = Math.max(
+    0,
+    coverAreaH > 0
+      ? coverAreaH - spacing.md
+      : height * (immersive ? 0.62 : 0.52) - controlsBottomLift,
+  )
   const coverWidth = Math.min(coverMaxW, coverMaxH * coverAspect)
   const contentMaxWidth = adaptiveContentMaxWidth(width)
   const progressRailWidth = Math.max(0, Math.min(width, contentMaxWidth) - spacing.xl * 2)
@@ -968,7 +983,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                 maxWidth: contentMaxWidth,
                 width: '100%',
                 alignSelf: 'center',
-                transform: [{ translateY: -controlsBottomLift }],
+                marginBottom: controlsBottomLift,
               },
               controlsRightInset > 0 && { paddingRight: spacing.xl + controlsRightInset },
             ]}
