@@ -49,7 +49,14 @@ export function MiniPlayerDock() {
   // spanning the width, so the mini player drops to the bottom and only insets
   // its right side to clear the column (width + its right margin).
   const vertical = hasTabBar && floatingNav && orientation === 'vertical'
-  const offset = (hasTabBar && !vertical ? TAB_BAR_HEIGHT : 0) + insets.bottom
+  // Sit the docked mini-player flush on TOP of the tab bar. The classic tab bar
+  // already reserves the bottom safe-area inset internally (its own
+  // paddingBottom), so its top edge is TAB_BAR_HEIGHT above the inset zone - we
+  // must NOT add insets.bottom again here or the bar floats a home-indicator's
+  // height too high, leaving a strip of dead space above the tab bar. When there
+  // is no tab bar (or a vertical floating column), the bar drops to the bottom
+  // and DOES clear the safe-area inset itself.
+  const offset = hasTabBar && !vertical ? TAB_BAR_HEIGHT : insets.bottom
   const rightInset = vertical ? VNAV_WIDTH + spacing.md : 0
   // With the floating pill nav, the mini player becomes a rounded floating card
   // (side margins + shadow) to match; with the classic docked tab bar it stays
