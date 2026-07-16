@@ -2,12 +2,11 @@
  * Yearly reading-goal celebration - the app's loudest moment. A single host
  * (<GoalCelebrationHost>) mounted once at the root layout, fired from anywhere via
  * `celebrateGoal({ goal, done })` (module-level store, same shape as the toast
- * host). No dimming scrim: a transparent edge glow frames the screen (brightest
- * at the edges, clear in the center), a heavy rainbow confetti downpour falls over
- * the live screen, and a giant "65 Books!" card floats in the middle. The card's
- * border is a true chasing rainbow ring (distinct colors around the edge that
- * rotate around the perimeter); the number and its glow are static so they don't
- * strobe. The bigger the goal, the denser the confetti. Tap anywhere to dismiss.
+ * host). No dimming scrim: a heavy cut-paper confetti downpour falls over the live
+ * screen and a dark "glass" card floats in the middle. The card is backlit by a
+ * thin chasing-rainbow rim whose soft glow bleeds outward off the border (the
+ * iOS-glass look); the number and text are static white on dark so they stay
+ * legible. The bigger the goal, the denser the confetti. Tap anywhere to dismiss.
  *
  * The trigger decision (has the user hit the goal, and haven't we already
  * celebrated this exact goal number) lives in lib/goalCelebration.ts; this file
@@ -15,14 +14,15 @@
  * spot, which - because the celebrated-goal flag is keyed to the goal number -
  * re-arms the celebration for the new, higher target.
  */
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
-import { Dimensions, Pressable, StyleSheet, Text, View, type LayoutRectangle } from 'react-native'
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
+import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { LinearGradient } from 'expo-linear-gradient'
 import Animated, {
   cancelAnimation,
   Easing,
   interpolate,
+  type SharedValue,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -80,16 +80,10 @@ const RING_A = ['#ff0040', '#ff8000', '#ffe000', '#40ff00', '#00ffcc', '#0080ff'
 const RING_B = ['#00ffcc', '#0080ff', '#8000ff', '#ff00c0', '#ff0040', '#ff8000', '#ffe000', '#40ff00'] as const
 
 // Edge glow: an accent tint at each edge (gradient endpoints) fading to fully
-// transparent by ~a third in, so the center of the screen stays clear.
-const EDGE_GLOW = [
-  'rgba(120,90,255,0.34)',
-  'rgba(120,90,255,0.0)',
-  'rgba(120,90,255,0.0)',
-  'rgba(120,90,255,0.34)',
-] as const
-
-const BORDER = 5 // ring thickness (px)
-const RING_RADIUS = radius.card + BORDER
+const BORDER = 3 // rainbow rim thickness (px) - a thin bright line, not a slab
+const CARD_RADIUS = radius.card
+// Opaque near-black glass face, so only the rim + text read (not a rainbow slab).
+const FACE = '#0e0d0c'
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window')
 
@@ -101,13 +95,13 @@ function confettiCountForGoal(goal: number): number {
 
 interface ConfettiSpec {
   x: number // start x (px)
-  size: number // side length (px)
+  w: number // piece width (px)
+  h: number // piece height (px) - taller than wide = a paper strip
   color: string
   fallMs: number // time to cross the screen once
   delayMs: number // initial stagger so the stream isn't a synchronized wall
   drift: number // horizontal sway amplitude (px)
   spin: number // full rotations per fall
-  round: boolean // circle vs square piece
 }
 
 /**
@@ -143,9 +137,8 @@ function Confetti({ spec }: { spec: ConfettiSpec }) {
           position: 'absolute',
           top: 0,
           left: spec.x,
-          width: spec.size,
-          height: spec.size,
-          borderRadius: spec.round ? spec.size / 2 : 2,
+          width: spec.w,
+          height: spec.h,
           backgroundColor: spec.color,
         },
         style,
@@ -154,68 +147,92 @@ function Confetti({ spec }: { spec: ConfettiSpec }) {
   )
 }
 
-/**
- * A chasing rainbow ring behind the card. A rainbow-filled disc, sized to cover
- * the card, spins continuously; the card body sits on top and masks all but a
- * `BORDER`-thick frame, so what shows is a rotating rainbow border where each edge
- * carries a different hue that chases around the perimeter.
- */
-function RainbowRing({ frame }: { frame: LayoutRectangle }) {
-  const spin = useSharedValue(0)
-  useEffect(() => {
-    spin.value = 0
-    spin.value = withRepeat(withTiming(1, { duration: 3200, easing: Easing.linear }), -1, false)
-    return () => cancelAnimation(spin)
-  }, [spin])
-
-  // The disc must fully cover the card at any rotation, so its side = the card's
-  // diagonal. Two crossed gradients give color on all four edges at once.
-  const diag = Math.ceil(Math.hypot(frame.width + BORDER * 2, frame.height + BORDER * 2))
+/** A spinning two-gradient rainbow disc that fills its parent. Reused for both the
+ *  crisp rim and the soft outward glow (the glow is just a blurred-substitute copy
+ *  rendered larger and faint behind the card). */
+function RainbowDisc({ spin, side }: { spin: SharedValue<number>; side: number }) {
   const style = useAnimatedStyle(() => ({
     transform: [{ rotateZ: `${spin.value * 360}deg` }],
   }))
+  return (
+    <Animated.View style={[{ width: side, height: side }, style]}>
+      <LinearGradient
+        colors={RING_A}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <LinearGradient
+        colors={RING_B}
+        start={{ x: 1, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={[StyleSheet.absoluteFill, { opacity: 0.6 }]}
+      />
+    </Animated.View>
+  )
+}
+
+/**
+ * The celebration card, built as stacked layers so it reads like backlit glass:
+ *   1. a rim CONTAINER carrying a soft native shadow - that shadow is the outward
+ *      glow bleeding off the border (the iOS-glass "light off the edge" look);
+ *   2. a crisp rainbow RIM - the spinning disc clipped to the rounded frame;
+ *   3. an opaque dark glass FACE inset by BORDER, on top of the rim, holding
+ *      the content so only a thin bright rainbow line shows around it.
+ */
+function GlowCard({ children, style }: { children: React.ReactNode; style?: object }) {
+  const spin = useSharedValue(0)
+  useEffect(() => {
+    spin.value = 0
+    spin.value = withRepeat(withTiming(1, { duration: 3600, easing: Easing.linear }), -1, false)
+    return () => cancelAnimation(spin)
+  }, [spin])
+
+  // Disc side must exceed the card's diagonal so color reaches every corner at any
+  // rotation. A fixed size comfortably larger than the max card covers it.
+  const DISC = 900
 
   return (
-    <View
-      pointerEvents="none"
-      style={{
-        position: 'absolute',
-        left: -BORDER,
-        top: -BORDER,
-        width: frame.width + BORDER * 2,
-        height: frame.height + BORDER * 2,
-        borderRadius: RING_RADIUS,
-        overflow: 'hidden',
-      }}
-    >
-      <Animated.View
-        style={[
-          {
-            position: 'absolute',
-            width: diag,
-            height: diag,
-            left: (frame.width + BORDER * 2 - diag) / 2,
-            top: (frame.height + BORDER * 2 - diag) / 2,
-          },
-          style,
-        ]}
-      >
-        <LinearGradient
-          colors={RING_A}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-        <LinearGradient
-          colors={RING_B}
-          start={{ x: 1, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={[StyleSheet.absoluteFill, { opacity: 0.6 }]}
-        />
-      </Animated.View>
+    <View style={[glowStyles.rim, style]}>
+      {/* Rainbow rim: the spinning disc, clipped to the rounded card frame. */}
+      <View style={glowStyles.rimClip} pointerEvents="none">
+        <RainbowDisc spin={spin} side={DISC} />
+      </View>
+      {/* Opaque glass face inset by BORDER, on top of the rim. */}
+      <View style={glowStyles.face}>{children}</View>
     </View>
   )
 }
+
+const glowStyles = StyleSheet.create({
+  rim: {
+    borderRadius: CARD_RADIUS + BORDER,
+    padding: BORDER,
+    // The outward glow: a soft, wide, low-opacity halo radiating off the border.
+    // iOS reads shadowRadius as a blur; Android approximates with elevation.
+    shadowColor: '#8a7bff',
+    shadowOpacity: 0.8,
+    shadowRadius: 26,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 24,
+  },
+  rimClip: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: CARD_RADIUS + BORDER,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  face: {
+    borderRadius: CARD_RADIUS,
+    backgroundColor: FACE,
+    overflow: 'hidden',
+  },
+})
 
 /** Mounted once at the root layout, above every screen and the mini player. */
 export function GoalCelebrationHost() {
@@ -226,8 +243,6 @@ export function GoalCelebrationHost() {
 
   // Card entrance pop. The text is static; only the ring + confetti move.
   const pop = useSharedValue(0)
-  // Card frame, measured on layout, to size the rainbow ring behind it.
-  const [frame, setFrame] = useState<LayoutRectangle | null>(null)
 
   const goal = state?.goal ?? 0
   // Fresh confetti field each time a celebration opens (density scales w/ goal).
@@ -237,15 +252,19 @@ export function GoalCelebrationHost() {
     return Array.from({ length: count }, () => {
       // Perspective: pieces starting lower read as "closer" - bigger and faster.
       const depth = Math.random()
+      // Cut-paper: sharp little squares and thin strips. Base width scales with
+      // depth; ~40% are elongated into rectangles (a taller-than-wide chip).
+      const base = 4 + depth * 8
+      const strip = Math.random() < 0.4
       return {
         x: Math.random() * SCREEN_W,
-        size: 6 + depth * 14,
+        w: base,
+        h: strip ? base * (2 + Math.random() * 1.5) : base,
         color: WHEEL[Math.floor(Math.random() * WHEEL.length)],
         fallMs: 2600 - depth * 1400 + Math.random() * 400,
         delayMs: Math.random() * 2600,
         drift: 12 + Math.random() * 46,
         spin: 1 + Math.random() * 3,
-        round: Math.random() < 0.4,
       }
     })
   }, [state, goal])
@@ -279,24 +298,7 @@ export function GoalCelebrationHost() {
 
   return (
     <Pressable style={styles.fill} onPress={dismissCelebration}>
-      {/* Transparent edge glow: brightest at each screen edge, fading to clear
-          toward the center so it frames the screen without dimming it. */}
-      <View style={styles.fill} pointerEvents="none">
-        <LinearGradient
-          colors={EDGE_GLOW}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={styles.fill}
-        />
-        <LinearGradient
-          colors={EDGE_GLOW}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={styles.fill}
-        />
-      </View>
-
-      {/* Heavy rainbow downpour over the live screen (no dimming layer). */}
+      {/* Heavy cut-paper downpour over the live screen (no dimming layer). */}
       <View style={styles.fill} pointerEvents="none">
         {confetti.map((spec, i) => (
           <Confetti key={i} spec={spec} />
@@ -305,28 +307,23 @@ export function GoalCelebrationHost() {
 
       <View style={[styles.center, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <Animated.View style={cardStyle}>
-          <View onLayout={(e) => setFrame(e.nativeEvent.layout)} style={styles.card}>
-            {frame ? <RainbowRing frame={frame} /> : null}
+          <GlowCard style={styles.cardShape}>
+            <View style={styles.cardInner}>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.kicker}>
+                READING GOAL SMASHED
+              </Text>
 
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.kicker}>
-              READING GOAL SMASHED
-            </Text>
-
-            {/* Static number with a soft fixed glow behind it. */}
-            <View style={styles.bragWrap}>
-              <View style={styles.bloom} pointerEvents="none" />
               <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.brag}>
                 {bragCount} {bragCount === 1 ? 'Book' : 'Books'}!
               </Text>
-            </View>
 
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.body}>
-              {done > goal
-                ? `${done - goal} past your goal of ${goal} this year.`
-                : `You hit your goal of ${goal} this year.`}
-            </Text>
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.body}>
+                {done > goal
+                  ? `${done - goal} past your goal of ${goal} this year.`
+                  : `You hit your goal of ${goal} this year.`}
+              </Text>
 
-            <View style={styles.actions}>
+              <View style={styles.actions}>
               <Pressable
                 onPress={handleRaise}
                 style={({ pressed }) => [styles.raiseBtn, pressed && styles.pressed]}
@@ -344,8 +341,9 @@ export function GoalCelebrationHost() {
                   Nice
                 </Text>
               </Pressable>
+              </View>
             </View>
-          </View>
+          </GlowCard>
         </Animated.View>
       </View>
     </Pressable>
@@ -361,48 +359,34 @@ const makeStyles = (colors: Palette) =>
       justifyContent: 'center',
       paddingHorizontal: spacing.xl,
     },
-    card: {
+    // Sizing lives on the GlowCard wrapper; the face + content padding is inside.
+    cardShape: {
       width: '100%',
       maxWidth: 380,
+    },
+    cardInner: {
       alignItems: 'center',
       gap: spacing.sm,
       paddingVertical: spacing.xl,
       paddingHorizontal: spacing.lg,
-      borderRadius: radius.card,
-      backgroundColor: colors.elevated,
     },
     kicker: {
-      color: colors.accent,
+      color: '#c9b8ff',
       fontSize: 13,
       fontWeight: '900',
       letterSpacing: 2,
     },
-    bragWrap: {
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginVertical: spacing.xs,
-    },
-    bloom: {
-      position: 'absolute',
-      width: 220,
-      height: 120,
-      borderRadius: 110,
-      opacity: 0.35,
-      backgroundColor: colors.accent,
-    },
     brag: {
-      color: colors.text,
+      color: '#ffffff',
       fontFamily: fonts.mono,
       fontSize: 64,
       fontWeight: '900',
       letterSpacing: -1,
       textAlign: 'center',
-      textShadowColor: colors.accent,
-      textShadowOffset: { width: 0, height: 0 },
-      textShadowRadius: 22,
+      marginVertical: spacing.xs,
     },
     body: {
-      color: colors.textMuted,
+      color: 'rgba(255,255,255,0.62)',
       fontSize: 15,
       lineHeight: 21,
       textAlign: 'center',
@@ -425,6 +409,6 @@ const makeStyles = (colors: Palette) =>
       paddingVertical: spacing.sm,
       borderRadius: radius.pill,
     },
-    dismissText: { color: colors.textMuted, fontSize: 14, fontWeight: '600' },
+    dismissText: { color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: '600' },
     pressed: { opacity: 0.7 },
   })
