@@ -69,6 +69,7 @@ import { onTabReselect } from '@/ui/tabReselect'
 import { useContentInset } from '@/ui/useContentInset'
 import { useBackHandler } from '@/ui/useBackHandler'
 import { adaptiveContentMaxWidth } from '@/ui/responsive'
+import { Skeleton, SkeletonRow, EmptyState, ErrorState } from '@/ui/states'
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const DAY_SHORT = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
@@ -274,7 +275,7 @@ export default function StatsTab() {
   if (status.phase === 'loading') {
     return (
       <Screen>
-        <Loading label="Loading your stats..." />
+        <StatsSkeleton styles={styles} contentMaxWidth={contentMaxWidth} />
       </Screen>
     )
   }
@@ -283,10 +284,7 @@ export default function StatsTab() {
     return (
       <Screen>
         <Centered>
-          <AppText variant="meta" color={colors.destructive} style={{ textAlign: 'center' }}>
-            {status.message}
-          </AppText>
-          <PrimaryButton label="Retry" icon={icons.retry} onPress={load} />
+          <ErrorState message={status.message} onRetry={load} />
         </Centered>
       </Screen>
     )
@@ -332,16 +330,13 @@ export default function StatsTab() {
             <StatTiles stats={stats} styles={styles} colors={colors} />
           </>
         ) : (
-          <View style={[styles.card, { alignItems: 'center', paddingVertical: spacing.xl }]}>
-            <AppText variant="title">Nothing yet</AppText>
-            <AppText
-              variant="meta"
-              color={colors.textMuted}
-              style={{ textAlign: 'center', marginTop: spacing.xs }}
-            >
-              Start a book and your streak, hours, and highlights will show up here.
-            </AppText>
-          </View>
+          <EmptyState
+            icon={icons.barChart}
+            title="Nothing yet"
+            body="Start a book and your streak, hours, and highlights will show up here."
+            cta="Browse library"
+            onCta={() => router.replace('/(tabs)/library')}
+          />
         )}
 
         <View onLayout={registerSection('goal')}>
@@ -449,6 +444,38 @@ function JumpChips({
         </Touchable>
       ))}
     </ScrollView>
+  )
+}
+
+// Loading skeleton that mirrors the real stats layout (title, tiles, goal,
+// chart) so content fills the same slots with no reflow.
+function StatsSkeleton({
+  styles,
+  contentMaxWidth,
+}: {
+  styles: Styles
+  contentMaxWidth: number
+}) {
+  return (
+    <View
+      style={{
+        alignSelf: 'center',
+        maxWidth: contentMaxWidth,
+        width: '100%',
+        padding: spacing.lg,
+        gap: spacing.lg,
+      }}
+    >
+      <SkeletonRow width={'50%'} height={26} />
+      <Skeleton width={'100%'} height={96} radius={radius.card} />
+      <View style={styles.tileGrid}>
+        {[0, 1, 2, 3].map((i) => (
+          <Skeleton key={i} width={'46%'} height={92} radius={radius.card} style={{ flexGrow: 1 }} />
+        ))}
+      </View>
+      <Skeleton width={'100%'} height={120} radius={radius.card} />
+      <Skeleton width={'100%'} height={160} radius={radius.card} />
+    </View>
   )
 }
 
