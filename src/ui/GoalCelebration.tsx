@@ -1,9 +1,11 @@
 /**
- * Yearly reading-goal celebration. A single host (<GoalCelebrationHost>) mounted
- * once at the root layout, fired from anywhere via `celebrateGoal({ goal, done })`
- * (module-level store, same shape as the toast host). When it fires it takes over
- * the screen with a warm scrim, a spring-in "Goal!" card, and a big ember burst -
- * the app's biggest emotional peak, one notch above a book-finished burst.
+ * Yearly reading-goal celebration - the app's loudest moment. A single host
+ * (<GoalCelebrationHost>) mounted once at the root layout, fired from anywhere via
+ * `celebrateGoal({ goal, done })` (module-level store, same shape as the toast
+ * host). No dimming scrim: it drops an endless rainbow confetti downpour over the
+ * live screen and floats a giant RGB-cycling "65 Books!" card whose text AND
+ * border ripple through the full color spectrum for as long as it's up. Tap
+ * anywhere to dismiss.
  *
  * The trigger decision (has the user hit the goal, and haven't we already
  * celebrated this exact goal number) lives in lib/goalCelebration.ts; this file
@@ -11,18 +13,21 @@
  * spot, which - because the celebrated-goal flag is keyed to the goal number -
  * re-arms the celebration for the new, higher target.
  */
-import { useCallback, useEffect, useSyncExternalStore } from 'react'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
+import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Animated, {
+  cancelAnimation,
   Easing,
+  interpolate,
+  interpolateColor,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
+  withRepeat,
   withSpring,
   withTiming,
 } from 'react-native-reanimated'
-import { EmberBurst } from './EmberBurst'
 import { haptics } from './haptics'
 import { MAX_FONT_SCALE, radius, spacing, fonts, type Palette } from './theme'
 import { useColors } from './ThemeProvider'
@@ -32,7 +37,7 @@ export interface GoalCelebration {
   goal: number
   /** How many books they've actually finished this year. */
   done: number
-  /** Bump the goal by `by` books (drives the "Raise the bar" button). */
+  /** Bump the goal (drives the "Raise the bar" button). */
   onRaise?: (nextGoal: number) => void
 }
 
@@ -64,6 +69,80 @@ function getState(): GoalCelebration | null {
 // How many books "Raise the bar" adds to the current goal.
 const RAISE_STEP = 5
 
+// The full RGB spectrum, looped so text/border can ripple continuously. The last
+// stop repeats the first so the wrap-around has no seam.
+const SPECTRUM = [
+  '#ff0040',
+  '#ff8000',
+  '#ffe000',
+  '#40ff00',
+  '#00ffcc',
+  '#0080ff',
+  '#8000ff',
+  '#ff00c0',
+  '#ff0040',
+]
+const SPECTRUM_INPUT = SPECTRUM.map((_, i) => i / (SPECTRUM.length - 1))
+
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window')
+// Confetti count - a genuine downpour, not a polite sprinkle.
+const CONFETTI_COUNT = 90
+
+interface ConfettiSpec {
+  x: number // start x (px)
+  size: number // side length (px)
+  color: string
+  fallMs: number // time to cross the screen once
+  delayMs: number // initial stagger so the stream isn't a synchronized wall
+  drift: number // horizontal sway amplitude (px)
+  spin: number // full rotations per fall
+  round: boolean // circle vs square piece
+}
+
+/**
+ * One confetti piece: falls from above the top edge to below the bottom, looping
+ * forever, swaying and spinning as it goes. Each piece owns its own driver so the
+ * stream is continuous and desynchronized.
+ */
+function Confetti({ spec }: { spec: ConfettiSpec }) {
+  const t = useSharedValue(0)
+
+  useEffect(() => {
+    t.value = 0
+    t.value = withDelay(
+      spec.delayMs,
+      withRepeat(withTiming(1, { duration: spec.fallMs, easing: Easing.linear }), -1, false),
+    )
+    return () => cancelAnimation(t)
+  }, [t, spec.delayMs, spec.fallMs])
+
+  const style = useAnimatedStyle(() => {
+    const fall = interpolate(t.value, [0, 1], [-40, SCREEN_H + 40])
+    const sway = Math.sin(t.value * Math.PI * 4) * spec.drift
+    const rot = t.value * 360 * spec.spin
+    return {
+      transform: [{ translateY: fall }, { translateX: sway }, { rotateZ: `${rot}deg` }],
+    }
+  })
+
+  return (
+    <Animated.View
+      style={[
+        {
+          position: 'absolute',
+          top: 0,
+          left: spec.x,
+          width: spec.size,
+          height: spec.size,
+          borderRadius: spec.round ? spec.size / 2 : 2,
+          backgroundColor: spec.color,
+        },
+        style,
+      ]}
+    />
+  )
+}
+
 /** Mounted once at the root layout, above every screen and the mini player. */
 export function GoalCelebrationHost() {
   const state = useSyncExternalStore(subscribe, getState)
@@ -71,34 +150,58 @@ export function GoalCelebrationHost() {
   const colors = useColors()
   const styles = makeStyles(colors)
 
-  // Drive the scrim + card entrance. Both live at the top so the hook order is
-  // stable whether or not a celebration is showing.
-  const scrim = useSharedValue(0)
+  // Card entrance pop + a forever-looping hue driver for the RGB text/border.
   const pop = useSharedValue(0)
+  const hue = useSharedValue(0)
+
+  // Fresh confetti field each time a celebration opens (new random spread).
+  const confetti = useMemo<ConfettiSpec[]>(() => {
+    // `state` in deps so a re-fire (diagnostics) reshuffles the field.
+    void state
+    return Array.from({ length: CONFETTI_COUNT }, () => ({
+      x: Math.random() * SCREEN_W,
+      size: 7 + Math.random() * 9,
+      color: SPECTRUM[Math.floor(Math.random() * (SPECTRUM.length - 1))],
+      fallMs: 1600 + Math.random() * 1800,
+      delayMs: Math.random() * 2400,
+      drift: 12 + Math.random() * 40,
+      spin: 1 + Math.random() * 3,
+      round: Math.random() < 0.4,
+    }))
+  }, [state])
 
   useEffect(() => {
     if (!state) {
-      scrim.value = 0
       pop.value = 0
+      cancelAnimation(hue)
       return
     }
     haptics.success()
-    scrim.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.quad) })
-    // A brief overshoot pop so "Goal!" lands with a bounce, then settles.
-    pop.value = withDelay(80, withSpring(1, { damping: 9, stiffness: 140, mass: 0.7 }))
-  }, [state, scrim, pop])
+    pop.value = withDelay(60, withSpring(1, { damping: 8, stiffness: 150, mass: 0.7 }))
+    hue.value = 0
+    hue.value = withRepeat(withTiming(1, { duration: 1400, easing: Easing.linear }), -1, false)
+    return () => cancelAnimation(hue)
+  }, [state, pop, hue])
 
-  const scrimStyle = useAnimatedStyle(() => ({ opacity: scrim.value }))
   const cardStyle = useAnimatedStyle(() => ({
-    opacity: scrim.value,
-    transform: [{ scale: 0.7 + pop.value * 0.3 }, { translateY: (1 - pop.value) * 20 }],
+    opacity: interpolate(pop.value, [0, 0.3, 1], [0, 1, 1]),
+    transform: [{ scale: 0.6 + pop.value * 0.4 }, { rotateZ: `${(1 - pop.value) * -6}deg` }],
+    borderColor: interpolateColor(hue.value, SPECTRUM_INPUT, SPECTRUM),
+  }))
+
+  // Text hue offset a third of the way round the wheel so it never matches the
+  // border - the two chase each other through the spectrum.
+  const textStyle = useAnimatedStyle(() => ({
+    color: interpolateColor((hue.value + 0.33) % 1, SPECTRUM_INPUT, SPECTRUM),
+  }))
+  const kickerStyle = useAnimatedStyle(() => ({
+    color: interpolateColor((hue.value + 0.66) % 1, SPECTRUM_INPUT, SPECTRUM),
   }))
 
   const handleRaise = useCallback(() => {
     if (!state) return
     haptics.confirm()
-    const next = state.goal + RAISE_STEP
-    state.onRaise?.(next)
+    state.onRaise?.(state.goal + RAISE_STEP)
     dismissCelebration()
   }, [state])
 
@@ -106,34 +209,30 @@ export function GoalCelebrationHost() {
 
   const done = state.done
   const goal = state.goal
-  const over = Math.max(0, done - goal)
+  // Headline number: what they actually finished, the bragging figure.
+  const bragCount = Math.max(done, goal)
 
   return (
-    <Pressable
-      style={StyleSheet.absoluteFill}
-      onPress={dismissCelebration}
-      // The whole scrim is the dismiss target; buttons stopPropagation below.
-    >
-      <Animated.View style={[styles.scrim, scrimStyle]} pointerEvents="none" />
+    <Pressable style={styles.fill} onPress={dismissCelebration}>
+      {/* Endless rainbow downpour over the live screen (no dimming layer). */}
+      <View style={styles.fill} pointerEvents="none">
+        {confetti.map((spec, i) => (
+          <Confetti key={i} spec={spec} />
+        ))}
+      </View>
+
       <View style={[styles.center, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <Animated.View style={[styles.card, cardStyle]}>
-          {/* Ember burst rises from behind the card's headline. Two stacked
-              bursts (each has its own random drifts) read as a fuller shower for
-              the app's biggest moment. */}
-          <View style={styles.burstAnchor} pointerEvents="none">
-            <EmberBurst burst={1} colors={[colors.accent, colors.brandHearth]} />
-            <EmberBurst burst={1} colors={[colors.brandHearth, colors.success]} />
-          </View>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.kicker}>
-            READING GOAL
-          </Text>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.headline}>
-            Goal!
-          </Text>
+          <Animated.Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.kicker, kickerStyle]}>
+            READING GOAL SMASHED
+          </Animated.Text>
+          <Animated.Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.brag, textStyle]}>
+            {bragCount} {bragCount === 1 ? 'Book' : 'Books'}!
+          </Animated.Text>
           <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.body}>
-            {over > 0
-              ? `You've finished ${done} books this year - ${over} past your goal of ${goal}.`
-              : `You hit your goal of ${goal} ${goal === 1 ? 'book' : 'books'} this year.`}
+            {done > goal
+              ? `${done - goal} past your goal of ${goal} this year.`
+              : `You hit your goal of ${goal} this year.`}
           </Text>
 
           <View style={styles.actions}>
@@ -163,14 +262,7 @@ export function GoalCelebrationHost() {
 
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
-    scrim: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: 'rgba(0,0,0,0.72)',
-    },
+    fill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
     center: {
       flex: 1,
       alignItems: 'center',
@@ -186,36 +278,26 @@ const makeStyles = (colors: Palette) =>
       paddingHorizontal: spacing.lg,
       borderRadius: radius.card,
       backgroundColor: colors.elevated,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      overflow: 'visible',
-    },
-    burstAnchor: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      height: 120,
+      borderWidth: 4,
     },
     kicker: {
-      color: colors.accent,
-      fontSize: 12,
-      fontWeight: '800',
+      fontSize: 13,
+      fontWeight: '900',
       letterSpacing: 2,
     },
-    headline: {
-      color: colors.text,
+    brag: {
       fontFamily: fonts.mono,
-      fontSize: 44,
-      fontWeight: '800',
-      marginTop: spacing.xs,
+      fontSize: 60,
+      fontWeight: '900',
+      letterSpacing: -1,
+      marginVertical: spacing.xs,
+      textAlign: 'center',
     },
     body: {
       color: colors.textMuted,
       fontSize: 15,
       lineHeight: 21,
       textAlign: 'center',
-      marginTop: spacing.xs,
       marginBottom: spacing.sm,
     },
     actions: {
