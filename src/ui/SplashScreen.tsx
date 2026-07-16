@@ -12,11 +12,13 @@
  * like a spark caught mid-flight. All motion is Reanimated (worklets), no JS-thread
  * timers. The field is seeded once at mount so no two boots look alike.
  */
-import { useMemo, useRef } from 'react'
-import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { AppState, Dimensions, Pressable, StyleSheet, Text, View } from 'react-native'
+import * as Device from 'expo-device'
 import { LinearGradient } from 'expo-linear-gradient'
 import Svg, { Circle, Defs, Ellipse, G, RadialGradient, Stop } from 'react-native-svg'
 import Animated, {
+  cancelAnimation,
   Easing,
   interpolate,
   useAnimatedProps,
@@ -28,6 +30,7 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated'
+import { useReducedMotion } from './motion'
 import { FlameLogo } from './FlameLogo'
 import { colors, fonts, shadow, spacing } from './theme'
 
@@ -35,7 +38,15 @@ const AnimatedG = Animated.createAnimatedComponent(G)
 const AnimatedCircle = Animated.createAnimatedComponent(Circle)
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window')
-const EMBER_COUNT = 24
+
+// Device-tier the particle count: a low-RAM phone can't afford 24 individually
+// animated SVG nodes at cold boot (the worst time to drop frames), so drop to a
+// lean field. Above ~3GB keeps the full field. Read once at module load.
+const LOW_MEM = (() => {
+  const bytes = Device.totalMemory ?? 0
+  return bytes > 0 && bytes < 3 * 1024 * 1024 * 1024
+})()
+const EMBER_COUNT = LOW_MEM ? 12 : 24
 
 // A deterministic-per-mount pseudo-random. Seeded from the ember index so the
 // field is varied but stable across re-renders within a single boot.
@@ -253,7 +264,7 @@ export type SplashServer = { id: string; name: string; url: string }
 
 export type SplashPhase =
   | { kind: 'igniting' }
-  | { kind: 'connecting'; label?: string }
+  | { kind: 'connecting'; label?: string; serverName?: string }
   | { kind: 'select-server'; servers: SplashServer[] }
   | { kind: 'no-servers' }
   | { kind: 'error'; message: string }
@@ -276,7 +287,13 @@ export function SplashScreen({
    *  native OS splash so it cross-fades onto an already-painted hearth. */
   onReady?: () => void
 }) {
-  const embers = useMemo(makeEmbers, [])
+  // Reduce Motion (OS setting) OR a low-RAM device gets the STATIC hearth: one
+  // painted glow, no ember field, no looping flicker - progress is carried by a
+  // determinate bar + text, never by fire motion alone (D-A11Y).
+  const reduced = useReducedMotion()
+  const staticMode = reduced || LOW_MEM
+
+  const embers = useMemo(() => (staticMode ? [] : makeEmbers()), [staticMode])
 
   // One shared clock drives both glows (they read it at different phases) and
   // the logo flicker, so everything breathes off the same fire.
@@ -287,7 +304,15 @@ export function SplashScreen({
   // and wordmark fade UP over ~0.2s as the hearth catches.
   const ignite = useSharedValue(0)
 
-  useMemo(() => {
+  useEffect(() => {
+    if (staticMode) {
+      // Static hearth: hold the glow at a warm mid-value, no loops, and skip the
+      // ignition animation (everything is just on).
+      pulse.value = 0.6
+      flicker.value = 1
+      ignite.value = 1
+      return
+    }
     pulse.value = withRepeat(
       withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.sin) }),
       -1,
@@ -307,8 +332,33 @@ export function SplashScreen({
     )
     // The 0.2s ignition. Short and deliberate - the fire "comes alive".
     ignite.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) })
+    // Don't burn battery/GPU while backgrounded: pause the loops on background.
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st !== 'active') {
+        cancelAnimation(pulse)
+        cancelAnimation(flicker)
+      } else {
+        pulse.value = withRepeat(
+          withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.sin) }),
+          -1,
+          true,
+        )
+        flicker.value = withRepeat(
+          withSequence(
+            withTiming(1, { duration: 90 }),
+            withTiming(0.72, { duration: 140 }),
+            withTiming(0.94, { duration: 70 }),
+            withTiming(0.82, { duration: 220 }),
+            withTiming(1, { duration: 110 }),
+          ),
+          -1,
+          false,
+        )
+      }
+    })
+    return () => sub.remove()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [staticMode])
 
   // The logo holds steady for the handoff, then picks up the live flicker once lit.
   const logoStyle = useAnimatedStyle(() => ({
@@ -328,6 +378,23 @@ export function SplashScreen({
 
   const isError = phase.kind === 'error' || phase.kind === 'no-servers'
   const readyFired = useRef(false)
+  const [showDetails, setShowDetails] = useState(false)
+
+  // A determinate progress bar for the static/reduce-motion path, so progress is
+  // never conveyed by fire motion alone. A slow indeterminate creep - we don't
+  // know real percent, but a moving bar reads as "working, not frozen".
+  const progress = useSharedValue(0)
+  useEffect(() => {
+    if (!staticMode) return
+    if (phase.kind === 'connecting') {
+      progress.value = 0.08
+      progress.value = withRepeat(withTiming(0.9, { duration: 3200, easing: Easing.out(Easing.quad) }), -1, true)
+    } else {
+      cancelAnimation(progress)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [staticMode, phase.kind])
+  const progressStyle = useAnimatedStyle(() => ({ width: `${progress.value * 100}%` }))
 
   return (
     <View
@@ -394,17 +461,46 @@ export function SplashScreen({
         {/* Status + actions. Only this region changes as the phase advances. */}
         <View style={styles.statusArea}>
           {phase.kind === 'connecting' ? (
-            <Text style={styles.label}>{phase.label ?? 'Warming up your library...'}</Text>
+            <>
+              <Text style={styles.label}>
+                {phase.serverName
+                  ? `Connecting to ${phase.serverName}…`
+                  : (phase.label ?? 'Warming up your library...')}
+              </Text>
+              {/* Static/reduce-motion path: a determinate bar so progress isn't
+                  carried by the fire alone. */}
+              {staticMode ? (
+                <View style={styles.progressTrack}>
+                  <Animated.View style={[styles.progressFill, progressStyle]} />
+                </View>
+              ) : null}
+            </>
           ) : null}
 
           {phase.kind === 'no-servers' ? (
-            <Text style={styles.errorText}>
-              No AudiobookShelf server is linked to your account yet.
-            </Text>
+            <>
+              <Text style={styles.errorText}>
+                No AudiobookShelf server is linked to your account yet.
+              </Text>
+              <Text style={styles.helpText}>
+                Ask a server owner for an invite link, then open it on this phone to link
+                up. You can also link one from Settings → My servers.
+              </Text>
+            </>
           ) : null}
 
           {phase.kind === 'error' ? (
-            <Text style={styles.errorText}>{friendlyError(phase.message)}</Text>
+            <>
+              <Text style={styles.errorText}>{friendlyError(phase.message)}</Text>
+              {/* Keep the raw string off the first-impression screen, but let the
+                  curious (or a bug report) reveal it. */}
+              <Pressable onPress={() => setShowDetails((v) => !v)} hitSlop={8}>
+                <Text style={styles.detailsToggle}>
+                  {showDetails ? 'Hide details' : 'Show details'}
+                </Text>
+              </Pressable>
+              {showDetails ? <Text style={styles.detailsText}>{phase.message}</Text> : null}
+            </>
           ) : null}
 
           {phase.kind === 'select-server' ? (
@@ -510,6 +606,40 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 300,
   },
+  helpText: {
+    color: colors.textMuted,
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    maxWidth: 300,
+    marginTop: spacing.sm,
+  },
+  detailsToggle: {
+    color: colors.textMuted,
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    marginTop: spacing.sm,
+    textDecorationLine: 'underline',
+  },
+  detailsText: {
+    color: colors.textFaint,
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: 'center',
+    maxWidth: 300,
+    marginTop: spacing.xs,
+  },
+  progressTrack: {
+    width: 200,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.fillStrong,
+    overflow: 'hidden',
+    marginTop: spacing.md,
+  },
+  progressFill: { height: '100%', backgroundColor: colors.accent, borderRadius: 2 },
   actions: {
     marginTop: spacing.lg,
     alignItems: 'center',

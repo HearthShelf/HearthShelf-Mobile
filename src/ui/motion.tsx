@@ -8,7 +8,22 @@
  */
 import { useEffect } from 'react'
 import { Pressable, type PressableProps, type StyleProp, type ViewStyle } from 'react-native'
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated'
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion as useReanimatedReducedMotion,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated'
+
+/**
+ * True when the OS "Reduce Motion" accessibility setting is on. Thin re-export of
+ * Reanimated's hook so every motion consumer gates on ONE import (D-A11Y): loops
+ * become static, big entrances become cross-fades. Kept here beside the other
+ * motion primitives so it's the obvious place to reach for.
+ */
+export function useReducedMotion(): boolean {
+  return useReanimatedReducedMotion()
+}
 
 export const POP_SPRING = { damping: 13, stiffness: 380, mass: 0.5 } as const
 
