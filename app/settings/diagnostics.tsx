@@ -15,6 +15,7 @@ import { useMemo, useState } from 'react'
 import {
   PixelRatio,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -180,7 +181,15 @@ export default function DiagnosticsScreen() {
             <PrimaryButton label="Refresh" onPress={() => setNonce((n) => n + 1)} />
           </View>
         </View>
-        <PrimaryButton label="Test goal celebration" onPress={() => void testGoalCelebration()} />
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => void testGoalCelebration()}
+          style={({ pressed }) => [styles.testButton, pressed && styles.testButtonPressed]}
+        >
+          <AppText variant="label" color={colors.accent}>
+            Test celebration
+          </AppText>
+        </Pressable>
       </View>
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingTop: 0 }}
@@ -212,4 +221,16 @@ const makeStyles = (colors: Palette) =>
       borderColor: colors.hairline,
       padding: spacing.md,
     },
+    testButton: {
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      backgroundColor: colors.card,
+      borderColor: colors.border,
+      borderRadius: radius.pill,
+      borderWidth: StyleSheet.hairlineWidth,
+      justifyContent: 'center',
+      minHeight: 48,
+      paddingHorizontal: spacing.lg,
+    },
+    testButtonPressed: { opacity: 0.65 },
   })

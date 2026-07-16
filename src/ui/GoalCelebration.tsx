@@ -1,414 +1,667 @@
 /**
- * Yearly reading-goal celebration - the app's loudest moment. A single host
- * (<GoalCelebrationHost>) mounted once at the root layout, fired from anywhere via
- * `celebrateGoal({ goal, done })` (module-level store, same shape as the toast
- * host). No dimming scrim: a heavy cut-paper confetti downpour falls over the live
- * screen and a dark "glass" card floats in the middle. The card is backlit by a
- * thin chasing-rainbow rim whose soft glow bleeds outward off the border (the
- * iOS-glass look); the number and text are static white on dark so they stay
- * legible. The bigger the goal, the denser the confetti. Tap anywhere to dismiss.
+ * Yearly reading-goal celebration. The launch/checking behavior lives in
+ * lib/goalCelebration.ts; this file owns the brief, app-wide visual moment.
  *
- * The trigger decision (has the user hit the goal, and haven't we already
- * celebrated this exact goal number) lives in lib/goalCelebration.ts; this file
- * only renders. A "Raise the bar" button lets the user bump their goal on the
- * spot, which - because the celebrated-goal flag is keyed to the goal number -
- * re-arms the celebration for the new, higher target.
+ * The milestone itself stays compact and luminous while a finite depth-sorted
+ * confetti field crosses the live app behind and in front of it. One shared
+ * animation drives the entire field, so a bigger goal can earn more confetti
+ * without starting an animation loop for every piece.
  */
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
-import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import {
+  AccessibilityInfo,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import Svg, { Defs, Ellipse, RadialGradient, Stop } from 'react-native-svg'
 import Animated, {
   cancelAnimation,
   Easing,
   interpolate,
   type SharedValue,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withDelay,
-  withRepeat,
+  withSequence,
   withSpring,
   withTiming,
 } from 'react-native-reanimated'
 import { haptics } from './haptics'
-import { MAX_FONT_SCALE, radius, spacing, fonts, type Palette } from './theme'
+import { fonts, MAX_FONT_SCALE, radius, spacing, type Palette } from './theme'
 import { useColors } from './ThemeProvider'
 
 export interface GoalCelebration {
   /** The goal the user just reached (books this year). */
   goal: number
-  /** How many books they've actually finished this year. */
+  /** How many books they have actually finished this year. */
   done: number
-  /** Bump the goal (drives the "Raise the bar" button). */
+  /** Bump the goal from the challenge button. */
   onRaise?: (nextGoal: number) => void
 }
 
-// --- global store: one celebration at a time ---
+// --- global store: one celebration at a time -------------------------------
+
 let current: GoalCelebration | null = null
 const listeners = new Set<() => void>()
-const emit = () => listeners.forEach((l) => l())
+const emit = () => listeners.forEach((listener) => listener())
 
-/** Raise the goal celebration from anywhere (launch check, diagnostics test). */
-export function celebrateGoal(c: GoalCelebration): void {
-  current = c
+/** Raise the goal celebration from anywhere (launch check or diagnostics). */
+export function celebrateGoal(celebration: GoalCelebration): void {
+  current = celebration
   emit()
 }
 
-/** Tear the celebration down (tap-to-dismiss, or after the user raises the bar). */
 function dismissCelebration(): void {
   current = null
   emit()
 }
 
-function subscribe(fn: () => void): () => void {
-  listeners.add(fn)
-  return () => listeners.delete(fn)
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
 }
+
 function getState(): GoalCelebration | null {
   return current
 }
 
-// How many books "Raise the bar" adds to the current goal.
 const RAISE_STEP = 5
 
-// The rainbow ring wheel: distinct hues placed around a disc that we rotate, so a
-// different color sits on each edge/corner and they chase around the perimeter.
-const WHEEL = ['#ff0040', '#ff8000', '#ffe000', '#40ff00', '#00ffcc', '#0080ff', '#8000ff', '#ff00c0']
-// The two crossed rainbow gradients that make the spinning ring, as fixed tuples
-// (expo-linear-gradient wants a non-empty color tuple).
-const RING_A = ['#ff0040', '#ff8000', '#ffe000', '#40ff00', '#00ffcc', '#0080ff', '#8000ff', '#ff00c0', '#ff0040'] as const
-const RING_B = ['#00ffcc', '#0080ff', '#8000ff', '#ff00c0', '#ff0040', '#ff8000', '#ffe000', '#40ff00'] as const
+// Restrained, warm-saturated paper colors. Keeping lime and pure RGB out of the
+// field lets the glow remain the visual signature instead of turning into a rave.
+const CONFETTI_COLORS = ['#f16a4f', '#f3ad4f', '#f8e7c7', '#8b72e8', '#45beba', '#d968a1'] as const
 
-// Edge glow: an accent tint at each edge (gradient endpoints) fading to fully
-const BORDER = 3 // rainbow rim thickness (px) - a thin bright line, not a slab
-const CARD_RADIUS = radius.card
-// Opaque near-black glass face, so only the rim + text read (not a rainbow slab).
-const FACE = '#0e0d0c'
-
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window')
-
-// Confetti scales with the goal: a modest goal still rains, a big one pours. The
-// higher you climb, the more you get.
+/** More ambitious goals earn a denser burst, with a ceiling for older devices. */
 function confettiCountForGoal(goal: number): number {
-  return Math.round(Math.max(80, Math.min(320, 80 + goal * 3)))
+  return Math.min(128, Math.max(48, Math.round(36 + Math.sqrt(Math.max(1, goal)) * 7)))
 }
+
+type ConfettiFlight = 'burst' | 'fall'
 
 interface ConfettiSpec {
-  x: number // start x (px)
-  w: number // piece width (px)
-  h: number // piece height (px) - taller than wide = a paper strip
   color: string
-  fallMs: number // time to cross the screen once
-  delayMs: number // initial stagger so the stream isn't a synchronized wall
-  drift: number // horizontal sway amplitude (px)
-  spin: number // full rotations per fall
+  delay: number
+  depth: number
+  dx: number
+  dy: number
+  end: number
+  flight: ConfettiFlight
+  height: number
+  phase: number
+  rise: number
+  rotation: number
+  turns: number
+  width: number
+  x: number
+  y: number
 }
 
-/**
- * One confetti piece: falls from above the top edge to below the bottom, looping
- * forever, swaying and spinning as it goes. Each piece owns its own driver so the
- * stream is continuous and desynchronized.
- */
-function Confetti({ spec }: { spec: ConfettiSpec }) {
-  const t = useSharedValue(0)
+function buildConfetti(
+  goal: number,
+  viewportWidth: number,
+  viewportHeight: number,
+): ConfettiSpec[] {
+  const count = confettiCountForGoal(goal)
+  const centerY = Math.min(viewportHeight * 0.44, viewportHeight - 280)
 
-  useEffect(() => {
-    t.value = 0
-    t.value = withDelay(
-      spec.delayMs,
-      withRepeat(withTiming(1, { duration: spec.fallMs, easing: Easing.linear }), -1, false),
-    )
-    return () => cancelAnimation(t)
-  }, [t, spec.delayMs, spec.fallMs])
+  return Array.from({ length: count }, (_, index) => {
+    const depth = Math.random()
+    const flight: ConfettiFlight = index < Math.round(count * 0.3) ? 'burst' : 'fall'
+    const size = 3.5 + depth * 6
+    const isRibbon = Math.random() < 0.52
+    const delay = flight === 'burst' ? 0.04 + Math.random() * 0.1 : Math.random() * 0.24
+    const duration = 0.58 + (1 - depth) * 0.24
+    const x =
+      flight === 'burst'
+        ? viewportWidth / 2 + (Math.random() - 0.5) * Math.min(190, viewportWidth * 0.52)
+        : Math.random() * viewportWidth
+    const y =
+      flight === 'burst'
+        ? centerY + (Math.random() - 0.5) * 90
+        : -50 - Math.random() * viewportHeight * 0.28
 
-  const style = useAnimatedStyle(() => {
-    const fall = interpolate(t.value, [0, 1], [-40, SCREEN_H + 40])
-    const sway = Math.sin(t.value * Math.PI * 4) * spec.drift
-    const rot = t.value * 360 * spec.spin
     return {
-      transform: [{ translateY: fall }, { translateX: sway }, { rotateZ: `${rot}deg` }],
+      color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+      delay,
+      depth,
+      dx:
+        flight === 'burst'
+          ? (Math.random() - 0.5) * viewportWidth * (0.7 + depth * 0.45)
+          : (Math.random() - 0.5) * (32 + depth * 54),
+      dy: viewportHeight - y + 80 + Math.random() * 120,
+      end: Math.min(1, delay + duration),
+      flight,
+      height: isRibbon ? size * (1.8 + Math.random() * 1.7) : size,
+      phase: Math.random() * Math.PI * 2,
+      rise: flight === 'burst' ? 80 + Math.random() * 150 : 0,
+      rotation: Math.random() * 180,
+      turns: 1.5 + Math.random() * 3.5,
+      width: size,
+      x,
+      y,
+    }
+  })
+}
+
+/** A single paper chip. All chips read the same progress shared value. */
+function ConfettiPiece({ progress, spec }: { progress: SharedValue<number>; spec: ConfettiSpec }) {
+  const animatedStyle = useAnimatedStyle(() => {
+    const local = Math.min(1, Math.max(0, (progress.value - spec.delay) / (spec.end - spec.delay)))
+    const sway = Math.sin(local * Math.PI * 4 + spec.phase) * (8 + spec.depth * 16) * local
+    const burstArc = spec.flight === 'burst' ? -Math.sin(local * Math.PI) * spec.rise : 0
+    const fall = spec.flight === 'burst' ? spec.dy * local * local : spec.dy * local
+
+    return {
+      opacity: interpolate(local, [0, 0.045, 0.8, 1], [0, 1, 0.92, 0]),
+      transform: [
+        { translateX: spec.dx * local + sway },
+        { translateY: burstArc + fall },
+        { rotateZ: `${spec.rotation + local * spec.turns * 360}deg` },
+        { scale: 0.72 + spec.depth * 0.42 },
+      ],
     }
   })
 
   return (
     <Animated.View
       style={[
+        particleStyles.piece,
         {
-          position: 'absolute',
-          top: 0,
-          left: spec.x,
-          width: spec.w,
-          height: spec.h,
           backgroundColor: spec.color,
+          height: spec.height,
+          left: spec.x,
+          top: spec.y,
+          width: spec.width,
         },
-        style,
+        animatedStyle,
       ]}
     />
   )
 }
 
-/** A spinning two-gradient rainbow disc that fills its parent. Reused for both the
- *  crisp rim and the soft outward glow (the glow is just a blurred-substitute copy
- *  rendered larger and faint behind the card). */
-function RainbowDisc({ spin, side }: { spin: SharedValue<number>; side: number }) {
-  const style = useAnimatedStyle(() => ({
-    transform: [{ rotateZ: `${spin.value * 360}deg` }],
-  }))
+function ConfettiField({
+  progress,
+  specs,
+}: {
+  progress: SharedValue<number>
+  specs: ConfettiSpec[]
+}) {
   return (
-    <Animated.View style={[{ width: side, height: side }, style]}>
-      <LinearGradient
-        colors={RING_A}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      <LinearGradient
-        colors={RING_B}
-        start={{ x: 1, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={[StyleSheet.absoluteFill, { opacity: 0.6 }]}
-      />
-    </Animated.View>
-  )
-}
-
-/**
- * The celebration card, built as stacked layers so it reads like backlit glass:
- *   1. a rim CONTAINER carrying a soft native shadow - that shadow is the outward
- *      glow bleeding off the border (the iOS-glass "light off the edge" look);
- *   2. a crisp rainbow RIM - the spinning disc clipped to the rounded frame;
- *   3. an opaque dark glass FACE inset by BORDER, on top of the rim, holding
- *      the content so only a thin bright rainbow line shows around it.
- */
-function GlowCard({ children, style }: { children: React.ReactNode; style?: object }) {
-  const spin = useSharedValue(0)
-  useEffect(() => {
-    spin.value = 0
-    spin.value = withRepeat(withTiming(1, { duration: 3600, easing: Easing.linear }), -1, false)
-    return () => cancelAnimation(spin)
-  }, [spin])
-
-  // Disc side must exceed the card's diagonal so color reaches every corner at any
-  // rotation. A fixed size comfortably larger than the max card covers it.
-  const DISC = 900
-
-  return (
-    <View style={[glowStyles.rim, style]}>
-      {/* Rainbow rim: the spinning disc, clipped to the rounded card frame. */}
-      <View style={glowStyles.rimClip} pointerEvents="none">
-        <RainbowDisc spin={spin} side={DISC} />
-      </View>
-      {/* Opaque glass face inset by BORDER, on top of the rim. */}
-      <View style={glowStyles.face}>{children}</View>
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      {specs.map((spec, index) => (
+        <ConfettiPiece key={index} progress={progress} spec={spec} />
+      ))}
     </View>
   )
 }
 
-const glowStyles = StyleSheet.create({
-  rim: {
-    borderRadius: CARD_RADIUS + BORDER,
-    padding: BORDER,
-    // The outward glow: a soft, wide, low-opacity halo radiating off the border.
-    // iOS reads shadowRadius as a blur; Android approximates with elevation.
-    shadowColor: '#8a7bff',
-    shadowOpacity: 0.8,
-    shadowRadius: 26,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 24,
-  },
-  rimClip: {
+const particleStyles = StyleSheet.create({
+  piece: {
+    borderRadius: 1.5,
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderRadius: CARD_RADIUS + BORDER,
-    overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  face: {
-    borderRadius: CARD_RADIUS,
-    backgroundColor: FACE,
-    overflow: 'hidden',
   },
 })
 
-/** Mounted once at the root layout, above every screen and the mini player. */
+/** Three offset radial fields create the soft multi-hue glow behind the badge. */
+function AuroraGlow({ accent }: { accent: string }) {
+  return (
+    <Svg height="100%" viewBox="0 0 360 260" width="100%">
+      <Defs>
+        <RadialGradient cx="42%" cy="50%" id="warmGlow" r="56%">
+          <Stop offset="0" stopColor={accent} stopOpacity="0.54" />
+          <Stop offset="0.48" stopColor="#d968a1" stopOpacity="0.14" />
+          <Stop offset="1" stopColor="#d968a1" stopOpacity="0" />
+        </RadialGradient>
+        <RadialGradient cx="64%" cy="42%" id="coolGlow" r="58%">
+          <Stop offset="0" stopColor="#7968e8" stopOpacity="0.52" />
+          <Stop offset="0.52" stopColor="#456fd8" stopOpacity="0.12" />
+          <Stop offset="1" stopColor="#456fd8" stopOpacity="0" />
+        </RadialGradient>
+        <RadialGradient cx="55%" cy="66%" id="goldGlow" r="48%">
+          <Stop offset="0" stopColor="#f1b15a" stopOpacity="0.36" />
+          <Stop offset="1" stopColor="#f1b15a" stopOpacity="0" />
+        </RadialGradient>
+      </Defs>
+      <Ellipse cx="162" cy="134" fill="url(#warmGlow)" rx="148" ry="104" />
+      <Ellipse cx="202" cy="118" fill="url(#coolGlow)" rx="144" ry="102" />
+      <Ellipse cx="188" cy="158" fill="url(#goldGlow)" rx="116" ry="80" />
+    </Svg>
+  )
+}
+
+/** Mounted once at the root layout, above every route and player surface. */
 export function GoalCelebrationHost() {
   const state = useSyncExternalStore(subscribe, getState)
-  const insets = useSafeAreaInsets()
   const colors = useColors()
+  const insets = useSafeAreaInsets()
+  const { height, width } = useWindowDimensions()
+  const reduceMotion = useReducedMotion()
   const styles = makeStyles(colors)
 
-  // Card entrance pop. The text is static; only the ring + confetti move.
-  const pop = useSharedValue(0)
+  const backdrop = useSharedValue(0)
+  const badge = useSharedValue(0)
+  const details = useSharedValue(0)
+  const confettiProgress = useSharedValue(0)
+  const glow = useSharedValue(0)
 
   const goal = state?.goal ?? 0
-  // Fresh confetti field each time a celebration opens (density scales w/ goal).
-  const confetti = useMemo<ConfettiSpec[]>(() => {
-    void state
-    const count = confettiCountForGoal(goal)
-    return Array.from({ length: count }, () => {
-      // Perspective: pieces starting lower read as "closer" - bigger and faster.
-      const depth = Math.random()
-      // Cut-paper: sharp little squares and thin strips. Base width scales with
-      // depth; ~40% are elongated into rectangles (a taller-than-wide chip).
-      const base = 4 + depth * 8
-      const strip = Math.random() < 0.4
-      return {
-        x: Math.random() * SCREEN_W,
-        w: base,
-        h: strip ? base * (2 + Math.random() * 1.5) : base,
-        color: WHEEL[Math.floor(Math.random() * WHEEL.length)],
-        fallMs: 2600 - depth * 1400 + Math.random() * 400,
-        delayMs: Math.random() * 2600,
-        drift: 12 + Math.random() * 46,
-        spin: 1 + Math.random() * 3,
-      }
-    })
-  }, [state, goal])
+  const done = state?.done ?? 0
+  const nextGoal = goal + RAISE_STEP
+  const badgeWidth = Math.min(300, Math.max(248, width - spacing.xl * 2))
+  const allConfetti = useMemo(
+    () => (state && !reduceMotion ? buildConfetti(goal, width, height) : []),
+    [goal, height, reduceMotion, state, width],
+  )
+  const behindConfetti = useMemo(
+    () => allConfetti.filter((piece) => piece.depth < 0.78),
+    [allConfetti],
+  )
+  const foregroundConfetti = useMemo(
+    () => allConfetti.filter((piece) => piece.depth >= 0.78),
+    [allConfetti],
+  )
 
   useEffect(() => {
+    cancelAnimation(backdrop)
+    cancelAnimation(badge)
+    cancelAnimation(details)
+    cancelAnimation(confettiProgress)
+    cancelAnimation(glow)
+
     if (!state) {
-      pop.value = 0
+      backdrop.value = 0
+      badge.value = 0
+      details.value = 0
+      confettiProgress.value = 0
+      glow.value = 0
       return
     }
-    haptics.success()
-    pop.value = withDelay(60, withSpring(1, { damping: 8, stiffness: 150, mass: 0.7 }))
-  }, [state, pop])
 
-  const cardStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(pop.value, [0, 0.3, 1], [0, 1, 1]),
-    transform: [{ scale: 0.6 + pop.value * 0.4 }, { rotateZ: `${(1 - pop.value) * -6}deg` }],
+    haptics.success()
+    void AccessibilityInfo.announceForAccessibility(
+      `Yearly reading goal reached. ${state.goal} ${state.goal === 1 ? 'book' : 'books'}.`,
+    )
+
+    if (reduceMotion) {
+      backdrop.value = 1
+      badge.value = 1
+      details.value = 1
+      glow.value = 0.84
+      return
+    }
+
+    backdrop.value = withTiming(1, { duration: 240, easing: Easing.out(Easing.quad) })
+    badge.value = withDelay(90, withSpring(1, { damping: 14, mass: 0.72, stiffness: 175 }))
+    confettiProgress.value = withDelay(
+      260,
+      withTiming(1, { duration: 3000, easing: Easing.linear }),
+    )
+    details.value = withDelay(
+      620,
+      withTiming(1, { duration: 360, easing: Easing.out(Easing.cubic) }),
+    )
+    glow.value = withDelay(
+      120,
+      withSequence(
+        withTiming(1, { duration: 520, easing: Easing.out(Easing.cubic) }),
+        withTiming(0.82, { duration: 760, easing: Easing.inOut(Easing.quad) }),
+        withTiming(0.9, { duration: 460, easing: Easing.out(Easing.quad) }),
+      ),
+    )
+  }, [backdrop, badge, confettiProgress, details, glow, reduceMotion, state])
+
+  const backdropStyle = useAnimatedStyle(() => ({ opacity: backdrop.value }))
+  const badgeStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(badge.value, [0, 0.22, 1], [0, 1, 1]),
+    transform: [{ scale: interpolate(badge.value, [0, 1], [0.72, 1]) }],
+  }))
+  const detailStyle = useAnimatedStyle(() => ({
+    opacity: details.value,
+    transform: [{ translateY: interpolate(details.value, [0, 1], [14, 0]) }],
+  }))
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(glow.value, [0, 1], [0, 0.68]),
+    transform: [{ scale: interpolate(glow.value, [0, 1], [0.72, 1]) }],
   }))
 
   const handleRaise = useCallback(() => {
     if (!state) return
-    haptics.confirm()
+    haptics.mode()
     state.onRaise?.(state.goal + RAISE_STEP)
     dismissCelebration()
   }, [state])
 
   if (!state) return null
 
-  const done = state.done
-  // Headline number: what they actually finished, the bragging figure.
-  const bragCount = Math.max(done, goal)
+  const year = new Date().getFullYear()
+  const statusCopy =
+    done > goal
+      ? `${done} finished — ${done - goal} ${done - goal === 1 ? 'book' : 'books'} beyond your goal.`
+      : `${done} ${done === 1 ? 'book' : 'books'} finished this year.`
 
   return (
-    <Pressable style={styles.fill} onPress={dismissCelebration}>
-      {/* Heavy cut-paper downpour over the live screen (no dimming layer). */}
-      <View style={styles.fill} pointerEvents="none">
-        {confetti.map((spec, i) => (
-          <Confetti key={i} spec={spec} />
-        ))}
-      </View>
+    <Modal
+      animationType="none"
+      hardwareAccelerated
+      onRequestClose={dismissCelebration}
+      presentationStyle="overFullScreen"
+      statusBarTranslucent
+      transparent
+      visible
+    >
+      <View accessibilityViewIsModal style={styles.fill}>
+        <Animated.View pointerEvents="none" style={[styles.backdrop, backdropStyle]} />
+        <Pressable
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          onPress={dismissCelebration}
+          style={styles.fill}
+        />
 
-      <View style={[styles.center, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-        <Animated.View style={cardStyle}>
-          <GlowCard style={styles.cardShape}>
-            <View style={styles.cardInner}>
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.kicker}>
-                READING GOAL SMASHED
-              </Text>
+        <ConfettiField progress={confettiProgress} specs={behindConfetti} />
 
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.brag}>
-                {bragCount} {bragCount === 1 ? 'Book' : 'Books'}!
-              </Text>
+        <View
+          pointerEvents="box-none"
+          style={[
+            styles.content,
+            {
+              paddingBottom: Math.max(insets.bottom, spacing.lg),
+              paddingTop: Math.max(insets.top, spacing.lg),
+            },
+          ]}
+        >
+          <Animated.View style={[styles.milestoneWrap, { width: badgeWidth }, badgeStyle]}>
+            <Animated.View pointerEvents="none" style={[styles.glow, glowStyle]}>
+              <AuroraGlow accent={colors.accent} />
+            </Animated.View>
 
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.body}>
-                {done > goal
-                  ? `${done - goal} past your goal of ${goal} this year.`
-                  : `You hit your goal of ${goal} this year.`}
-              </Text>
-
-              <View style={styles.actions}>
-              <Pressable
-                onPress={handleRaise}
-                style={({ pressed }) => [styles.raiseBtn, pressed && styles.pressed]}
+            <View style={styles.badgeShadow}>
+              <LinearGradient
+                colors={['#3459c8', '#7558da', colors.accent, '#dfa348']}
+                end={{ x: 1, y: 1 }}
+                start={{ x: 0, y: 0 }}
+                style={styles.badge}
               >
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.raiseText}>
-                  Raise the bar to {goal + RAISE_STEP}
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={dismissCelebration}
-                hitSlop={8}
-                style={({ pressed }) => [styles.dismissBtn, pressed && styles.pressed]}
-              >
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.dismissText}>
-                  Nice
-                </Text>
-              </Pressable>
-              </View>
+                <LinearGradient
+                  colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.02)', 'rgba(0,0,0,0.2)']}
+                  end={{ x: 1, y: 1 }}
+                  pointerEvents="none"
+                  start={{ x: 0, y: 0 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                <View pointerEvents="none" style={styles.badgeHighlight} />
+
+                <View
+                  accessible
+                  accessibilityLabel={`${year} reading goal. ${goal} ${goal === 1 ? 'book' : 'books'}. Goal reached.`}
+                  accessibilityRole="header"
+                  style={styles.badgeContent}
+                >
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.kicker}>
+                    {year} READING GOAL
+                  </Text>
+                  <View style={styles.numberRow}>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.goalNumber}>
+                      {goal}
+                    </Text>
+                    <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.goalUnit}>
+                      {goal === 1 ? 'BOOK' : 'BOOKS'}
+                    </Text>
+                  </View>
+                  <View style={styles.badgeRule} />
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.reached}>
+                    GOAL REACHED
+                  </Text>
+                </View>
+              </LinearGradient>
             </View>
-          </GlowCard>
-        </Animated.View>
+          </Animated.View>
+
+          <Animated.View style={[styles.details, detailStyle]}>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.didIt}>
+              You did it.
+            </Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.statusCopy}>
+              {statusCopy}
+            </Text>
+
+            {state.onRaise ? (
+              <View style={styles.challenge}>
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.challengeLabel}>
+                  Think you can top it?
+                </Text>
+                <Pressable
+                  accessibilityHint="Updates your yearly reading goal"
+                  accessibilityLabel={`Raise yearly goal to ${nextGoal} books`}
+                  accessibilityRole="button"
+                  onPress={handleRaise}
+                  style={({ pressed }) => [styles.raiseButton, pressed && styles.pressed]}
+                >
+                  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.raiseButtonText}>
+                    Raise the goal to {nextGoal}
+                  </Text>
+                  <Text
+                    accessibilityElementsHidden
+                    maxFontSizeMultiplier={MAX_FONT_SCALE}
+                    style={styles.arrow}
+                  >
+                    →
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
+
+            <Pressable
+              accessibilityLabel={`Keep yearly goal at ${goal} books`}
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={dismissCelebration}
+              style={({ pressed }) => [styles.keepButton, pressed && styles.pressed]}
+            >
+              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.keepButtonText}>
+                Keep {goal} for now
+              </Text>
+            </Pressable>
+          </Animated.View>
+        </View>
+
+        <ConfettiField progress={confettiProgress} specs={foregroundConfetti} />
       </View>
-    </Pressable>
+    </Modal>
   )
 }
 
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
-    fill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
-    center: {
-      flex: 1,
+    fill: {
+      bottom: 0,
+      left: 0,
+      position: 'absolute',
+      right: 0,
+      top: 0,
+    },
+    backdrop: {
+      bottom: 0,
+      backgroundColor: 'rgba(8,7,10,0.96)',
+      left: 0,
+      position: 'absolute',
+      right: 0,
+      top: 0,
+    },
+    content: {
       alignItems: 'center',
+      flex: 1,
       justifyContent: 'center',
       paddingHorizontal: spacing.xl,
     },
-    // Sizing lives on the GlowCard wrapper; the face + content padding is inside.
-    cardShape: {
-      width: '100%',
-      maxWidth: 380,
-    },
-    cardInner: {
+    milestoneWrap: {
       alignItems: 'center',
-      gap: spacing.sm,
-      paddingVertical: spacing.xl,
+      justifyContent: 'center',
+    },
+    glow: {
+      height: 260,
+      position: 'absolute',
+      width: 360,
+    },
+    badgeShadow: {
+      borderRadius: 30,
+      elevation: 24,
+      shadowColor: colors.accent,
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.42,
+      shadowRadius: 28,
+      width: '100%',
+    },
+    badge: {
+      borderRadius: 30,
+      minHeight: 204,
+      overflow: 'hidden',
+      width: '100%',
+    },
+    badgeHighlight: {
+      bottom: 0,
+      borderColor: 'rgba(255,255,255,0.42)',
+      borderRadius: 30,
+      borderWidth: StyleSheet.hairlineWidth,
+      left: 0,
+      position: 'absolute',
+      right: 0,
+      top: 0,
+    },
+    badgeContent: {
+      alignItems: 'center',
+      flex: 1,
+      justifyContent: 'center',
       paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.xl,
     },
     kicker: {
-      color: '#c9b8ff',
-      fontSize: 13,
-      fontWeight: '900',
-      letterSpacing: 2,
+      color: 'rgba(255,255,255,0.78)',
+      fontFamily: fonts.brand,
+      fontSize: 11,
+      fontWeight: '700',
+      letterSpacing: 1.7,
     },
-    brag: {
-      color: '#ffffff',
+    numberRow: {
+      alignItems: 'flex-end',
+      flexDirection: 'row',
+      gap: spacing.sm,
+      justifyContent: 'center',
+      marginBottom: spacing.xs,
+      marginTop: spacing.xs,
+    },
+    goalNumber: {
+      color: '#fffdf8',
       fontFamily: fonts.mono,
-      fontSize: 64,
-      fontWeight: '900',
-      letterSpacing: -1,
-      textAlign: 'center',
-      marginVertical: spacing.xs,
+      fontSize: 68,
+      fontWeight: '700',
+      letterSpacing: -3,
+      lineHeight: 76,
+      textShadowColor: 'rgba(19,10,36,0.24)',
+      textShadowOffset: { width: 0, height: 2 },
+      textShadowRadius: 8,
     },
-    body: {
-      color: 'rgba(255,255,255,0.62)',
+    goalUnit: {
+      color: 'rgba(255,255,255,0.86)',
+      fontFamily: fonts.sans,
+      fontSize: 16,
+      fontWeight: '700',
+      letterSpacing: 1.2,
+      lineHeight: 27,
+      marginBottom: 11,
+    },
+    badgeRule: {
+      backgroundColor: 'rgba(255,255,255,0.32)',
+      height: StyleSheet.hairlineWidth,
+      marginBottom: spacing.sm,
+      width: 76,
+    },
+    reached: {
+      color: '#fffdf8',
+      fontFamily: fonts.sans,
+      fontSize: 12,
+      fontWeight: '700',
+      letterSpacing: 2.3,
+    },
+    details: {
+      alignItems: 'center',
+      marginTop: spacing.xl,
+      maxWidth: 360,
+      width: '100%',
+    },
+    didIt: {
+      color: '#fffdf8',
+      fontFamily: fonts.brand,
+      fontSize: 26,
+      fontWeight: '700',
+      lineHeight: 34,
+    },
+    statusCopy: {
+      color: 'rgba(255,255,255,0.78)',
+      fontFamily: fonts.sans,
       fontSize: 15,
-      lineHeight: 21,
+      lineHeight: 22,
+      marginTop: spacing.xs,
       textAlign: 'center',
+    },
+    challenge: {
+      alignItems: 'center',
+      marginTop: spacing.xl,
+      width: '100%',
+    },
+    challengeLabel: {
+      color: 'rgba(255,255,255,0.7)',
+      fontFamily: fonts.sans,
+      fontSize: 13,
+      fontWeight: '600',
       marginBottom: spacing.sm,
     },
-    actions: {
-      alignSelf: 'stretch',
-      gap: spacing.sm,
-      marginTop: spacing.sm,
-    },
-    raiseBtn: {
+    raiseButton: {
       alignItems: 'center',
-      paddingVertical: spacing.md,
+      backgroundColor: 'rgba(255,255,255,0.11)',
+      borderColor: 'rgba(255,255,255,0.2)',
       borderRadius: radius.pill,
-      backgroundColor: colors.accent,
+      borderWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      justifyContent: 'center',
+      minHeight: 52,
+      paddingHorizontal: spacing.xl,
+      width: '100%',
     },
-    raiseText: { color: colors.scaffold, fontSize: 15, fontWeight: '700' },
-    dismissBtn: {
+    raiseButtonText: {
+      color: '#fffdf8',
+      fontFamily: fonts.sans,
+      fontSize: 15,
+      fontWeight: '700',
+    },
+    arrow: {
+      color: '#f5bd73',
+      fontFamily: fonts.sans,
+      fontSize: 20,
+      marginLeft: spacing.sm,
+      marginTop: -2,
+    },
+    keepButton: {
       alignItems: 'center',
-      paddingVertical: spacing.sm,
-      borderRadius: radius.pill,
+      justifyContent: 'center',
+      minHeight: 48,
+      paddingHorizontal: spacing.lg,
     },
-    dismissText: { color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: '600' },
-    pressed: { opacity: 0.7 },
+    keepButtonText: {
+      color: 'rgba(255,255,255,0.7)',
+      fontFamily: fonts.sans,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    pressed: {
+      opacity: 0.68,
+      transform: [{ scale: 0.985 }],
+    },
   })
