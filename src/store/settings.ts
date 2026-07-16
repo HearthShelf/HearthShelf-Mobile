@@ -381,6 +381,34 @@ export function setSetting<K extends keyof SettingsState>(key: K, value: Setting
   set({ [key]: value } as Partial<SettingsState>)
 }
 
+/**
+ * Reset a set of settings keys to their catalog defaults in one write. Returns
+ * the prior values (only for keys that actually changed) so a caller can offer
+ * an Undo. Keys with no catalog default, or already at their default, are left
+ * untouched.
+ */
+export function resetSettings(keys: (keyof SettingsState)[]): Partial<SettingsState> {
+  const prev: Record<string, unknown> = {}
+  const next: Record<string, unknown> = {}
+  const s = state as unknown as Record<string, unknown>
+  for (const key of keys) {
+    const k = key as string
+    const def = SETTINGS_CATALOG[k]
+    if (!def) continue
+    const dflt = def.default as unknown
+    if (s[k] === dflt) continue
+    prev[k] = s[k]
+    next[k] = dflt
+  }
+  if (Object.keys(next).length) set(next as Partial<SettingsState>)
+  return prev as Partial<SettingsState>
+}
+
+/** Restore a snapshot of prior values (the Undo companion to resetSettings). */
+export function restoreSettings(snapshot: Partial<SettingsState>): void {
+  if (Object.keys(snapshot).length) set(snapshot)
+}
+
 /** Current value + updatedAt for every catalogued setting the store holds, for
  *  the per-key sync push to diff against its last-pushed snapshot. */
 export function storedSettings(): Record<string, { value: SettingValue; updatedAt: number }> {

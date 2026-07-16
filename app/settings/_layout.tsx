@@ -37,16 +37,14 @@ export default function SettingsLayout() {
             animation: 'slide_from_right',
           }}
         >
-          <Stack.Screen name="appearance" options={{ title: 'Appearance' }} />
+          <Stack.Screen name="appearance" options={{ title: 'Appearance & feel' }} />
           <Stack.Screen name="playback" options={{ title: 'Player' }} />
           <Stack.Screen name="sleep" options={{ title: 'Sleep timer' }} />
           <Stack.Screen name="storage" options={{ title: 'Downloads & storage' }} />
-          <Stack.Screen name="haptics" options={{ title: 'Haptics' }} />
           <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
-          <Stack.Screen name="community" options={{ title: 'Community' }} />
+          <Stack.Screen name="community" options={{ title: 'Sharing & clubs' }} />
           <Stack.Screen name="reading" options={{ title: 'Reading' }} />
           <Stack.Screen name="integrations" options={{ title: 'Integrations' }} />
-          <Stack.Screen name="search" options={{ title: 'Search' }} />
           <Stack.Screen name="account" options={{ title: 'Account' }} />
           <Stack.Screen name="servers" options={{ title: 'My servers' }} />
           <Stack.Screen name="admin" options={{ title: 'Server Admin' }} />

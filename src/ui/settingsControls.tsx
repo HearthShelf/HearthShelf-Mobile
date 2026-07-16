@@ -92,13 +92,38 @@ export function SettingsGroup({
   return <View style={[styles.group, style]}>{children}</View>
 }
 
-export function SettingsLabel({ children }: { children: string }) {
+export function SettingsLabel({
+  children,
+  onReset,
+}: {
+  children: string
+  /** When set, a small "Reset" affordance rides the end of the label row and
+   *  fires this (the screen applies the reset + shows an Undo toast). */
+  onReset?: () => void
+}) {
   const colors = useColors()
   const styles = useStyles()
+  if (!onReset) {
+    return (
+      <AppText variant="eyebrow" color={colors.textMuted} style={styles.groupLabel}>
+        {children}
+      </AppText>
+    )
+  }
   return (
-    <AppText variant="eyebrow" color={colors.textMuted} style={styles.groupLabel}>
-      {children}
-    </AppText>
+    <View style={styles.labelRow}>
+      <AppText variant="eyebrow" color={colors.textMuted} style={{ flex: 1 }}>
+        {children}
+      </AppText>
+      <Pressable onPress={onReset} hitSlop={8} style={({ pressed }) => pressed && styles.pressed}>
+        <View style={styles.resetChip}>
+          <Icon name="refresh" size={13} color={colors.textMuted} />
+          <AppText variant="caption" color={colors.textMuted}>
+            Reset
+          </AppText>
+        </View>
+      </Pressable>
+    </View>
   )
 }
 
@@ -392,6 +417,22 @@ const makeStyles = (colors: Palette) =>
     overflow: 'hidden',
   },
   groupLabel: { paddingHorizontal: spacing.xs, paddingTop: spacing.lg, paddingBottom: spacing.sm },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.xs,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  resetChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    backgroundColor: colors.fill,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

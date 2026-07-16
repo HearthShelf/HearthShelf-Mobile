@@ -11,7 +11,7 @@
  */
 import { useUser } from '@clerk/expo'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native'
 import { useFocusEffect, useRouter, type Href } from 'expo-router'
 import Constants from 'expo-constants'
 import { useConnection } from '@/api/ConnectionProvider'
@@ -33,21 +33,28 @@ interface MenuItem {
   href: Href
 }
 
-const GROUPS: { label: string; items: MenuItem[] }[] = [
+interface MenuItemEx extends MenuItem {
+  /** Extra fuzzy-match terms for settings search (synonyms, sub-setting names). */
+  keywords?: string[]
+}
+
+const GROUPS: { label: string; items: MenuItemEx[] }[] = [
   {
     label: 'You',
     items: [
       {
         icon: 'palette',
-        title: 'Appearance',
-        desc: 'Theme, accent colour, covers.',
+        title: 'Appearance & feel',
+        desc: 'Theme, accent colour, covers, haptics.',
         href: '/settings/appearance',
+        keywords: ['dark mode', 'light', 'oled', 'accent', 'color', 'colour', 'vibration', 'haptics', 'feedback'],
       },
       {
         icon: 'notifications',
         title: 'Notifications',
         desc: 'Release alerts and the books you follow.',
         href: '/settings/notifications',
+        keywords: ['push', 'alerts', 'follow'],
       },
     ],
   },
@@ -57,26 +64,30 @@ const GROUPS: { label: string; items: MenuItem[] }[] = [
       {
         icon: 'speed',
         title: 'Player',
-        desc: 'Background, speed, skip, buttons, queue.',
+        desc: 'Background, speed, skip, buttons.',
         href: '/settings/playback',
+        keywords: ['speed', 'skip forward', 'skip back', 'hotspots', 'carousel', 'buttons', 'crossfade'],
       },
       {
         icon: 'bedtime',
         title: 'Sleep timer',
-        desc: 'Rewind, chapter, and fade behaviour.',
+        desc: 'Rewind, fade, warning beeps, shake.',
         href: '/settings/sleep',
+        keywords: ['sleep', 'rewind', 'fade', 'beep', 'shake', 'chapter', 'auto timer', 'quiet hours'],
+      },
+      {
+        icon: 'queue-music',
+        title: 'Queue',
+        desc: 'Mode, Auto rules, and hidden shelves.',
+        href: '/settings/queue',
+        keywords: ['up next', 'auto', 'manual', 'rules', 'hidden', 'not right now'],
       },
       {
         icon: 'download',
         title: 'Downloads & storage',
         desc: 'Offline books, auto-download, space used.',
         href: '/settings/storage',
-      },
-      {
-        icon: 'vibration',
-        title: 'Haptics',
-        desc: 'Feedback and intensity on this device.',
-        href: '/settings/haptics',
+        keywords: ['offline', 'download', 'storage', 'space', 'cache'],
       },
     ],
   },
@@ -88,29 +99,26 @@ const GROUPS: { label: string; items: MenuItem[] }[] = [
         title: 'Reading',
         desc: 'Ebook reader preferences.',
         href: '/settings/reading',
+        keywords: ['ebook', 'reader', 'font', 'typeface', 'text size', 'theme', 'layout'],
       },
     ],
   },
   {
-    label: 'Sharing & services',
+    label: 'Community',
     items: [
       {
         icon: 'groups',
-        title: 'Community',
+        title: 'Sharing & clubs',
         desc: 'Sharing, book clubs, and note pops.',
         href: '/settings/community',
+        keywords: ['share', 'clubs', 'notes', 'pops', 'search', 'beyond your library'],
       },
       {
         icon: 'hub',
         title: 'Integrations',
         desc: 'Hardcover, Goodreads import, external links.',
         href: '/settings/integrations',
-      },
-      {
-        icon: 'search',
-        title: 'Search',
-        desc: 'How far search reaches beyond your library.',
-        href: '/settings/search',
+        keywords: ['hardcover', 'goodreads', 'audible', 'import', 'external links'],
       },
     ],
   },
@@ -122,6 +130,7 @@ const GROUPS: { label: string; items: MenuItem[] }[] = [
         title: 'My servers',
         desc: 'Switch and manage linked servers.',
         href: '/settings/servers',
+        keywords: ['server', 'default', 'link', 'connect'],
       },
     ],
   },
@@ -174,17 +183,80 @@ export default function MoreScreen() {
   const email = user?.primaryEmailAddress?.emailAddress ?? ''
   const initial = displayName.charAt(0).toUpperCase()
 
+  // Settings search: fuzzy-match a row's title, description, and synonym
+  // keywords, then show only the groups with a hit. 17 settings routes is a long
+  // enough list to warrant this.
+  const [query, setQuery] = useState('')
+  const needle = query.trim().toLowerCase()
+  const filteredGroups = useMemo(() => {
+    if (!needle) return GROUPS
+    const hit = (it: MenuItemEx) =>
+      it.title.toLowerCase().includes(needle) ||
+      it.desc.toLowerCase().includes(needle) ||
+      (it.keywords ?? []).some((k) => k.includes(needle))
+    return GROUPS.map((g) => ({ ...g, items: g.items.filter(hit) })).filter((g) => g.items.length > 0)
+  }, [needle])
+
   return (
     <Screen>
       <SectionHeader title="More" />
       <ScrollView
         ref={scrollRef}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           padding: spacing.lg,
           paddingBottom: contentInset,
           gap: spacing.md,
         }}
       >
+        <View style={styles.searchPill}>
+          <Icon name="search" size={18} color={colors.textMuted} />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search settings"
+            placeholderTextColor={colors.textFaint}
+            style={styles.searchInput}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+          {query ? (
+            <Pressable onPress={() => setQuery('')} hitSlop={8}>
+              <Icon name="close" size={18} color={colors.textMuted} />
+            </Pressable>
+          ) : null}
+        </View>
+
+        {needle ? (
+          filteredGroups.length === 0 ? (
+            <AppText
+              variant="meta"
+              color={colors.textMuted}
+              style={{ textAlign: 'center', paddingVertical: spacing.xl }}
+            >
+              No settings match "{query.trim()}".
+            </AppText>
+          ) : (
+            filteredGroups.map((group) => (
+              <View key={group.label}>
+                <SettingsLabel>{group.label}</SettingsLabel>
+                <SettingsGroup>
+                  {group.items.map((item, i) => (
+                    <SettingsRow
+                      key={item.title}
+                      icon={item.icon}
+                      title={item.title}
+                      desc={item.desc}
+                      onPress={() => router.push(item.href)}
+                      last={i === group.items.length - 1}
+                    />
+                  ))}
+                </SettingsGroup>
+              </View>
+            ))
+          )
+        ) : (
+          <>
         <Pressable
           onPress={() => router.push('/settings/account')}
           style={({ pressed }) => [styles.userCard, pressed && styles.pressed]}
@@ -261,26 +333,21 @@ export default function MoreScreen() {
           </View>
         ) : null}
 
-        <View key="Sync">
-          <SettingsLabel>Sync</SettingsLabel>
-          <SettingsRow
-            icon="sync"
-            title="Sync settings"
-            desc="Use cloud synced settings. Turn off to keep settings local."
-            last
-            control={
-              <SettingsToggle
-                on={s.useSharedSettings}
-                onChange={(v) => setSetting('useSharedSettings', v)}
-              />
-            }
-          />
-        </View>
-
-        {/* TEMP diagnostics dump - remove this block with app/settings/diagnostics.tsx */}
-        <View key="Diagnostics">
-          <SettingsLabel>Debug</SettingsLabel>
+        <View key="Advanced">
+          <SettingsLabel>Advanced</SettingsLabel>
           <SettingsGroup>
+            <SettingsRow
+              icon="sync"
+              title="Sync settings"
+              desc="Use cloud synced settings. Turn off to keep settings local."
+              control={
+                <SettingsToggle
+                  on={s.useSharedSettings}
+                  onChange={(v) => setSetting('useSharedSettings', v)}
+                />
+              }
+            />
+            {/* TEMP diagnostics dump - remove with app/settings/diagnostics.tsx */}
             <SettingsRow
               icon="bug-report"
               title="Diagnostics"
@@ -301,6 +368,8 @@ export default function MoreScreen() {
               'DEV BUILD'}
           </AppText>
         </View>
+          </>
+        )}
       </ScrollView>
     </Screen>
   )
@@ -319,6 +388,22 @@ const makeStyles = (colors: Palette) =>
       borderColor: colors.hairline,
     },
     pressed: { opacity: 0.7 },
+    searchPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    searchInput: {
+      flex: 1,
+      paddingVertical: spacing.sm + 2,
+      color: colors.text,
+      fontSize: 15,
+    },
     avatar: {
       width: 52,
       height: 52,

@@ -1,9 +1,11 @@
 /**
- * Appearance panel: theme, accent colour, and cover display. Theme + accent flow
- * through the reactive ThemeProvider, so changes re-skin the whole app live.
+ * Appearance & feel panel: theme, accent colour, cover display, and haptics -
+ * Haptics folded in here (D-CONSIST) rather than a separate screen for two
+ * segments. Theme + accent flow through the reactive ThemeProvider, so changes
+ * re-skin the whole app live.
  */
 import { useSyncExternalStore } from 'react'
-import { getSettingsState, subscribeSettings, setSetting } from '@/store/settings'
+import { getSettingsState, subscribeSettings, setSetting, resetSettings, restoreSettings } from '@/store/settings'
 import {
   SettingsPanel,
   SettingsGroup,
@@ -14,12 +16,32 @@ import {
   SettingsToggle,
   AccentSwatchPicker,
 } from '@/ui/settingsControls'
+import { showToast } from '@/ui/Toast'
+import { haptics } from '@/ui/haptics'
 
 export default function AppearancePanel() {
   const s = useSyncExternalStore(subscribeSettings, getSettingsState)
 
+  // Reset a family of keys to defaults, with an Undo toast (D-ACTIONS).
+  const resetSection = (label: string, keys: Parameters<typeof resetSettings>[0]) => {
+    const prev = resetSettings(keys)
+    haptics.select()
+    if (Object.keys(prev).length === 0) {
+      showToast(`${label} already at defaults`)
+      return
+    }
+    showToast(`${label} reset`, {
+      action: { label: 'Undo', onPress: () => restoreSettings(prev) },
+    })
+  }
+
   return (
     <SettingsPanel>
+      <SettingsLabel
+        onReset={() => resetSection('Theme & accent', ['theme', 'accentHex'])}
+      >
+        Theme & accent
+      </SettingsLabel>
       <SettingsGroup>
         <SettingsRow
           icon="dark-mode"
@@ -131,6 +153,45 @@ export default function AppearancePanel() {
             last
           />
         ) : null}
+      </SettingsGroup>
+
+      <SettingsLabel
+        onReset={() => resetSection('Haptics', ['haptics', 'hapticIntensity'])}
+      >
+        Feel
+      </SettingsLabel>
+      <SettingsGroup>
+        <SettingsRow
+          icon="vibration"
+          title="Feedback"
+          desc="How much of the app taps back on this device."
+          stacked
+          last={s.haptics === 'off'}
+        >
+          <Seg
+            value={s.haptics}
+            onChange={(v) => setSetting('haptics', v)}
+            fill
+            options={[
+              { value: 'off', label: 'Off' },
+              { value: 'minimal', label: 'Minimal' },
+              { value: 'all', label: 'All' },
+            ]}
+          />
+        </SettingsRow>
+        {s.haptics !== 'off' && (
+          <SettingsRow title="Intensity" desc="How firm each tap feels." stacked last>
+            <Seg
+              value={s.hapticIntensity}
+              onChange={(v) => setSetting('hapticIntensity', v)}
+              fill
+              options={[
+                { value: 'light', label: 'Light' },
+                { value: 'medium', label: 'Medium' },
+              ]}
+            />
+          </SettingsRow>
+        )}
       </SettingsGroup>
     </SettingsPanel>
   )
