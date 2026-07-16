@@ -132,7 +132,7 @@ function MiniPlayerBar({
       style={[styles.wrap, { bottom: bottomOffset, right: rightInset }]}
       pointerEvents="box-none"
     >
-      <View style={floating ? styles.card : undefined}>
+      <View style={floating ? styles.card : styles.docked}>
         {/* Thin whole-book progress strip across the top of the dock. */}
         <View style={styles.progTrack}>
           <View style={[styles.progFill, { width: `${Math.max(0, Math.min(1, bookProgress)) * 100}%` }]} />
@@ -246,6 +246,18 @@ const makeStyles = (colors: Palette) =>
       position: 'absolute',
       left: 0,
       right: 0,
+      // Sit behind the docked tab bar so the 1px background extension (see
+      // `docked`) tucks under the bar's edge instead of covering it.
+      zIndex: 0,
+      elevation: 0,
+    },
+    // Docked (non-floating) variant: extend the popover background 1px below the
+    // layout anchor so the hairline seam between the bar and the tab bar is
+    // covered, without shifting the visible content.
+    docked: {
+      backgroundColor: colors.popover,
+      paddingBottom: 1,
+      marginBottom: -1,
     },
     // Floating variant: a rounded card with side margins, a hairline, and a
     // lift shadow - to match the floating pill nav. Clips the strip's top round.

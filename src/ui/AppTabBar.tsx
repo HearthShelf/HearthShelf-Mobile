@@ -465,6 +465,10 @@ const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
     borderTopWidth: StyleSheet.hairlineWidth,
+    // Paint above the docked mini-player so its 1px background extension tucks
+    // under this bar's edge instead of over it.
+    zIndex: 1,
+    elevation: 1,
   },
   // DS: each tab has vertical padding so the pill has room and its rounded ends
   // aren't clipped by the bar's top border; 4px pill->label gap.
