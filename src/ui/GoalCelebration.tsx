@@ -2,10 +2,12 @@
  * Yearly reading-goal celebration - the app's loudest moment. A single host
  * (<GoalCelebrationHost>) mounted once at the root layout, fired from anywhere via
  * `celebrateGoal({ goal, done })` (module-level store, same shape as the toast
- * host). No dimming scrim: it drops an endless rainbow confetti downpour over the
- * live screen and floats a giant RGB-cycling "65 Books!" card whose text AND
- * border ripple through the full color spectrum for as long as it's up. Tap
- * anywhere to dismiss.
+ * host). No dimming scrim: it drops a heavy rainbow confetti downpour over the
+ * live screen and floats a giant glowing "65 Books!" card. The card's border is a
+ * true chasing rainbow ring (distinct colors around the edge that rotate around
+ * the perimeter), and a soft RGB bloom + cycling text-glow sits behind the number.
+ * The bigger the goal, the denser the confetti - hit a huge number, get a
+ * downpour. Tap anywhere to dismiss.
  *
  * The trigger decision (has the user hit the goal, and haven't we already
  * celebrated this exact goal number) lives in lib/goalCelebration.ts; this file
@@ -13,9 +15,10 @@
  * spot, which - because the celebrated-goal flag is keyed to the goal number -
  * re-arms the celebration for the new, higher target.
  */
-import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
-import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { Dimensions, Pressable, StyleSheet, Text, View, type LayoutRectangle } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { LinearGradient } from 'expo-linear-gradient'
 import Animated, {
   cancelAnimation,
   Easing,
@@ -69,8 +72,8 @@ function getState(): GoalCelebration | null {
 // How many books "Raise the bar" adds to the current goal.
 const RAISE_STEP = 5
 
-// The full RGB spectrum, looped so text/border can ripple continuously. The last
-// stop repeats the first so the wrap-around has no seam.
+// The full RGB spectrum, looped so the text/glow can ripple continuously. The
+// last stop repeats the first so the wrap-around has no seam.
 const SPECTRUM = [
   '#ff0040',
   '#ff8000',
@@ -83,10 +86,24 @@ const SPECTRUM = [
   '#ff0040',
 ]
 const SPECTRUM_INPUT = SPECTRUM.map((_, i) => i / (SPECTRUM.length - 1))
+// The rainbow ring wheel: distinct hues placed around a disc that we rotate, so a
+// different color sits on each edge/corner and they chase around the perimeter.
+const WHEEL = ['#ff0040', '#ff8000', '#ffe000', '#40ff00', '#00ffcc', '#0080ff', '#8000ff', '#ff00c0']
+// The two crossed rainbow gradients that make the spinning ring, as fixed tuples
+// (expo-linear-gradient wants a non-empty color tuple).
+const RING_A = ['#ff0040', '#ff8000', '#ffe000', '#40ff00', '#00ffcc', '#0080ff', '#8000ff', '#ff00c0', '#ff0040'] as const
+const RING_B = ['#00ffcc', '#0080ff', '#8000ff', '#ff00c0', '#ff0040', '#ff8000', '#ffe000', '#40ff00'] as const
+
+const BORDER = 5 // ring thickness (px)
+const RING_RADIUS = radius.card + BORDER
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window')
-// Confetti count - a genuine downpour, not a polite sprinkle.
-const CONFETTI_COUNT = 90
+
+// Confetti scales with the goal: a modest goal still rains, a big one pours. The
+// higher you climb, the more you get.
+function confettiCountForGoal(goal: number): number {
+  return Math.round(Math.max(80, Math.min(320, 80 + goal * 3)))
+}
 
 interface ConfettiSpec {
   x: number // start x (px)
@@ -143,6 +160,69 @@ function Confetti({ spec }: { spec: ConfettiSpec }) {
   )
 }
 
+/**
+ * A chasing rainbow ring behind the card. A rainbow-filled disc, sized to cover
+ * the card, spins continuously; the card body sits on top and masks all but a
+ * `BORDER`-thick frame, so what shows is a rotating rainbow border where each edge
+ * carries a different hue that chases around the perimeter.
+ */
+function RainbowRing({ frame }: { frame: LayoutRectangle }) {
+  const spin = useSharedValue(0)
+  useEffect(() => {
+    spin.value = 0
+    spin.value = withRepeat(withTiming(1, { duration: 3200, easing: Easing.linear }), -1, false)
+    return () => cancelAnimation(spin)
+  }, [spin])
+
+  // The disc must fully cover the card at any rotation, so its side = the card's
+  // diagonal. Two crossed gradients give color on all four edges at once.
+  const diag = Math.ceil(Math.hypot(frame.width + BORDER * 2, frame.height + BORDER * 2))
+  const style = useAnimatedStyle(() => ({
+    transform: [{ rotateZ: `${spin.value * 360}deg` }],
+  }))
+
+  return (
+    <View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        left: -BORDER,
+        top: -BORDER,
+        width: frame.width + BORDER * 2,
+        height: frame.height + BORDER * 2,
+        borderRadius: RING_RADIUS,
+        overflow: 'hidden',
+      }}
+    >
+      <Animated.View
+        style={[
+          {
+            position: 'absolute',
+            width: diag,
+            height: diag,
+            left: (frame.width + BORDER * 2 - diag) / 2,
+            top: (frame.height + BORDER * 2 - diag) / 2,
+          },
+          style,
+        ]}
+      >
+        <LinearGradient
+          colors={RING_A}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <LinearGradient
+          colors={RING_B}
+          start={{ x: 1, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={[StyleSheet.absoluteFill, { opacity: 0.6 }]}
+        />
+      </Animated.View>
+    </View>
+  )
+}
+
 /** Mounted once at the root layout, above every screen and the mini player. */
 export function GoalCelebrationHost() {
   const state = useSyncExternalStore(subscribe, getState)
@@ -150,25 +230,32 @@ export function GoalCelebrationHost() {
   const colors = useColors()
   const styles = makeStyles(colors)
 
-  // Card entrance pop + a forever-looping hue driver for the RGB text/border.
+  // Card entrance pop + a forever-looping hue driver for the RGB text/glow.
   const pop = useSharedValue(0)
   const hue = useSharedValue(0)
+  // Card frame, measured on layout, to size the rainbow ring behind it.
+  const [frame, setFrame] = useState<LayoutRectangle | null>(null)
 
-  // Fresh confetti field each time a celebration opens (new random spread).
+  const goal = state?.goal ?? 0
+  // Fresh confetti field each time a celebration opens (density scales w/ goal).
   const confetti = useMemo<ConfettiSpec[]>(() => {
-    // `state` in deps so a re-fire (diagnostics) reshuffles the field.
     void state
-    return Array.from({ length: CONFETTI_COUNT }, () => ({
-      x: Math.random() * SCREEN_W,
-      size: 7 + Math.random() * 9,
-      color: SPECTRUM[Math.floor(Math.random() * (SPECTRUM.length - 1))],
-      fallMs: 1600 + Math.random() * 1800,
-      delayMs: Math.random() * 2400,
-      drift: 12 + Math.random() * 40,
-      spin: 1 + Math.random() * 3,
-      round: Math.random() < 0.4,
-    }))
-  }, [state])
+    const count = confettiCountForGoal(goal)
+    return Array.from({ length: count }, () => {
+      // Perspective: pieces starting lower read as "closer" - bigger and faster.
+      const depth = Math.random()
+      return {
+        x: Math.random() * SCREEN_W,
+        size: 6 + depth * 14,
+        color: WHEEL[Math.floor(Math.random() * WHEEL.length)],
+        fallMs: 2600 - depth * 1400 + Math.random() * 400,
+        delayMs: Math.random() * 2600,
+        drift: 12 + Math.random() * 46,
+        spin: 1 + Math.random() * 3,
+        round: Math.random() < 0.4,
+      }
+    })
+  }, [state, goal])
 
   useEffect(() => {
     if (!state) {
@@ -186,16 +273,19 @@ export function GoalCelebrationHost() {
   const cardStyle = useAnimatedStyle(() => ({
     opacity: interpolate(pop.value, [0, 0.3, 1], [0, 1, 1]),
     transform: [{ scale: 0.6 + pop.value * 0.4 }, { rotateZ: `${(1 - pop.value) * -6}deg` }],
-    borderColor: interpolateColor(hue.value, SPECTRUM_INPUT, SPECTRUM),
   }))
 
-  // Text hue offset a third of the way round the wheel so it never matches the
-  // border - the two chase each other through the spectrum.
-  const textStyle = useAnimatedStyle(() => ({
-    color: interpolateColor((hue.value + 0.33) % 1, SPECTRUM_INPUT, SPECTRUM),
-  }))
+  // The big number: cycles color AND carries a fat same-color glow (text-shadow).
+  const bragStyle = useAnimatedStyle(() => {
+    const c = interpolateColor(hue.value, SPECTRUM_INPUT, SPECTRUM)
+    return { color: c, textShadowColor: c }
+  })
   const kickerStyle = useAnimatedStyle(() => ({
-    color: interpolateColor((hue.value + 0.66) % 1, SPECTRUM_INPUT, SPECTRUM),
+    color: interpolateColor((hue.value + 0.5) % 1, SPECTRUM_INPUT, SPECTRUM),
+  }))
+  // Radial-ish bloom behind the number, tinted with the current hue.
+  const bloomStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(hue.value, SPECTRUM_INPUT, SPECTRUM),
   }))
 
   const handleRaise = useCallback(() => {
@@ -208,13 +298,12 @@ export function GoalCelebrationHost() {
   if (!state) return null
 
   const done = state.done
-  const goal = state.goal
   // Headline number: what they actually finished, the bragging figure.
   const bragCount = Math.max(done, goal)
 
   return (
     <Pressable style={styles.fill} onPress={dismissCelebration}>
-      {/* Endless rainbow downpour over the live screen (no dimming layer). */}
+      {/* Heavy rainbow downpour over the live screen (no dimming layer). */}
       <View style={styles.fill} pointerEvents="none">
         {confetti.map((spec, i) => (
           <Confetti key={i} spec={spec} />
@@ -222,37 +311,50 @@ export function GoalCelebrationHost() {
       </View>
 
       <View style={[styles.center, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-        <Animated.View style={[styles.card, cardStyle]}>
-          <Animated.Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.kicker, kickerStyle]}>
-            READING GOAL SMASHED
-          </Animated.Text>
-          <Animated.Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.brag, textStyle]}>
-            {bragCount} {bragCount === 1 ? 'Book' : 'Books'}!
-          </Animated.Text>
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.body}>
-            {done > goal
-              ? `${done - goal} past your goal of ${goal} this year.`
-              : `You hit your goal of ${goal} this year.`}
-          </Text>
+        <Animated.View style={cardStyle}>
+          <View onLayout={(e) => setFrame(e.nativeEvent.layout)} style={styles.card}>
+            {frame ? <RainbowRing frame={frame} /> : null}
 
-          <View style={styles.actions}>
-            <Pressable
-              onPress={handleRaise}
-              style={({ pressed }) => [styles.raiseBtn, pressed && styles.pressed]}
+            <Animated.Text
+              maxFontSizeMultiplier={MAX_FONT_SCALE}
+              style={[styles.kicker, kickerStyle]}
             >
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.raiseText}>
-                Raise the bar to {goal + RAISE_STEP}
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={dismissCelebration}
-              hitSlop={8}
-              style={({ pressed }) => [styles.dismissBtn, pressed && styles.pressed]}
-            >
-              <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.dismissText}>
-                Nice
-              </Text>
-            </Pressable>
+              READING GOAL SMASHED
+            </Animated.Text>
+
+            {/* Glow bloom sits behind the number. */}
+            <View style={styles.bragWrap}>
+              <Animated.View style={[styles.bloom, bloomStyle]} pointerEvents="none" />
+              <Animated.Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.brag, bragStyle]}>
+                {bragCount} {bragCount === 1 ? 'Book' : 'Books'}!
+              </Animated.Text>
+            </View>
+
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.body}>
+              {done > goal
+                ? `${done - goal} past your goal of ${goal} this year.`
+                : `You hit your goal of ${goal} this year.`}
+            </Text>
+
+            <View style={styles.actions}>
+              <Pressable
+                onPress={handleRaise}
+                style={({ pressed }) => [styles.raiseBtn, pressed && styles.pressed]}
+              >
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.raiseText}>
+                  Raise the bar to {goal + RAISE_STEP}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={dismissCelebration}
+                hitSlop={8}
+                style={({ pressed }) => [styles.dismissBtn, pressed && styles.pressed]}
+              >
+                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.dismissText}>
+                  Nice
+                </Text>
+              </Pressable>
+            </View>
           </View>
         </Animated.View>
       </View>
@@ -278,20 +380,32 @@ const makeStyles = (colors: Palette) =>
       paddingHorizontal: spacing.lg,
       borderRadius: radius.card,
       backgroundColor: colors.elevated,
-      borderWidth: 4,
     },
     kicker: {
       fontSize: 13,
       fontWeight: '900',
       letterSpacing: 2,
     },
+    bragWrap: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginVertical: spacing.xs,
+    },
+    bloom: {
+      position: 'absolute',
+      width: 220,
+      height: 120,
+      borderRadius: 110,
+      opacity: 0.5,
+    },
     brag: {
       fontFamily: fonts.mono,
-      fontSize: 60,
+      fontSize: 64,
       fontWeight: '900',
       letterSpacing: -1,
-      marginVertical: spacing.xs,
       textAlign: 'center',
+      textShadowOffset: { width: 0, height: 0 },
+      textShadowRadius: 22,
     },
     body: {
       color: colors.textMuted,
