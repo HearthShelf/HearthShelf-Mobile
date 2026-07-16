@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HearthShelf Redesign — Screen Transitions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Geist+Mono:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<link rel="stylesheet" href="hearth.css">
+<style>
+/* ============================================================
+   LIVE TRANSITION DEMOS — this page only
+   Each phone loops: idle → PUSH (detail in) → idle → POP → idle.
+   Cycle length is a var so the slow-mo toggle can stretch it.
+   ============================================================ */
+:root { --cycle: 5.2s; }
+body.slow { --cycle: 20.8s; }   /* 4x slow motion */
+
+.demo-controls { display:flex; gap:10px; justify-content:center; margin:18px 0 0; }
+.demo-controls button {
+  font-family: var(--font-mono); font-size:12px; font-weight:700; letter-spacing:.08em;
+  color: var(--muted); background: var(--page-card); border:1px solid var(--page-border);
+  border-radius:999px; padding:8px 16px; cursor:pointer;
+}
+.demo-controls button.on { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
+.demo-controls button:hover { color: var(--text); }
+body.slow .demo-controls button:hover.on { color: var(--on-accent); }
+
+/* phase readout under each phone */
+.phaselbl { text-align:center; font-family:var(--font-mono); font-size:11px; color:var(--faint); margin-top:10px; }
+.phaselbl b { color: var(--hearth); font-weight:700; }
+
+/* --- the two stacked route layers inside a demo screen --- */
+.route { position:absolute; inset:0; display:flex; flex-direction:column; background:var(--scaffold);
+  animation-duration: var(--cycle); animation-iteration-count: infinite; will-change: transform, opacity; }
+.route.under { z-index:2; }
+.route.over  { z-index:4; }
+
+/* simplified page content used by every demo */
+.pg-head { padding:14px 20px 6px; }
+.pg-head .hi { font-family:var(--font-brand); font-size:12px; color:var(--hearth); letter-spacing:.14em; text-transform:uppercase; }
+.pg-head .big { font-size:24px; font-weight:700; letter-spacing:-.02em; color:var(--text); margin-top:4px; }
+.pg-row { display:flex; gap:12px; padding:0 20px; margin-top:16px; }
+.pg-detailhero { display:flex; flex-direction:column; align-items:center; padding:26px 20px 0; }
+.pg-detailhero .cov { width:180px; aspect-ratio:2/3; }
+.pg-detailhero .bt { font-size:21px; font-weight:700; color:var(--text); margin-top:16px; text-align:center; }
+.pg-detailhero .ba { font-size:13.5px; color:var(--muted); margin-top:4px; }
+.pg-backrow { display:flex; align-items:center; gap:10px; padding:10px 16px 0; }
+
+/* ============================================================
+   OPTION A — "Hearth Push" · parallax slide (platform-native)
+   push 380ms: detail slides in from right, parent slides -28%
+   under a dim scrim. pop reverses. tab swap = 120ms crossfade.
+   ============================================================ */
+@keyframes a-over {
+  0%      { transform: translateX(103%); }
+  7.3%    { transform: translateX(0);    animation-timing-function: cubic-bezier(.2,.8,.25,1); }
+  55%     { transform: translateX(0); }
+  62.3%   { transform: translateX(103%); animation-timing-function: cubic-bezier(.4,.1,.7,1); }
+  100%    { transform: translateX(103%); }
+}
+@keyframes a-under {
+  0%      { transform: translateX(0);     filter: brightness(1); }
+  7.3%    { transform: translateX(-28%);  filter: brightness(.72); animation-timing-function: cubic-bezier(.2,.8,.25,1); }
+  55%     { transform: translateX(-28%);  filter: brightness(.72); }
+  62.3%   { transform: translateX(0);     filter: brightness(1);   animation-timing-function: cubic-bezier(.4,.1,.7,1); }
+  100%    { transform: translateX(0);     filter: brightness(1); }
+}
+.demoA .route.over  { animation-name: a-over;  box-shadow: -18px 0 40px rgba(0,0,0,.45); }
+.demoA .route.under { animation-name: a-under; }
+
+/* ============================================================
+   OPTION B — "Ember Fade-Through" (Material-style)
+   outgoing fades out 90ms, incoming fades in + scales .96→1
+   over 210ms. same recipe both directions and for tab swaps.
+   ============================================================ */
+@keyframes b-over {
+  0%      { opacity:0; transform: scale(.96); }
+  2%      { opacity:0; transform: scale(.96); }   /* outgoing clears first */
+  6.5%    { opacity:1; transform: scale(1); animation-timing-function: cubic-bezier(.2,.7,.3,1); }
+  55%     { opacity:1; transform: scale(1); }
+  57.5%   { opacity:0; transform: scale(.98); }   /* quick exit fade */
+  100%    { opacity:0; transform: scale(.98); }
+}
+@keyframes b-under {
+  0%      { opacity:1; transform: scale(1); }
+  2.5%    { opacity:0; transform: scale(1.02); }  /* fade out + slight grow */
+  55%     { opacity:0; transform: scale(1.02); }
+  57%     { opacity:0; transform: scale(.96); }
+  61.5%   { opacity:1; transform: scale(1); animation-timing-function: cubic-bezier(.2,.7,.3,1); }
+  100%    { opacity:1; transform: scale(1); }
+}
+.demoB .route.over  { animation-name: b-over; }
+.demoB .route.under { animation-name: b-under; }
+
+/* ============================================================
+   OPTION C — "Shelf Lift" · fade + vertical rise
+   push 260ms: detail fades in while rising 18px; parent settles
+   back (scale .985, dim). pop sinks. matches the player's
+   rise-from-dock so the whole app shares one motion axis.
+   ============================================================ */
+@keyframes c-over {
+  0%      { opacity:0; transform: translateY(18px); }
+  5%      { opacity:1; transform: translateY(0); animation-timing-function: cubic-bezier(.16,.8,.3,1); }
+  55%     { opacity:1; transform: translateY(0); }
+  60%     { opacity:0; transform: translateY(18px); animation-timing-function: cubic-bezier(.5,0,.75,.6); }
+  100%    { opacity:0; transform: translateY(18px); }
+}
+@keyframes c-under {
+  0%      { transform: scale(1);     filter: brightness(1); }
+  5%      { transform: scale(.985);  filter: brightness(.8); }
+  55%     { transform: scale(.985);  filter: brightness(.8); }
+  60%     { transform: scale(1);     filter: brightness(1); }
+  100%    { transform: scale(1);     filter: brightness(1); }
+}
+.demoC .route.over  { animation-name: c-over; }
+.demoC .route.under { animation-name: c-under; }
+
+/* ============================================================
+   TAB-SWAP MINI DEMOS — a short screen looping Home ⇄ Library
+   ============================================================ */
+.tabdemo .screen { height: 300px; }
+.tabpane { position:absolute; inset:0 0 74px 0; display:flex; flex-direction:column; background:var(--scaffold);
+  animation-duration: var(--cycle); animation-iteration-count: infinite; }
+.tabdemo .tabbar { position:absolute; left:0; right:0; bottom:0; }
+/* the accent pill + icon color hop between tab 1 and 2 in sync */
+.tabdemo .tab .pill, .tabdemo .tab .ms, .tabdemo .tab .lbl { animation-duration: var(--cycle); animation-iteration-count: infinite; }
+@keyframes tab1-on { 0%,49% { background: var(--accent-tile);} 50%,100% { background: transparent; } }
+@keyframes tab1-ic { 0%,49% { color: var(--accent);} 50%,100% { color: var(--faint); } }
+@keyframes tab1-lb { 0%,49% { color: var(--text);}   50%,100% { color: var(--faint); } }
+@keyframes tab2-on { 0%,49% { background: transparent;} 50%,100% { background: var(--accent-tile); } }
+@keyframes tab2-ic { 0%,49% { color: var(--faint);} 50%,100% { color: var(--accent); } }
+@keyframes tab2-lb { 0%,49% { color: var(--faint);} 50%,100% { color: var(--text); } }
+.tabdemo .tab.t1 .pill { animation-name: tab1-on; } .tabdemo .tab.t1 .ms { animation-name: tab1-ic; } .tabdemo .tab.t1 .lbl { animation-name: tab1-lb; }
+.tabdemo .tab.t2 .pill { animation-name: tab2-on; } .tabdemo .tab.t2 .ms { animation-name: tab2-ic; } .tabdemo .tab.t2 .lbl { animation-name: tab2-lb; }
+
+/* A: hard cut with a 120ms crossfade */
+@keyframes ta-p1 { 0%,48.8% { opacity:1; } 50%,98.8% { opacity:0; } 100% { opacity:1; } }
+@keyframes ta-p2 { 0%,48.8% { opacity:0; } 50%,98.8% { opacity:1; } 100% { opacity:0; } }
+.tabA .tabpane.p1 { animation-name: ta-p1; }
+.tabA .tabpane.p2 { animation-name: ta-p2; }
+/* B: fade-through (out, then in + scale) */
+@keyframes tb-p1 { 0%,47.5% {opacity:1; transform:scale(1);} 49.5%,97.5% {opacity:0; transform:scale(1.015);} 98%{opacity:0; transform:scale(.97);} 100%{opacity:1; transform:scale(1);} }
+@keyframes tb-p2 { 0%,49.5% {opacity:0; transform:scale(.97);} 52.5%,97.5% {opacity:1; transform:scale(1);} 99.5%,100% {opacity:0; transform:scale(1.015);} }
+.tabB .tabpane.p1 { animation-name: tb-p1; }
+.tabB .tabpane.p2 { animation-name: tb-p2; }
+/* C: fade + 10px lift */
+@keyframes tc-p1 { 0%,47.5% {opacity:1; transform:translateY(0);} 49.5%,97.5% {opacity:0; transform:translateY(0);} 98%{opacity:0; transform:translateY(10px);} 100%{opacity:1; transform:translateY(0);} }
+@keyframes tc-p2 { 0%,49.5% {opacity:0; transform:translateY(10px);} 52.5%,97.5% {opacity:1; transform:translateY(0);} 99.5%,100% {opacity:0;} }
+.tabC .tabpane.p1 { animation-name: tc-p1; }
+.tabC .tabpane.p2 { animation-name: tc-p2; }
+
+/* verdict cards */
+.verdict { display:grid; grid-template-columns:1fr 1fr; gap:10px 18px; margin-top:14px; font-size:12.5px; line-height:1.5; }
+.verdict .pro, .verdict .con { position:relative; padding-left:20px; color:#cdc7bc; }
+.verdict .pro::before { content:'+'; position:absolute; left:0; color:var(--good); font-family:var(--font-mono); font-weight:700; }
+.verdict .con::before { content:'−'; position:absolute; left:0; color:var(--crit); font-family:var(--font-mono); font-weight:700; }
+.verdict b { color: var(--text); font-weight:650; }
+
+.implnote { margin-top:12px; font-family:var(--font-mono); font-size:11.5px; color:var(--hearth);
+  background:#bd863f10; border:1px solid #4a3c25; border-radius:10px; padding:10px 12px; line-height:1.6; }
+.implnote b { color: var(--shelf); }
+
+/* ============================================================
+   FOLDABLE DEMO — open "book" posture, two leaves + hinge seam.
+   The right leaf loops the SAME Option-C keyframes (c-over /
+   c-under) scoped to the pane, proving the system composes from
+   whole-screen (folded) down to per-pane (open) unchanged.
+   ============================================================ */
+.foldphone {
+  width: 812px; max-width: 100%; padding: 12px; border-radius: 34px;
+  background: linear-gradient(160deg, #26241f, #0b0a09);
+  box-shadow: 0 42px 90px rgba(0,0,0,.66), inset 0 0 0 1.5px rgba(255,255,255,.05);
+}
+.foldscreen { position:relative; display:flex; height:600px; border-radius:24px; overflow:hidden; background:var(--scaffold); }
+.leaf { position:relative; flex:1; min-width:0; display:flex; flex-direction:column; overflow:hidden; }
+.seam { flex:none; width:14px; background:linear-gradient(90deg, rgba(0,0,0,.0), rgba(0,0,0,.55) 45%, rgba(0,0,0,.55) 55%, rgba(0,0,0,.0)); position:relative; z-index:10; }
+.seam::before, .seam::after { content:''; position:absolute; top:0; bottom:0; width:24px; }
+.gutterlbl { position:absolute; left:50%; top:12px; transform:translateX(-50%); z-index:12;
+  font-family:var(--font-mono); font-size:9.5px; color:var(--faint); background:#0e0d0ccc;
+  border:1px solid var(--page-border); border-radius:999px; padding:3px 9px; white-space:nowrap; }
+.leaf .route { position:absolute; inset:0; }
+.leafrow { display:flex; align-items:center; gap:11px; padding:10px 18px; }
+.leafrow .tx { flex:1; min-width:0; }
+.leafrow .tx .t { font-size:14px; font-weight:600; color:var(--text); }
+.leafrow .tx .d { font-size:11.5px; color:var(--muted); margin-top:1px; }
+.leafrow.sel { background: var(--accent-wash); box-shadow: inset 3px 0 0 var(--accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .route, .tabpane, .tabdemo .tab .pill, .tabdemo .tab .ms, .tabdemo .tab .lbl { animation: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div class="wordmark"><span class="lt">Hearth</span><span class="bd">Shelf</span><span class="sub"> · Mobile Redesign — Screen Transitions</span></div>
+    <div class="tagline">One motion system for every page swap: stack pushes, pops, and tab switches. Three candidate systems, animated live below.</div>
+  </div>
+  <div class="pagenav">
+    <a href="index-Final.html">Overview</a>
+    <a href="01-home-Final.html">Home</a>
+    <a href="02-library-v3.html">Library & Search</a>
+    <a href="03-player-Final.html">Player</a>
+    <a href="04-book-Final.html">Book & Reader</a>
+    <a href="05-stats-clubs-Final.html">Stats & Clubs</a>
+    <a href="06-settings-Final.html">Settings</a>
+    <a href="07-system-Final.html">Sign-in & System</a>
+    <a href="08-transitions.html" class="on">Transitions</a>
+  </div>
+
+  <div class="demo-controls">
+    <button id="spd1" class="on" type="button">1× speed</button>
+    <button id="spd4" type="button">¼× slow-mo</button>
+  </div>
+
+  <div class="section" id="teardown">
+    <div class="eyebrow">Motion 08 · Screen transitions</div>
+    <h2>What's wrong today, and the three ways to fix it</h2>
+    <p class="sub">Every push/pop and tab switch should feel like the same app moving. Today it doesn't:
+      transitions are whatever the platform default happens to be, per screen, per OS.</p>
+
+    <div class="audit">
+      <div class="crit"><h3>Teardown — what's wrong today</h3><ul>
+        <li><b>No declared animation on any pushed route</b> — <code>app/_layout.tsx</code> sets an animation only for <code>/player</code>; book, series, club, search, shelf, group all inherit the platform default, so iOS parallax-slides while Android does its own thing (and changes between OS versions).</li>
+        <li><b>Tab switches are a hard cut</b> — swapping Home ⇄ Library ⇄ Stats teleports with zero motion, which reads as a glitch next to the animated player.</li>
+        <li><b>Player still swipe-dismisses</b> — the collapse chevron was removed, but <code>gestureEnabled: false</code> only kills the iOS edge-pop gesture. The iOS full-screen sheet swipe and Android's system back gesture still pop the route, sliding the player away. Needs a code fix regardless of which option wins (block the dismiss gesture properly; back button should collapse to the mini player, not "exit" the primary surface).</li>
+        <li><b>Two unrelated motion vocabularies</b> — player rises from the dock (vertical), pages slide sideways (horizontal), tabs cut (none). Three grammars, no system.</li>
+      </ul></div>
+      <div class="moves"><h3>Redesign moves</h3><ul>
+        <li><b>Declare one animation for every route</b> — set it once on the root <code>Stack.screenOptions</code> so iOS and Android are pixel-identical.</li>
+        <li><b>Give tab swaps a micro-transition</b> — 120–200ms of fade is enough to make switching feel intentional, never sluggish.</li>
+        <li><b>Pick one grammar</b> — the three options below are each a complete, self-consistent system (push + pop + tab swap). Pick one; don't mix.</li>
+        <li><b>Respect reduced motion</b> — all options collapse to a plain fade when the OS accessibility setting asks for it.</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <div class="section" id="options">
+    <div class="eyebrow">Motion 08 · The candidates</div>
+    <h2>Three systems, looping live</h2>
+    <p class="sub">Each phone loops the same journey: Home → push a book detail → pop back. The short frame under it
+      shows that option's tab-switch treatment. Use the ¼× toggle above to study the easing.</p>
+
+    <div class="frames">
+
+      <!-- ============ OPTION A ============ -->
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Option A — Hearth Push <span class="chip">parallax slide</span></div>
+          <div class="d">The platform-classic: detail slides in from the right over the parent, which slips back 28% under a dim.
+            Pop reverses. Familiar, directional, tells you where "back" lives.</div></div>
+        <div class="phone"><div class="screen demoA">
+          <!-- UNDER: home -->
+          <div class="route under">
+            <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">wifi</span><span class="ms">battery_5_bar</span></span></div>
+            <div class="pg-head"><div class="hi">Good evening</div><div class="big">Home</div></div>
+            <div class="pg-row">
+              <div class="cov c1" style="width:104px; aspect-ratio:2/3"><span class="init">K</span><span class="ct">The Kingmaker</span></div>
+              <div class="cov c2" style="width:104px; aspect-ratio:2/3"><span class="init">T</span><span class="ct">Tide of War</span></div>
+              <div class="cov c5" style="width:104px; aspect-ratio:2/3"><span class="init">A</span><span class="ct">Ash & Amber</span></div>
+            </div>
+            <div class="secthead"><div class="l"><span class="ms fill">local_fire_department</span>Continue</div><div class="see">See all<span class="ms">chevron_right</span></div></div>
+            <div class="pg-row" style="margin-top:0">
+              <div class="cov c3" style="width:104px; aspect-ratio:2/3"><span class="init">S</span><span class="ct">Sage Road</span></div>
+              <div class="cov c7" style="width:104px; aspect-ratio:2/3"><span class="init">D</span><span class="ct">Dusk Runner</span></div>
+              <div class="cov c6" style="width:104px; aspect-ratio:2/3"><span class="init">R</span><span class="ct">Rosewater</span></div>
+            </div>
+            <div style="flex:1"></div>
+            <div class="tabbar">
+              <div class="tab on"><span class="pill"><span class="ms fill">home</span></span><span class="lbl">Home</span></div>
+              <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+              <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+              <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+              <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+            </div>
+          </div>
+          <!-- OVER: book detail -->
+          <div class="route over">
+            <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">wifi</span><span class="ms">battery_5_bar</span></span></div>
+            <div class="pg-backrow"><span class="iconbtn"><span class="ms">arrow_back</span></span><span class="meta-t">Book</span></div>
+            <div class="pg-detailhero">
+              <div class="cov c1"><span class="init">K</span><span class="ct" style="font-size:14px">The Kingmaker</span></div>
+              <div class="bt">The Kingmaker</div>
+              <div class="ba">Rowan Ashford · 14 h 22 m</div>
+              <div class="btn primary" style="margin-top:18px; width:220px"><span class="ms fill">play_arrow</span>Continue · Ch. 12</div>
+            </div>
+            <div style="flex:1"></div>
+            <div class="tabbar">
+              <div class="tab on"><span class="pill"><span class="ms fill">home</span></span><span class="lbl">Home</span></div>
+              <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+              <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+              <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+              <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+            </div>
+          </div>
+        </div></div>
+        <div class="phaselbl">loop: idle → <b>push 380ms</b> → idle → <b>pop 380ms</b></div>
+
+        <div class="framecap" style="margin-top:22px"><div class="t">Option A, same system — tab swap <span class="chip">120ms crossfade</span></div>
+          <div class="d">Not a separate option: this is what tab switches look like if A wins. Fast enough to feel instant, soft enough to not read as a glitch.</div></div>
+        <div class="phone tabdemo tabA"><div class="screen short" style="height:300px">
+          <div class="tabpane p1">
+            <div class="pg-head"><div class="big" style="font-size:19px">Home</div></div>
+            <div class="pg-row"><div class="cov c1" style="width:88px; aspect-ratio:2/3"><span class="init">K</span></div><div class="cov c2" style="width:88px; aspect-ratio:2/3"><span class="init">T</span></div><div class="cov c5" style="width:88px; aspect-ratio:2/3"><span class="init">A</span></div></div>
+          </div>
+          <div class="tabpane p2">
+            <div class="pg-head"><div class="big" style="font-size:19px">Library</div></div>
+            <div class="pg-row"><div class="cov c3" style="width:88px; aspect-ratio:2/3"><span class="init">S</span></div><div class="cov c7" style="width:88px; aspect-ratio:2/3"><span class="init">D</span></div><div class="cov c6" style="width:88px; aspect-ratio:2/3"><span class="init">R</span></div></div>
+          </div>
+          <div class="tabbar">
+            <div class="tab t1"><span class="pill"><span class="ms fill">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab t2"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+        </div></div>
+
+        <div class="verdict">
+          <div class="pro"><b>Universally understood</b> — spatial left/right model users already have.</div>
+          <div class="pro"><b>Free swipe-back affordance</b> on iOS (edge gesture matches the motion).</div>
+          <div class="con"><b>Fights the player</b> — the player rises vertically; sideways pages make it the odd one out.</div>
+          <div class="con"><b>Heaviest feel</b> of the three at 380ms; deep stacks (club → book → series) get "slide fatigue".</div>
+        </div>
+        <div class="implnote"><b>Cost: trivial.</b> <code>screenOptions.animation = 'slide_from_right'</code> on the root Stack (expo-router native stack) — identical on both platforms. Tab fade needs a tiny opacity animator in the custom AppTabBar layout.</div>
+      </div>
+
+      <!-- ============ OPTION B ============ -->
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Option B — Ember Fade-Through <span class="chip">fade + scale</span></div>
+          <div class="d">The outgoing page clears in 90ms, then the new page fades in while settling from 96% scale.
+            No direction at all — the same calm recipe for push, pop, and tab swap.</div></div>
+        <div class="phone"><div class="screen demoB">
+          <div class="route under">
+            <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">wifi</span><span class="ms">battery_5_bar</span></span></div>
+            <div class="pg-head"><div class="hi">Good evening</div><div class="big">Home</div></div>
+            <div class="pg-row">
+              <div class="cov c1" style="width:104px; aspect-ratio:2/3"><span class="init">K</span><span class="ct">The Kingmaker</span></div>
+              <div class="cov c2" style="width:104px; aspect-ratio:2/3"><span class="init">T</span><span class="ct">Tide of War</span></div>
+              <div class="cov c5" style="width:104px; aspect-ratio:2/3"><span class="init">A</span><span class="ct">Ash & Amber</span></div>
+            </div>
+            <div class="secthead"><div class="l"><span class="ms fill">local_fire_department</span>Continue</div><div class="see">See all<span class="ms">chevron_right</span></div></div>
+            <div class="pg-row" style="margin-top:0">
+              <div class="cov c3" style="width:104px; aspect-ratio:2/3"><span class="init">S</span><span class="ct">Sage Road</span></div>
+              <div class="cov c7" style="width:104px; aspect-ratio:2/3"><span class="init">D</span><span class="ct">Dusk Runner</span></div>
+              <div class="cov c6" style="width:104px; aspect-ratio:2/3"><span class="init">R</span><span class="ct">Rosewater</span></div>
+            </div>
+            <div style="flex:1"></div>
+            <div class="tabbar">
+              <div class="tab on"><span class="pill"><span class="ms fill">home</span></span><span class="lbl">Home</span></div>
+              <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+              <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+              <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+              <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+            </div>
+          </div>
+          <div class="route over">
+            <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">wifi</span><span class="ms">battery_5_bar</span></span></div>
+            <div class="pg-backrow"><span class="iconbtn"><span class="ms">arrow_back</span></span><span class="meta-t">Book</span></div>
+            <div class="pg-detailhero">
+              <div class="cov c1"><span class="init">K</span><span class="ct" style="font-size:14px">The Kingmaker</span></div>
+              <div class="bt">The Kingmaker</div>
+              <div class="ba">Rowan Ashford · 14 h 22 m</div>
+              <div class="btn primary" style="margin-top:18px; width:220px"><span class="ms fill">play_arrow</span>Continue · Ch. 12</div>
+            </div>
+            <div style="flex:1"></div>
+            <div class="tabbar">
+              <div class="tab on"><span class="pill"><span class="ms fill">home</span></span><span class="lbl">Home</span></div>
+              <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+              <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+              <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+              <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+            </div>
+          </div>
+        </div></div>
+        <div class="phaselbl">loop: idle → <b>fade-through 300ms</b> → idle → <b>fade-through 300ms</b></div>
+
+        <div class="framecap" style="margin-top:22px"><div class="t">Option B, same system — tab swap <span class="chip">fade-through 160ms</span></div>
+          <div class="d">Not a separate option: this is what tab switches look like if B wins. Pushes, pops, and tabs are literally the same animation.</div></div>
+        <div class="phone tabdemo tabB"><div class="screen short" style="height:300px">
+          <div class="tabpane p1">
+            <div class="pg-head"><div class="big" style="font-size:19px">Home</div></div>
+            <div class="pg-row"><div class="cov c1" style="width:88px; aspect-ratio:2/3"><span class="init">K</span></div><div class="cov c2" style="width:88px; aspect-ratio:2/3"><span class="init">T</span></div><div class="cov c5" style="width:88px; aspect-ratio:2/3"><span class="init">A</span></div></div>
+          </div>
+          <div class="tabpane p2">
+            <div class="pg-head"><div class="big" style="font-size:19px">Library</div></div>
+            <div class="pg-row"><div class="cov c3" style="width:88px; aspect-ratio:2/3"><span class="init">S</span></div><div class="cov c7" style="width:88px; aspect-ratio:2/3"><span class="init">D</span></div><div class="cov c6" style="width:88px; aspect-ratio:2/3"><span class="init">R</span></div></div>
+          </div>
+          <div class="tabbar">
+            <div class="tab t1"><span class="pill"><span class="ms fill">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab t2"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+        </div></div>
+
+        <div class="verdict">
+          <div class="pro"><b>Calmest option</b> — no motion sickness, no direction to get wrong, great for late-night listening sessions.</div>
+          <div class="pro"><b>One recipe everywhere</b> — push = pop = tab swap; maximum consistency for minimum rules.</div>
+          <div class="con"><b>No spatial model</b> — back doesn't "come from" anywhere; deep stacks can feel placeless.</div>
+          <div class="con"><b>Costliest to build well</b> — the native stack's <code>'fade'</code> is a plain crossfade; true fade-through (out-then-in) needs a custom animator.</div>
+        </div>
+        <div class="implnote"><b>Cost: moderate.</b> Nearest native: <code>animation: 'fade'</code> (plain crossfade, 90% of the feel for one line). Exact fade-through needs reanimated screen transitions or a JS-stack interpolator.</div>
+      </div>
+
+      <!-- ============ OPTION C ============ -->
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Option C — Shelf Lift <span class="chip">fade + rise</span></div>
+          <div class="d">Pages lift off the shelf: the detail fades in while rising ~18px, the parent settles back a touch and dims.
+            Pop sinks it back down. The whole app moves on the same vertical axis the player already owns.</div></div>
+        <div class="phone"><div class="screen demoC">
+          <div class="route under">
+            <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">wifi</span><span class="ms">battery_5_bar</span></span></div>
+            <div class="pg-head"><div class="hi">Good evening</div><div class="big">Home</div></div>
+            <div class="pg-row">
+              <div class="cov c1" style="width:104px; aspect-ratio:2/3"><span class="init">K</span><span class="ct">The Kingmaker</span></div>
+              <div class="cov c2" style="width:104px; aspect-ratio:2/3"><span class="init">T</span><span class="ct">Tide of War</span></div>
+              <div class="cov c5" style="width:104px; aspect-ratio:2/3"><span class="init">A</span><span class="ct">Ash & Amber</span></div>
+            </div>
+            <div class="secthead"><div class="l"><span class="ms fill">local_fire_department</span>Continue</div><div class="see">See all<span class="ms">chevron_right</span></div></div>
+            <div class="pg-row" style="margin-top:0">
+              <div class="cov c3" style="width:104px; aspect-ratio:2/3"><span class="init">S</span><span class="ct">Sage Road</span></div>
+              <div class="cov c7" style="width:104px; aspect-ratio:2/3"><span class="init">D</span><span class="ct">Dusk Runner</span></div>
+              <div class="cov c6" style="width:104px; aspect-ratio:2/3"><span class="init">R</span><span class="ct">Rosewater</span></div>
+            </div>
+            <div style="flex:1"></div>
+            <div class="tabbar">
+              <div class="tab on"><span class="pill"><span class="ms fill">home</span></span><span class="lbl">Home</span></div>
+              <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+              <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+              <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+              <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+            </div>
+          </div>
+          <div class="route over">
+            <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">wifi</span><span class="ms">battery_5_bar</span></span></div>
+            <div class="pg-backrow"><span class="iconbtn"><span class="ms">arrow_back</span></span><span class="meta-t">Book</span></div>
+            <div class="pg-detailhero">
+              <div class="cov c1"><span class="init">K</span><span class="ct" style="font-size:14px">The Kingmaker</span></div>
+              <div class="bt">The Kingmaker</div>
+              <div class="ba">Rowan Ashford · 14 h 22 m</div>
+              <div class="btn primary" style="margin-top:18px; width:220px"><span class="ms fill">play_arrow</span>Continue · Ch. 12</div>
+            </div>
+            <div style="flex:1"></div>
+            <div class="tabbar">
+              <div class="tab on"><span class="pill"><span class="ms fill">home</span></span><span class="lbl">Home</span></div>
+              <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+              <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+              <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+              <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+            </div>
+          </div>
+        </div></div>
+        <div class="phaselbl">loop: idle → <b>lift 260ms</b> → idle → <b>sink 260ms</b></div>
+
+        <div class="framecap" style="margin-top:22px"><div class="t">Option C, same system — tab swap <span class="chip">lift 10px · 180ms</span></div>
+          <div class="d">Not a separate option: this is what tab switches look like if C wins. Tabs get a smaller, faster dose of the same lift, so the vocabulary stays singular.</div></div>
+        <div class="phone tabdemo tabC"><div class="screen short" style="height:300px">
+          <div class="tabpane p1">
+            <div class="pg-head"><div class="big" style="font-size:19px">Home</div></div>
+            <div class="pg-row"><div class="cov c1" style="width:88px; aspect-ratio:2/3"><span class="init">K</span></div><div class="cov c2" style="width:88px; aspect-ratio:2/3"><span class="init">T</span></div><div class="cov c5" style="width:88px; aspect-ratio:2/3"><span class="init">A</span></div></div>
+          </div>
+          <div class="tabpane p2">
+            <div class="pg-head"><div class="big" style="font-size:19px">Library</div></div>
+            <div class="pg-row"><div class="cov c3" style="width:88px; aspect-ratio:2/3"><span class="init">S</span></div><div class="cov c7" style="width:88px; aspect-ratio:2/3"><span class="init">D</span></div><div class="cov c6" style="width:88px; aspect-ratio:2/3"><span class="init">R</span></div></div>
+          </div>
+          <div class="tabbar">
+            <div class="tab t1"><span class="pill"><span class="ms fill">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab t2"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+        </div></div>
+
+        <div class="verdict">
+          <div class="pro"><b>Harmonizes with the player</b> — the flagship surface already rises from the dock; now everything shares that axis. One grammar, zero exceptions.</div>
+          <div class="pro"><b>Native-cheap</b> — <code>'fade_from_bottom'</code> is a built-in native-stack animation; identical on iOS and Android for one line of config.</div>
+          <div class="con"><b>Less conventional</b> — a few iOS users may miss the sideways parallax they expect from system apps.</div>
+          <div class="con"><b>Vertical is a loaded axis</b> — rise must stay small (≤20px) so a push never reads as a sheet/modal presenting.</div>
+        </div>
+        <div class="implnote"><b>Cost: trivial.</b> <code>screenOptions.animation = 'fade_from_bottom'</code> on the root Stack — including <code>/player</code> (amended after the study-09 cross-review below: the old full-height <code>'slide_from_bottom'</code> is sheet grammar that promises swipe-to-dismiss). Tab lift = small reanimated fade+translateY in AppTabBar.</div>
+      </div>
+
+    </div>
+
+    <div class="motionspec"><h4>Motion spec — side by side</h4><table>
+      <tr><td></td><td><b>A · Hearth Push</b></td><td><b>B · Ember Fade-Through</b></td><td><b>C · Shelf Lift</b></td></tr>
+      <tr><td>push</td><td>slide in from right 380ms · parent −28% + dim · cubic-bezier(.2,.8,.25,1)</td><td>out 90ms, in 210ms · scale .96→1 · standard decel</td><td>fade in + rise 18px→0 260ms · parent scale .985 + dim · cubic-bezier(.16,.8,.3,1)</td></tr>
+      <tr><td>pop</td><td>reverse slide 380ms · accel curve</td><td>same fade-through, roles swapped</td><td>fade out + sink 0→18px 220ms · accel curve</td></tr>
+      <tr><td>tab swap</td><td>crossfade 120ms</td><td>fade-through 160ms</td><td>fade + lift 10px, 180ms</td></tr>
+      <tr><td>player present</td><td>rise from dock (unchanged) — the one vertical exception</td><td>rise from dock (unchanged)</td><td>standard lift, same as any push (amended per 09 cross-review — no sheet-like full slide)</td></tr>
+      <tr><td>reduced motion</td><td>plain fade 150ms</td><td>already fade — durations halved</td><td>plain fade 150ms (no rise)</td></tr>
+      <tr><td>dual-pane (fold)</td><td>✗ slide crosses the hinge; grammar breaks between postures</td><td>✓ same fade-through, scoped to the changing leaf</td><td>✓ same lift, scoped to the changing leaf; tabletop drops the rise (pure fade)</td></tr>
+      <tr><td>expo-router</td><td><code>animation:'slide_from_right'</code></td><td><code>animation:'fade'</code> (approx) / custom for exact</td><td><code>animation:'fade_from_bottom'</code></td></tr>
+    </table></div>
+  </div>
+
+  <div class="section" id="foldables">
+    <div class="eyebrow">Motion 08 · Foldables</div>
+    <h2>How each system survives the open fold</h2>
+    <p class="sub">The fold direction (<code>docs/redesign/fold/</code>) changes what a "page swap" even is: on the open
+      device the left leaf keeps focus, selection, and playback while most navigation becomes a <b>right-leaf pane swap</b> —
+      and the hinge plus 24px of gutter on each side must stay motion- and touch-free. A transition system only qualifies
+      if the exact same recipe works whole-screen when folded and per-pane when open.</p>
+
+    <div class="audit">
+      <div class="crit"><h3>What the fold rules eliminate</h3><ul>
+        <li><b>Option A is out.</b> A horizontal slide drags content <i>across</i> the hinge, and in dual-pane the parent
+          stays visible in the left leaf — there is nothing to "slide over". Worse, the horizontal axis is already the
+          spine's spatial model (right leaf = detail of the left leaf), so sideways motion inside a pane fights it.
+          A would need a second grammar for the open posture — the exact inconsistency this page exists to kill.</li>
+        <li><b>Whole-screen pushes are the exception, not the rule, when open</b> — only compact-posture navigation and
+          the player's rise stay full-screen. Any system defined only at screen level doesn't compose.</li>
+      </ul></div>
+      <div class="moves"><h3>What passes</h3><ul>
+        <li><b>Option B passes clean</b> — directionless fade-through scopes to a single leaf with zero changes; it's
+          literally the reduced-motion rule the fold prototype already specifies for right-pane swaps.</li>
+        <li><b>Option C passes with one posture rule</b> — the rise runs <i>parallel</i> to the vertical hinge in book
+          posture, so motion never crosses the seam. In tabletop posture the fold is horizontal, so the rise is dropped
+          there and C degrades to a pure fade (tabletop is the player surface anyway, which doesn't push routes).</li>
+        <li><b>C and B converge</b> — C's reduced-motion and tabletop fallback <i>is</i> B. Choosing C gives both:
+          lift where the axis allows it, calm fade where it doesn't.</li>
+      </ul></div>
+    </div>
+
+    <div class="frames">
+      <div class="frameunit wide">
+        <div class="framecap"><div class="t">Open fold — right-leaf pane swap <span class="chip">option C, same keyframes</span></div>
+          <div class="d">Library stays put in the left leaf; selecting a book swaps only the right leaf, which loops the
+            identical Shelf Lift keyframes the phone demo uses. Nothing moves across the seam; the 24px gutters stay quiet.</div></div>
+        <div class="foldphone"><div class="foldscreen demoC">
+          <!-- LEFT LEAF: static library list, selection highlighted -->
+          <div class="leaf">
+            <div class="pg-head"><div class="hi">Library</div><div class="big" style="font-size:20px">All books</div></div>
+            <div style="margin-top:10px">
+              <div class="leafrow sel"><div class="cov c1" style="width:44px; aspect-ratio:2/3"><span class="init" style="font-size:1.6em">K</span></div>
+                <div class="tx"><div class="t">The Kingmaker</div><div class="d">Rowan Ashford · 62%</div></div><span class="ms" style="color:var(--accent); font-size:18px">graphic_eq</span></div>
+              <div class="leafrow"><div class="cov c2" style="width:44px; aspect-ratio:2/3"><span class="init" style="font-size:1.6em">T</span></div>
+                <div class="tx"><div class="t">Tide of War</div><div class="d">Mara Ellison · new</div></div></div>
+              <div class="leafrow"><div class="cov c5" style="width:44px; aspect-ratio:2/3"><span class="init" style="font-size:1.6em">A</span></div>
+                <div class="tx"><div class="t">Ash & Amber</div><div class="d">J. P. Corbin · 12%</div></div></div>
+              <div class="leafrow"><div class="cov c3" style="width:44px; aspect-ratio:2/3"><span class="init" style="font-size:1.6em">S</span></div>
+                <div class="tx"><div class="t">Sage Road</div><div class="d">Ilse Vantar · finished</div></div></div>
+              <div class="leafrow"><div class="cov c7" style="width:44px; aspect-ratio:2/3"><span class="init" style="font-size:1.6em">D</span></div>
+                <div class="tx"><div class="t">Dusk Runner</div><div class="d">Rowan Ashford · 4%</div></div></div>
+            </div>
+          </div>
+          <!-- HINGE -->
+          <div class="seam"><div class="gutterlbl">hinge + 24px gutters · no motion, no targets</div></div>
+          <!-- RIGHT LEAF: pane-swap loop, reusing c-over/c-under -->
+          <div class="leaf">
+            <div class="route under">
+              <div class="pg-detailhero" style="padding-top:44px">
+                <div class="cov c2" style="width:150px; aspect-ratio:2/3"><span class="init">T</span><span class="ct" style="font-size:13px">Tide of War</span></div>
+                <div class="bt" style="font-size:19px">Tide of War</div>
+                <div class="ba">Mara Ellison · 11 h 05 m</div>
+                <div class="btn secondary" style="margin-top:16px; width:200px"><span class="ms">play_arrow</span>Start listening</div>
+              </div>
+            </div>
+            <div class="route over">
+              <div class="pg-detailhero" style="padding-top:44px">
+                <div class="cov c1" style="width:150px; aspect-ratio:2/3"><span class="init">K</span><span class="ct" style="font-size:13px">The Kingmaker</span></div>
+                <div class="bt" style="font-size:19px">The Kingmaker</div>
+                <div class="ba">Rowan Ashford · 14 h 22 m</div>
+                <div class="btn primary" style="margin-top:16px; width:200px"><span class="ms fill">play_arrow</span>Continue · Ch. 12</div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+        <div class="phaselbl">right leaf loops: detail A → <b>lift-swap 260ms</b> → detail B → back · left leaf never moves</div>
+      </div>
+    </div>
+
+    <div class="audit" style="margin-top:26px">
+      <div class="crit" style="grid-column:1/-1"><h3>Cross-review — study 09 (Steady Frame / Shelf Depth / Cover Relay)</h3><ul>
+        <li><b>Adopted from 09: entry motion is a promise.</b> This page originally kept the player's big slide-from-bottom
+          rise as the "hero variant" of Option C. Study 09's Rule 03 is right that this is sheet grammar — a full-screen
+          bottom slide teaches users to swipe down to dismiss, which is exactly the gesture we're removing. <b>Amendment
+          to C:</b> the player enters with the same standard Shelf Lift as every other push (or, later, as a morph
+          growing out of the mini-player dock). One grammar, now with zero exceptions.</li>
+        <li><b>Adopted from 09: refuse the swipe audibly.</b> A blocked gesture must not feel dead. On a downward
+          drag attempt, the player follows the finger a few px, rubber-bands back (~260ms spring), and a toast says
+          "Player stays open". Ship this with the gesture fix.</li>
+        <li><b>Held against 09: foldables.</b> Study 09 never tests the hinge. Its "Steady Frame" pick soft-pushes
+          details sideways (18% travel) — pane-clippable, so survivable, but it reintroduces the horizontal axis the
+          fold analysis eliminated; its "Cover Relay" self-admits the highest foldable/virtualization QA cost. One
+          dose-scaled grammar (C) composes across postures better than three route-type grammars.</li>
+        <li><b>Held against 09: doctrine.</b> 09's demo swaps the Stats tab for a Search tab — against D-NAV/D-SEARCH
+          (search is a pushed route, not a tab). Cosmetic in a motion study, flagged so it doesn't leak into code.</li>
+        <li><b>Parked: Cover Relay.</b> The book-cover shared-element morph is the most "HearthShelf" idea in either
+          study, and it's orthogonal — it can be layered on top of C later for book → detail → player, once the base
+          system ships. Not in scope for the first pass.</li>
+      </ul></div>
+      <div class="moves" style="grid-column:1/-1"><h3>Recommendation</h3><ul>
+        <li><b>Option C — Shelf Lift, as amended by the 09 cross-review.</b> One dose-scaled grammar for everything —
+          pushes, pops, tabs, and now the player too (standard lift instead of the old sheet-like full slide, so the
+          entrance no longer promises a swipe-down that doesn't exist). It's a one-line native animation on both
+          platforms (no custom animator to maintain) and fold-proof: the lift runs parallel to the book-posture hinge
+          and scopes to a single leaf unchanged. Option B is the fallback (it's what C already degrades to under
+          reduced motion and in tabletop posture). <b>Option A is eliminated by the fold direction</b> — horizontal
+          slides cross the hinge and fight the spine's left/right spatial model, forcing a second grammar for the
+          open posture. Study 09's "Cover Relay" morph is parked as a later layer on top of C.</li>
+        <li><b>Ship the player-gesture fix with whichever wins:</b> fully block swipe-dismiss on <code>/player</code>
+          (the current <code>gestureEnabled:false</code> misses the iOS full-screen swipe and Android system back),
+          make hardware/system back collapse to the mini player rather than pop, and refuse drag attempts audibly —
+          follow the finger a few px, rubber-band back, toast "Player stays open" (adopted from study 09).</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <div class="footnav"><a href="07-system-Final.html">← Sign-in & System</a><a href="index-Final.html">Overview →</a></div>
+</div>
+<script>
+  // Speed toggle: stretches every demo loop 4x for easing inspection.
+  const b1 = document.getElementById('spd1'), b4 = document.getElementById('spd4');
+  function setSlow(slow) {
+    document.body.classList.toggle('slow', slow);
+    b1.classList.toggle('on', !slow); b4.classList.toggle('on', slow);
+  }
+  b1.addEventListener('click', () => setSlow(false));
+  b4.addEventListener('click', () => setSlow(true));
+</script>
+</body>
+</html>

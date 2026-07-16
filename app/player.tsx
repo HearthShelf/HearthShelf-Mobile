@@ -31,6 +31,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
+  withSpring,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated'
@@ -83,7 +84,13 @@ import { useBackHandler, useSheetBackHandler } from '@/ui/useBackHandler'
 import { AppTabBar, TAB_BAR_HEIGHT, VNAV_WIDTH, useNavMode } from '@/ui/AppTabBar'
 import { MiniPlayer } from '@/player/MiniPlayer'
 import { haptics } from '@/ui/haptics'
-import { DUR, SpringPressable } from '@/ui/motion'
+import {
+  DUR,
+  LIFT_REJECT,
+  LIFT_REJECT_SPRING,
+  SpringPressable,
+  useReducedMotion,
+} from '@/ui/motion'
 import { useToast, Toast } from '@/ui/Toast'
 import { radius, spacing, withAlpha, type Palette } from '@/ui/theme'
 import { useColors, useTheme, type ActiveTheme } from '@/ui/ThemeProvider'
@@ -206,9 +213,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
       deckJumpRef.current = info.jumpTo
       deckPlayRef.current = info.playActive
       setDeck((d) =>
-        d.count === info.count &&
-        d.index === info.index &&
-        d.active?.itemId === info.active.itemId
+        d.count === info.count && d.index === info.index && d.active?.itemId === info.active.itemId
           ? d
           : { count: info.count, index: info.index, active: info.active },
       )
@@ -347,15 +352,70 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // and it swallows the press only when a sheet was actually open.
   useSheetBackHandler()
 
+  // Downward-swipe rejection: the player refuses to be dismissed. A downward
+  // pan drags the whole surface at a fraction of the finger, caps out at a few
+  // pixels, and springs back on release. It never navigates, never collapses,
+  // and shows no UI - the rubber band IS the feedback. Reduced motion skips
+  // the displacement entirely.
+  const reduceMotion = useReducedMotion()
+  const rejectY = useSharedValue(0)
+  // At-most-once-per-gesture latch for the cap haptic.
+  const capFelt = useSharedValue(false)
+  const rejectStyle = useAnimatedStyle(() => ({ transform: [{ translateY: rejectY.value }] }))
+
   // Vertical-only so it never steals the horizontal swipe when the cover is a
   // carousel (activeOffsetY makes it wait for clear vertical motion before
   // claiming the gesture; the FlatList keeps horizontal drags).
   const swipe = Gesture.Pan()
     .activeOffsetY([-14, 14])
     .failOffsetX([-16, 16])
+    .onUpdate((e) => {
+      // Downward drag on the cover outside focus view: rubber-band the surface.
+      if (!immersive && !reduceMotion && e.translationY > 0) {
+        const y = Math.min(LIFT_REJECT.capPx, e.translationY * LIFT_REJECT.followRatio)
+        rejectY.value = y
+        if (y >= LIFT_REJECT.capPx && !capFelt.value) {
+          capFelt.value = true
+          runOnJS(haptics.select)()
+        }
+      }
+    })
     .onEnd((e) => {
       if (e.velocityY < -400) runOnJS(enter)()
-      else if (e.velocityY > 400) runOnJS(exit)()
+      // A downward fling only exits the focus view; on the normal player the
+      // rubber band above is the entire response.
+      else if (e.velocityY > 400 && immersive) runOnJS(exit)()
+    })
+    .onFinalize(() => {
+      capFelt.value = false
+      if (rejectY.value !== 0) rejectY.value = withSpring(0, LIFT_REJECT_SPRING)
+    })
+
+  // Same rejection for downward pans that start anywhere else on the surface
+  // (header, progress strip, margins). Activates only on clearly-vertical
+  // DOWNWARD movement: upward fails (yields to the cover's immersive swipe-up),
+  // horizontal fails (yields to the carousel), and instant-activation children
+  // (scrubber, sheets) win before this can reach its threshold. Runs
+  // simultaneously with the cover swipe so the two never cancel each other -
+  // over the cover both write the same displacement.
+  const reject = Gesture.Pan()
+    .enabled(!reduceMotion)
+    .activeOffsetY(14)
+    .failOffsetY(-14)
+    .failOffsetX([-16, 16])
+    .simultaneousWithExternalGesture(swipe)
+    .onUpdate((e) => {
+      if (immersive || e.translationY <= 0) return
+      const y = Math.min(LIFT_REJECT.capPx, e.translationY * LIFT_REJECT.followRatio)
+      rejectY.value = y
+      if (y >= LIFT_REJECT.capPx && !capFelt.value) {
+        capFelt.value = true
+        runOnJS(haptics.select)()
+      }
+    })
+    .onFinalize(() => {
+      capFelt.value = false
+      if (rejectY.value !== 0) rejectY.value = withSpring(0, LIFT_REJECT_SPRING)
     })
 
   // The thin whole-book bar eases toward each new position instead of ticking,
@@ -569,7 +629,12 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
     new Map(),
   )
   useEffect(() => {
-    if (!browsedItemId || !browsedRec || browsedRec.isFinished || (browsedRec.currentTime ?? 0) <= 0) {
+    if (
+      !browsedItemId ||
+      !browsedRec ||
+      browsedRec.isFinished ||
+      (browsedRec.currentTime ?? 0) <= 0
+    ) {
       setBrowsedChapter(null)
       return
     }
@@ -604,520 +669,533 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   }, [browsedItemId, browsedRec])
 
   return (
-    <Screen
-      edges={immersive ? ['top', 'bottom'] : ['top']}
-      tabBar={
-        <>
-          {!immersive && !embedded ? (
-            <Animated.View
-              entering={FadeIn.duration(DUR.base)}
-              exiting={FadeOut.duration(DUR.fast)}
-              pointerEvents="box-none"
-              style={floatingNavVisible ? StyleSheet.absoluteFill : undefined}
-            >
-              <AppTabBar activeName="now" onPressTab={goToTab} />
-            </Animated.View>
-          ) : null}
-          {browsing ? (
-            <MiniPlayer
-              bottomOffset={
-                embedded || verticalNavVisible ? insets.bottom : insets.bottom + TAB_BAR_HEIGHT
-              }
-              rightInset={verticalNavVisible ? VNAV_WIDTH + spacing.md : 0}
-              floating={settings.floatingNav}
-            />
-          ) : null}
-        </>
-      }
-    >
-      {/* Player background, per the playerBg setting. Blurred cover gets a light
+    // The rejection pan wraps the whole surface (both the pushed /player route
+    // and the embedded Now tab render through here) and the translate applies
+    // to this root so the entire page nods, not just the cover.
+    <GestureDetector gesture={reject}>
+      <Animated.View style={[{ flex: 1 }, rejectStyle]} collapsable={false}>
+        <Screen
+          edges={immersive ? ['top', 'bottom'] : ['top']}
+          tabBar={
+            <>
+              {!immersive && !embedded ? (
+                <Animated.View
+                  entering={FadeIn.duration(DUR.base)}
+                  exiting={FadeOut.duration(DUR.fast)}
+                  pointerEvents="box-none"
+                  style={floatingNavVisible ? StyleSheet.absoluteFill : undefined}
+                >
+                  <AppTabBar activeName="now" onPressTab={goToTab} />
+                </Animated.View>
+              ) : null}
+              {browsing ? (
+                <MiniPlayer
+                  bottomOffset={
+                    embedded || verticalNavVisible ? insets.bottom : insets.bottom + TAB_BAR_HEIGHT
+                  }
+                  rightInset={verticalNavVisible ? VNAV_WIDTH + spacing.md : 0}
+                  floating={settings.floatingNav}
+                />
+              ) : null}
+            </>
+          }
+        >
+          {/* Player background, per the playerBg setting. Blurred cover gets a light
           scrim fading it into the scaffold near the controls; gradient mode is the
           breathing cover-hue glow on the bare scaffold; hearth art shows on its
           own with no scrim so the picture stays fully visible. */}
-      <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        {settings.playerBg === 'blurred' && nowPlaying.artworkUrl ? (
-          <>
-            <Image
-              source={{ uri: nowPlaying.artworkUrl }}
-              style={StyleSheet.absoluteFill}
-              blurRadius={40}
-            />
-            <LinearGradient
-              colors={[
-                withAlpha(colors.scaffold, 0.18),
-                withAlpha(colors.scaffold, 0.5),
-                colors.scaffold,
-              ]}
-              locations={[0, 0.62, 1]}
-              style={StyleSheet.absoluteFill}
-            />
-          </>
-        ) : null}
-        {settings.playerBg === 'hearth' ? (
-          <Image source={HEARTH_BG} style={styles.hearthBg} resizeMode="cover" />
-        ) : null}
-        {settings.playerBg === 'gradient' ? <CoverGlow hue={hue} height={430} breathe /> : null}
-      </View>
+          <View style={StyleSheet.absoluteFill} pointerEvents="none">
+            {settings.playerBg === 'blurred' && nowPlaying.artworkUrl ? (
+              <>
+                <Image
+                  source={{ uri: nowPlaying.artworkUrl }}
+                  style={StyleSheet.absoluteFill}
+                  blurRadius={40}
+                />
+                <LinearGradient
+                  colors={[
+                    withAlpha(colors.scaffold, 0.18),
+                    withAlpha(colors.scaffold, 0.5),
+                    colors.scaffold,
+                  ]}
+                  locations={[0, 0.62, 1]}
+                  style={StyleSheet.absoluteFill}
+                />
+              </>
+            ) : null}
+            {settings.playerBg === 'hearth' ? (
+              <Image source={HEARTH_BG} style={styles.hearthBg} resizeMode="cover" />
+            ) : null}
+            {settings.playerBg === 'gradient' ? <CoverGlow hue={hue} height={430} breathe /> : null}
+          </View>
 
-      {/* Focus view: a visible X to leave (swipe-down still works). */}
-      {immersive && (
-        <Animated.View
-          entering={FadeIn.duration(DUR.base)}
-          exiting={FadeOut.duration(DUR.fast)}
-          style={styles.focusExit}
-        >
-          <IconButton name={icons.close} size={24} color={colors.textMuted} onPress={exit} />
-        </Animated.View>
-      )}
+          {/* Focus view: a visible X to leave (swipe-down still works). */}
+          {immersive && (
+            <Animated.View
+              entering={FadeIn.duration(DUR.base)}
+              exiting={FadeOut.duration(DUR.fast)}
+              style={styles.focusExit}
+            >
+              <IconButton name={icons.close} size={24} color={colors.textMuted} onPress={exit} />
+            </Animated.View>
+          )}
 
-      {!immersive && (
-        <Animated.View entering={FadeIn.duration(DUR.base)} exiting={FadeOut.duration(DUR.fast)}>
-          {/* Header, three zones: [queue count] · [title/author or back-to-live]
+          {!immersive && (
+            <Animated.View
+              entering={FadeIn.duration(DUR.base)}
+              exiting={FadeOut.duration(DUR.fast)}
+            >
+              {/* Header, three zones: [queue count] · [title/author or back-to-live]
               · [focus + sync]. The center carries the now-playing identity
               (marquees if long) and becomes the return-home action when browsed
               into the deck, so the cover keeps its full size below. */}
-          <View style={styles.header}>
-            {/* Left: queue chip (icon + count) opening the Queue sheet. */}
-            <Touchable style={styles.queueChip} onPress={() => queueRef.current?.present()}>
-              <Icon name={icons.queue} size={16} color={colors.accent} />
-              <AppText variant="caption" style={{ fontWeight: '700' }}>
-                {queue.items.length}
-              </AppText>
-            </Touchable>
-
-            {/* Center: the book you're viewing - the playing book at index 0,
-                else the browsed up-next book (marquees when long). */}
-            <View style={styles.headerCenter}>
-              <Marquee>
-                <View style={styles.headerTitleRow}>
-                  <AppText variant="label" numberOfLines={1} style={styles.headerTitleText}>
-                    {deck.active?.title ?? nowPlaying.title}
+              <View style={styles.header}>
+                {/* Left: queue chip (icon + count) opening the Queue sheet. */}
+                <Touchable style={styles.queueChip} onPress={() => queueRef.current?.present()}>
+                  <Icon name={icons.queue} size={16} color={colors.accent} />
+                  <AppText variant="caption" style={{ fontWeight: '700' }}>
+                    {queue.items.length}
                   </AppText>
-                  <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
-                    {deck.active?.author ?? nowPlaying.author}
+                </Touchable>
+
+                {/* Center: the book you're viewing - the playing book at index 0,
+                else the browsed up-next book (marquees when long). */}
+                <View style={styles.headerCenter}>
+                  <Marquee>
+                    <View style={styles.headerTitleRow}>
+                      <AppText variant="label" numberOfLines={1} style={styles.headerTitleText}>
+                        {deck.active?.title ?? nowPlaying.title}
+                      </AppText>
+                      <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
+                        {deck.active?.author ?? nowPlaying.author}
+                      </AppText>
+                    </View>
+                  </Marquee>
+                </View>
+
+                {/* Right: Focus-view entry + passive sync status glyph. */}
+                <View style={styles.headerRight}>
+                  <IconButton
+                    name={icons.focusView}
+                    size={22}
+                    color={colors.textMuted}
+                    onPress={enter}
+                  />
+                  <SyncStatusIcon />
+                </View>
+              </View>
+
+              {carActive && (
+                <View style={styles.carChip}>
+                  <Icon name={icons.carMode} size={15} color={colors.accent} />
+                  <AppText variant="caption" color={colors.textMuted}>
+                    Playing in your car
                   </AppText>
                 </View>
-              </Marquee>
-            </View>
+              )}
 
-            {/* Right: Focus-view entry + passive sync status glyph. */}
-            <View style={styles.headerRight}>
-              <IconButton
-                name={icons.focusView}
-                size={22}
-                color={colors.textMuted}
-                onPress={enter}
-              />
-              <SyncStatusIcon />
-            </View>
-          </View>
-
-          {carActive && (
-            <View style={styles.carChip}>
-              <Icon name={icons.carMode} size={15} color={colors.accent} />
-              <AppText variant="caption" color={colors.textMuted}>
-                Playing in your car
-              </AppText>
-            </View>
-          )}
-
-          {/* Whole-book progress bar + numeric strip for the PLAYING book. Made
+              {/* Whole-book progress bar + numeric strip for the PLAYING book. Made
               invisible (not removed) while browsing, so its space is reserved
               and nothing below shifts; the mini player carries the playing book
               while you browse. */}
-          <View style={browsing ? styles.hiddenReserved : undefined} pointerEvents="none">
-            <View style={[styles.bookBarTrack, { width: progressRailWidth }]}>
-              <Animated.View style={[styles.bookBarFill, bookBarStyle]} />
-            </View>
-            <View
-              style={[
-                styles.wholeBookStrip,
-                { maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' },
-              ]}
-            >
-              <AppText variant="mono" color={colors.textMuted}>
-                {formatTimestamp(position)}
-              </AppText>
-              <AppText variant="mono" style={{ fontWeight: '700' }}>
-                {Math.round(bookProgress * 100)}%
-              </AppText>
-              <AppText variant="mono" color={colors.textMuted}>
-                -{formatTimestamp(Math.max(0, duration - position))}
-              </AppText>
-            </View>
-          </View>
-        </Animated.View>
-      )}
+              <View style={browsing ? styles.hiddenReserved : undefined} pointerEvents="none">
+                <View style={[styles.bookBarTrack, { width: progressRailWidth }]}>
+                  <Animated.View style={[styles.bookBarFill, bookBarStyle]} />
+                </View>
+                <View
+                  style={[
+                    styles.wholeBookStrip,
+                    { maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' },
+                  ]}
+                >
+                  <AppText variant="mono" color={colors.textMuted}>
+                    {formatTimestamp(position)}
+                  </AppText>
+                  <AppText variant="mono" style={{ fontWeight: '700' }}>
+                    {Math.round(bookProgress * 100)}%
+                  </AppText>
+                  <AppText variant="mono" color={colors.textMuted}>
+                    -{formatTimestamp(Math.max(0, duration - position))}
+                  </AppText>
+                </View>
+              </View>
+            </Animated.View>
+          )}
 
-      {/* Carousel deck-position dots, above the cover per the layout. In normal
+          {/* Carousel deck-position dots, above the cover per the layout. In normal
           flow here so they can't be clipped by the cover area's overflow. */}
-      {!immersive && deck.count > 1 && (
-        <DeckDots
-          count={deck.count}
-          index={deck.index}
-          fraction={deckFraction}
-          onJump={(i) => deckJumpRef.current(i)}
-        />
-      )}
+          {!immersive && deck.count > 1 && (
+            <DeckDots
+              count={deck.count}
+              index={deck.index}
+              fraction={deckFraction}
+              onJump={(i) => deckJumpRef.current(i)}
+            />
+          )}
 
-      {/* Cover fills the space between header and the pinned controls. The
+          {/* Cover fills the space between header and the pinned controls. The
           cover-tap overlays (bookmark/club) are shared between the plain cover
           and the carousel; skip-hotspots are suppressed in carousel mode since
           the horizontal swipe owns that gesture. */}
-      {(() => {
-        const coverOverlays = (
-          <>
-            {!immersive && (
-              <IconButton
-                name={isBookmarked ? icons.bookmarkFilled : icons.bookmark}
-                size={19}
-                color="#fff"
-                onPress={onBookmark}
-                style={styles.bookmarkBtn}
-              />
-            )}
-            {showClubButton && (
-              <IconButton
-                name={icons.club}
-                size={19}
-                color="#fff"
-                onPress={() => router.push(`/club/${encodeURIComponent(activeClub!.id)}?from=now`)}
-                style={styles.clubBtn}
-              />
-            )}
-            {!immersive && showInspectHint && !tapTogglesPlay && (
-              <Animated.View
-                entering={FadeIn.duration(DUR.base)}
-                exiting={FadeOut.duration(DUR.fast)}
-                style={styles.inspectHint}
-                pointerEvents="none"
-              >
-                <View style={styles.inspectHintChip}>
-                  <Icon name={icons.search} size={13} color="rgba(255,255,255,0.85)" />
-                  <AppText variant="caption" color="rgba(255,255,255,0.85)">
-                    tap to inspect
-                  </AppText>
-                </View>
-              </Animated.View>
-            )}
-          </>
-        )
-        const carouselOn = !immersive
-        return (
-          <GestureDetector gesture={swipe}>
-            <View
-              style={styles.coverArea}
-              onLayout={(e) => {
-                const h = e.nativeEvent.layout.height
-                setCoverAreaH((prev) => (Math.abs(prev - h) > 1 ? h : prev))
-              }}
-            >
-              {carouselOn ? (
-                <PlayerCoverCarousel
-                  liveItemId={nowPlaying.itemId}
-                  liveTitle={nowPlaying.title}
-                  liveAuthor={nowPlaying.author}
-                  liveArtworkUrl={nowPlaying.artworkUrl}
-                  queue={queue.items}
-                  coverWidth={coverWidth}
-                  coverAspect={coverAspect}
-                  pageWidth={width}
-                  overlay={coverOverlays}
-                  skipFeedback={<SkipFeedbackOverlay ref={skipFeedbackRef} />}
-                  hotspots={
-                    // Only on the live page: once you've paged into the deck,
-                    // hotspots hide so paging and skipping never fight.
-                    settings.skipHotspots && deck.index === 0 && carouselHotspotWidth > 24 ? (
-                      <>
-                        <Pressable
-                          onPress={() => onHotspotTap(-1)}
-                          style={[styles.hotspotLeft, { width: carouselHotspotWidth }]}
-                          accessibilityLabel={`Skip back ${settings.skipBack} seconds`}
-                        />
-                        <Pressable
-                          onPress={() => onHotspotTap(1)}
-                          style={[styles.hotspotRight, { width: carouselHotspotWidth }]}
-                          accessibilityLabel={`Skip forward ${settings.skipForward} seconds`}
-                        />
-                      </>
-                    ) : null
-                  }
-                  onLivePress={onCoverTap}
-                  onDeckChange={onDeckChange}
-                  onScrollFraction={onScrollFraction}
-                />
-              ) : (
-                // Focus view (immersive): a single large cover, no carousel.
-                <Pressable onPress={onCoverTap} style={styles.coverTap}>
-                  <Cover
-                    uri={nowPlaying.artworkUrl}
-                    itemId={nowPlaying.itemId}
-                    width={coverWidth}
-                    aspectRatio={coverAspect}
-                    radius={radius.card}
-                    fallback={{
-                      hue,
-                      initial: nowPlaying.title.charAt(0).toUpperCase(),
-                      title: nowPlaying.title,
-                    }}
-                    style={styles.cover}
+          {(() => {
+            const coverOverlays = (
+              <>
+                {!immersive && (
+                  <IconButton
+                    name={isBookmarked ? icons.bookmarkFilled : icons.bookmark}
+                    size={19}
+                    color="#fff"
+                    onPress={onBookmark}
+                    style={styles.bookmarkBtn}
                   />
-                  <SkipFeedbackOverlay ref={skipFeedbackRef} />
-                  {coverOverlays}
-                </Pressable>
-              )}
-            </View>
-          </GestureDetector>
-        )
-      })()}
+                )}
+                {showClubButton && (
+                  <IconButton
+                    name={icons.club}
+                    size={19}
+                    color="#fff"
+                    onPress={() =>
+                      router.push(`/club/${encodeURIComponent(activeClub!.id)}?from=now`)
+                    }
+                    style={styles.clubBtn}
+                  />
+                )}
+                {!immersive && showInspectHint && !tapTogglesPlay && (
+                  <Animated.View
+                    entering={FadeIn.duration(DUR.base)}
+                    exiting={FadeOut.duration(DUR.fast)}
+                    style={styles.inspectHint}
+                    pointerEvents="none"
+                  >
+                    <View style={styles.inspectHintChip}>
+                      <Icon name={icons.search} size={13} color="rgba(255,255,255,0.85)" />
+                      <AppText variant="caption" color="rgba(255,255,255,0.85)">
+                        tap to inspect
+                      </AppText>
+                    </View>
+                  </Animated.View>
+                )}
+              </>
+            )
+            const carouselOn = !immersive
+            return (
+              <GestureDetector gesture={swipe}>
+                <View
+                  style={styles.coverArea}
+                  onLayout={(e) => {
+                    const h = e.nativeEvent.layout.height
+                    setCoverAreaH((prev) => (Math.abs(prev - h) > 1 ? h : prev))
+                  }}
+                >
+                  {carouselOn ? (
+                    <PlayerCoverCarousel
+                      liveItemId={nowPlaying.itemId}
+                      liveTitle={nowPlaying.title}
+                      liveAuthor={nowPlaying.author}
+                      liveArtworkUrl={nowPlaying.artworkUrl}
+                      queue={queue.items}
+                      coverWidth={coverWidth}
+                      coverAspect={coverAspect}
+                      pageWidth={width}
+                      overlay={coverOverlays}
+                      skipFeedback={<SkipFeedbackOverlay ref={skipFeedbackRef} />}
+                      hotspots={
+                        // Only on the live page: once you've paged into the deck,
+                        // hotspots hide so paging and skipping never fight.
+                        settings.skipHotspots && deck.index === 0 && carouselHotspotWidth > 24 ? (
+                          <>
+                            <Pressable
+                              onPress={() => onHotspotTap(-1)}
+                              style={[styles.hotspotLeft, { width: carouselHotspotWidth }]}
+                              accessibilityLabel={`Skip back ${settings.skipBack} seconds`}
+                            />
+                            <Pressable
+                              onPress={() => onHotspotTap(1)}
+                              style={[styles.hotspotRight, { width: carouselHotspotWidth }]}
+                              accessibilityLabel={`Skip forward ${settings.skipForward} seconds`}
+                            />
+                          </>
+                        ) : null
+                      }
+                      onLivePress={onCoverTap}
+                      onDeckChange={onDeckChange}
+                      onScrollFraction={onScrollFraction}
+                    />
+                  ) : (
+                    // Focus view (immersive): a single large cover, no carousel.
+                    <Pressable onPress={onCoverTap} style={styles.coverTap}>
+                      <Cover
+                        uri={nowPlaying.artworkUrl}
+                        itemId={nowPlaying.itemId}
+                        width={coverWidth}
+                        aspectRatio={coverAspect}
+                        radius={radius.card}
+                        fallback={{
+                          hue,
+                          initial: nowPlaying.title.charAt(0).toUpperCase(),
+                          title: nowPlaying.title,
+                        }}
+                        style={styles.cover}
+                      />
+                      <SkipFeedbackOverlay ref={skipFeedbackRef} />
+                      {coverOverlays}
+                    </Pressable>
+                  )}
+                </View>
+              </GestureDetector>
+            )
+          })()}
 
-      {/* Controls pinned to the bottom. Browsing an up-next book swaps in the
+          {/* Controls pinned to the bottom. Browsing an up-next book swaps in the
           deck transport (that book's progress + a big Play + a keep-controlling
           strip for the playing book); a distinct control set, not the live one
           reconfigured, so layouts stay clean across displays. */}
-      <View
-        style={[
-          styles.controls,
-          {
-            maxWidth: contentMaxWidth,
-            width: '100%',
-            alignSelf: 'center',
-            transform: [{ translateY: -controlsBottomLift }],
-          },
-          controlsRightInset > 0 && { paddingRight: spacing.xl + controlsRightInset },
-        ]}
-      >
-        {browsing && deck.active ? (
-          <DeckControls
-            progress={browsedProgress}
-            finished={browsedFinished}
-            leftSec={browsedLeftSec}
-            chapterLabel={
-              browsedChapter?.id === deck.active.itemId
-                ? formatChapterLabel(browsedChapter.title, browsedChapter.num)
-                : null
-            }
-            onPlay={() => deckPlayRef.current()}
-          />
-        ) : (
-          <>
-        {/* Focus view has no header, so it keeps a compact title line here;
+          <View
+            style={[
+              styles.controls,
+              {
+                maxWidth: contentMaxWidth,
+                width: '100%',
+                alignSelf: 'center',
+                transform: [{ translateY: -controlsBottomLift }],
+              },
+              controlsRightInset > 0 && { paddingRight: spacing.xl + controlsRightInset },
+            ]}
+          >
+            {browsing && deck.active ? (
+              <DeckControls
+                progress={browsedProgress}
+                finished={browsedFinished}
+                leftSec={browsedLeftSec}
+                chapterLabel={
+                  browsedChapter?.id === deck.active.itemId
+                    ? formatChapterLabel(browsedChapter.title, browsedChapter.num)
+                    : null
+                }
+                onPlay={() => deckPlayRef.current()}
+              />
+            ) : (
+              <>
+                {/* Focus view has no header, so it keeps a compact title line here;
             normally the title lives in the header's center zone. */}
-        {immersive && (
-          <Marquee style={styles.titleLine}>
-            <View style={styles.titleRow}>
-              <AppText variant="title" numberOfLines={1} style={styles.titleText}>
-                {nowPlaying.title}
-              </AppText>
-              <AppText variant="label" color={colors.textMuted} numberOfLines={1}>
-                {nowPlaying.author}
-              </AppText>
-            </View>
-          </Marquee>
-        )}
+                {immersive && (
+                  <Marquee style={styles.titleLine}>
+                    <View style={styles.titleRow}>
+                      <AppText variant="title" numberOfLines={1} style={styles.titleText}>
+                        {nowPlaying.title}
+                      </AppText>
+                      <AppText variant="label" color={colors.textMuted} numberOfLines={1}>
+                        {nowPlaying.author}
+                      </AppText>
+                    </View>
+                  </Marquee>
+                )}
 
-        <View style={styles.scrub}>
-          {!immersive && (
-            <TimelineMarkers
-              markers={timelineMarkers}
-              onOpenNote={(timeSec) => notesRef.current?.presentAt(timeSec)}
-              onAheadTeaser={(timeSec) =>
-                toast.show(`A note awaits at ${formatTimestamp(timeSec)}`)
-              }
-            />
-          )}
-          <Scrubber
-            ratio={chRatio}
-            playing={isPlaying}
-            elapsed={elapsedLabel}
-            remain={remainLabel}
-            chapter={chapterLabel}
-            onDrag={setPreviewRatio}
-            onSeek={seekToRatio}
-          />
-        </View>
+                <View style={styles.scrub}>
+                  {!immersive && (
+                    <TimelineMarkers
+                      markers={timelineMarkers}
+                      onOpenNote={(timeSec) => notesRef.current?.presentAt(timeSec)}
+                      onAheadTeaser={(timeSec) =>
+                        toast.show(`A note awaits at ${formatTimestamp(timeSec)}`)
+                      }
+                    />
+                  )}
+                  <Scrubber
+                    ratio={chRatio}
+                    playing={isPlaying}
+                    elapsed={elapsedLabel}
+                    remain={remainLabel}
+                    chapter={chapterLabel}
+                    onDrag={setPreviewRatio}
+                    onSeek={seekToRatio}
+                  />
+                </View>
 
-        {/* In immersive (Car Mode) the chapter-skip buttons drop to a second row
+                {/* In immersive (Car Mode) the chapter-skip buttons drop to a second row
             beneath the play button, leaving the top row an evenly spaced
             rewind / play / forward trio for easy in-car reach. */}
-        <View style={[styles.transport, immersive && styles.transportImmersive]}>
-          {/* Chapter-prev is gated on chapters existing; the rewind skip button
+                <View style={[styles.transport, immersive && styles.transportImmersive]}>
+                  {/* Chapter-prev is gated on chapters existing; the rewind skip button
               always renders (a chapterless book still needs to skip back). */}
-          {!immersive ? (
-            <>
-              {hasChapters ? (
-                <TransportBtn icon={icons.skipPrev} ghost onPress={() => skipChapter(-1)} />
-              ) : null}
-              <SkipButton
-                dir={-1}
-                seconds={settings.skipBack}
-                color={colors.text}
-                onPress={() => skipBy(-1, settings.skipBack)}
-              />
-            </>
-          ) : null}
-          <View style={styles.playWrap}>
-            {buffering && <BufferingRing />}
-            <SpringPressable onPress={togglePlay} style={styles.play} scaleTo={0.9}>
-              {/* Keyed remount so the pause/play glyph fades in rather than snapping. */}
-              <Animated.View
-                key={isPlaying ? 'pause' : 'play'}
-                entering={FadeIn.duration(DUR.fast)}
-              >
-                <Icon
-                  name={isPlaying ? icons.pause : icons.play}
-                  size={44}
-                  color={colors.onAccent}
-                />
-              </Animated.View>
-            </SpringPressable>
-          </View>
-          {!immersive ? (
-            <>
-              <SkipButton
-                dir={1}
-                seconds={settings.skipForward}
-                color={colors.text}
-                onPress={() => skipBy(1, settings.skipForward)}
-              />
-              {hasChapters ? (
-                <TransportBtn icon={icons.skipNext} ghost onPress={() => skipChapter(1)} />
-              ) : null}
-            </>
-          ) : null}
-        </View>
+                  {!immersive ? (
+                    <>
+                      {hasChapters ? (
+                        <TransportBtn icon={icons.skipPrev} ghost onPress={() => skipChapter(-1)} />
+                      ) : null}
+                      <SkipButton
+                        dir={-1}
+                        seconds={settings.skipBack}
+                        color={colors.text}
+                        onPress={() => skipBy(-1, settings.skipBack)}
+                      />
+                    </>
+                  ) : null}
+                  <View style={styles.playWrap}>
+                    {buffering && <BufferingRing />}
+                    <SpringPressable onPress={togglePlay} style={styles.play} scaleTo={0.9}>
+                      {/* Keyed remount so the pause/play glyph fades in rather than snapping. */}
+                      <Animated.View
+                        key={isPlaying ? 'pause' : 'play'}
+                        entering={FadeIn.duration(DUR.fast)}
+                      >
+                        <Icon
+                          name={isPlaying ? icons.pause : icons.play}
+                          size={44}
+                          color={colors.onAccent}
+                        />
+                      </Animated.View>
+                    </SpringPressable>
+                  </View>
+                  {!immersive ? (
+                    <>
+                      <SkipButton
+                        dir={1}
+                        seconds={settings.skipForward}
+                        color={colors.text}
+                        onPress={() => skipBy(1, settings.skipForward)}
+                      />
+                      {hasChapters ? (
+                        <TransportBtn icon={icons.skipNext} ghost onPress={() => skipChapter(1)} />
+                      ) : null}
+                    </>
+                  ) : null}
+                </View>
 
-        {buffering && (
-          <Animated.View entering={FadeIn.duration(DUR.base)} style={styles.bufferCaption}>
-            <AppText variant="caption" color={colors.textMuted}>
-              Buffering...
-            </AppText>
-          </Animated.View>
-        )}
+                {buffering && (
+                  <Animated.View entering={FadeIn.duration(DUR.base)} style={styles.bufferCaption}>
+                    <AppText variant="caption" color={colors.textMuted}>
+                      Buffering...
+                    </AppText>
+                  </Animated.View>
+                )}
 
-        {immersive && hasChapters && (
-          <Animated.View entering={FadeIn.duration(DUR.base)} style={styles.chapterSkipRow}>
-            <TransportBtn icon={icons.skipPrev} onPress={() => skipChapter(-1)} />
-            <SkipButton
-              dir={-1}
-              seconds={settings.skipBack}
-              color={colors.text}
-              onPress={() => skipBy(-1, settings.skipBack)}
-            />
-            <SkipButton
-              dir={1}
-              seconds={settings.skipForward}
-              color={colors.text}
-              onPress={() => skipBy(1, settings.skipForward)}
-            />
-            <TransportBtn icon={icons.skipNext} onPress={() => skipChapter(1)} />
-          </Animated.View>
-        )}
+                {immersive && hasChapters && (
+                  <Animated.View entering={FadeIn.duration(DUR.base)} style={styles.chapterSkipRow}>
+                    <TransportBtn icon={icons.skipPrev} onPress={() => skipChapter(-1)} />
+                    <SkipButton
+                      dir={-1}
+                      seconds={settings.skipBack}
+                      color={colors.text}
+                      onPress={() => skipBy(-1, settings.skipBack)}
+                    />
+                    <SkipButton
+                      dir={1}
+                      seconds={settings.skipForward}
+                      color={colors.text}
+                      onPress={() => skipBy(1, settings.skipForward)}
+                    />
+                    <TransportBtn icon={icons.skipNext} onPress={() => skipChapter(1)} />
+                  </Animated.View>
+                )}
 
-        {!immersive && (
-          <Animated.View
-            entering={FadeIn.duration(DUR.base)}
-            exiting={FadeOut.duration(DUR.fast)}
-            style={styles.actionRow}
-          >
-            {onScreenKeys.map((key) => {
-              const a = actionMap[key]
-              return (
-                <ActionBtn
-                  key={key}
-                  icon={a.icon}
-                  label={a.label}
-                  iconOnly={iconOnly}
-                  disabled={a.disabled}
-                  active={a.active}
-                  depletion={a.depletion}
-                  onPress={a.onPress}
-                />
-              )
-            })}
-            {showMore && (
-              <ActionBtn
-                icon={icons.more}
-                label="More"
-                iconOnly={iconOnly}
-                onPress={() => moreRef.current?.present()}
-              />
+                {!immersive && (
+                  <Animated.View
+                    entering={FadeIn.duration(DUR.base)}
+                    exiting={FadeOut.duration(DUR.fast)}
+                    style={styles.actionRow}
+                  >
+                    {onScreenKeys.map((key) => {
+                      const a = actionMap[key]
+                      return (
+                        <ActionBtn
+                          key={key}
+                          icon={a.icon}
+                          label={a.label}
+                          iconOnly={iconOnly}
+                          disabled={a.disabled}
+                          active={a.active}
+                          depletion={a.depletion}
+                          onPress={a.onPress}
+                        />
+                      )
+                    })}
+                    {showMore && (
+                      <ActionBtn
+                        icon={icons.more}
+                        label="More"
+                        iconOnly={iconOnly}
+                        onPress={() => moreRef.current?.present()}
+                      />
+                    )}
+                  </Animated.View>
+                )}
+              </>
             )}
-          </Animated.View>
-        )}
-          </>
-        )}
-      </View>
+          </View>
 
-      <CoverLightbox
-        visible={lightbox}
-        uri={nowPlaying.artworkUrl}
-        title={nowPlaying.title}
-        author={nowPlaying.author}
-        hue={hue}
-        onClose={() => setLightbox(false)}
-      />
+          <CoverLightbox
+            visible={lightbox}
+            uri={nowPlaying.artworkUrl}
+            title={nowPlaying.title}
+            author={nowPlaying.author}
+            hue={hue}
+            onClose={() => setLightbox(false)}
+          />
 
-      <Toast message={toast.message} />
+          <Toast message={toast.message} />
 
-      <ChaptersSheet ref={chaptersRef} />
-      <SpeedSheet ref={speedRef} />
-      <SleepSheet
-        ref={sleepRef}
-        onEditBehavior={() => {
-          sleepRef.current?.dismiss()
-          router.push('/settings/sleep')
-        }}
-      />
-      <QueueSheet
-        ref={queueRef}
-        onJump={async (itemId) => {
-          const saved = getProgressState().byId.get(itemId)
-          await playItemById(itemId)
-          if (!saved?.isFinished && (saved?.currentTime ?? 0) > 0) requestSeek(saved!.currentTime)
-          router.replace('/player')
-        }}
-      />
-      <MoreSheet
-        ref={moreRef}
-        actions={trayKeys.map((k) => {
-          const a = actionMap[k]
-          // Surface a live-state badge on the tiles worth glancing at.
-          const badge =
-            k === 'bookmarks'
-              ? bookmarks.length
-              : k === 'notes'
-                ? timelineMarkers.length
-                : undefined
-          return { ...a, badge }
-        })}
-        onSettings={() => {
-          moreRef.current?.dismiss()
-          playerSettingsRef.current?.present()
-        }}
-        onEdit={() => {
-          moreRef.current?.dismiss()
-          router.push('/settings/player-buttons')
-        }}
-      />
-      <PlayerSettingsSheet ref={playerSettingsRef} />
-      <RecentSheet
-        ref={recentRef}
-        itemId={nowPlaying.itemId}
-        chapters={chapters}
-        onSeek={requestSeek}
-      />
-      <BookmarksSheet ref={bookmarksRef} itemId={nowPlaying.itemId} onSeek={requestSeek} />
-      <PlayerNotesSheet ref={notesRef} onToast={(msg) => toast.show(msg)} />
-      {libraryId && (
-        <AddToListSheet
-          ref={addToListRef}
-          libraryId={libraryId}
-          libraryItemId={nowPlaying.itemId}
-          onAdded={(msg) => toast.show(msg)}
-        />
-      )}
-    </Screen>
+          <ChaptersSheet ref={chaptersRef} />
+          <SpeedSheet ref={speedRef} />
+          <SleepSheet
+            ref={sleepRef}
+            onEditBehavior={() => {
+              sleepRef.current?.dismiss()
+              router.push('/settings/sleep')
+            }}
+          />
+          <QueueSheet
+            ref={queueRef}
+            onJump={async (itemId) => {
+              const saved = getProgressState().byId.get(itemId)
+              await playItemById(itemId)
+              if (!saved?.isFinished && (saved?.currentTime ?? 0) > 0)
+                requestSeek(saved!.currentTime)
+              router.replace('/player')
+            }}
+          />
+          <MoreSheet
+            ref={moreRef}
+            actions={trayKeys.map((k) => {
+              const a = actionMap[k]
+              // Surface a live-state badge on the tiles worth glancing at.
+              const badge =
+                k === 'bookmarks'
+                  ? bookmarks.length
+                  : k === 'notes'
+                    ? timelineMarkers.length
+                    : undefined
+              return { ...a, badge }
+            })}
+            onSettings={() => {
+              moreRef.current?.dismiss()
+              playerSettingsRef.current?.present()
+            }}
+            onEdit={() => {
+              moreRef.current?.dismiss()
+              router.push('/settings/player-buttons')
+            }}
+          />
+          <PlayerSettingsSheet ref={playerSettingsRef} />
+          <RecentSheet
+            ref={recentRef}
+            itemId={nowPlaying.itemId}
+            chapters={chapters}
+            onSeek={requestSeek}
+          />
+          <BookmarksSheet ref={bookmarksRef} itemId={nowPlaying.itemId} onSeek={requestSeek} />
+          <PlayerNotesSheet ref={notesRef} onToast={(msg) => toast.show(msg)} />
+          {libraryId && (
+            <AddToListSheet
+              ref={addToListRef}
+              libraryId={libraryId}
+              libraryItemId={nowPlaying.itemId}
+              onAdded={(msg) => toast.show(msg)}
+            />
+          )}
+        </Screen>
+      </Animated.View>
+    </GestureDetector>
   )
 }
 
@@ -1436,7 +1514,11 @@ const MoreSheet = forwardRef<
         {actions.map((a) => (
           <SpringPressable
             key={a.key}
-            style={[moreStyles.tile, a.disabled && { opacity: 0.35 }, a.active && moreStyles.tileActive]}
+            style={[
+              moreStyles.tile,
+              a.disabled && { opacity: 0.35 },
+              a.active && moreStyles.tileActive,
+            ]}
             scaleTo={0.94}
             onPress={
               a.disabled
@@ -1701,135 +1783,141 @@ const RecentSheet = forwardRef<
 
   return (
     <>
-    <Sheet ref={sheetRef} kicker="Recent Listens" snapPoints={['60%']}>
-      {!sessions && rows.length === 0 ? (
-        <AppText variant="meta" color={colors.textMuted}>
-          Loading...
-        </AppText>
-      ) : rows.length === 0 ? (
-        <AppText
-          variant="meta"
-          color={colors.textMuted}
-          style={{ textAlign: 'center', paddingVertical: spacing.xl }}
-        >
-          You haven't listened to this book yet.
-        </AppText>
-      ) : (
-        <BottomSheetScrollView showsVerticalScrollIndicator={false}>
-          {rows.map((r) => {
-            const startCh = chapterAt(r.startTime)?.title ?? null
-            const endCh = chapterAt(r.currentTime)?.title ?? null
-            // Green once confirmed on the server; ember while unsynced/in-progress.
-            const accent = r.synced ? colors.success : colors.accent
-            const live = r.kind === 'live'
-            const started = new Date(r.startedAt)
-            return (
-              <Touchable
-                key={r.key}
-                style={[recentStyles.row, live && recentStyles.liveRow]}
-                // Tapping the row opens a small popover to choose Start over vs
-                // Resume (session end) - no more three crammed tap targets. The
-                // live "Now" row isn't a jump target.
-                onPress={
-                  live
-                    ? undefined
-                    : () => {
-                        setOverflow({ start: r.startTime, end: r.currentTime })
-                        overflowRef.current?.present()
-                      }
-                }
-              >
-                <View style={{ flex: 1, gap: 3 }}>
-                  <View style={recentStyles.durationRow}>
-                    {/* Confirmed server rows show which device recorded them
+      <Sheet ref={sheetRef} kicker="Recent Listens" snapPoints={['60%']}>
+        {!sessions && rows.length === 0 ? (
+          <AppText variant="meta" color={colors.textMuted}>
+            Loading...
+          </AppText>
+        ) : rows.length === 0 ? (
+          <AppText
+            variant="meta"
+            color={colors.textMuted}
+            style={{ textAlign: 'center', paddingVertical: spacing.xl }}
+          >
+            You haven't listened to this book yet.
+          </AppText>
+        ) : (
+          <BottomSheetScrollView showsVerticalScrollIndicator={false}>
+            {rows.map((r) => {
+              const startCh = chapterAt(r.startTime)?.title ?? null
+              const endCh = chapterAt(r.currentTime)?.title ?? null
+              // Green once confirmed on the server; ember while unsynced/in-progress.
+              const accent = r.synced ? colors.success : colors.accent
+              const live = r.kind === 'live'
+              const started = new Date(r.startedAt)
+              return (
+                <Touchable
+                  key={r.key}
+                  style={[recentStyles.row, live && recentStyles.liveRow]}
+                  // Tapping the row opens a small popover to choose Start over vs
+                  // Resume (session end) - no more three crammed tap targets. The
+                  // live "Now" row isn't a jump target.
+                  onPress={
+                    live
+                      ? undefined
+                      : () => {
+                          setOverflow({ start: r.startTime, end: r.currentTime })
+                          overflowRef.current?.present()
+                        }
+                  }
+                >
+                  <View style={{ flex: 1, gap: 3 }}>
+                    <View style={recentStyles.durationRow}>
+                      {/* Confirmed server rows show which device recorded them
                         (Apple/Android/Car/Web); the accent tint doubles as sync
                         status. Live/pending rows stay on a cloud glyph so the
                         row reads as an in-flight sync rather than a device. */}
-                    {r.kind === 'server' ? (
-                      <DeviceKindIcon deviceInfo={r.deviceInfo} size={15} color={accent} />
-                    ) : (
-                      <Icon
-                        name={r.offline ? icons.cloudOff : r.synced ? icons.cloudDone : icons.cloudQueue}
-                        size={15}
-                        color={accent}
-                      />
-                    )}
-                    <AppText variant="label" color={accent}>
-                      {formatTimestamp(r.timeListening)} listened
-                    </AppText>
-                    <AppText variant="caption" color={colors.textMuted}>
-                      {live
-                        ? `Now · started ${started.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
-                        : r.kind === 'pending'
-                          ? 'Not synced yet'
-                          : started.toLocaleDateString()}
-                    </AppText>
-                  </View>
-                  {/* The resume point: tapping the row jumps here (session end).
+                      {r.kind === 'server' ? (
+                        <DeviceKindIcon deviceInfo={r.deviceInfo} size={15} color={accent} />
+                      ) : (
+                        <Icon
+                          name={
+                            r.offline
+                              ? icons.cloudOff
+                              : r.synced
+                                ? icons.cloudDone
+                                : icons.cloudQueue
+                          }
+                          size={15}
+                          color={accent}
+                        />
+                      )}
+                      <AppText variant="label" color={accent}>
+                        {formatTimestamp(r.timeListening)} listened
+                      </AppText>
+                      <AppText variant="caption" color={colors.textMuted}>
+                        {live
+                          ? `Now · started ${started.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+                          : r.kind === 'pending'
+                            ? 'Not synced yet'
+                            : started.toLocaleDateString()}
+                      </AppText>
+                    </View>
+                    {/* The resume point: tapping the row jumps here (session end).
                       The overflow covers start/end for the rare cases. */}
-                  <View style={recentStyles.timecodeRow}>
-                    <AppText variant="mono" color={accent}>
-                      {'→ '}
-                      {formatTimestamp(shownPos(r.currentTime))}
-                    </AppText>
+                    <View style={recentStyles.timecodeRow}>
+                      <AppText variant="mono" color={accent}>
+                        {'→ '}
+                        {formatTimestamp(shownPos(r.currentTime))}
+                      </AppText>
+                    </View>
+                    {(startCh || endCh) && (
+                      <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
+                        {startCh && endCh && startCh !== endCh
+                          ? `${startCh} → ${endCh}`
+                          : (endCh ?? startCh)}
+                      </AppText>
+                    )}
                   </View>
-                  {(startCh || endCh) && (
-                    <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
-                      {startCh && endCh && startCh !== endCh
-                        ? `${startCh} → ${endCh}`
-                        : (endCh ?? startCh)}
-                    </AppText>
-                  )}
-                </View>
-                {/* The whole row opens the Start-over / Resume popover. */}
-                {!live && <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />}
-              </Touchable>
-            )
-          })}
-        </BottomSheetScrollView>
-      )}
-    </Sheet>
+                  {/* The whole row opens the Start-over / Resume popover. */}
+                  {!live && <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />}
+                </Touchable>
+              )
+            })}
+          </BottomSheetScrollView>
+        )}
+      </Sheet>
 
-    {/* Compact popover: pick where to pick this session up. Start over restarts
+      {/* Compact popover: pick where to pick this session up. Start over restarts
         from the session's beginning; Resume drops you at where it ended. */}
-    <Sheet ref={overflowRef} kicker="This session" stackBehavior="push">
-      <View style={recentStyles.popover}>
-        <Touchable
-          style={recentStyles.popoverBtn}
-          onPress={() => {
-            if (overflow) onSeek(overflow.start)
-            overflowRef.current?.dismiss()
-            sheetRef.current?.dismiss()
-          }}
-        >
-          <Icon name={icons.replay} size={24} color={colors.text} />
-          <View style={{ flex: 1 }}>
-            <AppText variant="label">Start over</AppText>
-            <AppText variant="caption" color={colors.textMuted}>
-              From {overflow ? formatTimestamp(shownPos(overflow.start)) : ''}
-            </AppText>
-          </View>
-        </Touchable>
-        <Touchable
-          style={[recentStyles.popoverBtn, recentStyles.popoverBtnPrimary]}
-          onPress={() => {
-            if (overflow) onSeek(overflow.end)
-            overflowRef.current?.dismiss()
-            sheetRef.current?.dismiss()
-          }}
-        >
-          <Icon name={icons.play} size={24} color={colors.onAccent} />
-          <View style={{ flex: 1 }}>
-            <AppText variant="label" color={colors.onAccent}>
-              Resume
-            </AppText>
-            <AppText variant="caption" color={colors.onAccent} style={{ opacity: 0.85 }}>
-              At {overflow ? formatTimestamp(shownPos(overflow.end)) : ''}
-            </AppText>
-          </View>
-        </Touchable>
-      </View>
-    </Sheet>
+      <Sheet ref={overflowRef} kicker="This session" stackBehavior="push">
+        <View style={recentStyles.popover}>
+          <Touchable
+            style={recentStyles.popoverBtn}
+            onPress={() => {
+              if (overflow) onSeek(overflow.start)
+              overflowRef.current?.dismiss()
+              sheetRef.current?.dismiss()
+            }}
+          >
+            <Icon name={icons.replay} size={24} color={colors.text} />
+            <View style={{ flex: 1 }}>
+              <AppText variant="label">Start over</AppText>
+              <AppText variant="caption" color={colors.textMuted}>
+                From {overflow ? formatTimestamp(shownPos(overflow.start)) : ''}
+              </AppText>
+            </View>
+          </Touchable>
+          <Touchable
+            style={[recentStyles.popoverBtn, recentStyles.popoverBtnPrimary]}
+            onPress={() => {
+              if (overflow) onSeek(overflow.end)
+              overflowRef.current?.dismiss()
+              sheetRef.current?.dismiss()
+            }}
+          >
+            <Icon name={icons.play} size={24} color={colors.onAccent} />
+            <View style={{ flex: 1 }}>
+              <AppText variant="label" color={colors.onAccent}>
+                Resume
+              </AppText>
+              <AppText variant="caption" color={colors.onAccent} style={{ opacity: 0.85 }}>
+                At {overflow ? formatTimestamp(shownPos(overflow.end)) : ''}
+              </AppText>
+            </View>
+          </Touchable>
+        </View>
+      </Sheet>
     </>
   )
 })

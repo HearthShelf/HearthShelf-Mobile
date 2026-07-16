@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>HearthShelf — Shelf Lift, Recut</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Geist+Mono:wght@500;600;700&display=swap">
+<style>
+  :root {
+    --night: #0c0d0b;
+    --surface: #131411;
+    --raised: #1a1a16;
+    --raised-2: #20201b;
+    --line: #302f28;
+    --line-soft: #24241f;
+    --text: #f2eee6;
+    --muted: #aaa397;
+    --faint: #746f65;
+    --ember: #db744d;
+    --ember-soft: #f09a73;
+    --honey: #d6a14e;
+    --moss: #9aaa83;
+    --serif: "Libre Baskerville", Georgia, serif;
+    --sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: "Geist Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+    --lift-ease: cubic-bezier(.16, 1, .3, 1);
+    --sink-ease: cubic-bezier(.5, 0, .75, .5);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    color: var(--text);
+    background:
+      linear-gradient(rgba(255,255,255,.012) 1px, transparent 1px),
+      radial-gradient(circle at 78% 9%, rgba(214,161,78,.11), transparent 26rem),
+      var(--night);
+    background-size: 100% 46px, auto, auto;
+    font-family: var(--sans);
+  }
+  button { font: inherit; color: inherit; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--ember-soft); outline-offset: 3px; }
+  code { color: #e7c999; font-family: var(--mono); font-size: .93em; }
+
+  .page { width: min(1440px, calc(100% - 40px)); margin: 0 auto; padding: 20px 0 90px; }
+  .masthead { min-height: 60px; display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid var(--line); }
+  .wordmark { font-family: var(--serif); font-size: 20px; letter-spacing: -.035em; }
+  .wordmark span { color: var(--honey); }
+  .study { margin-left: 12px; color: var(--faint); font: 700 10px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+  .mast-actions { display: flex; gap: 8px; }
+  .button {
+    min-height: 46px;
+    padding: 0 16px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--raised);
+    cursor: pointer;
+    color: var(--muted);
+    font: 700 11px/1 var(--mono);
+    transition: transform 100ms ease, color 100ms ease, border-color 100ms ease, background 100ms ease;
+  }
+  .button:hover { color: var(--text); border-color: #4b493f; }
+  .button:active { transform: scale(.97); }
+  .button.primary { color: #1a0e09; background: var(--ember); border-color: var(--ember); }
+  .button[aria-pressed="true"] { color: #17130e; background: var(--honey); border-color: var(--honey); }
+
+  .hero { display: grid; grid-template-columns: minmax(0, .86fr) minmax(580px, 1.14fr); gap: clamp(40px, 7vw, 100px); align-items: center; min-height: 790px; padding: 68px 0 78px; }
+  .eyebrow { color: var(--ember-soft); font: 700 11px/1.2 var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+  h1 { margin: 20px 0 0; max-width: 690px; font-family: var(--serif); font-weight: 400; font-size: clamp(56px, 7vw, 104px); line-height: .94; letter-spacing: -.06em; }
+  h1 span { color: var(--honey); }
+  .lede { max-width: 620px; margin: 28px 0 0; color: var(--muted); font-size: 16px; line-height: 1.75; }
+  .lede strong { color: var(--text); }
+  .position { display: flex; align-items: flex-start; gap: 14px; margin-top: 32px; padding: 18px; border: 1px solid #3b3427; border-radius: 15px; background: rgba(214,161,78,.055); }
+  .position-mark { flex: 0 0 auto; width: 9px; height: 9px; margin-top: 5px; border-radius: 50%; background: var(--moss); box-shadow: 0 0 0 6px rgba(154,170,131,.1); }
+  .position p { margin: 0; color: #c6c0b5; font-size: 13px; line-height: 1.58; }
+  .position b { color: var(--text); }
+
+  .demo-stage { position: relative; min-height: 690px; display: grid; grid-template-columns: 185px minmax(310px, 360px); gap: 26px; justify-content: end; align-items: center; }
+  .stage-glow { position: absolute; z-index: -1; width: 500px; height: 500px; right: -50px; top: 95px; border-radius: 50%; background: radial-gradient(circle, rgba(219,116,77,.12), transparent 66%); filter: blur(8px); }
+  .dose-rail { align-self: stretch; padding: 58px 0; display: flex; flex-direction: column; justify-content: center; gap: 26px; }
+  .dose { position: relative; padding-left: 24px; }
+  .dose::before { content: ""; position: absolute; left: 0; top: 2px; bottom: -28px; width: 1px; background: var(--line); }
+  .dose:last-child::before { bottom: calc(100% - 11px); }
+  .dose::after { content: ""; position: absolute; left: -4px; top: 2px; width: 9px; height: 9px; border-radius: 50%; background: var(--night); border: 2px solid var(--faint); }
+  .dose.active::after { background: var(--ember); border-color: var(--ember-soft); box-shadow: 0 0 0 5px rgba(219,116,77,.12); }
+  .dose-label { color: var(--faint); font: 700 9px/1 var(--mono); letter-spacing: .11em; text-transform: uppercase; }
+  .dose.active .dose-label { color: var(--ember-soft); }
+  .dose-value { margin-top: 7px; font-family: var(--serif); font-size: 17px; }
+  .dose-note { margin-top: 5px; color: var(--faint); font-size: 10px; line-height: 1.4; }
+
+  .phone { position: relative; width: 354px; max-width: 100%; padding: 8px; border-radius: 40px; background: linear-gradient(145deg, #46433b, #0a0a09 45%, #302d27); box-shadow: 0 38px 74px rgba(0,0,0,.56), inset 0 0 0 1px rgba(255,255,255,.09); }
+  .phone::after { content: ""; position: absolute; z-index: 70; top: 15px; left: 50%; translate: -50% 0; width: 62px; height: 19px; border-radius: 20px; background: #070707; }
+  .viewport { position: relative; aspect-ratio: 9 / 18.4; overflow: hidden; border-radius: 32px; background: #10110f; isolation: isolate; touch-action: pan-y; }
+  .status { position: absolute; z-index: 65; inset: 0 0 auto; height: 35px; display: flex; align-items: center; justify-content: space-between; padding: 0 17px; color: rgba(255,255,255,.75); font-size: 9px; font-weight: 750; pointer-events: none; }
+  .screen { position: absolute; inset: 0 0 118px; z-index: 2; visibility: hidden; opacity: 0; padding: 44px 17px 20px; overflow: hidden; background: #11120f; transform-origin: 50% 60%; }
+  .screen.active { z-index: 5; visibility: visible; opacity: 1; }
+  .screen.player { bottom: 62px; background: radial-gradient(circle at 50% 24%, rgba(219,116,77,.16), transparent 44%), #10110f; }
+  .screen.dragging { transition: none !important; }
+  .scene-kicker { color: var(--ember-soft); font: 700 8px/1 var(--mono); letter-spacing: .13em; text-transform: uppercase; }
+  .scene-title { margin-top: 7px; font-family: var(--serif); font-size: 24px; line-height: 1.08; letter-spacing: -.04em; }
+  .scene-sub { margin-top: 6px; color: #918b80; font-size: 9px; }
+  .continue-card { margin-top: 18px; padding: 15px; border: 1px solid #373329; border-radius: 18px; background: linear-gradient(135deg, #2a2119, #181714 68%); }
+  .continue-card small { color: var(--honey); font: 700 7px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+  .continue-card b { display: block; margin-top: 11px; font-family: var(--serif); font-size: 17px; font-weight: 400; }
+  .progress { height: 3px; margin-top: 13px; overflow: hidden; border-radius: 3px; background: #3d3932; }
+  .progress::after { content: ""; display: block; width: 64%; height: 100%; background: var(--ember); }
+  .section-label { display: flex; justify-content: space-between; margin-top: 18px; color: #d6d0c6; font-size: 10px; font-weight: 700; }
+  .section-label span:last-child { color: #777168; font: 700 7px/1 var(--mono); }
+  .book-line { display: flex; gap: 10px; margin-top: 11px; }
+  .cover { position: relative; flex: 0 0 auto; width: 60px; aspect-ratio: 2/3; overflow: hidden; border-radius: 7px; background: linear-gradient(150deg, #a85135, #322019); box-shadow: 0 10px 18px rgba(0,0,0,.28); }
+  .cover::before { content: "THE\A NIGHT\A LIBRARY"; white-space: pre; position: absolute; inset: 12px 8px; color: #f8e6d6; font: 700 7px/1.25 var(--serif); letter-spacing: .06em; }
+  .cover.green { background: linear-gradient(150deg, #607653, #182019); }
+  .cover.green::before { content: "WILD\A WOOD"; }
+  .cover.blue { background: linear-gradient(150deg, #607987, #182126); }
+  .cover.blue::before { content: "NORTH\A WATER"; }
+  .cover.tiny { width: 40px; border-radius: 5px; }
+  .book-meta { min-width: 0; padding-top: 2px; }
+  .book-meta b { display: block; font-family: var(--serif); font-size: 11px; font-weight: 400; }
+  .book-meta span { display: block; margin-top: 5px; color: #888278; font-size: 8px; line-height: 1.4; }
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+  .stat { min-height: 93px; padding: 13px; border: 1px solid #302e28; border-radius: 16px; background: #181915; }
+  .stat span { color: #807a70; font-size: 8px; }
+  .stat b { display: block; margin-top: 8px; font-family: var(--serif); font-size: 25px; font-weight: 400; }
+  .bars { display: flex; align-items: end; gap: 5px; height: 80px; margin-top: 18px; padding: 0 8px; border-bottom: 1px solid #333129; }
+  .bars i { flex: 1; border-radius: 4px 4px 0 0; background: #41362d; }
+  .bars i:nth-child(1) { height: 38%; } .bars i:nth-child(2) { height: 64%; } .bars i:nth-child(3) { height: 48%; } .bars i:nth-child(4) { height: 82%; background: var(--ember); } .bars i:nth-child(5) { height: 58%; } .bars i:nth-child(6) { height: 70%; } .bars i:nth-child(7) { height: 51%; }
+  .chips { display: flex; gap: 6px; margin-top: 13px; }
+  .chip { padding: 6px 8px; border: 1px solid #35322d; border-radius: 999px; color: #898278; font: 700 7px/1 var(--mono); }
+  .chip.on { color: #1a0e09; background: var(--ember); border-color: var(--ember); }
+  .book-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 8px; margin-top: 16px; }
+  .book-grid .cover { width: 100%; }
+  .grid-name { margin-top: 5px; color: #c9c3ba; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 8px; }
+  .back { display: flex; align-items: center; gap: 5px; color: #bbb4a9; font-size: 9px; }
+  .detail-cover { width: 118px; margin: 22px auto 0; border-radius: 11px; }
+  .detail-title { margin-top: 16px; text-align: center; font-family: var(--serif); font-size: 18px; }
+  .detail-author { margin-top: 5px; text-align: center; color: #888177; font-size: 9px; }
+  .primary-action { display: grid; place-items: center; width: 126px; height: 35px; margin: 16px auto 0; border-radius: 20px; color: #190e09; background: var(--ember); font-size: 9px; font-weight: 800; }
+  .detail-copy { margin-top: 16px; padding: 13px 3px 0; border-top: 1px solid #2b2924; color: #8b857a; font-size: 8px; line-height: 1.6; }
+  .player-head { height: 22px; display: flex; align-items: center; justify-content: center; color: #777168; font: 650 7px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+  .player-cover { width: min(68%, 182px); margin: 14px auto 0; border-radius: 13px; }
+  .track { margin-top: 15px; text-align: center; font-family: var(--serif); font-size: 17px; }
+  .chapter { margin-top: 5px; text-align: center; color: #8c857b; font-size: 8px; }
+  .scrub { height: 3px; margin: 16px 14px 0; border-radius: 3px; background: #403c35; }
+  .scrub::after { content: ""; display: block; width: 46%; height: 100%; border-radius: inherit; background: var(--ember-soft); }
+  .transport { display: flex; align-items: center; justify-content: center; gap: 24px; margin-top: 17px; color: #c8c1b7; font-size: 13px; }
+  .transport .play { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; background: var(--text); color: #171510; }
+  .mini { position: absolute; z-index: 25; left: 8px; right: 8px; bottom: 61px; height: 53px; display: flex; align-items: center; gap: 9px; padding: 6px; border: 1px solid #343129; border-radius: 15px; background: rgba(29,29,25,.98); transition: opacity 140ms ease, transform 140ms ease; }
+  .mini.hidden { opacity: 0; transform: scale(.97); pointer-events: none; }
+  .mini-copy { min-width: 0; flex: 1; }
+  .mini-copy b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--serif); font-size: 9px; font-weight: 400; }
+  .mini-copy span { display: block; margin-top: 3px; color: #827b72; font-size: 7px; }
+  .mini-play { width: 31px; height: 31px; display: grid; place-items: center; border-radius: 50%; background: #ede6dc; color: #171410; font-size: 9px; }
+  .tabbar { position: absolute; z-index: 30; inset: auto 0 0; height: 62px; display: grid; grid-template-columns: repeat(5, 1fr); padding: 5px 7px 7px; border-top: 1px solid #2a2823; background: rgba(16,17,15,.985); }
+  .tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #706a61; font-size: 6px; transition: color 140ms ease; }
+  .tab i { width: 29px; height: 21px; display: grid; place-items: center; border-radius: 12px; font-style: normal; font-size: 11px; transition: transform 140ms ease, color 140ms ease, background 140ms ease; }
+  .tab.active { color: #d8d1c7; }
+  .tab.active i { color: var(--ember-soft); background: rgba(219,116,77,.13); transform: translateY(-1px); }
+
+  .phone-controls { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; margin-top: -8px; }
+  .demo-button { min-height: 45px; padding: 0 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--raised); color: var(--muted); cursor: pointer; font-size: 9px; font-weight: 750; }
+  .demo-button:hover { color: var(--text); border-color: #4a473e; }
+  .demo-button.run { color: var(--ember-soft); border-color: #56392c; background: #241915; }
+  .readout { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; margin-top: 2px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--line); }
+  .readout div { padding: 10px; background: #151612; text-align: center; }
+  .readout span { display: block; color: var(--faint); font: 700 7px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+  .readout b { display: block; margin-top: 5px; color: #d8d1c7; font: 650 9px/1 var(--mono); }
+
+  .contract { padding: 76px 0; border-top: 1px solid var(--line); }
+  .section-head { display: grid; grid-template-columns: .7fr 1.3fr; gap: 60px; align-items: end; margin-bottom: 32px; }
+  .section-head h2 { margin: 12px 0 0; font-family: var(--serif); font-size: clamp(38px, 5vw, 70px); font-weight: 400; line-height: 1; letter-spacing: -.05em; }
+  .section-head p { margin: 0; max-width: 650px; color: var(--muted); font-size: 14px; line-height: 1.72; }
+  .dose-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; overflow: hidden; border: 1px solid var(--line); border-radius: 20px; background: var(--line); }
+  .dose-card { min-height: 260px; padding: 28px; background: var(--surface); }
+  .dose-card .measure { color: var(--ember-soft); font: 700 10px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+  .dose-card h3 { margin: 20px 0 0; font-family: var(--serif); font-size: 28px; font-weight: 400; }
+  .dose-card p { margin: 12px 0 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+  .dose-card ul { margin: 20px 0 0; padding: 16px 0 0; border-top: 1px solid var(--line-soft); list-style: none; }
+  .dose-card li { position: relative; margin-top: 9px; padding-left: 15px; color: #c9c2b8; font-size: 11px; }
+  .dose-card li::before { content: ""; position: absolute; left: 0; top: 5px; width: 5px; height: 5px; border-radius: 50%; background: var(--honey); }
+
+  .fold-section { padding: 82px 0; border-top: 1px solid var(--line); }
+  .fold-toolbar { display: flex; justify-content: space-between; gap: 20px; align-items: center; margin-bottom: 24px; }
+  .segmented { display: flex; gap: 5px; padding: 4px; border: 1px solid var(--line); border-radius: 999px; background: #11120f; }
+  .segment { min-height: 42px; padding: 0 15px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; font-weight: 700; }
+  .segment.active { color: #160f0b; background: var(--honey); }
+  .fold-wrap { padding: 30px; overflow: hidden; border: 1px solid var(--line); border-radius: 24px; background: radial-gradient(circle at 50% 0, rgba(214,161,78,.08), transparent 30rem), #11120f; }
+  .fold-device { width: min(100%, 880px); height: 500px; margin: 0 auto; padding: 10px; border-radius: 34px; background: linear-gradient(145deg, #3b3932, #0a0a09 52%, #29271f); box-shadow: 0 34px 65px rgba(0,0,0,.5); transition: width 360ms var(--lift-ease), height 360ms var(--lift-ease); }
+  .fold-screen { position: relative; width: 100%; height: 100%; display: grid; grid-template-columns: 1fr 15px 1fr; overflow: hidden; border-radius: 25px; background: #10110f; }
+  .hinge { position: relative; z-index: 20; background: linear-gradient(90deg, transparent, rgba(0,0,0,.62) 45%, rgba(0,0,0,.62) 55%, transparent); }
+  .hinge-label { position: absolute; z-index: 24; left: 50%; top: 12px; transform: translateX(-50%); width: max-content; padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; background: rgba(12,13,11,.9); color: var(--faint); font: 700 8px/1 var(--mono); }
+  .pane { position: relative; min-width: 0; overflow: hidden; background: #121310; }
+  .pane-inner { position: absolute; inset: 0; padding: 26px; }
+  .pane-title { margin-top: 7px; font-family: var(--serif); font-size: 23px; }
+  .fold-list { margin-top: 18px; }
+  .fold-row { display: flex; align-items: center; gap: 11px; padding: 9px; border-radius: 12px; }
+  .fold-row.selected { background: rgba(219,116,77,.1); box-shadow: inset 3px 0 0 var(--ember); }
+  .fold-row .cover { width: 45px; }
+  .fold-row b { font-family: var(--serif); font-size: 12px; font-weight: 400; }
+  .fold-row span { display: block; margin-top: 4px; color: #817b71; font-size: 8px; }
+  .pane-route { position: absolute; inset: 0; visibility: hidden; opacity: 0; padding: 25px 30px; background: #121310; }
+  .pane-route.active { visibility: visible; opacity: 1; }
+  .fold-detail-cover { width: 124px; margin: 27px auto 0; border-radius: 11px; }
+  .fold-title { margin-top: 17px; text-align: center; font-family: var(--serif); font-size: 20px; }
+  .fold-author { margin-top: 6px; text-align: center; color: #888177; font-size: 9px; }
+  .fold-device.tabletop { width: min(100%, 620px); height: 650px; }
+  .fold-device.tabletop .fold-screen { grid-template-columns: 1fr; grid-template-rows: 1fr 15px 1fr; }
+  .fold-device.tabletop .hinge { background: linear-gradient(180deg, transparent, rgba(0,0,0,.62) 45%, rgba(0,0,0,.62) 55%, transparent); }
+  .fold-device.tabletop .hinge-label { top: 50%; transform: translate(-50%, -50%); }
+  .fold-device.tabletop .fold-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .fold-caption { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; width: min(100%, 880px); margin: 22px auto 0; }
+  .fold-caption div { padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.55; }
+  .fold-caption b { display: block; margin-bottom: 6px; color: var(--text); }
+
+  .map-section { padding: 80px 0 0; border-top: 1px solid var(--line); }
+  .map { display: grid; grid-template-columns: 1.05fr .95fr; gap: 20px; margin-top: 32px; }
+  .route-table, .gesture-card { border: 1px solid var(--line); border-radius: 20px; background: var(--surface); overflow: hidden; }
+  .table-row { display: grid; grid-template-columns: 1.1fr .8fr .9fr; gap: 20px; padding: 17px 20px; border-bottom: 1px solid var(--line-soft); font-size: 12px; align-items: center; }
+  .table-row:last-child { border-bottom: 0; }
+  .table-row.head { color: var(--faint); font: 700 8px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; background: #171814; }
+  .table-row b { color: var(--text); }
+  .table-row span { color: var(--muted); }
+  .gesture-card { padding: 28px; background: radial-gradient(circle at 100% 0, rgba(219,116,77,.1), transparent 20rem), var(--surface); }
+  .gesture-card h3 { margin: 16px 0 0; font-family: var(--serif); font-size: 29px; font-weight: 400; }
+  .gesture-card p { color: var(--muted); font-size: 13px; line-height: 1.65; }
+  .gesture-sequence { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 20px; }
+  .gesture-step { min-height: 100px; padding: 13px; border: 1px solid var(--line); border-radius: 13px; background: #171814; }
+  .gesture-step i { display: block; width: 22px; height: 4px; border-radius: 4px; background: var(--ember); }
+  .gesture-step:nth-child(2) i { margin-top: 12px; background: var(--honey); }
+  .gesture-step b { display: block; margin-top: 17px; font-size: 10px; }
+  .gesture-step span { display: block; margin-top: 5px; color: var(--faint); font: 650 8px/1.4 var(--mono); }
+  .no-toast { margin-top: 18px; padding: 13px; border: 1px solid rgba(154,170,131,.26); border-radius: 12px; color: #bdc9ae; background: rgba(154,170,131,.07); font-size: 11px; line-height: 1.5; }
+
+  .verdict { display: grid; grid-template-columns: .82fr 1.18fr; margin-top: 72px; overflow: hidden; border: 1px solid var(--line); border-radius: 24px; background: var(--surface); }
+  .verdict-title { padding: clamp(32px, 5vw, 62px); background: radial-gradient(circle at 0 0, rgba(214,161,78,.18), transparent 25rem), #171814; }
+  .verdict-title h2 { margin: 18px 0 0; font-family: var(--serif); font-size: clamp(42px, 5vw, 72px); font-weight: 400; line-height: .98; letter-spacing: -.05em; }
+  .verdict-copy { display: grid; grid-template-columns: 1fr 1fr; }
+  .verdict-point { padding: 28px; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .verdict-point:nth-last-child(-n+2) { border-bottom: 0; }
+  .verdict-point b { display: block; font-size: 13px; }
+  .verdict-point p { margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+  footer { display: flex; justify-content: space-between; gap: 30px; margin-top: 24px; color: var(--faint); font: 650 9px/1.5 var(--mono); }
+
+  body.reduced *, body.reduced *::before, body.reduced *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+  }
+  @media (max-width: 1050px) {
+    .hero { grid-template-columns: 1fr; }
+    .hero-copy { max-width: 850px; }
+    .demo-stage { grid-template-columns: 190px 354px; justify-content: center; }
+    .map { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 760px) {
+    .page { width: min(100% - 24px, 560px); padding-top: 8px; }
+    .masthead { align-items: flex-start; padding: 12px 0; }
+    .study { display: block; margin: 6px 0 0; }
+    .mast-actions { flex-direction: column; }
+    .mast-actions .button { min-height: 40px; }
+    .hero { min-height: auto; padding: 60px 0; gap: 40px; }
+    h1 { font-size: clamp(52px, 17vw, 82px); }
+    .demo-stage { display: flex; min-height: auto; flex-direction: column; }
+    .dose-rail { width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); padding: 0; gap: 8px; }
+    .dose { min-height: 108px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; }
+    .dose::before, .dose::after { display: none; }
+    .phone-controls { grid-template-columns: repeat(2, 1fr); width: 100%; margin-top: 8px; }
+    .demo-button.run { grid-column: 1 / -1; }
+    .readout { grid-template-columns: 1fr 1fr; width: 100%; }
+    .section-head { grid-template-columns: 1fr; gap: 20px; }
+    .dose-cards { grid-template-columns: 1fr; }
+    .fold-toolbar { align-items: flex-start; flex-direction: column; }
+    .fold-wrap { padding: 12px; }
+    .fold-device { height: 330px; }
+    .fold-device.tabletop { height: 520px; }
+    .pane-inner, .pane-route { padding: 17px; }
+    .fold-row:nth-child(n+3) { display: none; }
+    .fold-detail-cover { width: 82px; margin-top: 18px; }
+    .fold-caption { grid-template-columns: 1fr; gap: 4px; }
+    .table-row { grid-template-columns: 1fr; gap: 5px; }
+    .table-row.head { display: none; }
+    .gesture-sequence { grid-template-columns: 1fr; }
+    .gesture-step { min-height: auto; }
+    .verdict { grid-template-columns: 1fr; }
+    .verdict-copy { grid-template-columns: 1fr; }
+    .verdict-point { border-left: 0; }
+    .verdict-point:nth-last-child(2) { border-bottom: 1px solid var(--line); }
+    footer { display: block; }
+    footer span { display: block; margin-top: 6px; }
+  }
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="masthead">
+    <div><span class="wordmark"><span>Hearth</span>Shelf</span><span class="study">Study 09.2 / Shelf Lift, recut</span></div>
+    <div class="mast-actions"><button class="button" id="reduceMotion" type="button" aria-pressed="false">Reduce motion</button><button class="button primary" id="runAll" type="button">Run the system</button></div>
+  </header>
+
+  <section class="hero">
+    <div class="hero-copy">
+      <div class="eyebrow">One grammar, deliberately dosed</div>
+      <h1>One lift.<br><span>Three doses.</span></h1>
+      <p class="lede">Claude’s Shelf Lift has the better foundation. My revision makes the rule more literal: <strong>every new surface arrives with the same fade-and-lift gesture</strong>, but the distance is scaled to the relationship. The player gets the standard lift—not a sheet-like rise from the bottom edge.</p>
+      <div class="position"><span class="position-mark"></span><p><b>Entry motion is a promise.</b> Nothing enters like a dismissible sheet unless it can actually be dismissed like one. Now Playing lifts into focus, stays anchored, and resists downward drag without explaining itself in a toast.</p></div>
+    </div>
+
+    <div class="demo-stage">
+      <div class="stage-glow"></div>
+      <aside class="dose-rail" aria-label="Current motion dose">
+        <div class="dose" data-dose="micro"><div class="dose-label">Micro</div><div class="dose-value">8px · 160ms</div><div class="dose-note">Bottom tab swaps</div></div>
+        <div class="dose active" data-dose="standard"><div class="dose-label">Standard</div><div class="dose-value">18px · 240ms</div><div class="dose-note">Routes, player, fold pane</div></div>
+        <div class="dose" data-dose="zero"><div class="dose-label">Zero</div><div class="dose-value">0px · 120ms</div><div class="dose-note">Reduced motion, tabletop</div></div>
+      </aside>
+
+      <div class="phone">
+        <div class="viewport" id="phoneDemo">
+          <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
+          <section class="screen home active" data-scene="home">
+            <div class="scene-kicker">Thursday evening</div><div class="scene-title">Welcome back, Jamie.</div><div class="scene-sub">A quiet shelf for the next chapter.</div>
+            <div class="continue-card"><small>Continue listening</small><b>The Night Library</b><div class="scene-sub">Chapter 14 · The Hidden Room</div><div class="progress"></div></div>
+            <div class="section-label"><span>Your next listens</span><span>SEE ALL</span></div>
+            <div class="book-line"><div class="cover"></div><div class="book-meta"><b>The Night Library</b><span>Mara Vale<br>7h 18m remaining</span></div></div>
+            <div class="book-line"><div class="cover green"></div><div class="book-meta"><b>Wild Wood</b><span>Elian Shore<br>Saved for later</span></div></div>
+          </section>
+          <section class="screen stats" data-scene="stats">
+            <div class="scene-kicker">Your listening</div><div class="scene-title">Stats</div><div class="scene-sub">A steady year, one chapter at a time.</div>
+            <div class="stats-grid"><div class="stat"><span>Time listened</span><b>126h</b></div><div class="stat"><span>Books finished</span><b>18</b></div><div class="stat"><span>Current streak</span><b>12d</b></div><div class="stat"><span>Longest day</span><b>3.4h</b></div></div>
+            <div class="section-label"><span>This week</span><span>8H 42M</span></div><div class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </section>
+          <section class="screen library" data-scene="library">
+            <div class="scene-kicker">Your collection</div><div class="scene-title">Library</div><div class="chips"><span class="chip on">ALL</span><span class="chip">AUDIOBOOKS</span><span class="chip">EBOOKS</span></div>
+            <div class="book-grid"><div><div class="cover"></div><div class="grid-name">Night Library</div></div><div><div class="cover green"></div><div class="grid-name">Wild Wood</div></div><div><div class="cover blue"></div><div class="grid-name">North Water</div></div><div><div class="cover blue"></div><div class="grid-name">Quiet Atlas</div></div><div><div class="cover"></div><div class="grid-name">Ember House</div></div><div><div class="cover green"></div><div class="grid-name">Green Roads</div></div></div>
+          </section>
+          <section class="screen detail" data-scene="detail">
+            <div class="back">‹ <span>Library</span></div><div class="cover detail-cover"></div><div class="detail-title">The Night Library</div><div class="detail-author">Mara Vale · Narrated by L. Hart</div><div class="primary-action">▶ &nbsp;Continue</div><div class="detail-copy">A hidden archive. A vanished map. One last night to uncover what the library has been protecting.</div>
+          </section>
+          <section class="screen player" data-scene="player">
+            <div class="player-head">Now playing</div><div class="cover player-cover"></div><div class="track">The Night Library</div><div class="chapter">Chapter 14 · The Hidden Room</div><div class="scrub"></div><div class="transport"><span>↶ 15</span><span class="play">▶</span><span>30 ↷</span></div>
+          </section>
+          <div class="mini"><div class="cover tiny"></div><div class="mini-copy"><b>The Night Library</b><span>Chapter 14 · 42:18</span></div><div class="mini-play">▶</div></div>
+          <nav class="tabbar" aria-label="App tabs"><div class="tab active" data-tab="home"><i>⌂</i><span>Home</span></div><div class="tab" data-tab="library"><i>▥</i><span>Library</span></div><div class="tab" data-tab="stats"><i>⌁</i><span>Stats</span></div><div class="tab" data-tab="player"><i>◉</i><span>Playing</span></div><div class="tab" data-tab="more"><i>•••</i><span>More</span></div></nav>
+        </div>
+      </div>
+
+      <div class="phone-controls">
+        <button class="demo-button" data-action="tab" type="button">Swap tab</button><button class="demo-button" data-action="push" type="button">Push book</button><button class="demo-button" data-action="pop" type="button">Pop back</button><button class="demo-button" data-action="player" type="button">Open player</button><button class="demo-button" data-action="reject" type="button">Reject ↓ swipe</button><button class="demo-button run" data-action="sequence" type="button">Run full sequence</button>
+      </div>
+      <div class="readout"><div><span>Current dose</span><b id="readDose">standard</b></div><div><span>Distance</span><b id="readDistance">18 px</b></div><div><span>Duration</span><b id="readDuration">240 ms</b></div><div><span>Curve</span><b id="readCurve">lift-out</b></div></div>
+    </div>
+  </section>
+
+  <section class="contract">
+    <div class="section-head"><div><div class="eyebrow">The motion contract</div><h2>Same gesture. Different volume.</h2></div><p>The consistency comes from the shape, not identical distance everywhere. Every entrance fades from zero while translating upward into rest; every exit sinks and fades. Only the dose changes. This keeps the system recognizable without making a five-item tab bar feel like five modal presentations.</p></div>
+    <div class="dose-cards">
+      <article class="dose-card"><div class="measure">Micro · 8px · 160ms</div><h3>Tabs whisper.</h3><p>The frame, tab bar, and mini-player remain fixed. Only the destination content lifts a short distance.</p><ul><li>Home ↔ Library ↔ Stats</li><li>Playing and More tabs</li><li>No directional left/right travel</li></ul></article>
+      <article class="dose-card"><div class="measure">Standard · 18px · 240ms</div><h3>Routes speak.</h3><p>A parent settles to 98.5% and dims while the new surface lifts into focus. The player uses this exact dose.</p><ul><li>Book, series, club, settings</li><li>Search as a pushed route</li><li>Player and fold-pane swaps</li></ul></article>
+      <article class="dose-card"><div class="measure">Zero · 0px · 120ms</div><h3>Fallback stays legible.</h3><p>When displacement is wrong, the same opacity handoff remains. It still acknowledges navigation without moving content.</p><ul><li>OS Reduce Motion</li><li>Horizontal tabletop hinge</li><li>Low-power safety fallback</li></ul></article>
+    </div>
+  </section>
+
+  <section class="fold-section">
+    <div class="section-head"><div><div class="eyebrow">Posture proof</div><h2>The hinge stays quiet.</h2></div><p>In book posture, the standard 18px lift runs parallel to the vertical hinge and is clipped to the right leaf. In tabletop posture the hinge is horizontal, so vertical translation drops to zero and the pane uses the fallback fade.</p></div>
+    <div class="fold-toolbar"><div class="segmented" role="group" aria-label="Fold posture"><button class="segment active" data-posture="book" type="button">Book posture</button><button class="segment" data-posture="tabletop" type="button">Tabletop posture</button></div><button class="button primary" id="runFold" type="button">Swap right pane</button></div>
+    <div class="fold-wrap">
+      <div class="fold-device" id="foldDevice">
+        <div class="fold-screen">
+          <section class="pane">
+            <div class="pane-inner"><div class="scene-kicker">Library</div><div class="pane-title">All books</div><div class="fold-list"><div class="fold-row selected"><div class="cover"></div><div><b>The Night Library</b><span>Mara Vale · 64% complete</span></div></div><div class="fold-row"><div class="cover green"></div><div><b>Wild Wood</b><span>Elian Shore · Not started</span></div></div><div class="fold-row"><div class="cover blue"></div><div><b>North Water</b><span>R. Wells · 18% complete</span></div></div></div></div>
+          </section>
+          <div class="hinge"><span class="hinge-label">hinge + quiet gutters</span></div>
+          <section class="pane" id="foldPane"><div class="pane-route active" data-fold-scene="detail"><div class="scene-kicker">Selected book</div><div class="cover fold-detail-cover"></div><div class="fold-title">The Night Library</div><div class="fold-author">Mara Vale · 7h 18m remaining</div><div class="primary-action">▶ &nbsp;Continue</div></div><div class="pane-route" data-fold-scene="notes"><div class="scene-kicker">Reading notes</div><div class="pane-title">Chapter 14</div><div class="continue-card"><small>Private note · 42:18</small><b>The map is probably a catalog.</b><div class="scene-sub">Return here after the archive scene.</div></div><div class="continue-card"><small>Book club · 38:04</small><b>“Did anyone else catch the door number?”</b><div class="scene-sub">3 replies · Spoilers gated</div></div></div></section>
+        </div>
+      </div>
+      <div class="fold-caption"><div><b id="postureTitle">Book posture · standard dose</b><span id="postureCopy">18px lift stays within the changing leaf. Nothing travels across the spine.</span></div><div><b>Scope is the feature</b>The left leaf, selection highlight, hinge, and 24px quiet gutters never animate.</div></div>
+    </div>
+  </section>
+
+  <section class="map-section">
+    <div class="section-head"><div><div class="eyebrow">Route doctrine</div><h2>Make the rule hard to misuse.</h2></div><p>The implementation should choose a dose from route semantics, not screen names scattered across the app. This also makes the Search correction explicit: it is pushed from a search affordance; it is not a sixth or substituted tab.</p></div>
+    <div class="map">
+      <div class="route-table">
+        <div class="table-row head"><span>Surface</span><span>Relationship</span><span>Dose</span></div>
+        <div class="table-row"><b>Home · Library · Stats · Playing · More</b><span>Peer destinations</span><code>micro</code></div>
+        <div class="table-row"><b>Book · Series · Club · Settings · Search</b><span>Stack push / pop</span><code>standard</code></div>
+        <div class="table-row"><b>Now Playing from mini-player</b><span>Persistent destination</span><code>standard</code></div>
+        <div class="table-row"><b>Fold right-leaf pane</b><span>Scoped detail swap</span><code>standard</code></div>
+        <div class="table-row"><b>Reduced motion · tabletop</b><span>Non-displacing fallback</span><code>zero</code></div>
+      </div>
+      <aside class="gesture-card">
+        <div class="eyebrow">Downward gesture</div><h3>Resistance is the response.</h3><p>The player follows a downward drag at roughly 10% of finger travel, caps near 14px, then springs to rest in about 260ms. It does not navigate, collapse, or display explanatory UI.</p>
+        <div class="gesture-sequence"><div class="gesture-step"><i></i><b>Touch</b><span>0px · immediate</span></div><div class="gesture-step"><i></i><b>Resist</b><span>max 14px · 0.1×</span></div><div class="gesture-step"><i></i><b>Return</b><span>spring · ~260ms</span></div></div>
+        <div class="no-toast"><b>No toast.</b> The rubber-band motion is the feedback; leaving Now Playing remains an intentional tab or system-back action.</div>
+      </aside>
+    </div>
+  </section>
+
+  <section class="verdict">
+    <div class="verdict-title"><div class="eyebrow">The call</div><h2>Ship Shelf Lift, amended.</h2></div>
+    <div class="verdict-copy"><article class="verdict-point"><b>One recognizable silhouette</b><p>Fade plus vertical settle is the system. Dose scaling does not invent a second grammar.</p></article><article class="verdict-point"><b>No false player promise</b><p>The player uses the standard 18px lift, never a full bottom-edge sheet presentation.</p></article><article class="verdict-point"><b>Foldable-safe by scope</b><p>Animate only the changing leaf. Tabletop and reduced motion converge on the zero dose.</p></article><article class="verdict-point"><b>Cover Relay stays parked</b><p>A future enhancement for book → detail → player, after the base transition contract ships.</p></article></div>
+  </section>
+  <footer><span>Study 09.2 · Prototype only · No app code changed</span><span>Transform + opacity only · 60fps target · reduced-motion aware</span></footer>
+</main>
+
+<script>
+(() => {
+  const phone = document.getElementById('phoneDemo');
+  const screens = [...phone.querySelectorAll('[data-scene]')];
+  const mini = phone.querySelector('.mini');
+  const doseNodes = [...document.querySelectorAll('[data-dose]')];
+  const readDose = document.getElementById('readDose');
+  const readDistance = document.getElementById('readDistance');
+  const readDuration = document.getElementById('readDuration');
+  const readCurve = document.getElementById('readCurve');
+  const reduceButton = document.getElementById('reduceMotion');
+  const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let manualReduced = false;
+  let current = 'home';
+  let phoneToken = 0;
+  let foldCurrent = 'detail';
+  let posture = 'book';
+
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const reduced = () => manualReduced || prefersReduced.matches;
+  const byName = (name) => phone.querySelector(`[data-scene="${name}"]`);
+  const duration = (ms) => reduced() ? 80 : ms;
+
+  function animate(el, frames, options) {
+    const safeFrames = reduced()
+      ? frames.map((frame) => ({ opacity: frame.opacity ?? 1, transform: 'none', filter: 'none' }))
+      : frames;
+    return el.animate(safeFrames, { fill: 'both', ...options }).finished.catch(() => {});
+  }
+  function setVisible(el, visible, z = 5) {
+    el.classList.toggle('active', visible);
+    el.style.visibility = visible ? 'visible' : 'hidden';
+    el.style.opacity = visible ? '1' : '0';
+    el.style.zIndex = visible ? String(z) : '2';
+  }
+  function setDose(name) {
+    const values = name === 'micro'
+      ? ['micro', '8 px', '160 ms', 'lift-out']
+      : name === 'zero'
+        ? ['zero', '0 px', '120 ms', 'fade']
+        : ['standard', '18 px', '240 ms', 'lift-out'];
+    doseNodes.forEach((node) => node.classList.toggle('active', node.dataset.dose === name));
+    [readDose.textContent, readDistance.textContent, readDuration.textContent, readCurve.textContent] = values;
+  }
+  function updateChrome(next) {
+    const tabName = ['home', 'library', 'stats', 'player'].includes(next) ? next : 'library';
+    phone.querySelectorAll('[data-tab]').forEach((tab) => tab.classList.toggle('active', tab.dataset.tab === tabName));
+    mini.classList.toggle('hidden', next === 'player');
+  }
+
+  async function go(next, dose = 'standard', direction = 'push') {
+    if (next === current) return;
+    const from = byName(current);
+    const to = byName(next);
+    const distance = dose === 'micro' ? 8 : 18;
+    const ms = dose === 'micro' ? 160 : 240;
+    const pop = direction === 'pop';
+    setDose(reduced() ? 'zero' : dose);
+    setVisible(to, true, 6);
+    updateChrome(next);
+    const outgoing = pop
+      ? [{ opacity: 1, transform: 'translateY(0) scale(1)' }, { opacity: 0, transform: `translateY(${distance}px) scale(.995)` }]
+      : [{ opacity: 1, transform: 'scale(1)', filter: 'brightness(1)' }, { opacity: dose === 'micro' ? .4 : .56, transform: dose === 'micro' ? 'scale(1)' : 'scale(.985)', filter: dose === 'micro' ? 'brightness(1)' : 'brightness(.72)' }];
+    const incoming = pop
+      ? [{ opacity: .55, transform: dose === 'micro' ? 'scale(1)' : 'scale(.985)', filter: dose === 'micro' ? 'brightness(1)' : 'brightness(.72)' }, { opacity: 1, transform: 'scale(1)', filter: 'brightness(1)' }]
+      : [{ opacity: 0, transform: `translateY(${distance}px) scale(.995)` }, { opacity: 1, transform: 'translateY(0) scale(1)' }];
+    await Promise.all([
+      animate(from, outgoing, { duration: duration(pop ? Math.max(150, ms - 30) : ms), easing: pop ? 'cubic-bezier(.5,0,.75,.5)' : 'cubic-bezier(.2,.7,.3,1)' }),
+      animate(to, incoming, { duration: duration(ms), easing: 'cubic-bezier(.16,1,.3,1)' }),
+    ]);
+    setVisible(from, false);
+    setVisible(to, true);
+    from.getAnimations().forEach((animation) => animation.cancel());
+    to.getAnimations().forEach((animation) => animation.cancel());
+    current = next;
+  }
+
+  async function rejectSwipe() {
+    if (current !== 'player') await go('player', 'standard');
+    setDose(reduced() ? 'zero' : 'standard');
+    const player = byName('player');
+    await animate(player, [{ transform: 'translateY(0)' }, { transform: 'translateY(14px)', offset: .38 }, { transform: 'translateY(0)', offset: 1 }], { duration: duration(420), easing: 'cubic-bezier(.16,1,.3,1)' });
+    player.getAnimations().forEach((animation) => animation.cancel());
+  }
+
+  async function runSequence() {
+    const token = ++phoneToken;
+    if (current !== 'home') await go('home', 'micro');
+    if (token !== phoneToken) return;
+    await wait(duration(360)); await go('library', 'micro');
+    if (token !== phoneToken) return;
+    await wait(duration(430)); await go('detail', 'standard');
+    if (token !== phoneToken) return;
+    await wait(duration(540)); await go('library', 'standard', 'pop');
+    if (token !== phoneToken) return;
+    await wait(duration(420)); await go('player', 'standard');
+    if (token !== phoneToken) return;
+    await wait(duration(550)); await rejectSwipe();
+    if (token !== phoneToken) return;
+    await wait(duration(480)); await go('stats', 'micro');
+  }
+
+  document.querySelectorAll('[data-action]').forEach((button) => button.addEventListener('click', () => {
+    phoneToken++;
+    const action = button.dataset.action;
+    if (action === 'tab') go(current === 'stats' ? 'home' : 'stats', 'micro');
+    if (action === 'push') go('detail', 'standard');
+    if (action === 'pop') go('library', 'standard', 'pop');
+    if (action === 'player') go('player', 'standard');
+    if (action === 'reject') rejectSwipe();
+    if (action === 'sequence') runSequence();
+  }));
+
+  const playerScreen = byName('player');
+  let dragStart = 0;
+  playerScreen.addEventListener('pointerdown', (event) => {
+    if (current !== 'player') return;
+    dragStart = event.clientY;
+    playerScreen.setPointerCapture(event.pointerId);
+    playerScreen.classList.add('dragging');
+  });
+  playerScreen.addEventListener('pointermove', (event) => {
+    if (!playerScreen.classList.contains('dragging')) return;
+    const drag = Math.max(0, event.clientY - dragStart);
+    playerScreen.style.transform = `translateY(${Math.min(14, drag * .1)}px)`;
+  });
+  playerScreen.addEventListener('pointerup', () => {
+    if (!playerScreen.classList.contains('dragging')) return;
+    playerScreen.classList.remove('dragging');
+    playerScreen.style.transition = `transform ${duration(260)}ms cubic-bezier(.16,1,.3,1)`;
+    playerScreen.style.transform = 'translateY(0)';
+    setTimeout(() => { playerScreen.style.transition = ''; playerScreen.style.transform = ''; }, duration(280));
+  });
+
+  reduceButton.addEventListener('click', () => {
+    manualReduced = !manualReduced;
+    document.body.classList.toggle('reduced', manualReduced);
+    reduceButton.setAttribute('aria-pressed', String(manualReduced));
+    reduceButton.textContent = manualReduced ? 'Reduced motion on' : 'Reduce motion';
+    setDose(reduced() ? 'zero' : 'standard');
+  });
+  document.getElementById('runAll').addEventListener('click', () => { phoneToken++; runSequence(); });
+
+  async function runFold() {
+    const pane = document.getElementById('foldPane');
+    const from = pane.querySelector(`[data-fold-scene="${foldCurrent}"]`);
+    const nextName = foldCurrent === 'detail' ? 'notes' : 'detail';
+    const to = pane.querySelector(`[data-fold-scene="${nextName}"]`);
+    const zero = reduced() || posture === 'tabletop';
+    setVisible(to, true, 6);
+    await Promise.all([
+      animate(from, [{ opacity: 1, transform: 'scale(1)' }, { opacity: .55, transform: zero ? 'none' : 'scale(.985)' }], { duration: duration(zero ? 120 : 240), easing: 'ease-out' }),
+      animate(to, [{ opacity: 0, transform: zero ? 'none' : 'translateY(18px) scale(.995)' }, { opacity: 1, transform: 'translateY(0) scale(1)' }], { duration: duration(zero ? 120 : 240), easing: 'cubic-bezier(.16,1,.3,1)' }),
+    ]);
+    setVisible(from, false);
+    setVisible(to, true);
+    from.getAnimations().forEach((animation) => animation.cancel());
+    to.getAnimations().forEach((animation) => animation.cancel());
+    foldCurrent = nextName;
+  }
+  document.getElementById('runFold').addEventListener('click', runFold);
+  document.querySelectorAll('[data-posture]').forEach((button) => button.addEventListener('click', () => {
+    posture = button.dataset.posture;
+    document.querySelectorAll('[data-posture]').forEach((item) => item.classList.toggle('active', item === button));
+    document.getElementById('foldDevice').classList.toggle('tabletop', posture === 'tabletop');
+    document.getElementById('postureTitle').textContent = posture === 'tabletop' ? 'Tabletop posture · zero dose' : 'Book posture · standard dose';
+    document.getElementById('postureCopy').textContent = posture === 'tabletop' ? 'The horizontal hinge cancels vertical travel; the pane uses a 120ms fade.' : '18px lift stays within the changing leaf. Nothing travels across the spine.';
+  }));
+
+  setTimeout(runSequence, 700);
+})();
+</script>
+</body>
+</html>

@@ -29,6 +29,27 @@ export const POP_SPRING = { damping: 13, stiffness: 380, mass: 0.5 } as const
 
 export const DUR = { fast: 120, base: 180, slow: 220 } as const
 
+/**
+ * Shelf Lift navigation doses (docs/redesign/08-transitions-2.html). Every
+ * navigation entrance is fade + upward settle; every exit sinks. Only the dose
+ * changes with the gesture: tab swaps whisper (micro), pushes and the player
+ * speak (standard), and Reduce Motion / tabletop drop displacement entirely
+ * (zero: opacity only). Distances in px, durations in ms.
+ */
+export const LIFT = {
+  micro: { distance: 8, duration: 160 },
+  standard: { distance: 18, duration: 240 },
+  zero: { distance: 0, duration: 120 },
+} as const
+
+/**
+ * Player downward-swipe rejection: the surface follows the finger at
+ * `followRatio` up to `capPx`, then springs back. The rubber band IS the
+ * feedback - no toast, no navigation.
+ */
+export const LIFT_REJECT = { followRatio: 0.1, capPx: 14 } as const
+export const LIFT_REJECT_SPRING = { damping: 18, stiffness: 240, mass: 0.7 } as const
+
 export const PULSE_MS = 2600
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable)

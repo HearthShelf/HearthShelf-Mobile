@@ -32,6 +32,7 @@ import { ensureNotificationChannels } from '@/lib/notifications'
 import { mountNoteForegroundHandler } from '@/social/noteEvents'
 import { mountPushHandlers } from '@/player/pushHandlers'
 import { ThemeProvider, useColors, useTheme } from '@/ui/ThemeProvider'
+import { useReducedMotion } from '@/ui/motion'
 import { AppBlurTargetProvider } from '@/ui/BlurTarget'
 import { flushPriorCrash, mountCrashLifecycle } from '@/lib/crashReporter'
 
@@ -264,19 +265,26 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
 // The routed stack, under the ThemeProvider so its background tracks the theme.
 function ThemedStack() {
   const colors = useColors()
+  const reduced = useReducedMotion()
   return (
     <Stack
       screenOptions={{
         headerShown: false,
         contentStyle: { backgroundColor: colors.scaffold },
+        // One motion grammar for every push: fade + upward settle, identical on
+        // iOS and Android. Reduce Motion drops the displacement, fade only.
+        animation: reduced ? 'fade' : 'fade_from_bottom',
       }}
     >
-      {/* The player rises from the mini-player dock rather than pushing
-          sideways. Deliberately NO dismiss gesture: it's the primary surface,
-          and an accidental swipe shouldn't throw the listener out of it. */}
+      {/* The player is a persistent destination, not a dismissible sheet, so it
+          enters with the same standard lift as every other push (no sheet-style
+          slide that would falsely promise swipe-to-dismiss). Dismiss gestures
+          are disabled: it's the primary surface, and an accidental swipe
+          shouldn't throw the listener out of it. System back remains the
+          sanctioned exit. */}
       <Stack.Screen
         name="player"
-        options={{ animation: 'slide_from_bottom', gestureEnabled: false }}
+        options={{ gestureEnabled: false, fullScreenGestureEnabled: false }}
       />
     </Stack>
   )
