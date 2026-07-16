@@ -105,12 +105,18 @@ export default function ServersScreen() {
   }
 
   async function toggleDefault(server: LinkedServer) {
+    haptics.select()
     try {
-      if (server.isDefault) await clearDefaultServer(tokenFn, server.id)
-      else await setDefaultServer(tokenFn, server.id)
+      if (server.isDefault) {
+        await clearDefaultServer(tokenFn, server.id)
+        showToast('No default server')
+      } else {
+        await setDefaultServer(tokenFn, server.id)
+        showToast(`Default: ${server.name}`)
+      }
       await load({ silent: true })
     } catch {
-      Alert.alert('Could not update default', 'Please try again.')
+      showToast('Could not update the default')
     }
   }
 

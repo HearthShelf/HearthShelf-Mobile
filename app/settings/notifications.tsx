@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { AppState, Linking, Pressable, View } from 'react-native'
+import { useRouter } from 'expo-router'
 import { coverHue, countdownLabel } from '@hearthshelf/core'
 import type { HSSubscription } from '@hearthshelf/core'
 import { getSettingsState, subscribeSettings, setSetting } from '@/store/settings'
@@ -35,6 +36,7 @@ export default function NotificationsPanel() {
     getSubscriptionsState,
   )
   const colors = useColors()
+  const router = useRouter()
 
   // Refresh the follow list whenever the panel opens.
   useEffect(() => {
@@ -180,8 +182,15 @@ export default function NotificationsPanel() {
       ) : subscriptions.length === 0 ? (
         <SettingsGroup>
           <SettingsRow
+            icon="bookmark-add"
             title="Nothing followed yet"
-            desc="Follow an upcoming book or a series to get notified when it lands."
+            desc="Follow an upcoming book or a series and we'll tell you the moment it arrives."
+          />
+          <SettingsRow
+            icon="search"
+            title="Find upcoming books"
+            desc="Search beyond your library for books to follow."
+            onPress={() => router.push('/search?from=more')}
             last
           />
         </SettingsGroup>

@@ -7,7 +7,7 @@
  * user across devices.
  */
 import { useMemo, useSyncExternalStore } from 'react'
-import { Alert, StyleSheet, View, type DimensionValue } from 'react-native'
+import { Pressable, StyleSheet, View, type DimensionValue } from 'react-native'
 import {
   getDownloadsState,
   subscribeDownloads,
@@ -15,6 +15,7 @@ import {
   setMaxBytes,
   cancelDownload,
   deleteDownload,
+  downloadItem,
   totalBytes,
   diskSpace,
   type DownloadEntry,
@@ -30,7 +31,10 @@ import {
   ChipRow,
 } from '@/ui/settingsControls'
 import { AppText, IconButton, ProgressBar, icons } from '@/ui/primitives'
-import { spacing, type Palette } from '@/ui/theme'
+import { Icon } from '@/ui/icons'
+import { showToast } from '@/ui/Toast'
+import { haptics } from '@/ui/haptics'
+import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 
 const GB = 1024 * 1024 * 1024
@@ -39,6 +43,20 @@ function formatBytes(bytes: number): string {
   if (bytes <= 0) return '0 MB'
   const mb = bytes / (1024 * 1024)
   return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`
+}
+
+/** A plain-language failure reason for a failed download, with how far it got so
+ *  the user knows a retry resumes rather than restarts from zero. */
+function failReason(e: DownloadEntry): string {
+  const pct = Math.round((e.progress || 0) * 100)
+  const at = pct > 0 && pct < 100 ? ` at ${pct}%` : ''
+  const raw = (e.error || '').toLowerCase()
+  let why = 'download stopped'
+  if (/network|connection|offline|econn|timeout|timed out/.test(raw)) why = 'connection lost'
+  else if (/space|disk|storage|enospc/.test(raw)) why = 'ran out of space'
+  else if (/token|auth|401|403|unauthor/.test(raw)) why = "server wouldn't allow it"
+  else if (/404|not found|410/.test(raw)) why = 'the file is no longer on the server'
+  return `Failed - ${why}${at}`
 }
 
 export default function StorageScreen() {
@@ -55,11 +73,21 @@ export default function StorageScreen() {
   const capGb = maxBytes > 0 ? Math.round((maxBytes / GB) * 10) / 10 : 0
   const disk = diskSpace()
 
-  const confirmDelete = (e: DownloadEntry) =>
-    Alert.alert('Remove download', `Delete the downloaded copy of "${e.title}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => void deleteDownload(e.itemId) },
-    ])
+  // Delete immediately with an Undo toast (no blocking Alert - D-FINISH). Undo
+  // re-downloads the same book; the file is re-fetched if it was already purged.
+  const removeDownload = (e: DownloadEntry) => {
+    haptics.select()
+    void deleteDownload(e.itemId)
+    showToast(`Removed ${e.title}`, {
+      action: { label: 'Undo', onPress: () => void downloadItem(e.itemId, e.title, e.author) },
+    })
+  }
+
+  // Retry a failed download - re-runs downloadItem, which restarts the transfer.
+  const retryDownload = (e: DownloadEntry) => {
+    haptics.select()
+    void downloadItem(e.itemId, e.title, e.author)
+  }
 
   return (
     <SettingsPanel>
@@ -167,12 +195,32 @@ export default function StorageScreen() {
           <SettingsLabel>Failed</SettingsLabel>
           <SettingsGroup>
             {failed.map((e) => (
-              <SettingsRow
-                key={e.itemId}
-                title={e.title}
-                desc="Download didn't finish. Tap to remove."
-                onPress={() => void deleteDownload(e.itemId)}
-              />
+              <View key={e.itemId} style={styles.dlRow}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <AppText variant="label" numberOfLines={1}>
+                    {e.title}
+                  </AppText>
+                  <AppText variant="caption" color={colors.destructive} numberOfLines={1}>
+                    {failReason(e)}
+                  </AppText>
+                </View>
+                <Pressable
+                  style={styles.retryBtn}
+                  onPress={() => retryDownload(e)}
+                  hitSlop={6}
+                >
+                  <Icon name={icons.retry} size={14} color={colors.accent} />
+                  <AppText variant="caption" color={colors.accent}>
+                    Retry
+                  </AppText>
+                </Pressable>
+                <IconButton
+                  name={icons.close}
+                  size={20}
+                  color={colors.textMuted}
+                  onPress={() => removeDownload(e)}
+                />
+              </View>
             ))}
           </SettingsGroup>
         </>
@@ -195,7 +243,7 @@ export default function StorageScreen() {
                   {e.author} · {formatBytes(e.bytes)}
                 </AppText>
               </View>
-              <IconButton name={icons.close} size={20} color={colors.textMuted} onPress={() => confirmDelete(e)} />
+              <IconButton name={icons.close} size={20} color={colors.textMuted} onPress={() => removeDownload(e)} />
             </View>
           ))
         )}
@@ -315,6 +363,17 @@ const makeStyles = (colors: Palette) =>
       alignItems: 'center',
       gap: spacing.sm,
       marginTop: spacing.xs,
+    },
+    retryBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs / 2,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs,
+      borderRadius: radius.pill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.accent,
+      backgroundColor: colors.accentWash,
     },
     meter: {
       paddingHorizontal: spacing.lg,
