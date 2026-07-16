@@ -1,13 +1,15 @@
 /**
  * Integrations panel: connect other services and import your reading history.
  *
- * Cards, top to bottom: Hardcover (connect / sync / disconnect), Import from
- * Goodreads (its own card, opens a bottom sheet), Server integrations (info -
- * RMAB etc. are set up server-side by an admin), and External book links (which
- * store search links show on a book's detail page).
+ * Two labeled subgroups keep the two jobs distinct (Hardcover appears in both,
+ * as a connection AND an external link, which reads confusingly otherwise):
+ *  - "Connected accounts": Hardcover (connect / sync / disconnect), Import from
+ *    Goodreads, and the server-integrations info note.
+ *  - "Links on book pages": which store search links (Goodreads / Audible /
+ *    Hardcover) show on a book's detail page.
  *
- * This replaces the old "Connections" panel; the search toggle moved to
- * app/settings/search.tsx and the social toggles to app/settings/community.tsx.
+ * The social toggles live in app/settings/community.tsx; the search-external
+ * toggle lives in the unified search's gear.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Pressable, TextInput, View } from 'react-native'
@@ -113,7 +115,7 @@ export default function IntegrationsPanel() {
 
   return (
     <SettingsPanel>
-      <SettingsLabel>Services</SettingsLabel>
+      <SettingsLabel>Connected accounts</SettingsLabel>
       <SettingsGroup>
         <SettingsRow
           icon="link"
@@ -197,7 +199,7 @@ export default function IntegrationsPanel() {
         />
       </SettingsGroup>
 
-      <SettingsLabel>External book links</SettingsLabel>
+      <SettingsLabel>Links on book pages</SettingsLabel>
       <SettingsGroup>
         <SettingsRow
           icon="menu-book"

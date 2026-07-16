@@ -4,8 +4,8 @@
  * settings (they sync across devices); the subscription list is the server-owned
  * follow list (src/player/subscriptions.ts).
  */
-import { useEffect, useSyncExternalStore } from 'react'
-import { View } from 'react-native'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { AppState, Linking, Pressable, View } from 'react-native'
 import { coverHue, countdownLabel } from '@hearthshelf/core'
 import type { HSSubscription } from '@hearthshelf/core'
 import { getSettingsState, subscribeSettings, setSetting } from '@/store/settings'
@@ -40,6 +40,30 @@ export default function NotificationsPanel() {
   useEffect(() => {
     void refreshSubscriptions()
   }, [])
+
+  // OS-level notification permission: when the user has release notifications on
+  // in-app but the phone denied the permission, no push can arrive - so surface
+  // an actionable Enable row that deep-links to system settings. Re-checked when
+  // the panel regains focus (they may have just toggled it in Settings).
+  const [osDenied, setOsDenied] = useState(false)
+  const checkPermission = useCallback(() => {
+    void (async () => {
+      try {
+        const Notifications = await import('expo-notifications')
+        const { status, canAskAgain } = await Notifications.getPermissionsAsync()
+        setOsDenied(status !== 'granted' && !canAskAgain)
+      } catch {
+        setOsDenied(false)
+      }
+    })()
+  }, [])
+  useEffect(() => {
+    checkPermission()
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'active') checkPermission()
+    })
+    return () => sub.remove()
+  }, [checkPermission])
 
   const master = s.notifyEnabled
   const seriesSubs = subscriptions.filter((x) => x.kind === 'series')
@@ -98,6 +122,28 @@ export default function NotificationsPanel() {
           </>
         )}
       </SettingsGroup>
+
+      {/* Actionable permission row: in-app on, but the OS denied it. */}
+      {master && osDenied ? (
+        <Pressable onPress={() => void Linking.openSettings()}>
+          <SettingsGroup>
+            <SettingsRow
+              icon="notifications-off"
+              title="Turn on notifications for HearthShelf"
+              desc="Your phone is blocking alerts, so followed books won't buzz. Tap to open system settings."
+              danger
+              control={
+                <View style={{ paddingHorizontal: spacing.md, paddingVertical: 4 }}>
+                  <AppText variant="label" color={colors.accent}>
+                    Enable
+                  </AppText>
+                </View>
+              }
+              last
+            />
+          </SettingsGroup>
+        </Pressable>
+      ) : null}
 
       <SettingsGroup>
         <SettingsRow
