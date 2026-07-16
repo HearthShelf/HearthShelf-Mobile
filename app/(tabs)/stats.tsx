@@ -13,7 +13,7 @@
  * only when its data exists, so a slim server or a fresh user sees fewer
  * sections rather than a wall of zeros or empty frames.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   RefreshControl,
   ScrollView,
@@ -53,13 +53,17 @@ import {
   Loading,
   PrimaryButton,
   Screen,
+  Sheet,
+  type SheetRef,
   Touchable,
 } from '@/ui/primitives'
+import { BottomSheetTextInput, BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import { Seg } from '@/ui/settingsControls'
 import { radius, spacing, fonts, type Palette } from '@/ui/theme'
 import { useTheme } from '@/ui/ThemeProvider'
 import { Icon, icons } from '@/ui/icons'
 import { DUR } from '@/ui/motion'
+import { EmberBurst } from '@/ui/EmberBurst'
 import { haptics } from '@/ui/haptics'
 import { onTabReselect } from '@/ui/tabReselect'
 import { useContentInset } from '@/ui/useContentInset'
@@ -158,7 +162,7 @@ function vmFromHs(s: HSListeningStats): StatsVM {
 type Status =
   | { phase: 'loading' }
   | { phase: 'error'; message: string }
-  | { phase: 'ready'; stats: StatsVM; history: HSStatsHistory }
+  | { phase: 'ready'; stats: StatsVM; history: HSStatsHistory; historyFailed: boolean }
 
 export default function StatsTab() {
   const router = useRouter()
@@ -191,20 +195,35 @@ export default function StatsTab() {
     }, [router]),
   )
 
+  // Fetch history, distinguishing a real fetch FAILURE (offer Retry) from the
+  // server simply not offering history (available:false, no error).
+  const fetchHistory = useCallback(async (): Promise<{
+    history: HSStatsHistory
+    failed: boolean
+  }> => {
+    try {
+      return { history: await getStatsHistory('year'), failed: false }
+    } catch {
+      return { history: { available: false, days: [], months: [] }, failed: true }
+    }
+  }, [])
+
   const load = useCallback(async () => {
     setStatus({ phase: 'loading' })
     try {
-      // Stats + durable history in parallel; history degrades to unavailable on
-      // its own, so a failure there never blocks the core stats.
-      const [statsRes, historyRes] = await Promise.all([
-        getHSStats(),
-        getStatsHistory('year').catch(() => ({ available: false, days: [], months: [] })),
-      ])
-      setStatus({ phase: 'ready', stats: vmFromHs(statsRes), history: historyRes })
+      // Stats + durable history in parallel; a history failure never blocks the
+      // core stats - it shows an inline retry card instead.
+      const [statsRes, hist] = await Promise.all([getHSStats(), fetchHistory()])
+      setStatus({
+        phase: 'ready',
+        stats: vmFromHs(statsRes),
+        history: hist.history,
+        historyFailed: hist.failed,
+      })
     } catch (e) {
       setStatus({ phase: 'error', message: (e as Error).message })
     }
-  }, [])
+  }, [fetchHistory])
 
   useEffect(() => {
     void load()
@@ -213,18 +232,30 @@ export default function StatsTab() {
   const refresh = useCallback(async () => {
     setRefreshing(true)
     try {
-      const [statsRes, historyRes] = await Promise.all([
-        getHSStats(),
-        getStatsHistory('year').catch(() => ({ available: false, days: [], months: [] })),
-      ])
-      setStatus({ phase: 'ready', stats: vmFromHs(statsRes), history: historyRes })
+      const [statsRes, hist] = await Promise.all([getHSStats(), fetchHistory()])
+      setStatus({
+        phase: 'ready',
+        stats: vmFromHs(statsRes),
+        history: hist.history,
+        historyFailed: hist.failed,
+      })
     } catch {
       // Keep the current data on a failed pull-to-refresh; the initial load owns
       // the error state.
     } finally {
       setRefreshing(false)
     }
-  }, [])
+  }, [fetchHistory])
+
+  // Retry only the history half, keeping the core stats on screen.
+  const retryHistory = useCallback(async () => {
+    const hist = await fetchHistory()
+    setStatus((s) =>
+      s.phase === 'ready'
+        ? { ...s, history: hist.history, historyFailed: hist.failed }
+        : s,
+    )
+  }, [fetchHistory])
 
   const registerSection = useCallback(
     (key: string) => (e: LayoutChangeEvent) => {
@@ -343,10 +374,30 @@ export default function StatsTab() {
               />
             </View>
 
-            <Heatmap stats={stats} history={history} styles={styles} colors={colors} />
+            {status.historyFailed ? (
+              <View style={[styles.card, styles.historyFail]}>
+                <Icon name={icons.cloudOff} size={22} color={colors.textMuted} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <AppText variant="label">Couldn't load history</AppText>
+                  <AppText variant="caption" color={colors.textMuted}>
+                    Your heatmap and monthly averages need it.
+                  </AppText>
+                </View>
+                <Touchable style={styles.historyRetry} onPress={retryHistory}>
+                  <Icon name={icons.retry} size={16} color={colors.accent} />
+                  <AppText variant="caption" color={colors.accent}>
+                    Retry
+                  </AppText>
+                </Touchable>
+              </View>
+            ) : (
+              <>
+                <Heatmap stats={stats} history={history} styles={styles} colors={colors} />
 
-            {history.available && (history.months?.length ?? 0) > 0 && (
-              <MonthCard months={history.months ?? []} styles={styles} colors={colors} />
+                {history.available && (history.months?.length ?? 0) > 0 && (
+                  <MonthCard months={history.months ?? []} styles={styles} colors={colors} />
+                )}
+              </>
             )}
 
             <View onLayout={registerSection('compare')}>
@@ -585,6 +636,17 @@ function GoalCard({
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(String(goal || ''))
+  // Celebrate the moment the goal is reached with a one-shot ember burst.
+  const [goalBurst, setGoalBurst] = useState(0)
+  const reached = goal > 0 && (booksThisYear ?? 0) >= goal
+  const wasReached = useRef(reached)
+  useEffect(() => {
+    if (reached && !wasReached.current) {
+      setGoalBurst((b) => b + 1)
+      haptics.success()
+    }
+    wasReached.current = reached
+  }, [reached])
 
   const startEdit = () => {
     setDraft(goal ? String(goal) : '')
@@ -677,12 +739,15 @@ function GoalCard({
           editor
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.lg }}>
-            <ProgressRing
-              frac={frac}
-              label={booksThisYear == null ? '--' : `${pct}%`}
-              sub={`of ${goal}`}
-              colors={colors}
-            />
+            <View style={{ overflow: 'visible' }}>
+              <ProgressRing
+                frac={frac}
+                label={booksThisYear == null ? '--' : `${pct}%`}
+                sub={`of ${goal}`}
+                colors={colors}
+              />
+              <EmberBurst burst={goalBurst} colors={[colors.accent, colors.brandHearth]} />
+            </View>
             <View style={{ flex: 1, minWidth: 0, gap: spacing.xs }}>
               {booksThisYear == null ? (
                 <>
@@ -1399,6 +1464,7 @@ function CompareCard({ styles, colors }: { styles: Styles; colors: Palette }) {
   const [userId, setUserId] = useState<string>('')
   const [roster, setRoster] = useState<HSLeaderboardEntry[]>([])
   const [status, setStatus] = useState<CompareStatus>({ phase: 'loading' })
+  const pickerRef = useRef<SheetRef>(null)
 
   // Roster for the user picker: draw from the leaderboard (already privacy-
   // filtered server-side), fetched once.
@@ -1481,32 +1547,60 @@ function CompareCard({ styles, colors }: { styles: Styles; colors: Palette }) {
       typeof s.me === 'number' && typeof s.target === 'number',
   )
 
+  const selectedName = userId ? roster.find((u) => u.userId === userId)?.username : null
+
   return (
     <View style={{ gap: spacing.sm }}>
       <SectionHead icon="compare" title="Compare" colors={colors} />
       {/* Server-average / user toggle. The picker is a horizontal chip row of the
-          privacy-filtered roster, native-friendlier than a <select>. */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: spacing.sm }}
-      >
-        <CompareChip
-          label="Server average"
-          on={!userId}
-          onPress={() => setUserId('')}
-          colors={colors}
-        />
-        {roster.map((u) => (
+          privacy-filtered roster; on a busy server (>8) a search icon opens a
+          searchable picker sheet so the chips don't run off the edge. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: spacing.sm }}
+          style={{ flex: 1 }}
+        >
           <CompareChip
-            key={u.userId}
-            label={u.username}
-            on={userId === u.userId}
-            onPress={() => setUserId(u.userId)}
+            label="Server average"
+            on={!userId}
+            onPress={() => setUserId('')}
             colors={colors}
           />
-        ))}
-      </ScrollView>
+          {selectedName && (
+            <CompareChip label={selectedName} on onPress={() => undefined} colors={colors} />
+          )}
+          {roster.slice(0, 8).map((u) =>
+            u.userId === userId ? null : (
+              <CompareChip
+                key={u.userId}
+                label={u.username}
+                on={false}
+                onPress={() => setUserId(u.userId)}
+                colors={colors}
+              />
+            ),
+          )}
+        </ScrollView>
+        {roster.length > 8 && (
+          <Touchable style={styles.compareSearchBtn} onPress={() => pickerRef.current?.present()}>
+            <Icon name={icons.search} size={18} color={colors.text} />
+          </Touchable>
+        )}
+      </View>
+
+      <ComparePickerSheet
+        ref={pickerRef}
+        roster={roster}
+        selectedId={userId}
+        onPick={(uid) => {
+          setUserId(uid)
+          pickerRef.current?.dismiss()
+        }}
+        styles={styles}
+        colors={colors}
+      />
       <View style={[styles.card, { gap: spacing.md }]}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
           <AppText variant="caption" color={colors.accent}>
@@ -1582,6 +1676,54 @@ function CompareChip({
     </Touchable>
   )
 }
+
+// A searchable picker for the compare roster, opened from the search icon when
+// the chip row would overflow. Server-average sits at the top; the rest filter
+// by the typed query.
+const ComparePickerSheet = forwardRef<
+  SheetRef,
+  {
+    roster: HSLeaderboardEntry[]
+    selectedId: string
+    onPick: (userId: string) => void
+    styles: Styles
+    colors: Palette
+  }
+>(function ComparePickerSheet({ roster, selectedId, onPick, styles, colors }, ref) {
+  const [query, setQuery] = useState('')
+  const filtered = query
+    ? roster.filter((u) => u.username.toLowerCase().includes(query.toLowerCase()))
+    : roster
+  return (
+    <Sheet ref={ref} title="Compare with" snapPoints={['70%']}>
+      <BottomSheetTextInput
+        placeholder="Search people"
+        placeholderTextColor={colors.textFaint}
+        value={query}
+        onChangeText={setQuery}
+        style={styles.compareSearchInput}
+      />
+      <BottomSheetScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }}>
+        <Touchable style={styles.comparePickRow} onPress={() => onPick('')}>
+          <Icon name={icons.compare} size={20} color={colors.textMuted} />
+          <AppText variant="body" style={{ flex: 1 }}>
+            Server average
+          </AppText>
+          {!selectedId && <Icon name={icons.check} size={20} color={colors.accent} />}
+        </Touchable>
+        {filtered.map((u) => (
+          <Touchable key={u.userId} style={styles.comparePickRow} onPress={() => onPick(u.userId)}>
+            <Avatar uri={avatarUrl(u.userId)} size={28} name={u.username} hue={coverHue(u.userId)} />
+            <AppText variant="body" numberOfLines={1} style={{ flex: 1 }}>
+              {u.username}
+            </AppText>
+            {selectedId === u.userId && <Icon name={icons.check} size={20} color={colors.accent} />}
+          </Touchable>
+        ))}
+      </BottomSheetScrollView>
+    </Sheet>
+  )
+})
 
 // --- 9. Leaderboard --------------------------------------------------------
 
@@ -1857,6 +1999,44 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
 
     monthAvgNum: { fontFamily: fonts.mono, fontSize: 22, fontWeight: '700', color: colors.text },
 
+    historyFail: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+    },
+    historyRetry: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radius.pill,
+      backgroundColor: colors.accentWash,
+    },
+    compareSearchBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    compareSearchInput: {
+      backgroundColor: colors.fill,
+      borderRadius: radius.card,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm + 2,
+      color: colors.text,
+      marginBottom: spacing.sm,
+    },
+    comparePickRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.md,
+    },
     cmpBars: { gap: 4 },
     cmpTrack: {
       height: 20,
