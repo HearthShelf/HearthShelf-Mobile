@@ -104,6 +104,7 @@ import { AddToListSheet } from '@/player/AddToListSheet'
 import { QueueSheet } from '@/player/QueueSheet'
 import { buildActions, type ActionContext } from '@/player/actions'
 import { PlayerNotesSheet, type PlayerNotesSheetHandle } from '@/social/PlayerNotesSheet'
+import { PlayerSettingsSheet } from '@/player/PlayerSettingsSheet'
 import { TimelineMarkers } from '@/social/TimelineMarkers'
 import { useTimelineMarkers } from '@/social/useTimelineMarkers'
 import type { PlayerActionKey } from '@/store/settings'
@@ -148,6 +149,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const bookmarksRef = useRef<SheetHandle>(null)
   const addToListRef = useRef<SheetHandle>(null)
   const queueRef = useRef<SheetHandle>(null)
+  const playerSettingsRef = useRef<SheetHandle>(null)
   const notesRef = useRef<PlayerNotesSheetHandle>(null)
   const skipFeedbackRef = useRef<SkipFeedbackHandle>(null)
 
@@ -1063,13 +1065,14 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         })}
         onSettings={() => {
           moreRef.current?.dismiss()
-          router.push('/settings/playback')
+          playerSettingsRef.current?.present()
         }}
         onEdit={() => {
           moreRef.current?.dismiss()
           router.push('/settings/player-buttons')
         }}
       />
+      <PlayerSettingsSheet ref={playerSettingsRef} />
       <RecentSheet
         ref={recentRef}
         itemId={nowPlaying.itemId}
