@@ -5,9 +5,9 @@
  * hand) and both the on-screen row and the More tray render from it, so the
  * arrangement in My Settings is the single source of truth for order + labels.
  *
- * Actions with no mobile implementation yet (Cast, Car mode, Download, Notes)
- * are real entries here so they can be arranged, but their handler shows a
- * "Coming soon" toast until the feature lands.
+ * Actions with no mobile implementation yet (Cast) are real entries here so
+ * they can be arranged, but their handler shows a "Coming soon" toast until the
+ * feature lands.
  */
 import type { PlayerActionKey } from '@/store/settings'
 import { icons } from '@/ui/icons'
@@ -147,6 +147,6 @@ export const ACTION_META: Record<
   addList: { icon: icons.addList, label: 'Add to list' },
   cast: { icon: icons.cast, label: 'Cast', comingSoon: true },
   carMode: { icon: icons.focusView, label: 'Focus view' },
-  download: { icon: icons.download, label: 'Download', comingSoon: true },
+  download: { icon: icons.download, label: 'Download' },
   notes: { icon: icons.notes, label: 'Notes' },
 }
