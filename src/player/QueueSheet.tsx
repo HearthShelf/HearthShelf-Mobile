@@ -276,8 +276,14 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
                       parentOff && styles.ruleDisabled,
                     ]}
                   >
-                    <Pressable onLongPress={drag} disabled={parentOff} hitSlop={8}>
-                      <Icon name={icons.dragHandle} size={20} color={colors.textMuted} />
+                    <Pressable
+                      onLongPress={drag}
+                      delayLongPress={200}
+                      disabled={parentOff}
+                      hitSlop={12}
+                      style={styles.dragGrip}
+                    >
+                      <Icon name={icons.dragHandle} size={22} color={colors.textMuted} />
                     </Pressable>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <AppText variant="label">{copy.label}</AppText>
@@ -470,8 +476,14 @@ function QueueRow({
   return (
     <View style={[styles.row, isActive && styles.rowDragging]}>
       {canDrag ? (
-        <Pressable onLongPress={drag} disabled={dragActive} hitSlop={8}>
-          <Icon name={icons.dragHandle} size={20} color={colors.textMuted} />
+        <Pressable
+          onLongPress={drag}
+          delayLongPress={200}
+          disabled={dragActive}
+          hitSlop={12}
+          style={styles.dragGrip}
+        >
+          <Icon name={icons.dragHandle} size={22} color={colors.textMuted} />
         </Pressable>
       ) : (
         <View style={{ width: 20 }} />
@@ -580,6 +592,14 @@ const makeStyles = (colors: Palette) =>
     rowDragging: { backgroundColor: colors.high, borderRadius: radius.row },
     rulesHint: { paddingHorizontal: spacing.xs, paddingVertical: spacing.sm },
     boltSlot: { width: 20, alignItems: 'center', justifyContent: 'center' },
+    // A roomy grab target for the drag handle - the bare 20px icon was too small
+    // to land on with a mouse in an emulator.
+    dragGrip: {
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.xs,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     subRule: { paddingLeft: spacing.xl, marginLeft: spacing.xs },
     ruleDisabled: { opacity: 0.4 },
     empty: { alignItems: 'center', paddingVertical: spacing.xxl, paddingHorizontal: spacing.xl },
