@@ -34,6 +34,8 @@ import { windowClass, adaptiveLibraryColumns } from '@/ui/responsive'
 import { getSession } from '@/api/session'
 import { showToast } from '@/ui/Toast'
 import { testGoalCelebration } from '@/lib/goalCelebration'
+import { forceSplash } from '@/lib/splashDebug'
+import { useRouter } from 'expo-router'
 
 /** Build the diagnostics text. Pure + synchronous so it can be regenerated on tap. */
 function buildDump(args: {
@@ -142,6 +144,7 @@ function redactHost(url: string): string {
 
 export default function DiagnosticsScreen() {
   const colors = useColors()
+  const router = useRouter()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const window = useWindowDimensions()
   const insets = useSafeAreaInsets()
@@ -181,15 +184,31 @@ export default function DiagnosticsScreen() {
             <PrimaryButton label="Refresh" onPress={() => setNonce((n) => n + 1)} />
           </View>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => void testGoalCelebration()}
-          style={({ pressed }) => [styles.testButton, pressed && styles.testButtonPressed]}
-        >
-          <AppText variant="label" color={colors.accent}>
-            Test celebration
-          </AppText>
-        </Pressable>
+        <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' }}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => void testGoalCelebration()}
+            style={({ pressed }) => [styles.testButton, pressed && styles.testButtonPressed]}
+          >
+            <AppText variant="label" color={colors.accent}>
+              Test celebration
+            </AppText>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              // Force the splash overlay, then leave Diagnostics so it shows over
+              // the app. Tap the splash to dismiss it.
+              forceSplash()
+              router.back()
+            }}
+            style={({ pressed }) => [styles.testButton, pressed && styles.testButtonPressed]}
+          >
+            <AppText variant="label" color={colors.accent}>
+              Show boot splash
+            </AppText>
+          </Pressable>
+        </View>
       </View>
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingTop: 0 }}

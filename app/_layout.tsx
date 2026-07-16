@@ -16,7 +16,7 @@ import { ToastHost } from '@/ui/Toast'
 import { GoalCelebrationHost } from '@/ui/GoalCelebration'
 import { FinishDateHost } from '@/ui/FinishDatePrompt'
 import { checkGoalCelebration } from '@/lib/goalCelebration'
-import { SplashScreen as HearthSplash, type SplashPhase } from '@/ui/SplashScreen'
+import { SplashScreen as HearthSplash, ForcedSplashHost, type SplashPhase } from '@/ui/SplashScreen'
 import { OfflineBanner } from '@/ui/OfflineBanner'
 import { ConnectionProvider, useConnection } from '@/api/ConnectionProvider'
 import { clearSession } from '@/api/session'
@@ -336,6 +336,9 @@ export default function RootLayout() {
                   actions app-wide, so backdated completions land in the right
                   stats bucket. */}
               <FinishDateHost />
+              {/* Debug: force-show the boot splash (from Diagnostics), tap to
+                  dismiss. Renders nothing unless forced. */}
+              <ForcedSplashHost />
             </BottomSheetModalProvider>
           </ThemeProvider>
         </SafeAreaProvider>

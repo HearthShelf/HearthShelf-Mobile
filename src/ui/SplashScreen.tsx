@@ -12,8 +12,9 @@
  * like a spark caught mid-flight. All motion is Reanimated (worklets), no JS-thread
  * timers. The field is seeded once at mount so no two boots look alike.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { AppState, Dimensions, Pressable, StyleSheet, Text, View } from 'react-native'
+import { getSplashDebug, subscribeSplashDebug, dismissForcedSplash } from '@/lib/splashDebug'
 import * as Device from 'expo-device'
 import { LinearGradient } from 'expo-linear-gradient'
 import Svg, { Circle, Defs, Ellipse, G, RadialGradient, Stop } from 'react-native-svg'
@@ -545,6 +546,26 @@ export function SplashScreen({
         </View>
       </View>
     </View>
+  )
+}
+
+/**
+ * Debug overlay: when Diagnostics force-shows the splash, this renders it full-
+ * screen on top of everything so it can be watched running. A tap anywhere
+ * dismisses it. Mounted once at the root layout; renders nothing normally.
+ */
+export function ForcedSplashHost() {
+  const forced = useSyncExternalStore(subscribeSplashDebug, getSplashDebug)
+  if (!forced) return null
+  return (
+    <Pressable
+      style={StyleSheet.absoluteFill}
+      onPress={dismissForcedSplash}
+      accessibilityRole="button"
+      accessibilityLabel="Dismiss the boot splash preview"
+    >
+      <SplashScreen phase={{ kind: 'connecting', label: 'Boot splash preview - tap to dismiss' }} />
+    </Pressable>
   )
 }
 
