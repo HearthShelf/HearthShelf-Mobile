@@ -268,25 +268,19 @@ export const BookActionsSheet = forwardRef<
   const canReset = source === 'listening'
   const canViewSeries = !!seriesRef
 
-  // The six peer one-tap launches (D-ACTIONS): frequency-ordered, Play is the
-  // accent-filled tile. Download encodes its tri-state in color.
-  const downloadTile = {
-    key: 'download',
-    icon:
-      dl?.status === 'done'
-        ? icons.downloadDone
-        : dl?.status === 'downloading' || dl?.status === 'queued'
-          ? icons.close
-          : icons.download,
-    label:
-      dl?.status === 'done'
-        ? 'Downloaded'
-        : dl?.status === 'downloading' || dl?.status === 'queued'
-          ? `${Math.round((dl.progress ?? 0) * 100)}%`
-          : 'Download',
-    active: dl?.status === 'done',
-    onPress: () => void download(),
-  }
+  // The Download tile encodes its tri-state in icon + label + color.
+  const dlIcon =
+    dl?.status === 'done'
+      ? icons.downloadDone
+      : dl?.status === 'downloading' || dl?.status === 'queued'
+        ? icons.close
+        : icons.download
+  const dlLabel =
+    dl?.status === 'done'
+      ? 'Downloaded'
+      : dl?.status === 'downloading' || dl?.status === 'queued'
+        ? `${Math.round((dl.progress ?? 0) * 100)}%`
+        : 'Download'
 
   return (
     <>
@@ -327,7 +321,12 @@ export const BookActionsSheet = forwardRef<
           <GridTile icon={icons.skipNext} label="Play next" onPress={playNext} />
           <GridTile icon={icons.queue} label="Add to queue" onPress={queueLast} />
           <GridTile icon={icons.addList} label="Add to list" onPress={addToList} />
-          <GridTile {...downloadTile} />
+          <GridTile
+            icon={dlIcon}
+            label={dlLabel}
+            active={dl?.status === 'done'}
+            onPress={() => void download()}
+          />
           <GridTile
             icon={finished ? icons.removeDone : icons.taskAlt}
             label={finished ? 'Unfinish' : 'Finish'}
