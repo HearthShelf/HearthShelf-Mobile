@@ -26,7 +26,7 @@ export interface ChapterMark {
 
 /** "Chapter 3 - 1:02:05" for a timestamped note, or just the timestamp when no
  *  chapter list is available. null for a general (ungated) note. */
-function stampLabel(timeSec: number | null, chapters: ChapterMark[]): string | null {
+export function stampLabel(timeSec: number | null, chapters: ChapterMark[]): string | null {
   if (timeSec == null) return null
   const ch = chapters.find((c) => timeSec >= c.start && timeSec < c.end)
   const ts = formatTimestamp(timeSec)
@@ -123,6 +123,7 @@ export function NoteThread({
   onReply,
   onDelete,
   onNoteLayout,
+  newSinceTs,
 }: {
   notes: HSNote[]
   chapters?: ChapterMark[]
@@ -134,6 +135,9 @@ export function NoteThread({
   onDelete?: (note: HSNote) => void
   /** Fires the highlighted note's y within the thread so the caller can scroll. */
   onNoteLayout?: (id: string, y: number) => void
+  /** When set, a "new since last visit" divider renders before the first
+   *  top-level note created after this timestamp. */
+  newSinceTs?: number
 }) {
   // Group replies under their parents; keep top-level notes in createdAt order.
   const { tops, repliesByParent } = useMemo(() => {
@@ -153,10 +157,17 @@ export function NoteThread({
     return { tops, repliesByParent }
   }, [notes])
 
+  const colors = useColors()
+  // The first top-level note newer than the last-visit cursor gets a divider
+  // above it. null when nothing is new (or no cursor supplied).
+  const firstNewId =
+    newSinceTs != null ? tops.find((n) => n.createdAt > newSinceTs)?.id ?? null : null
+
   return (
     <View>
       {tops.map((n) => {
         const replies = repliesByParent.get(n.id) ?? []
+        const showNewDivider = n.id === firstNewId
         // Report this group's y when the deep-linked note is this note or one of
         // its replies, so the caller scrolls the thread to it.
         const groupHoldsTarget =
@@ -170,6 +181,15 @@ export function NoteThread({
                 : undefined
             }
           >
+            {showNewDivider ? (
+              <View style={newStyles.newRow}>
+                <View style={[newStyles.newLine, { backgroundColor: colors.accent }]} />
+                <AppText variant="caption" color={colors.accent}>
+                  new since last visit
+                </AppText>
+                <View style={[newStyles.newLine, { backgroundColor: colors.accent }]} />
+              </View>
+            ) : null}
             <NoteBubble
               note={n}
               chapters={chapters}
@@ -241,3 +261,14 @@ function useStyles() {
   const colors = useColors()
   return useMemo(() => makeStyles(colors), [colors])
 }
+
+// A subtle "new since last visit" divider between read and unread notes.
+const newStyles = StyleSheet.create({
+  newRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginVertical: spacing.sm,
+  },
+  newLine: { flex: 1, height: StyleSheet.hairlineWidth, opacity: 0.6 },
+})

@@ -46,7 +46,7 @@ import { postNote, deleteNote } from '@/api/notes'
 import { getMeId } from '@/api/me'
 import { coverUrl, avatarUrl } from '@/api/abs'
 import { getState as getPlayerState, subscribe as subscribePlayer } from '@/player/store'
-import { NoteThread, type ChapterMark } from '@/social/NoteThread'
+import { NoteThread, stampLabel, type ChapterMark } from '@/social/NoteThread'
 import { SafeSwitch } from '@/social/NoteComposerControls'
 import {
   AppText,
@@ -108,6 +108,12 @@ export default function ClubRoomScreen() {
   const [replyTo, setReplyTo] = useState<HSNote | null>(null)
   const [safe, setSafe] = useState(false)
   const [busy, setBusy] = useState(false)
+  // Whether the next note carries a position stamp. Was implicit ("stamped iff
+  // playing this book"); now an explicit, removable chip above the composer.
+  const [stampEnabled, setStampEnabled] = useState(true)
+  // The frozen "new since last visit" divider boundary (see load()). undefined
+  // until the first load resolves it; reset when the viewed book changes.
+  const [newSinceTs, setNewSinceTs] = useState<number | undefined>(undefined)
 
   const membersSheetRef = useRef<SheetRef>(null)
   const historySheetRef = useRef<SheetRef>(null)
@@ -160,6 +166,18 @@ export default function ClubRoomScreen() {
         return
       }
       setDetail(res)
+      // Freeze the "new since last visit" boundary once, on the first load of
+      // this visit, BEFORE marking read moves the cursor. The unreadCount newest
+      // notes are new; the boundary is the newest ALREADY-READ note's time (or 0
+      // when everything is new). Held for the whole visit so the divider is
+      // stable while polling and after posting.
+      setNewSinceTs((prev) => {
+        if (prev != null) return prev
+        const sorted = [...res.notes.notes].sort((a, b) => b.createdAt - a.createdAt)
+        if (res.unreadCount <= 0 || sorted.length === 0) return 0
+        const firstRead = sorted[res.unreadCount] // one past the last unread
+        return firstRead ? firstRead.createdAt : 0
+      })
       // Reading the thread bumps the unread cursor to the newest unlocked note.
       if (opts.markRead && res.notes.notes.length > 0) {
         const newest = res.notes.notes.reduce((m, n) => Math.max(m, n.createdAt), 0)
@@ -170,6 +188,8 @@ export default function ClubRoomScreen() {
   )
 
   useEffect(() => {
+    // New book view = recompute the divider boundary from its own unread count.
+    setNewSinceTs(undefined)
     void load({ markRead: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, viewBookId])
@@ -206,9 +226,10 @@ export default function ClubRoomScreen() {
       libraryItemId: viewedBook.libraryItemId,
       clubId: detail.club.id,
       parentId: replyTo?.id ?? '',
-      // Stamp the current position only when the player is on this book AND
-      // we're not replying (a reply inherits its parent's gate).
-      timeSec: playingThisBook && !replyTo ? Math.round(position) : null,
+      // Stamp the current position only when the player is on this book, we're
+      // not replying (a reply inherits its parent's gate), AND the user hasn't
+      // removed the timestamp chip.
+      timeSec: playingThisBook && !replyTo && stampEnabled ? Math.round(position) : null,
       // Club posts are always club-scoped (no visibility toggle). Safe is a
       // top-level opt-in; a reply can't be safe.
       safe: replyTo ? false : safe,
@@ -219,6 +240,7 @@ export default function ClubRoomScreen() {
       setBody('')
       setReplyTo(null)
       setSafe(false)
+      setStampEnabled(true)
       await load({ markRead: true })
     } else {
       show('Could not post')
@@ -549,6 +571,7 @@ export default function ClubRoomScreen() {
               meId={meId}
               canModerate={isOwner}
               highlightId={highlightId ?? undefined}
+              newSinceTs={newSinceTs}
               onReply={isMember ? (n) => setReplyTo(n) : undefined}
               onDelete={isMember ? removeNote : undefined}
               onNoteLayout={(_, y) => {
@@ -595,6 +618,32 @@ export default function ClubRoomScreen() {
                   onPress={() => setReplyTo(null)}
                 />
               </View>
+            ) : null}
+            {/* Timestamp chip: shows exactly what will be attached, and its X
+                sends the note with no stamp. Only when playing this book and not
+                replying (a reply inherits its parent's gate). */}
+            {playingThisBook && !replyTo ? (
+              stampEnabled ? (
+                <View style={styles.stampChip}>
+                  <Icon name={icons.schedule} size={14} color={colors.accent} />
+                  <AppText variant="caption" color={colors.accent} style={{ flex: 1 }}>
+                    {stampLabel(Math.round(position), chapters)}
+                  </AppText>
+                  <IconButton
+                    name={icons.close}
+                    size={14}
+                    color={colors.accent}
+                    onPress={() => setStampEnabled(false)}
+                  />
+                </View>
+              ) : (
+                <Touchable style={styles.stampAdd} onPress={() => setStampEnabled(true)}>
+                  <Icon name={icons.schedule} size={14} color={colors.textMuted} />
+                  <AppText variant="caption" color={colors.textMuted}>
+                    Add timestamp
+                  </AppText>
+                </Touchable>
+              )
             ) : null}
             <View style={styles.composerRow}>
               <TextInput
@@ -723,17 +772,27 @@ export default function ClubRoomScreen() {
       <Sheet ref={ownerSheetRef} title={detail.club.name}>
         {isOwner ? (
           <>
+            {/* Archive is reversible, so it reads neutral - not the same red as
+                Delete. The caption says the history can come back. */}
             <Touchable style={styles.sheetAction} onPress={() => void archive()}>
-              <Icon name={icons.archive} size={20} color={colors.destructive} />
-              <AppText variant="body" color={colors.destructive}>
-                Archive this club
-              </AppText>
+              <Icon name={icons.archive} size={20} color={colors.textMuted} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <AppText variant="body">Archive this club</AppText>
+                <AppText variant="caption" color={colors.textMuted}>
+                  Hides it from active lists. Can be restored later.
+                </AppText>
+              </View>
             </Touchable>
             <Touchable style={styles.sheetAction} onPress={() => void removeClub()}>
               <Icon name={icons.delete} size={20} color={colors.destructive} />
-              <AppText variant="body" color={colors.destructive}>
-                Delete this club
-              </AppText>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <AppText variant="body" color={colors.destructive}>
+                  Delete this club
+                </AppText>
+                <AppText variant="caption" color={colors.textMuted}>
+                  Permanently removes members, books, and notes.
+                </AppText>
+              </View>
             </Touchable>
           </>
         ) : (
@@ -802,6 +861,11 @@ function MemberRace({ member, isMe }: { member: HSClubMember; isMe: boolean }) {
             ]}
           />
         </View>
+        {member.listeningNow ? (
+          <AppText variant="caption" color={colors.accent} style={{ marginTop: 2 }}>
+            Listening now
+          </AppText>
+        ) : null}
       </View>
     </View>
   )
@@ -946,6 +1010,27 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.fill,
     },
     composer: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, gap: spacing.sm },
+    stampChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      alignSelf: 'flex-start',
+      paddingLeft: spacing.md,
+      paddingRight: 2,
+      paddingVertical: 2,
+      borderRadius: radius.pill,
+      backgroundColor: colors.accentWash,
+    },
+    stampAdd: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      alignSelf: 'flex-start',
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+    },
     replyBanner: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
     composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm },
     input: {
