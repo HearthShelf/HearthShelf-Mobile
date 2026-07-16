@@ -11,6 +11,25 @@ const coreRoot = path.resolve(projectRoot, 'packages/core')
 
 const config = getDefaultConfig(projectRoot)
 
+// Keep Metro out of the native build output. android/app/build alone is >1 GB of
+// Gradle intermediates and .cxx artifacts; crawling and hashing it on every
+// bundle pins a CPU and stalls the bundle partway through. None of it is JS
+// source Metro should resolve. Block the build/.cxx/.gradle trees (not all of
+// android/ - the config plugin and a few source files legitimately live there).
+const nativeBuildBlock = [
+  /[\\/]android[\\/]app[\\/]build[\\/].*/,
+  /[\\/]android[\\/]app[\\/]\.cxx[\\/].*/,
+  /[\\/]android[\\/]\.gradle[\\/].*/,
+  /[\\/]android[\\/]build[\\/].*/,
+  /[\\/]ios[\\/]build[\\/].*/,
+  /[\\/]ios[\\/]Pods[\\/].*/,
+]
+config.resolver.blockList = Array.isArray(config.resolver.blockList)
+  ? [...config.resolver.blockList, ...nativeBuildBlock]
+  : config.resolver.blockList
+    ? [config.resolver.blockList, ...nativeBuildBlock]
+    : nativeBuildBlock
+
 // Watch the submodule source so edits to core rebundle.
 config.watchFolders = [...(config.watchFolders || []), coreRoot]
 

@@ -29,6 +29,7 @@ import Animated, {
   useReducedMotion,
   useSharedValue,
   withDelay,
+  withRepeat,
   withSequence,
   withSpring,
   withTiming,
@@ -94,6 +95,8 @@ interface ConfettiSpec {
   end: number
   flight: ConfettiFlight
   height: number
+  /** Fall chips only: fixed 0..1 offset into the wrapping rain phase. */
+  loopOffset: number
   phase: number
   rise: number
   rotation: number
@@ -116,7 +119,9 @@ function buildConfetti(
     const flight: ConfettiFlight = index < Math.round(count * 0.3) ? 'burst' : 'fall'
     const size = 3.5 + depth * 6
     const isRibbon = Math.random() < 0.52
-    const delay = flight === 'burst' ? 0.04 + Math.random() * 0.1 : Math.random() * 0.24
+    // Fall delays spread across most of the loop so the looping rain reads as
+    // continuous instead of arriving in waves.
+    const delay = flight === 'burst' ? 0.04 + Math.random() * 0.1 : Math.random() * 0.55
     const duration = 0.58 + (1 - depth) * 0.24
     const x =
       flight === 'burst'
@@ -139,6 +144,10 @@ function buildConfetti(
       end: Math.min(1, delay + duration),
       flight,
       height: isRibbon ? size * (1.8 + Math.random() * 1.7) : size,
+      // Even, per-chip spread across the wrapping loop. Deterministic spacing
+      // (index-based) plus a small jitter keeps the rain uniformly dense with
+      // no synchronized gap between loops.
+      loopOffset: (index / count + Math.random() * 0.12) % 1,
       phase: Math.random() * Math.PI * 2,
       rise: flight === 'burst' ? 80 + Math.random() * 150 : 0,
       rotation: Math.random() * 180,
@@ -150,19 +159,49 @@ function buildConfetti(
   })
 }
 
-/** A single paper chip. All chips read the same progress shared value. */
-function ConfettiPiece({ progress, spec }: { progress: SharedValue<number>; spec: ConfettiSpec }) {
+/**
+ * A single paper chip. Burst chips ride the one-shot progress; falling chips
+ * ride the looping progress so the rain continues while the modal is open.
+ */
+function ConfettiPiece({
+  burst,
+  fall: fallProgress,
+  spec,
+}: {
+  burst: SharedValue<number>
+  fall: SharedValue<number>
+  spec: ConfettiSpec
+}) {
   const animatedStyle = useAnimatedStyle(() => {
-    const local = Math.min(1, Math.max(0, (progress.value - spec.delay) / (spec.end - spec.delay)))
-    const sway = Math.sin(local * Math.PI * 4 + spec.phase) * (8 + spec.depth * 16) * local
-    const burstArc = spec.flight === 'burst' ? -Math.sin(local * Math.PI) * spec.rise : 0
-    const fall = spec.flight === 'burst' ? spec.dy * local * local : spec.dy * local
+    if (spec.flight === 'burst') {
+      const local = Math.min(1, Math.max(0, (burst.value - spec.delay) / (spec.end - spec.delay)))
+      const sway = Math.sin(local * Math.PI * 4 + spec.phase) * (8 + spec.depth * 16) * local
+      const burstArc = -Math.sin(local * Math.PI) * spec.rise
+
+      return {
+        opacity: interpolate(local, [0, 0.045, 0.8, 1], [0, 1, 0.92, 0]),
+        transform: [
+          { translateX: spec.dx * local + sway },
+          { translateY: burstArc + spec.dy * local * local },
+          { rotateZ: `${spec.rotation + local * spec.turns * 360}deg` },
+          { scale: 0.72 + spec.depth * 0.42 },
+        ],
+      }
+    }
+
+    // Fall chips ride a continuously wrapping phase: each has a fixed offset,
+    // so the field is uniformly populated top-to-bottom at every instant and
+    // never empties out between loops.
+    const local = (fallProgress.value + spec.loopOffset) % 1
+    const sway = Math.sin(local * Math.PI * 4 + spec.phase) * (8 + spec.depth * 16)
 
     return {
-      opacity: interpolate(local, [0, 0.045, 0.8, 1], [0, 1, 0.92, 0]),
+      // Fade in at the top, out near the bottom; both ends live off-screen via
+      // spec.y so a chip is invisible only while it wraps.
+      opacity: interpolate(local, [0, 0.08, 0.85, 1], [0, 1, 1, 0]),
       transform: [
         { translateX: spec.dx * local + sway },
-        { translateY: burstArc + fall },
+        { translateY: spec.dy * local },
         { rotateZ: `${spec.rotation + local * spec.turns * 360}deg` },
         { scale: 0.72 + spec.depth * 0.42 },
       ],
@@ -187,16 +226,18 @@ function ConfettiPiece({ progress, spec }: { progress: SharedValue<number>; spec
 }
 
 function ConfettiField({
-  progress,
+  burst,
+  fall,
   specs,
 }: {
-  progress: SharedValue<number>
+  burst: SharedValue<number>
+  fall: SharedValue<number>
   specs: ConfettiSpec[]
 }) {
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
       {specs.map((spec, index) => (
-        <ConfettiPiece key={index} progress={progress} spec={spec} />
+        <ConfettiPiece burst={burst} fall={fall} key={index} spec={spec} />
       ))}
     </View>
   )
@@ -208,6 +249,19 @@ const particleStyles = StyleSheet.create({
     position: 'absolute',
   },
 })
+
+// Color cycle for the card interior. First and last entries match so the
+// rotating sweep loops seamlessly; hues stay in the warm/violet family with
+// one teal beat so the drift reads as living color, not a rainbow strobe.
+const CARD_SWEEP_COLORS = [
+  '#3459c8',
+  '#7558da',
+  '#c750b4',
+  '#f16a4f',
+  '#dfa348',
+  '#45a8c8',
+  '#3459c8',
+] as const
 
 /** Three offset radial fields create the soft multi-hue glow behind the badge. */
 function AuroraGlow({ accent }: { accent: string }) {
@@ -249,7 +303,9 @@ export function GoalCelebrationHost() {
   const badge = useSharedValue(0)
   const details = useSharedValue(0)
   const confettiProgress = useSharedValue(0)
+  const confettiRain = useSharedValue(0)
   const glow = useSharedValue(0)
+  const colorDrift = useSharedValue(0)
 
   const goal = state?.goal ?? 0
   const done = state?.done ?? 0
@@ -273,14 +329,18 @@ export function GoalCelebrationHost() {
     cancelAnimation(badge)
     cancelAnimation(details)
     cancelAnimation(confettiProgress)
+    cancelAnimation(confettiRain)
     cancelAnimation(glow)
+    cancelAnimation(colorDrift)
 
     if (!state) {
       backdrop.value = 0
       badge.value = 0
       details.value = 0
       confettiProgress.value = 0
+      confettiRain.value = 0
       glow.value = 0
+      colorDrift.value = 0
       return
     }
 
@@ -303,9 +363,18 @@ export function GoalCelebrationHost() {
       260,
       withTiming(1, { duration: 3000, easing: Easing.linear }),
     )
+    confettiRain.value = withDelay(
+      260,
+      withRepeat(withTiming(1, { duration: 3400, easing: Easing.linear }), -1, false),
+    )
     details.value = withDelay(
       620,
       withTiming(1, { duration: 360, easing: Easing.out(Easing.cubic) }),
+    )
+    colorDrift.value = withRepeat(
+      withTiming(1, { duration: 9000, easing: Easing.linear }),
+      -1,
+      false,
     )
     glow.value = withDelay(
       120,
@@ -315,7 +384,17 @@ export function GoalCelebrationHost() {
         withTiming(0.9, { duration: 460, easing: Easing.out(Easing.quad) }),
       ),
     )
-  }, [backdrop, badge, confettiProgress, details, glow, reduceMotion, state])
+  }, [
+    backdrop,
+    badge,
+    confettiProgress,
+    confettiRain,
+    details,
+    glow,
+    reduceMotion,
+    colorDrift,
+    state,
+  ])
 
   const backdropStyle = useAnimatedStyle(() => ({ opacity: backdrop.value }))
   const badgeStyle = useAnimatedStyle(() => ({
@@ -328,7 +407,18 @@ export function GoalCelebrationHost() {
   }))
   const glowStyle = useAnimatedStyle(() => ({
     opacity: interpolate(glow.value, [0, 1], [0, 0.68]),
-    transform: [{ scale: interpolate(glow.value, [0, 1], [0.72, 1]) }],
+    transform: [
+      { scale: interpolate(glow.value, [0, 1], [0.72, 1]) },
+      // Slow counter-rotation drifts the offset warm/cool/gold fields around
+      // the badge, so the halo's hues travel instead of sitting still.
+      { rotateZ: `${-colorDrift.value * 360}deg` },
+    ],
+  }))
+  // The card interior: an oversized gradient square spins behind the static
+  // base wash, fading between them so the card's color slowly travels.
+  const sweepStyle = useAnimatedStyle(() => ({
+    opacity: 0.5 + Math.sin(colorDrift.value * Math.PI * 2) * 0.28,
+    transform: [{ rotateZ: `${colorDrift.value * 360}deg` }],
   }))
 
   const handleRaise = useCallback(() => {
@@ -343,8 +433,8 @@ export function GoalCelebrationHost() {
   const year = new Date().getFullYear()
   const statusCopy =
     done > goal
-      ? `${done} finished — ${done - goal} ${done - goal === 1 ? 'book' : 'books'} beyond your goal.`
-      : `${done} ${done === 1 ? 'book' : 'books'} finished this year.`
+      ? `${done} finished, ${done - goal} past the goal.`
+      : `${done} ${done === 1 ? 'book' : 'books'} this year.`
 
   return (
     <Modal
@@ -365,7 +455,7 @@ export function GoalCelebrationHost() {
           style={styles.fill}
         />
 
-        <ConfettiField progress={confettiProgress} specs={behindConfetti} />
+        <ConfettiField burst={confettiProgress} fall={confettiRain} specs={behindConfetti} />
 
         <View
           pointerEvents="box-none"
@@ -383,12 +473,22 @@ export function GoalCelebrationHost() {
             </Animated.View>
 
             <View style={styles.badgeShadow}>
-              <LinearGradient
-                colors={['#3459c8', '#7558da', colors.accent, '#dfa348']}
-                end={{ x: 1, y: 1 }}
-                start={{ x: 0, y: 0 }}
-                style={styles.badge}
-              >
+              <View style={styles.badge}>
+                <LinearGradient
+                  colors={['#3459c8', '#7558da', colors.accent, '#dfa348']}
+                  end={{ x: 1, y: 1 }}
+                  pointerEvents="none"
+                  start={{ x: 0, y: 0 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                <Animated.View pointerEvents="none" style={[styles.cardSweep, sweepStyle]}>
+                  <LinearGradient
+                    colors={CARD_SWEEP_COLORS}
+                    end={{ x: 1, y: 1 }}
+                    start={{ x: 0, y: 0 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                </Animated.View>
                 <LinearGradient
                   colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.02)', 'rgba(0,0,0,0.2)']}
                   end={{ x: 1, y: 1 }}
@@ -420,23 +520,13 @@ export function GoalCelebrationHost() {
                     GOAL REACHED
                   </Text>
                 </View>
-              </LinearGradient>
+              </View>
             </View>
           </Animated.View>
 
           <Animated.View style={[styles.details, detailStyle]}>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.didIt}>
-              You did it.
-            </Text>
-            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.statusCopy}>
-              {statusCopy}
-            </Text>
-
             {state.onRaise ? (
               <View style={styles.challenge}>
-                <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.challengeLabel}>
-                  Think you can top it?
-                </Text>
                 <Pressable
                   accessibilityHint="Updates your yearly reading goal"
                   accessibilityLabel={`Raise yearly goal to ${nextGoal} books`}
@@ -445,7 +535,7 @@ export function GoalCelebrationHost() {
                   style={({ pressed }) => [styles.raiseButton, pressed && styles.pressed]}
                 >
                   <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.raiseButtonText}>
-                    Raise the goal to {nextGoal}
+                    Raise it to {nextGoal}
                   </Text>
                   <Text
                     accessibilityElementsHidden
@@ -466,13 +556,13 @@ export function GoalCelebrationHost() {
               style={({ pressed }) => [styles.keepButton, pressed && styles.pressed]}
             >
               <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.keepButtonText}>
-                Keep {goal} for now
+                Keep {goal}
               </Text>
             </Pressable>
           </Animated.View>
         </View>
 
-        <ConfettiField progress={confettiProgress} specs={foregroundConfetti} />
+        <ConfettiField burst={confettiProgress} fall={confettiRain} specs={foregroundConfetti} />
       </View>
     </Modal>
   )
@@ -518,6 +608,17 @@ const makeStyles = (colors: Palette) =>
       shadowOpacity: 0.42,
       shadowRadius: 28,
       width: '100%',
+    },
+    // Oversized square spinning inside the clipped badge; the card is a
+    // moving window onto it, so its colors sweep across the surface.
+    cardSweep: {
+      height: 460,
+      left: '50%',
+      marginLeft: -230,
+      marginTop: -230,
+      position: 'absolute',
+      top: '50%',
+      width: 460,
     },
     badge: {
       borderRadius: 30,
@@ -596,32 +697,18 @@ const makeStyles = (colors: Palette) =>
       maxWidth: 360,
       width: '100%',
     },
-    didIt: {
-      color: '#fffdf8',
-      fontFamily: fonts.brand,
-      fontSize: 26,
-      fontWeight: '700',
-      lineHeight: 34,
-    },
     statusCopy: {
-      color: 'rgba(255,255,255,0.78)',
+      color: 'rgba(255,255,255,0.86)',
       fontFamily: fonts.sans,
-      fontSize: 15,
-      lineHeight: 22,
-      marginTop: spacing.xs,
+      fontSize: 16,
+      fontWeight: '600',
+      lineHeight: 23,
       textAlign: 'center',
     },
     challenge: {
       alignItems: 'center',
-      marginTop: spacing.xl,
+      marginTop: spacing.lg,
       width: '100%',
-    },
-    challengeLabel: {
-      color: 'rgba(255,255,255,0.7)',
-      fontFamily: fonts.sans,
-      fontSize: 13,
-      fontWeight: '600',
-      marginBottom: spacing.sm,
     },
     raiseButton: {
       alignItems: 'center',

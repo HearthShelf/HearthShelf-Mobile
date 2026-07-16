@@ -61,7 +61,9 @@ export function MiniPlayer({
   // Whole-book position drives the top strip; the ring + subtitle read
   // chapter-relative when the user's setting asks for it.
   const bookProgress = nowPlaying.duration > 0 ? position / nowPlaying.duration : 0
-  const remaining = useChapter ? Math.max(0, chSpan - chPos) : Math.max(0, nowPlaying.duration - position)
+  const remaining = useChapter
+    ? Math.max(0, chSpan - chPos)
+    : Math.max(0, nowPlaying.duration - position)
   const subtitle =
     useChapter && chapter?.title
       ? `${chapter.title} · -${formatTimestamp(remaining)}`
@@ -135,69 +137,78 @@ function MiniPlayerBar({
       <View style={floating ? styles.card : styles.docked}>
         {/* Thin whole-book progress strip across the top of the dock. */}
         <View style={styles.progTrack}>
-          <View style={[styles.progFill, { width: `${Math.max(0, Math.min(1, bookProgress)) * 100}%` }]} />
+          <View
+            style={[styles.progFill, { width: `${Math.max(0, Math.min(1, bookProgress)) * 100}%` }]}
+          />
         </View>
         <GestureDetector gesture={swipe}>
           <View style={styles.bar}>
-          <Pressable style={styles.tap} onPress={() => router.push('/player')}>
-            {/* Round cover inside a round chapter-progress ring. */}
-            <View style={styles.ringWrap}>
-              <CoverRing progress={progress} color={colors.accent} track={colors.fillStrong} />
-              <View style={styles.cover}>
-                {nowPlaying.artworkUrl ? (
-                  <Image source={{ uri: nowPlaying.artworkUrl }} style={styles.coverImg} />
-                ) : null}
-                <CoverDownloadOverlay itemId={nowPlaying.itemId} size={40} radius={20} />
+            <Pressable style={styles.tap} onPress={() => router.push('/player')}>
+              {/* Round cover inside a round chapter-progress ring. */}
+              <View style={styles.ringWrap}>
+                <CoverRing progress={progress} color={colors.accent} track={colors.fillStrong} />
+                <View style={styles.cover}>
+                  {nowPlaying.artworkUrl ? (
+                    <Image source={{ uri: nowPlaying.artworkUrl }} style={styles.coverImg} />
+                  ) : null}
+                  <CoverDownloadOverlay itemId={nowPlaying.itemId} size={40} radius={20} />
+                </View>
               </View>
-            </View>
-            <View style={styles.meta}>
-              <AppText variant="label" numberOfLines={1}>
-                {nowPlaying.title}
-              </AppText>
-              <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
-                {subtitle}
-              </AppText>
-            </View>
-          </Pressable>
-          <SkipButton
-            dir={-1}
-            seconds={settings.skipBack}
-            size={24}
-            color={colors.textMuted}
-            onPress={() => jumpBy(-settings.skipBack)}
-          />
-          <SpringPressable onPress={togglePlay} style={styles.play} scaleTo={0.88}>
-            <Animated.View key={isPlaying ? 'pause' : 'play'} entering={FadeIn.duration(DUR.fast)}>
-              <Icon name={isPlaying ? icons.pause : icons.play} size={30} color={colors.onAccent} />
-            </Animated.View>
-          </SpringPressable>
-          <SkipButton
-            dir={1}
-            seconds={settings.skipForward}
-            size={24}
-            color={colors.textMuted}
-            onPress={() => jumpBy(settings.skipForward)}
-          />
+              <View style={styles.meta}>
+                <AppText variant="label" numberOfLines={1}>
+                  {nowPlaying.title}
+                </AppText>
+                <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
+                  {subtitle}
+                </AppText>
+              </View>
+            </Pressable>
+            <SkipButton
+              dir={-1}
+              seconds={settings.skipBack}
+              size={24}
+              color={colors.textMuted}
+              onPress={() => jumpBy(-settings.skipBack)}
+            />
+            <SpringPressable onPress={togglePlay} style={styles.play} scaleTo={0.88}>
+              <Animated.View
+                key={isPlaying ? 'pause' : 'play'}
+                entering={FadeIn.duration(DUR.fast)}
+              >
+                <Icon
+                  name={isPlaying ? icons.pause : icons.play}
+                  size={30}
+                  color={colors.onAccent}
+                />
+              </Animated.View>
+            </SpringPressable>
+            <SkipButton
+              dir={1}
+              seconds={settings.skipForward}
+              size={24}
+              color={colors.textMuted}
+              onPress={() => jumpBy(settings.skipForward)}
+            />
 
-          {/* Swipe-skip ± feedback bloom. */}
-          {bloom && (
-            <Animated.View
-              entering={FadeIn.duration(DUR.fast)}
-              exiting={FadeOut.duration(DUR.base)}
-              style={styles.bloom}
-              pointerEvents="none"
-            >
-              <Icon
-                name={bloom.dir < 0 ? icons.replay : icons.forward}
-                size={18}
-                color={colors.accent}
-              />
-              <AppText variant="caption" color={colors.accent} style={{ fontWeight: '700' }}>
-                {bloom.dir < 0 ? '-' : '+'}
-                {bloom.sec}s
-              </AppText>
-            </Animated.View>
-          )}
+            {/* Swipe-skip ± feedback bloom. */}
+            {bloom && (
+              <Animated.View
+                entering={FadeIn.duration(DUR.fast)}
+                exiting={FadeOut.duration(DUR.base)}
+                style={styles.bloom}
+                pointerEvents="none"
+              >
+                <Icon
+                  name={bloom.dir < 0 ? icons.replay : icons.forward}
+                  size={18}
+                  color={colors.accent}
+                />
+                <AppText variant="caption" color={colors.accent} style={{ fontWeight: '700' }}>
+                  {bloom.dir < 0 ? '-' : '+'}
+                  {bloom.sec}s
+                </AppText>
+              </Animated.View>
+            )}
           </View>
         </GestureDetector>
       </View>
@@ -206,15 +217,7 @@ function MiniPlayerBar({
 }
 
 /** A circular chapter-progress ring sized to sit around the 40px round cover. */
-function CoverRing({
-  progress,
-  color,
-  track,
-}: {
-  progress: number
-  color: string
-  track: string
-}) {
+function CoverRing({ progress, color, track }: { progress: number; color: string; track: string }) {
   const size = 50
   const stroke = 2.5
   const r = (size - stroke) / 2
@@ -257,7 +260,7 @@ const makeStyles = (colors: Palette) =>
     docked: {
       backgroundColor: colors.popover,
       paddingBottom: 1,
-      marginBottom: -1,
+      marginBottom: -2,
     },
     // Floating variant: a rounded card with side margins, a hairline, and a
     // lift shadow - to match the floating pill nav. Clips the strip's top round.
