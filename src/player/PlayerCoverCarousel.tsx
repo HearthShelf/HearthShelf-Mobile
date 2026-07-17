@@ -60,6 +60,7 @@ export function PlayerCoverCarousel({
   hotspots,
   /** Tap the live cover (play/pause or lightbox, per the player's own logic). */
   onLivePress,
+  onLongPressPage,
   /** Reports the deck (page count, active index, the active page's book, and a
    *  jump fn) so the player can draw the dots and the browsed book's header +
    *  transport. */
@@ -78,6 +79,9 @@ export function PlayerCoverCarousel({
   skipFeedback?: React.ReactNode
   hotspots?: React.ReactNode
   onLivePress: () => void
+  /** Long-press any cover to open the book actions sheet (same menu as the
+   *  home shelves). Fires with the pressed page's book id/title/author. */
+  onLongPressPage?: (page: { itemId: string; title: string; author: string; isLive: boolean }) => void
   onDeckChange?: (info: {
     count: number
     index: number
@@ -207,6 +211,8 @@ export function PlayerCoverCarousel({
                     animated: true,
                   })
           }
+          onLongPress={onLongPressPage ? () => onLongPressPage(item) : undefined}
+          delayLongPress={300}
           style={[styles.card, { width: coverWidth }]}
         >
           <Cover

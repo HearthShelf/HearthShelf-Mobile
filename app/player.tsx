@@ -36,7 +36,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated'
 import { coverHue, formatTimestamp, formatDuration } from '@hearthshelf/core'
-import type { ABSDeviceInfo } from '@hearthshelf/core'
+import type { ABSDeviceInfo, ABSLibraryItem } from '@hearthshelf/core'
 import {
   getState,
   subscribe,
@@ -48,6 +48,7 @@ import {
 } from '@/player/store'
 import { getQueueState, subscribeQueue } from '@/player/queue'
 import { getProgressState, subscribeProgress } from '@/store/progress'
+import { BookActionsSheet, type BookActionsHandle } from '@/ui/BookActionsSheet'
 import { getImmersive, subscribeImmersive, setImmersive } from '@/player/immersive'
 import { getActiveClub, subscribeActiveClub } from '@/player/clubSync'
 import { getSettingsState, subscribeSettings, COVER_ASPECT_RATIO } from '@/store/settings'
@@ -161,6 +162,46 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const playerSettingsRef = useRef<SheetHandle>(null)
   const notesRef = useRef<PlayerNotesSheetHandle>(null)
   const skipFeedbackRef = useRef<SkipFeedbackHandle>(null)
+  const bookActionsRef = useRef<BookActionsHandle>(null)
+
+  // Long-press any carousel cover to open the same actions sheet the home
+  // shelves use. The deck page only carries id/title/author, so resolve the
+  // full library item (the sheet needs libraryId + media.duration) before
+  // presenting. The detail's media type omits `duration`/`numChapters`, so
+  // rebuild a plain library-item media shape the sheet expects.
+  const onCoverLongPress = useCallback(
+    async (page: { itemId: string; title: string; author: string; isLive: boolean }) => {
+      haptics.select()
+      try {
+        const detail = await getItemDetail(page.itemId)
+        const chapters = detail.media.chapters ?? []
+        const duration = page.isLive
+          ? (nowPlaying?.duration ?? 0)
+          : (chapters.length ? chapters[chapters.length - 1].end : 0)
+        const item: ABSLibraryItem = {
+          ...detail,
+          media: {
+            id: detail.media.id,
+            metadata: detail.media.metadata,
+            coverPath: detail.media.coverPath,
+            tags: detail.media.tags,
+            numTracks: detail.media.numTracks,
+            numAudioFiles: detail.media.numAudioFiles,
+            numChapters: chapters.length,
+            duration,
+            size: detail.media.size,
+            ebookFile: detail.media.ebookFile,
+          },
+        }
+        const isFinished = getProgressState().byId.get(page.itemId)?.isFinished === true
+        bookActionsRef.current?.present(item, isFinished, 'browse')
+      } catch {
+        // Offline or the item isn't reachable - silently skip (the cover still
+        // works for tap-to-play).
+      }
+    },
+    [nowPlaying?.duration],
+  )
 
   // Fire a relative skip and flash the accumulating overlay over the cover.
   const skipBy = useCallback((dir: -1 | 1, seconds: number) => {
@@ -952,6 +993,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                         ) : null
                       }
                       onLivePress={onCoverTap}
+                      onLongPressPage={onCoverLongPress}
                       onDeckChange={onDeckChange}
                       onScrollFraction={onScrollFraction}
                     />
@@ -1245,6 +1287,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
           />
           <BookmarksSheet ref={bookmarksRef} itemId={nowPlaying.itemId} onSeek={requestSeek} />
           <PlayerNotesSheet ref={notesRef} onToast={(msg) => toast.show(msg)} />
+          <BookActionsSheet ref={bookActionsRef} onToast={(msg) => toast.show(msg)} />
           {libraryId && (
             <AddToListSheet
               ref={addToListRef}
