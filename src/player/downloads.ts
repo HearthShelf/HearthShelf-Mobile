@@ -78,15 +78,18 @@ export interface AutoDownloadCandidate {
   author: string
 }
 
+/** Sentinel for "no cap - use any available space" (the slider's far right). */
+export const UNLIMITED_BYTES = -1
+
 export interface DownloadsState {
   byId: ReadonlyMap<string, DownloadEntry>
-  /** Cap on total download bytes; 0 = unlimited. */
+  /** Cap on total download bytes; UNLIMITED_BYTES = no cap, 0 = downloads off. */
   maxBytes: number
   auto: AutoDownloadPrefs
 }
 
 const STORE_KEY = 'hs.downloads.v1'
-const DEFAULT_MAX_BYTES = 0
+const DEFAULT_MAX_BYTES = UNLIMITED_BYTES
 const DEFAULT_AUTO: AutoDownloadPrefs = { onStart: false, queueAhead: 0, continueListening: true }
 
 let state: DownloadsState = { byId: new Map(), maxBytes: DEFAULT_MAX_BYTES, auto: DEFAULT_AUTO }
@@ -102,6 +105,9 @@ function emit(next: Partial<DownloadsState>): void {
 
 function persist(): void {
   const payload = {
+    // Cap schema marker: v2 payloads mean maxBytes 0 = downloads off and -1 =
+    // unlimited. Absent marker = legacy payload where 0 meant unlimited.
+    capV: 2,
     maxBytes: state.maxBytes,
     auto: state.auto,
     // Only finished downloads are worth persisting as playable; in-flight ones
@@ -136,6 +142,7 @@ export async function hydrateDownloads(): Promise<void> {
     const raw = await AsyncStorage.getItem(STORE_KEY)
     if (!raw) return
     const parsed = JSON.parse(raw) as {
+      capV?: number
       maxBytes?: number
       auto?: Partial<AutoDownloadPrefs>
       items?: DownloadEntry[]
@@ -158,9 +165,13 @@ export async function hydrateDownloads(): Promise<void> {
       }
       byId.set(e.itemId, rebased)
     }
+    // Migrate legacy payloads (no capV): 0 used to mean "no limit" before it
+    // became "downloads off" - carry those users over to the unlimited sentinel.
+    let maxBytes = parsed.maxBytes ?? DEFAULT_MAX_BYTES
+    if (!parsed.capV && maxBytes <= 0) maxBytes = UNLIMITED_BYTES
     emit({
       byId,
-      maxBytes: parsed.maxBytes ?? DEFAULT_MAX_BYTES,
+      maxBytes,
       auto: { ...DEFAULT_AUTO, ...(parsed.auto ?? {}) },
     })
     // Rewrite the index with healed URIs so later saves don't reintroduce the
@@ -251,6 +262,7 @@ function extFor(mimeType: string, contentUrl: string): string {
  * downloaded or in flight is a no-op.
  */
 export async function downloadItem(itemId: string, title: string, author: string): Promise<void> {
+  if (state.maxBytes === 0) return
   const existing = state.byId.get(itemId)
   if (existing && (existing.status === 'done' || existing.status === 'downloading')) return
 
@@ -467,8 +479,14 @@ export function setAutoPrefs(patch: Partial<AutoDownloadPrefs>): void {
 export function autoDownload(itemId: string, title: string, author: string): void {
   const cur = state.byId.get(itemId)
   if (cur && (cur.status === 'done' || cur.status === 'downloading' || cur.status === 'queued')) return
+  if (state.maxBytes === 0) return
   if (state.maxBytes > 0 && totalBytes() >= state.maxBytes) return
   void downloadItem(itemId, title, author)
+}
+
+/** Whether downloads are allowed at all (storage cap isn't set to Off). */
+export function downloadsAllowed(): boolean {
+  return state.maxBytes !== 0
 }
 
 /**

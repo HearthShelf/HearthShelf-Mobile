@@ -32,6 +32,7 @@ import {
   getDownloadsState,
   subscribeDownloads,
   downloadItem,
+  downloadsAllowed,
   cancelDownload,
   deleteDownload,
 } from '@/player/downloads'
@@ -191,6 +192,8 @@ export const BookActionsSheet = forwardRef<
     } else if (dl?.status === 'downloading' || dl?.status === 'queued') {
       void cancelDownload(item.id)
       toast('Download cancelled')
+    } else if (!downloadsAllowed()) {
+      toast('Downloads are off - allow storage in Downloads & Storage settings')
     } else {
       void downloadItem(item.id, itemTitle(item), itemAuthor(item))
       toast('Downloading for offline')

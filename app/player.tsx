@@ -239,9 +239,9 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // Live per-item progress, so the browsed book's deck progress bar updates.
   const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
 
-  // One-time "tap to inspect" hint on the cover (device-local), so the
-  // inspect-by-default gesture is discoverable. Dismissed on first cover tap or
-  // after it has been shown once.
+  // One-time tutorial hint on the cover (device-local), so the
+  // zoom-by-default gesture is discoverable. Shows once, then fades out on its
+  // own after a few seconds (or on first cover tap) and never comes back.
   const [showInspectHint, setShowInspectHint] = useState(false)
   useEffect(() => {
     void AsyncStorage.getItem(INSPECT_HINT_KEY).then((seen) => {
@@ -252,6 +252,11 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
     setShowInspectHint(false)
     void AsyncStorage.setItem(INSPECT_HINT_KEY, '1')
   }, [])
+  useEffect(() => {
+    if (!showInspectHint) return
+    const t = setTimeout(dismissInspectHint, 6000)
+    return () => clearTimeout(t)
+  }, [showInspectHint, dismissInspectHint])
 
   // Cover taps. Default (FINAL): a single tap INSPECTS - opens the lightbox -
   // since the cover is the largest target and shouldn't be a play/pause
@@ -906,7 +911,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                     <View style={styles.inspectHintChip}>
                       <Icon name={icons.search} size={13} color="rgba(255,255,255,0.85)" />
                       <AppText variant="caption" color="rgba(255,255,255,0.85)">
-                        tap to inspect
+                        tap cover to zoom in
                       </AppText>
                     </View>
                   </Animated.View>
@@ -2168,7 +2173,7 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-    // One-time "tap to inspect" hint chip, bottom-center of the cover. The
+    // One-time "tap cover to zoom in" hint chip, bottom-center of the cover. The
     // absolute wrapper spans the cover width so the chip centers within it.
     inspectHint: {
       position: 'absolute',

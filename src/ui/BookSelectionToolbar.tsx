@@ -12,7 +12,7 @@ import { useMemo, useRef, useSyncExternalStore } from 'react'
 import { StyleSheet, View } from 'react-native'
 import type { ABSLibraryItem } from '@hearthshelf/core'
 import { addToQueue } from '@/player/queue'
-import { downloadItem } from '@/player/downloads'
+import { downloadItem, downloadsAllowed } from '@/player/downloads'
 import { AddToListSheet } from '@/player/AddToListSheet'
 import type { SheetHandle } from '@/player/sheets'
 import { itemAuthor, itemTitle } from '@/api/abs'
@@ -95,6 +95,10 @@ export function BookSelectionToolbar({
   const download = async () => {
     const selectedBooks = books.filter((b) => selection.isSelected(b.id))
     if (!selectedBooks.length) return
+    if (!downloadsAllowed()) {
+      onToast?.('Downloads are off - allow storage in Downloads & Storage settings')
+      return
+    }
     const ok = await confirm({
       title: 'Download for offline',
       message: `Download ${selectedBooks.length} book${selectedBooks.length === 1 ? '' : 's'} for offline listening? This can use a lot of storage and data.`,

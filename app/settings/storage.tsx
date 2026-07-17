@@ -18,6 +18,7 @@ import {
   downloadItem,
   totalBytes,
   diskSpace,
+  UNLIMITED_BYTES,
   type DownloadEntry,
 } from '@/player/downloads'
 import { getSettingsState, subscribeSettings, setSetting } from '@/store/settings'
@@ -38,6 +39,8 @@ import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 
 const GB = 1024 * 1024 * 1024
+/** Top slider position - means "Any Available" (no cap), not a literal GB count. */
+const CAP_MAX_GB = 64
 
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return '0 MB'
@@ -70,7 +73,14 @@ export default function StorageScreen() {
   const failed = entries.filter((e) => e.status === 'failed')
   const done = entries.filter((e) => e.status === 'done')
   const used = totalBytes()
-  const capGb = maxBytes > 0 ? Math.round((maxBytes / GB) * 10) / 10 : 0
+  // Slider positions: 0 = Off (no storage allowed), 1..63 = GB cap, CAP_MAX_GB
+  // (far right) = Any Available (unlimited).
+  const capGb =
+    maxBytes === UNLIMITED_BYTES
+      ? CAP_MAX_GB
+      : maxBytes > 0
+        ? Math.min(CAP_MAX_GB - 1, Math.round((maxBytes / GB) * 10) / 10)
+        : 0
   const disk = diskSpace()
 
   // Delete immediately with an Undo toast (no blocking Alert - D-FINISH). Undo
@@ -141,16 +151,24 @@ export default function StorageScreen() {
         ) : null}
         <SettingsRow
           title="Maximum download space"
-          desc={capGb === 0 ? 'No limit - downloads until the device is full.' : `Auto-download pauses at ${capGb} GB.`}
+          desc={
+            capGb === 0
+              ? 'Off - no downloads are stored on this device.'
+              : capGb === CAP_MAX_GB
+                ? 'Uses any available space - downloads until the device is full.'
+                : `Auto-download pauses at ${capGb} GB.`
+          }
           stacked
         >
           <SettingsSlider
             value={capGb}
             min={0}
-            max={64}
+            max={CAP_MAX_GB}
             step={1}
-            onChange={(v) => setMaxBytes(v * GB)}
-            formatLabel={(v) => (v === 0 ? 'Off' : `${v} GB`)}
+            onChange={(v) => setMaxBytes(v === CAP_MAX_GB ? UNLIMITED_BYTES : v * GB)}
+            formatLabel={(v) =>
+              v === 0 ? 'Off' : v === CAP_MAX_GB ? 'Any Available' : `${v} GB`
+            }
           />
         </SettingsRow>
         <SettingsRow
@@ -274,9 +292,14 @@ function StorageMeter({
   const free = Math.max(0, Math.min(disk.free, total - hs))
   const other = Math.max(0, total - hs - free)
   // Headroom auto-download may still use: the cap minus what's already used,
-  // never more than the free space actually on the device. No cap = all of free.
+  // never more than the free space actually on the device. Unlimited = all of
+  // free; Off (0) = none.
   const allowance =
-    maxBytes > 0 ? Math.max(0, Math.min(maxBytes - disk.used, free)) : free
+    maxBytes === UNLIMITED_BYTES
+      ? free
+      : maxBytes > 0
+        ? Math.max(0, Math.min(maxBytes - disk.used, free))
+        : 0
   const pct = (n: number): DimensionValue => `${(n / total) * 100}%`
 
   // Distinct hues so the segments read apart at a glance: ember for our own
