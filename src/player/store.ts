@@ -71,6 +71,9 @@ export interface SleepBehavior {
 export interface PlayerState {
   nowPlaying: NowPlaying | null
   isPlaying: boolean
+  /** True while the native engine wants to play but is stalled waiting on data
+   *  (a genuine rebuffer, reported by ExoPlayer/AVPlayer - not a heuristic). */
+  buffering: boolean
   /** Current position in seconds (driven by <Video> onProgress). */
   position: number
   /** A seek request the <Video> host should honor once, then clear. */
@@ -92,6 +95,7 @@ export interface PlayerState {
 let state: PlayerState = {
   nowPlaying: null,
   isPlaying: false,
+  buffering: false,
   position: 0,
   seekTo: null,
   sleepTimer: null,
@@ -150,6 +154,11 @@ export function setPlaying(isPlaying: boolean): void {
   if (!state.nowPlaying) return
   set({ isPlaying })
   if (isPlaying) maybeAutoArmSleep()
+}
+
+/** Native rebuffer signal (see PlayerState.buffering). */
+export function setBuffering(buffering: boolean): void {
+  if (state.buffering !== buffering) set({ buffering })
 }
 
 /** Enter/leave car-owned playback. On enter, the phone player stands down (the
@@ -448,6 +457,7 @@ export function clearTrack(): void {
   set({
     nowPlaying: null,
     isPlaying: false,
+    buffering: false,
     position: 0,
     seekTo: null,
     sleepTimer: null,

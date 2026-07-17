@@ -305,6 +305,13 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
       val map = Arguments.createMap().apply { putBoolean("isPlaying", isPlaying) }
       emitter?.invoke("onState", map)
     }
+    /** True while the engine wants to play but has run out of buffered data
+     *  (ExoPlayer STATE_BUFFERING with playWhenReady). Drives the UI's
+     *  buffering ring around the play button. */
+    fun emitBuffering(buffering: Boolean) {
+      val map = Arguments.createMap().apply { putBoolean("buffering", buffering) }
+      emitter?.invoke("onBuffering", map)
+    }
     fun emitTogglePlay() {
       emitter?.invoke("onTogglePlay", Arguments.createMap())
     }

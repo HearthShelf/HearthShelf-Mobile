@@ -19,6 +19,7 @@ import {
   reportPosition,
   clearSeek,
   setPlaying,
+  setBuffering,
   jumpBy,
   togglePlay,
   setCarActive,
@@ -118,6 +119,11 @@ export function PlayerHost() {
         // sync so the server has the real stop point and Recent listens is fresh.
         // The car does its own final sync on pause, so skip it while car-active.
         if (!e.isPlaying && !getState().carActive) void syncProgress(getState().position, true)
+      }),
+      // Real engine rebuffer state (ExoPlayer STATE_BUFFERING / AVPlayer
+      // waitingToPlayAtSpecifiedRate) - drives the ring around the play button.
+      emitter.addListener('onBuffering', (e: { buffering: boolean }) => {
+        setBuffering(e.buffering)
       }),
       // Native transport (lock screen / car) routes back through the store so it
       // stays the source of truth.

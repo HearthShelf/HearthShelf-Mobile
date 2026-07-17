@@ -195,9 +195,9 @@ final class HearthShelfAuto: RCTEventEmitter {
     // onCarChapter / onCarBookmark are the CPNowPlayingTemplate custom buttons,
     // routed through the same store commands the phone uses.
     [
-      "onProgress", "onState", "onTogglePlay", "onJump", "onEnded", "onError", "onCarActive",
-      "onCarLoaded", "onShakeExtend", "onCarPlayRequest", "onCarRateCycle", "onCarChapter",
-      "onCarBookmark",
+      "onProgress", "onState", "onBuffering", "onTogglePlay", "onJump", "onEnded", "onError",
+      "onCarActive", "onCarLoaded", "onShakeExtend", "onCarPlayRequest", "onCarRateCycle",
+      "onCarChapter", "onCarBookmark",
     ]
   }
 
@@ -558,6 +558,13 @@ final class HearthShelfAuto: RCTEventEmitter {
           observedPlayer.currentItem?.error?.localizedDescription ?? "Playback could not continue"
         DispatchQueue.main.async { self.reportPlaybackError(message) }
       }
+      // Real rebuffer signal for the UI ring: the player wants to play but is
+      // held up waiting on data. Any other status (.playing or an explicit
+      // .paused) clears it.
+      let buffering =
+        observedPlayer.timeControlStatus == .waitingToPlayAtSpecifiedRate
+        && observedPlayer.currentItem?.status != .failed
+      DispatchQueue.main.async { self.emitBuffering(buffering) }
     }
   }
 
@@ -1099,6 +1106,13 @@ final class HearthShelfAuto: RCTEventEmitter {
       return
     }
     sendEvent(withName: "onState", body: ["isPlaying": isPlaying])
+  }
+
+  private func emitBuffering(_ buffering: Bool) {
+    guard hasListeners else {
+      return
+    }
+    sendEvent(withName: "onBuffering", body: ["buffering": buffering])
   }
 
   private func emitTogglePlay() {

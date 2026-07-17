@@ -141,10 +141,8 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter()
   const { colors, shadow } = useTheme()
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
-  const { nowPlaying, isPlaying, position, sleepTimer, rate, carActive } = useSyncExternalStore(
-    subscribe,
-    getState,
-  )
+  const { nowPlaying, isPlaying, position, sleepTimer, rate, carActive, buffering } =
+    useSyncExternalStore(subscribe, getState)
   const queue = useSyncExternalStore(subscribeQueue, getQueueState)
   const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
   const downloads = useSyncExternalStore(subscribeDownloads, getDownloadsState)
@@ -230,11 +228,6 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
     },
     [deckFraction],
   )
-
-  // Buffering heuristic (no native buffer event yet): while we intend to be
-  // playing but the reported position hasn't advanced, we're likely stalled.
-  // Surface it only after a grace period so micro-stalls don't flash.
-  const buffering = useBuffering(isPlaying, position)
 
   // Live per-item progress, so the browsed book's deck progress bar updates.
   const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
@@ -1264,43 +1257,6 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
       </Animated.View>
     </GestureDetector>
   )
-}
-
-/**
- * Buffering heuristic. There's no native buffer event, so infer a stall: while
- * `playing` is true, if the reported `position` stops advancing for longer than
- * a grace period, treat it as buffering. Any position change (or a pause)
- * clears it immediately, so this only lights up during a genuine stall.
- */
-const BUFFER_GRACE_MS = 400
-function useBuffering(playing: boolean, position: number): boolean {
-  const [buffering, setBuffering] = useState(false)
-  const lastPos = useRef(position)
-  const lastMovedAt = useRef(Date.now())
-
-  useEffect(() => {
-    if (position !== lastPos.current) {
-      lastPos.current = position
-      lastMovedAt.current = Date.now()
-      if (buffering) setBuffering(false)
-    }
-  }, [position, buffering])
-
-  useEffect(() => {
-    if (!playing) {
-      setBuffering(false)
-      return
-    }
-    // Poll while playing; flip to buffering once the position has been static
-    // past the grace window.
-    const t = setInterval(() => {
-      const stalledFor = Date.now() - lastMovedAt.current
-      setBuffering(stalledFor > BUFFER_GRACE_MS)
-    }, 200)
-    return () => clearInterval(t)
-  }, [playing])
-
-  return playing && buffering
 }
 
 /** The pushed `/player` route: the full surface with a collapse button. */

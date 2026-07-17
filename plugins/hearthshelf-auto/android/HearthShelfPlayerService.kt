@@ -377,6 +377,14 @@ class HearthShelfPlayerService : MediaSessionService() {
           HearthShelfAutoModule.emitState(false)
           HearthShelfAutoModule.emitEnded()
         }
+        // Real rebuffer signal for the UI ring: the engine ran out of data while
+        // it intends to play. Cleared on any other state (READY resumes, IDLE and
+        // ENDED aren't buffering).
+        if (HearthShelfAutoModule.carPlayer == null) {
+          HearthShelfAutoModule.emitBuffering(
+            state == Player.STATE_BUFFERING && player.playWhenReady
+          )
+        }
       }
     })
 
