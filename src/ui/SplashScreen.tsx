@@ -15,7 +15,10 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import {
   ActivityIndicator,
   AppState,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -320,117 +323,136 @@ export function SplashScreen({
         </Animated.View>
       ) : null}
 
-      <View style={styles.center}>
-        <View style={styles.hearth}>
-          {/* Radial-gradient bloom, breathing behind the flame. Ignites in with
+      {/* The foreground scrolls inside a keyboard-avoiding frame so the invite
+          field stays visible once the keyboard is up. The gradients and fire
+          are absolute-fill siblings, so they're untouched by this. */}
+      <KeyboardAvoidingView
+        style={styles.keyboardFrame}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          <View style={styles.center}>
+            <View style={styles.hearth}>
+              {/* Radial-gradient bloom, breathing behind the flame. Ignites in with
               the embers so the handoff frame is just the logo. */}
-          <Animated.View
-            style={[StyleSheet.absoluteFill, styles.glowWrap, igniteStyle]}
-            pointerEvents="none"
-          >
-            <HearthGlow pulse={pulse} />
-          </Animated.View>
-          <Animated.View style={logoStyle}>
-            <FlameLogo size={132} />
-          </Animated.View>
-        </View>
+              <Animated.View
+                style={[StyleSheet.absoluteFill, styles.glowWrap, igniteStyle]}
+                pointerEvents="none"
+              >
+                <HearthGlow pulse={pulse} />
+              </Animated.View>
+              <Animated.View style={logoStyle}>
+                <FlameLogo size={132} />
+              </Animated.View>
+            </View>
 
-        <Animated.Text style={[styles.wordmark, wordmarkStyle]}>HearthShelf</Animated.Text>
+            <Animated.Text style={[styles.wordmark, wordmarkStyle]}>HearthShelf</Animated.Text>
 
-        {/* Status + actions. Only this region changes as the phase advances. */}
-        <View style={styles.statusArea}>
-          {phase.kind === 'connecting' ? (
-            <>
-              <Text style={styles.label}>
-                {phase.serverName
-                  ? `Connecting to ${phase.serverName}…`
-                  : (phase.label ?? 'Warming up your library...')}
-              </Text>
-              {/* Static/reduce-motion path: a determinate bar so progress isn't
+            {/* Status + actions. Only this region changes as the phase advances. */}
+            <View style={styles.statusArea}>
+              {phase.kind === 'connecting' ? (
+                <>
+                  <Text style={styles.label}>
+                    {phase.serverName
+                      ? `Connecting to ${phase.serverName}…`
+                      : (phase.label ?? 'Warming up your library...')}
+                  </Text>
+                  {/* Static/reduce-motion path: a determinate bar so progress isn't
                   carried by the fire alone. */}
-              {staticMode ? (
-                <View style={styles.progressTrack}>
-                  <Animated.View style={[styles.progressFill, progressStyle]} />
+                  {staticMode ? (
+                    <View style={styles.progressTrack}>
+                      <Animated.View style={[styles.progressFill, progressStyle]} />
+                    </View>
+                  ) : null}
+                </>
+              ) : null}
+
+              {phase.kind === 'no-servers' ? (
+                <>
+                  <Text style={styles.errorText}>Enter your invite code</Text>
+                  <Text style={styles.helpText}>
+                    Whoever shared their library with you can give you a code.
+                  </Text>
+                  <InviteCodeEntry onSubmit={actions?.onSubmitInviteCode} />
+                </>
+              ) : null}
+
+              {phase.kind === 'error' ? (
+                <>
+                  <Text style={styles.errorText}>{friendlyError(phase.message)}</Text>
+                  {/* Keep the raw string off the first-impression screen, but let the
+                  curious (or a bug report) reveal it. */}
+                  <Pressable onPress={() => setShowDetails((v) => !v)} hitSlop={8}>
+                    <Text style={styles.detailsToggle}>
+                      {showDetails ? 'Hide details' : 'Show details'}
+                    </Text>
+                  </Pressable>
+                  {showDetails ? <Text style={styles.detailsText}>{phase.message}</Text> : null}
+                </>
+              ) : null}
+
+              {phase.kind === 'select-server' ? (
+                <View style={styles.serverList}>
+                  <Text style={styles.label}>Choose a server</Text>
+                  {phase.servers.map((s) => (
+                    <Pressable
+                      key={s.id}
+                      style={styles.serverRow}
+                      onPress={() => actions?.onSelectServer?.(s)}
+                    >
+                      <Text style={styles.serverName} numberOfLines={1}>
+                        {s.name}
+                      </Text>
+                      <Text style={styles.serverUrl} numberOfLines={1}>
+                        {s.url}
+                      </Text>
+                    </Pressable>
+                  ))}
                 </View>
               ) : null}
-            </>
-          ) : null}
 
-          {phase.kind === 'no-servers' ? (
-            <>
-              <Text style={styles.errorText}>Enter your invite code</Text>
-              <Text style={styles.helpText}>
-                Whoever shared their library with you can give you a code.
-              </Text>
-              <InviteCodeEntry onSubmit={actions?.onSubmitInviteCode} />
-            </>
-          ) : null}
-
-          {phase.kind === 'error' ? (
-            <>
-              <Text style={styles.errorText}>{friendlyError(phase.message)}</Text>
-              {/* Keep the raw string off the first-impression screen, but let the
-                  curious (or a bug report) reveal it. */}
-              <Pressable onPress={() => setShowDetails((v) => !v)} hitSlop={8}>
-                <Text style={styles.detailsToggle}>
-                  {showDetails ? 'Hide details' : 'Show details'}
-                </Text>
-              </Pressable>
-              {showDetails ? <Text style={styles.detailsText}>{phase.message}</Text> : null}
-            </>
-          ) : null}
-
-          {phase.kind === 'select-server' ? (
-            <View style={styles.serverList}>
-              <Text style={styles.label}>Choose a server</Text>
-              {phase.servers.map((s) => (
-                <Pressable
-                  key={s.id}
-                  style={styles.serverRow}
-                  onPress={() => actions?.onSelectServer?.(s)}
-                >
-                  <Text style={styles.serverName} numberOfLines={1}>
-                    {s.name}
-                  </Text>
-                  <Text style={styles.serverUrl} numberOfLines={1}>
-                    {s.url}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          ) : null}
-
-          {phase.kind === 'error' ? (
-            <View style={styles.actions}>
-              {actions?.onRetry ? (
-                <Pressable style={[styles.btn, styles.btnPrimary]} onPress={actions.onRetry}>
-                  <Text style={styles.btnPrimaryText}>Retry</Text>
-                </Pressable>
+              {phase.kind === 'error' ? (
+                <View style={styles.actions}>
+                  {actions?.onRetry ? (
+                    <Pressable style={[styles.btn, styles.btnPrimary]} onPress={actions.onRetry}>
+                      <Text style={styles.btnPrimaryText}>Retry</Text>
+                    </Pressable>
+                  ) : null}
+                  {actions?.onManageServers ? (
+                    <Pressable
+                      style={[styles.btn, styles.btnGhost]}
+                      onPress={actions.onManageServers}
+                    >
+                      <Text style={styles.btnGhostText}>My libraries</Text>
+                    </Pressable>
+                  ) : null}
+                  {actions?.onLogout ? (
+                    <Pressable style={styles.logoutRow} onPress={actions.onLogout}>
+                      <Text style={styles.logoutText}>Log out</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
               ) : null}
-              {actions?.onManageServers ? (
-                <Pressable style={[styles.btn, styles.btnGhost]} onPress={actions.onManageServers}>
-                  <Text style={styles.btnGhostText}>My libraries</Text>
-                </Pressable>
-              ) : null}
-              {actions?.onLogout ? (
-                <Pressable style={styles.logoutRow} onPress={actions.onLogout}>
-                  <Text style={styles.logoutText}>Log out</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          ) : null}
 
-          {/* no-servers has no Retry: retrying finds the same nothing. The code
+              {/* no-servers has no Retry: retrying finds the same nothing. The code
               entry above IS the action, so the only escape offered is Log out. */}
-          {phase.kind === 'no-servers' && actions?.onLogout ? (
-            <View style={styles.actions}>
-              <Pressable style={styles.logoutRow} onPress={actions.onLogout}>
-                <Text style={styles.logoutText}>Log out</Text>
-              </Pressable>
+              {phase.kind === 'no-servers' && actions?.onLogout ? (
+                <View style={styles.actions}>
+                  <Pressable style={styles.logoutRow} onPress={actions.onLogout}>
+                    <Text style={styles.logoutText}>Log out</Text>
+                  </Pressable>
+                </View>
+              ) : null}
             </View>
-          ) : null}
-        </View>
-      </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   )
 }
@@ -543,6 +565,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+  },
+  keyboardFrame: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  // grow-not-fill: centers the content when it's shorter than the screen, and
+  // lets it scroll once the keyboard squeezes the frame instead of clipping it.
+  scroll: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   center: {
     alignItems: 'center',
