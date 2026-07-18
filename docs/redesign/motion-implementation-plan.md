@@ -10,7 +10,7 @@ Only the dose changes:
 
 | Dose | Values | Applies to |
 | --- | --- | --- |
-| micro | 8px / 160ms | Tab swaps (Home/Library/Now/Stats/More) |
+| micro | 8px / 200ms | Tab swaps (Home/Library/Now/Stats/More) — was 160ms; retuned on device (read as a blink) |
 | standard | 18px / 240ms | Stack pushes+pops (book, series, club, shelf, group, search, settings) and the pushed `/player` |
 | zero | 0px / 120ms fade | OS Reduce Motion (and later: tabletop posture) |
 
@@ -23,6 +23,17 @@ Rules:
 - **Pop symmetry.** Parent restore = exact inverse of push dim (native stack handles this).
 - **Native-first band.** Phase 1 uses native `fade_from_bottom`; 18/240 numbers are the
   design target for a later custom animator only if on-device review rejects the native feel.
+
+## On-device tuning log
+
+- 2026-07-16: tab swaps "blinked" - two causes fixed. (1) Both scenes faded
+  simultaneously, so the dark scaffold bled through at the midpoint; the tab
+  interpolators now hold opacity at 1 for |progress| <= 0.4 so one scene is
+  always fully solid (crossfade through content, never through background).
+  (2) micro duration raised 160ms -> 200ms. Stack pushes were checked and are
+  not the blink: Android's native fade_from_bottom fades the incoming screen
+  over a fully opaque outgoing one (210ms alpha / 350ms translate, fixed
+  natively - not tunable from JS on Android).
 
 ## Shared constants (already added to `src/ui/motion.tsx` by the coordinator)
 
