@@ -36,8 +36,9 @@ function inviteTokenFrom(raw: string): string | null {
   if (!s) return null
   const m = s.match(/[?&]token=([^&\s]+)/)
   if (m) return decodeURIComponent(m[1])
-  // A bare token (no URL): accept it if it looks like one (no spaces/slashes).
-  return /^[\w.-]+$/.test(s) ? s : null
+  // A bare code. Allow an internal space ("NRB6 5QD7") - someone retyping a code
+  // read aloud often uses one, and the control plane strips separators anyway.
+  return /^[\w.-]+(\s[\w.-]+)*$/.test(s) ? s : null
 }
 
 type Status = { phase: 'loading' } | { phase: 'error'; message: string } | { phase: 'ready' }
