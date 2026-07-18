@@ -425,9 +425,12 @@ export default function SignInScreen() {
         </Text>
       </View>
 
+      {/* No behavior on Android: MainActivity is windowSoftInputMode=adjustResize,
+          so the window is already resized for us - adding 'height' on top of that
+          compensates twice and over-shrinks the frame. */}
       <KeyboardAvoidingView
         style={styles.content}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={0}
       >
         <ScrollView
