@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HearthShelf Mobile — In-House Review (v3)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Geist+Mono:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<link rel="stylesheet" href="hearth.css">
+<style>
+  .doctrine { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:14px; margin-top:26px; }
+  .doc { border-radius:16px; padding:18px 20px; background:var(--page-card); border:1px solid var(--page-border); }
+  .doc.rv { border-color:var(--review-border); background:linear-gradient(180deg, rgba(111,140,255,.06), transparent 70%), var(--page-card); }
+  .doc .id { font-family:var(--font-mono); font-size:11px; letter-spacing:.14em; color:var(--hearth); }
+  .doc.rv .id { color:var(--review); }
+  .doc h4 { margin:6px 0 7px; font-size:15px; color:var(--text); }
+  .doc p { margin:0; font-size:13px; line-height:1.6; color:#b6afa3; }
+  .toc { display:grid; grid-template-columns:repeat(auto-fill,minmax(400px,1fr)); gap:14px; margin-top:26px; }
+  .toc a { display:flex; gap:14px; align-items:flex-start; text-decoration:none; border-radius:16px; padding:17px 19px; background:var(--page-card); border:1px solid var(--review-border); transition:border-color .15s; }
+  .toc a:hover { border-color:#55628f; }
+  .toc .num { font-family:var(--font-mono); font-size:22px; font-weight:700; color:var(--review); line-height:1; padding-top:2px; }
+  .toc h4 { margin:0 0 5px; font-size:15.5px; color:var(--text); }
+  .toc p { margin:0; font-size:12.5px; line-height:1.55; color:#a49d90; }
+  .verdict { display:flex; gap:14px; flex-wrap:wrap; margin-top:20px; }
+  .vcard { flex:1; min-width:220px; border-radius:14px; padding:16px 18px; background:var(--page-card); border:1px solid var(--page-border); }
+  .vcard .big { font-family:var(--font-mono); font-size:30px; font-weight:700; color:var(--review); }
+  .vcard .lbl { font-size:12.5px; color:var(--muted); margin-top:4px; line-height:1.5; }
+</style>
+<link rel="stylesheet" href="hearth-v3.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div class="wordmark" style="font-size:26px"><span class="lt">Hearth</span><span class="bd">Shelf</span><span class="sub"> · Mobile Redesign</span><span class="v3tag">Design director pass</span></div>
+    <div class="tagline">A production-beta-aware revision of the consultant redesign.<br>V3 now separates shipped behavior from genuine design changes.</div>
+  </div>
+  <div class="pagenav">
+    <a href="index.html">V1 overview</a>
+    <a href="index-v2.html">V2 overview</a>
+    <a href="index-v3.html" class="v3 on">V3 overview</a>
+    <a href="01-home-v3.html" class="v3">Home</a>
+    <a href="02-library-v3.html" class="v3">Library &amp; Search</a>
+    <a href="03-player-v3.html" class="v3">Player</a>
+    <a href="04-book-v3.html" class="v3">Book &amp; Reader</a>
+    <a href="05-stats-clubs-v3.html" class="v3">Stats &amp; Clubs</a>
+    <a href="06-settings-v3.html" class="v3">Settings</a>
+    <a href="07-system-v3.html" class="v3">Sign-in &amp; System</a>
+  </div>
+  <aside class="v3panel" aria-label="production beta decision">
+    <div class="v3panel-kicker">V3 · production-beta decision</div>
+    <div class="v3decisions">
+      <div><span class="v3verb keep">Keep beta</span><p>Credit implemented behavior before proposing a replacement.</p></div>
+      <div><span class="v3verb change">Revise beta</span><p>Change only verified gaps in utility, reach, scaling, motion, or accessibility.</p></div>
+      <div><span class="v3verb keep">Traceable</span><p>Every v3 decision names the current route or component it was checked against.</p></div>
+    </div>
+  </aside>
+
+  <!-- ============================== HOW TO READ ============================== -->
+  <div class="beta-audit">
+    <div class="beta-kicker">Production-beta code audit · 2026-07-14</div>
+    <h3><span class="beta-status">RE-BASELINED</span> Current beta is now the starting point</h3>
+    <p>The route/component audit is documented in <code>PRODUCTION-BETA-AUDIT.md</code>; v1 and v2 remain design proposals, while v3 is the code-informed recommendation. <a href="PRODUCTION-BETA-AUDIT.md" style="color:var(--accent)">Read the code audit →</a></p>
+  </div>
+
+  <div class="section" id="how">
+    <div class="eyebrow">Read this first</div>
+    <h2>What changed in the second v3 pass</h2>
+    <p class="sub">The current React Native implementation is now the baseline. Existing safeguards and complete screens are marked as product behavior; only the remaining deltas stay in the recommendation.</p>
+    <div class="verdict">
+      <div class="vcard"><div class="big">7</div><div class="lbl">surface groups audited against current routes and shared components.</div></div>
+      <div class="vcard"><div class="big">3</div><div class="lbl">focused visual changes remain: Home utility, compact book actions, and Stats heatmap access.</div></div>
+      <div class="vcard"><div class="big">2</div><div class="lbl">cross-cutting passes remain: large-text/accessibility semantics and reduced motion.</div></div>
+    </div>
+    <div class="motionspec"><h4>Corrections from the first v3 pass</h4><table>
+      <tr><td>Home</td><td>keep the live hero and keep MiniPlayerDock hidden on Home; add useful safe-area controls</td></tr>
+      <tr><td>Player</td><td>collapse and artwork-tap default already ship; retain them and improve Focus-view naming/accessibility</td></tr>
+      <tr><td>Settings</td><td>the current More screen already implements the recommended hierarchy; no redesign</td></tr>
+      <tr><td>Sign-in</td><td>keep the intentional dark pre-auth identity; accessibility and reduced motion are the actual deltas</td></tr>
+    </table></div>
+  </div>
+
+  <!-- ============================== DOCTRINE ADDENDUM ============================== -->
+  <div class="section" id="doctrine">
+    <div class="eyebrow">Doctrine — the in-house addendum</div>
+    <h2>Two rules worth keeping — with restraint</h2>
+    <p class="sub">V3 keeps an accessibility floor and reach evidence, but now starts from implemented beta behavior. Existing safeguards and completed screens are marked as current product, not redesign inventions.</p>
+    <div class="doctrine">
+      <div class="doc rv"><div class="id">D-REACH <span style="color:var(--muted)">· extends D-THUMB</span></div><h4>Prove the thumb zone, don't assert it</h4>
+        <p>Every primary action must sit inside the bottom ~55% one-handed arc on a 6.7" phone, shown with a reach overlay. Destructive or irreversible actions sit OUTSIDE the fast-tap zone so they can't be fired by a stray thumb. "Reachable" is a measurement, not a claim.</p></div>
+      <div class="doc rv"><div class="id">D-A11Y <span style="color:var(--muted)">· new</span></div><h4>An accessibility &amp; theme floor on every surface</h4>
+        <p>Signed-in surfaces retain theme parity; the branded pre-auth surface guarantees contrast. Core reading and playback layouts reflow for large text without clipping. Every icon-only control has a label for VoiceOver/TalkBack, in a logical focus order. EmberBurst, CoverGlow, and carousel parallax all honor Reduce Motion with a static fallback. Color never carries meaning alone (sync state gets an icon shape, not just red/green).</p></div>
+    </div>
+  </div>
+
+  <!-- ============================== SUMMARY OF PER-PAGE FINDINGS ============================== -->
+  <div class="section" id="findings">
+    <div class="eyebrow">The suite</div>
+    <h2>V3 pages &amp; decisions</h2>
+    <p class="sub">Each v3 page now checks the consultant direction against the current React Native implementation and recommends only the remaining delta.</p>
+    <div class="toc">
+      <a href="01-home-v3.html" class="v3"><span class="num">01</span><span><h4>Home</h4><p><b>Revise beta:</b> retain the bleeding live hero and add server/library context, Search, and Downloads to its safe-area utility row.</p></span></a>
+      <a href="02-library-v3.html" class="v3"><span class="num">02</span><span><h4>Library &amp; Search</h4><p><b>Revise beta:</b> keep the mature architecture; reserve the A-Z rail for list view and escalate empty local searches to global Search.</p></span></a>
+      <a href="03-player-v3.html" class="v3"><span class="num">03</span><span><h4>Player</h4><p><b>Accessibility pass:</b> retain collapse, explicit transport, artwork-tap default off, and native vehicle playback; add Focus-view naming and large-text reflow.</p></span></a>
+      <a href="04-book-v3.html" class="v3"><span class="num">04</span><span><h4>Book &amp; Reader</h4><p><b>Revise beta:</b> keep visible Finish and its date prompt; wrap compact-width secondary actions below Resume.</p></span></a>
+      <a href="05-stats-clubs-v3.html" class="v3"><span class="num">05</span><span><h4>Stats &amp; Clubs</h4><p><b>Revise Stats:</b> add accessible week detail to the visual-only heatmap. <b>Keep Clubs:</b> the current club flow is complete.</p></span></a>
+      <a href="06-settings-v3.html" class="v3"><span class="num">06</span><span><h4>Settings</h4><p><b>Current beta — keep:</b> account hero, grouped destinations, and descriptive rows already implement the recommended structure.</p></span></a>
+      <a href="07-system-v3.html" class="v3"><span class="num">07</span><span><h4>Sign-in &amp; System</h4><p><b>Accessibility pass:</b> keep the dark branded pre-auth identity; add semantics, large-text form reflow, and a static reduced-motion splash.</p></span></a>
+    </div>
+  </div>
+
+  <div class="footnav"><a href="index.html">← V1 overview</a><a href="01-home-v3.html" class="v3" style="color:var(--review)">01 · Home (v3) →</a></div>
+</div>
+</body>
+</html>

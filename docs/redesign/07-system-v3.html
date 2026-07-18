@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HearthShelf Redesign v3 — Sign-in &amp; System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Geist+Mono:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<link rel="stylesheet" href="hearth.css">
+<link rel="stylesheet" href="hearth-v3.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div class="wordmark"><span class="lt">Hearth</span><span class="bd">Shelf</span><span class="sub"> · Mobile Redesign — Sign-in &amp; System</span><span class="v3tag">V3 proposal</span></div>
+    <div class="tagline">V3 revision checked against the current dark pre-auth implementation.<br>The remaining work is accessible form semantics, large-text reflow, and reduced motion.</div>
+  </div>
+  <div class="pagenav">
+    <a href="index-v3.html" class="v3">v3 Overview</a>
+    <a href="01-home-v3.html" class="v3">Home</a>
+    <a href="02-library-v3.html" class="v3">Library &amp; Search</a>
+    <a href="03-player-v3.html" class="v3">Player</a>
+    <a href="04-book-v3.html" class="v3">Book &amp; Reader</a>
+    <a href="05-stats-clubs-v3.html" class="v3">Stats &amp; Clubs</a>
+    <a href="06-settings-v3.html" class="v3">Settings</a>
+    <a href="07-system-v3.html" class="v3 on">Sign-in &amp; System</a>
+    <a href="07-system.html" style="margin-left:14px; opacity:.7">↩ v1</a>
+  </div>
+
+
+  <div class="beta-audit">
+    <div class="beta-kicker">Production-beta code audit · 2026-07-14</div>
+    <h3><span class="beta-status">ACCESSIBILITY PASS</span> Dark sign-in retained</h3>
+    <p>Verified against <code>app/sign-in.tsx</code>, <code>src/ui/SplashScreen.tsx</code>, and the connection gate. <a href="PRODUCTION-BETA-AUDIT.md" style="color:var(--accent)">Read the code audit →</a></p>
+  </div>
+
+  <div class="section" id="signin-fix">
+    <div class="eyebrow">Screen 07 · Sign-in</div>
+    <h2>Keep the dark identity; complete motion and access</h2>
+    <p class="sub">The beta sign-in is intentionally a dark branded pre-auth surface, independent of the signed-in app theme. V3 keeps that identity and the enabled-provider stack. The genuine additions are explicit accessibility semantics, responsive large-text form behavior, and a static reduced-motion splash.</p>
+
+    <div class="frames">
+      <!-- CURRENT DARK SIGN-IN, ACCESSIBILITY PASS -->
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Sign-in — current dark identity, accessible <span class="chip v3fix">D-A11Y</span></div>
+          <div class="d">The current dark tavern sign-in remains brand-locked. Provider buttons render only when enabled, email remains the stable fallback, and the form gains explicit labels, roles, focus order, and large-text reflow.</div></div>
+        <div class="phone"><div class="screen" style="background:radial-gradient(90% 52% at 50% 25%, #5a3022 0%, #24150f 48%, #0e0d0c 100%)">
+          <div class="statusbar" style="color:#f0e6d6"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <!-- dimmed art zone -->
+          <div style="position:absolute; inset:0; background:radial-gradient(80% 44% at 50% 30%, rgba(210,120,60,.34), transparent 60%)"></div>
+          <div style="position:relative; z-index:2; text-align:center; padding-top:64px">
+            <div style="font-family:var(--font-brand); font-size:34px"><span style="color:#bd863f; font-weight:400">Hearth</span><span style="color:#f0e6d6; font-weight:700">Shelf</span></div>
+            <div style="font-family:var(--font-mono); font-size:12px; color:#b7aa97; margin-top:8px">your library, by the fire</div>
+          </div>
+          <!-- stable dark auth scrim -->
+          <div style="position:absolute; left:14px; right:14px; bottom:20px; z-index:3; background:rgba(20,17,14,.88); backdrop-filter:blur(8px); border:1px solid rgba(255,255,255,.14); border-radius:22px; padding:18px 16px">
+            <div style="height:50px; border-radius:14px; background:#3a2f22; color:#fff; display:flex; align-items:center; justify-content:center; gap:10px; font-weight:700; font-size:15px"><span class="ms" style="font-size:20px">login</span>Continue with Google</div>
+            <div style="display:flex; gap:10px; margin-top:10px">
+              <div style="flex:1; height:48px; border-radius:14px; background:#fff; border:1px solid #d8c6a8; display:flex; align-items:center; justify-content:center; gap:8px; font-weight:700; font-size:14px; color:#3a2f22"><span class="ms" style="font-size:19px">apple</span>Apple</div>
+              <div style="flex:1; height:48px; border-radius:14px; background:#fff; border:1px solid #d8c6a8; display:flex; align-items:center; justify-content:center; gap:8px; font-weight:700; font-size:14px; color:#3a2f22"><span class="ms" style="font-size:19px">forum</span>Discord</div>
+            </div>
+            <div style="height:48px; border-radius:14px; background:#fff; border:1px solid #d8c6a8; display:flex; align-items:center; justify-content:center; gap:8px; font-weight:700; font-size:14px; color:#3a2f22; margin-top:10px"><span class="ms" style="font-size:19px">mail</span>Continue with email</div>
+            <div style="text-align:center; font-size:11px; color:#b7aa97; margin-top:12px; line-height:1.5">By continuing you agree to our <u style="color:#e2a060">Terms</u> &amp; <u style="color:#e2a060">Privacy Policy</u></div>
+          </div>
+          <span class="n rv" style="top:70px; left:120px">1</span>
+          <span class="n rv" style="bottom:130px; left:30px">2</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>Dark wordmark identity retained</b> — the pre-auth surface stays independent of the signed-in theme and keeps its existing tavern character.
+            <span class="rvnote">current beta direction retained</span></span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>Accessible provider stack</b> — enabled providers render in logical focus order, email remains the stable fallback, and the scrim guarantees contrast over the artwork.
+            <span class="rvnote">semantics and scaling are the v3 delta</span></span></div>
+        </div>
+      </div>
+
+      <!-- REDUCED MOTION EMBER FALLBACK -->
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Splash — reduced-motion fallback <span class="chip v3fix">D-A11Y</span></div>
+          <div class="d">When Reduce Motion is on (or on very low-end hardware), the animated ember field is replaced by a single painted glow — no moving particles at all. Same warmth, zero vestibular risk, near-zero GPU. V1's perf plan optimizes the animation; this defines what shows when animation must be OFF.</div></div>
+        <div class="phone"><div class="screen" style="background:radial-gradient(70% 40% at 50% 62%, #5a2f1c, #1a0f0a 72%)">
+          <div class="statusbar" style="color:var(--muted)"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative">
+            <!-- static painted glow, no particles -->
+            <div style="position:absolute; bottom:150px; width:180px; height:120px; border-radius:50%; background:radial-gradient(closest-side, rgba(224,101,74,.55), rgba(189,134,63,.25) 55%, transparent 78%); filter:blur(6px)"></div>
+            <div style="font-family:var(--font-brand); font-size:36px; position:relative"><span style="color:#bd863f; font-weight:400">Hearth</span><span style="color:#f0e6d6; font-weight:700">Shelf</span></div>
+            <div style="font-family:var(--font-mono); font-size:12px; color:#8a7f6a; margin-top:10px; position:relative">connecting to Shelfside…</div>
+            <div style="width:150px; height:3px; border-radius:999px; background:rgba(255,255,255,.1); margin-top:18px; overflow:hidden; position:relative"><i style="display:block; height:100%; width:60%; background:var(--accent); border-radius:999px"></i></div>
+          </div>
+          <span class="n rv" style="top:430px; left:90px">1</span>
+          <span class="n rv" style="top:520px; left:150px">2</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>Static glow, no particles</b> — with Reduce Motion on, the 24 animated embers become one painted radial glow. Users with vestibular sensitivity get the identity (warm fire under the wordmark) with none of the motion. Also the guaranteed fallback if the device tier can't hold frame rate.
+            <span class="rvnote">the reduced-motion state the plan called "optional"</span></span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>Determinate progress + honest copy</b> — a real progress bar instead of implying activity through fire motion, and plain "connecting to {server}…" copy. Error phase (kept from v1) demotes raw strings behind "Show details."
+            <span class="rvnote">motion is never the only signal of progress</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="motionspec"><h4>Sign-in &amp; System — addendum (D-A11Y, D-CONSIST)</h4><table>
+      <tr><td>pre-auth theme</td><td>keep the dark tavern identity; guarantee contrast with a stable bottom scrim</td></tr>
+      <tr><td>contrast floor</td><td>a guaranteed bottom scrim/panel ensures buttons + terms clear AA over ANY frame of the photo/fire</td></tr>
+      <tr><td>reduce motion</td><td>ember field → single static painted glow; no particle animation; progress shown by a determinate bar</td></tr>
+      <tr><td>low-end fallback</td><td>same static glow auto-engages below the device-memory tier, independent of the motion setting</td></tr>
+      <tr><td>focus &amp; labels</td><td>provider buttons in a logical VoiceOver order; email/2FA fields labelled; Terms/Privacy announced as links</td></tr>
+    </table></div>
+  </div>
+
+  <aside class="v3panel" aria-label="production beta design decision">
+    <div class="v3panel-kicker">V3 · production-beta decision</div>
+    <div class="v3decisions">
+      <div><span class="v3verb keep">Current beta</span><p>Keep the dark branded sign-in, enabled-provider stack, email fallback, and complete connection phases.</p></div>
+      <div><span class="v3verb change">V3 delta</span><p>Add labels/roles/focus, large-text form reflow, and a static reduced-motion splash.</p></div>
+      <div><span class="v3verb keep">Preserve</span><p>Keep sign-in independent of the signed-in theme; guarantee contrast with the existing dark identity.</p></div>
+    </div>
+  </aside>
+
+  <div class="section" id="review">
+    <div class="eyebrow">Production-beta audit</div>
+    <h2>System v3 now follows the implemented pre-auth model</h2>
+    <p class="sub">A light sign-in is no longer treated as a requirement. Accessibility and reduced motion remain real production deltas.</p>
+    <div class="motionspec"><h4>Code-informed decision</h4><table><tr><td>keep</td><td>dark tavern sign-in, provider availability, email/username flow, keyboard avoidance, connection phases</td></tr><tr><td>change</td><td>accessible provider/form semantics and responsive large-text layout</td></tr><tr><td>motion</td><td>static glow fallback when Reduce Motion is enabled</td></tr></table></div>
+  </div>
+
+  <div class="footnav"><a href="06-settings-v3.html" class="v3" style="color:var(--review)">← 06 · Settings (v3)</a><a href="index-v3.html" class="v3" style="color:var(--review)">v3 Overview ↩</a></div>
+</div>
+</body>
+</html>

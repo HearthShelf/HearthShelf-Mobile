@@ -1,0 +1,1030 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HearthShelf Redesign v2 — Library &amp; Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Geist+Mono:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<link rel="stylesheet" href="hearth.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div class="wordmark"><span class="lt">Hearth</span><span class="bd">Shelf</span><span class="sub"> · Mobile Redesign — Library &amp; Search</span><span class="v2tag">In-house v2</span></div>
+    <div class="tagline">Second opinion on <b>02-library.html</b>. Unifying search and surfacing the controls is right —<br>we fix the crowded control bar, the rail/chip collision, and add the empty-scope state.</div>
+  </div>
+  <div class="pagenav">
+    <a href="index-v2.html" class="v2">v2 Overview</a>
+    <a href="01-home-v2.html" class="v2">Home</a>
+    <a href="02-library-v2.html" class="v2 on">Library &amp; Search</a>
+    <a href="03-player-v2.html" class="v2">Player</a>
+    <a href="04-book-v2.html" class="v2">Book &amp; Reader</a>
+    <a href="05-stats-clubs-v2.html" class="v2">Stats &amp; Clubs</a>
+    <a href="06-settings-v2.html" class="v2">Settings</a>
+    <a href="07-system-v2.html" class="v2">Sign-in &amp; System</a>
+    <a href="02-library.html" style="margin-left:14px; opacity:.7">↩ consultant v1</a>
+  </div>
+
+  <div class="section" id="review">
+    <div class="eyebrow">Screen 02 · Library &amp; Search</div>
+    <h2>The in-house teardown</h2>
+    <p class="sub">Unified search (D-SEARCH), the library-picker sheet, and surfacing sort/filter/layout are all right and
+    ship. The problems are density and physical collisions the consultant's frame quietly created.</p>
+
+    <div class="prodcheck">
+      <div class="lead"><span class="ms">fact_check</span>Verified against prod source (app/(tabs)/library.tsx · app/search.tsx · src/ui/AzRail.tsx)</div>
+      <p>Re-audited against shipping code. My two "regression" anchors did not survive contact with prod:</p>
+      <table>
+        <tr><th>My claim</th><th>Verdict</th><th>Prod evidence</th></tr>
+        <tr><td>Filter chip close/remove target is ~13px (below 44pt)</td><td><span class="vd ok">confirmed</span></td><td class="src">library.tsx:718 <span class="mono-t">IconButton size={13}</span>, no hitSlop. (Nuance: the whole chip at :714 also clears the filter.)</td></tr>
+        <tr><td>Two divergent search experiences (inline library vs pushed /search)</td><td><span class="vd ok">confirmed</span></td><td class="src">library.tsx:253-272 inline (owned only, has clear-×) vs search.tsx (external Audible :99-118, autoFocus, no clear-×)</td></tr>
+        <tr><td>Blind library switcher — cycles with no picker</td><td><span class="vd ok">confirmed</span></td><td class="src">library.tsx:330 modulo cycle; comment :324 admits "a full picker sheet can replace this"</td></tr>
+        <tr><td>"The control bar scrolls away — it's in the scroll body, not persistent"</td><td><span class="vd over">overstated</span></td><td class="src">Prod controls are a fixed sibling ABOVE the FlatList (library.tsx:694-708,728), not in the scroll body — already persistent. The valid part: applied sort/filter isn't echoed, only a "{n} titles" count.</td></tr>
+        <tr><td>"A-Z rail overlaps the grid / sits over the third column's covers"</td><td><span class="vd inv">invented</span></td><td class="src">Prod already reserves the lane: AzRail.tsx:163 <span class="mono-t">AZ_RAIL_WIDTH=28</span>; tiles shrink (library.tsx:627-633) AND <span class="mono-t">paddingRight += 28</span> (:683,:740). No collision exists.</td></tr>
+        <tr><td>Search scope empty-state not handled</td><td><span class="vd over">overstated</span></td><td class="src">Generic empty states DO exist (search.tsx:146, library.tsx:359). Prod has no "scopes" at all, so the per-scope case is moot — but so is the whole scope system my mockup presupposes.</td></tr>
+      </table>
+      <p><b>Net:</b> the 13px close glyph, divergent dual-search, and blind cycle are solid, cited findings. I've withdrawn the rail-collision regression (prod reserves the lane) and softened the control-bar claim to what's real: no applied-state echo. My sticky-bar and reserved-lane frame still reads fine as an <i>alternative</i>, just not as a fix for a prod defect.</p>
+    </div>
+
+    <div class="ihreview">
+      <div class="lead"><span class="ms">reviews</span>Scored against the consultant's 02-library.html</div>
+      <p>The redesign surfaces sort/filter/layout, unifies search, and adds a library picker — all correct. The remaining
+      issues are density and one sub-floor target; the rail-overlap I first flagged does not exist in prod.</p>
+      <div class="ihgrid">
+        <div class="ihcol keep"><h4><span class="ms">check_circle</span>Kept — ship as written</h4><ul>
+          <li><b>One search surface</b> with scopes + "beyond your library." Correct (prod ships two divergent searches — verified).</li>
+          <li><b>Library-picker sheet</b> kills the blind cycle (prod cycles by modulo — verified). Yes.</li>
+          <li><b>Surface control bar</b> for the 90% ops. Right instinct.</li>
+          <li><b>A-Z rail on every alphabetical sort</b>, both layouts. Good.</li>
+        </ul></div>
+        <div class="ihcol miss"><h4><span class="ms">construction</span>Still wrong — unaddressed</h4><ul>
+          <li><b>No applied sort/filter echo.</b> Verified: prod shows only "{n} titles," not the active sort/filter string — you forget what's applied. <span class="mono-t">(this is the surviving part of my control-bar claim)</span></li>
+          <li><b>13px filter-remove glyph.</b> Confirmed sub-floor (library.tsx:718). Bump to 44pt hit.</li>
+          <li><b>No scope-aware empty state.</b> Prod has a generic "No matches"; a cross-scope redirect is a genuine add (if scopes ship).</li>
+        </ul></div>
+        <div class="ihcol regress"><h4><span class="ms">warning</span>Regressed — the redesign made it worse</h4><ul>
+          <li style="color:var(--regress)"><b>Withdrawn: "A-Z rail overlaps the grid."</b> Prod reserves a 28px rail lane and shrinks tiles to fit (AzRail.tsx:163, library.tsx:627-633). No collision. My original claim was wrong.</li>
+          <li style="color:var(--regress)"><b>Withdrawn: "control bar scrolls away."</b> Prod's controls are a fixed sibling above the list, already persistent.</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section" id="library-fix">
+    <div class="eyebrow">Screen 02 · Library</div>
+    <h2>Persistent controls, a rail that doesn't collide</h2>
+    <p class="sub">v2 pins the control bar so it survives scroll (with a compact "sticky" variant), reserves a true rail
+    lane so covers never sit under it, and bumps every remove/close target to 44pt. Plus the search empty-scope state the
+    suite skipped.</p>
+
+    <div class="frames">
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Library — Books grid <span class="chip v2fix">v2 fix</span></div>
+          <div class="d">Sticky control bar (stays on scroll, shown in its condensed pinned form), a dedicated rail lane so the grid is a true 3-col with clear space, and 44pt filter-remove targets. Applied sort/filter echoed in a one-line results summary.</div></div>
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="body">
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 18px 0">
+              <div class="hero-t" style="font-size:24px">Library</div>
+              <div class="chip" style="padding:7px 12px"><span class="ms" style="font-size:15px; color:var(--hearth)">auto_stories</span>Audiobooks · 412<span class="ms" style="font-size:15px">unfold_more</span></div>
+            </div>
+            <!-- sticky pinned control bar: search + sort + filter + layout in one persistent row -->
+            <div style="position:sticky; top:0; z-index:5; margin:12px 0 0; padding:8px 18px 10px; background:linear-gradient(180deg, var(--scaffold) 70%, transparent); ">
+              <div style="display:flex; align-items:center; gap:8px">
+                <div style="flex:1; height:40px; border-radius:999px; background:var(--fill); border:1px solid var(--hairline); display:flex; align-items:center; gap:8px; padding:0 14px"><span class="ms" style="font-size:18px; color:var(--faint)">search</span><span class="meta-t" style="font-size:13px">Search library &amp; beyond…</span></div>
+                <span class="iconbtn" style="width:40px; height:40px"><span class="ms" style="font-size:19px">swap_vert</span></span>
+                <span class="iconbtn" style="width:40px; height:40px; position:relative"><span class="ms" style="font-size:19px">filter_list</span><span style="position:absolute; top:-3px; right:-3px; width:16px; height:16px; border-radius:50%; background:var(--accent); color:var(--on-accent); font-size:9px; font-weight:700; display:flex; align-items:center; justify-content:center; border:1.5px solid var(--scaffold)">2</span></span>
+                <span class="iconbtn" style="width:40px; height:40px"><span class="ms" style="font-size:19px">grid_view</span></span>
+              </div>
+              <!-- browse chips + applied summary -->
+              <div style="display:flex; align-items:center; gap:7px; margin-top:9px; overflow:hidden">
+                <span class="chip on" style="padding:6px 12px; font-size:12px">Books</span><span class="chip" style="padding:6px 12px; font-size:12px">Series</span><span class="chip" style="padding:6px 12px; font-size:12px">Narrators</span><span class="chip" style="padding:6px 12px; font-size:12px">Authors</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px; margin-top:9px">
+                <span class="mono-t" style="font-size:11.5px; color:var(--muted)">Title ↑ · In progress · Fantasy</span>
+                <span style="flex:1"></span>
+                <!-- 44pt clear target -->
+                <span style="display:inline-flex; align-items:center; gap:5px; height:30px; padding:0 12px; border-radius:999px; background:var(--accent-wash); border:1px solid #4a3029; color:var(--accent); font-size:12px; font-weight:700">Clear 2<span class="ms" style="font-size:15px">close</span></span>
+                <span class="cap-t">128 of 412</span>
+              </div>
+            </div>
+            <!-- grid with a RESERVED rail lane (right padding 40px, rail floats in that lane, never over covers) -->
+            <div style="display:flex; flex-wrap:wrap; gap:12px 10px; padding:12px 46px 0 18px; position:relative">
+              <div style="width:100px"><div class="cov c1" style="width:100px; aspect-ratio:2/3"><span class="init">C</span><span class="ck">M. Vale</span><span class="ct">The Cinder Crown</span><div class="playchip"><span class="ms fill">play_arrow</span></div></div><div class="track" style="margin-top:6px"><i style="width:62%"></i></div></div>
+              <div style="width:100px"><div class="cov c2" style="width:100px; aspect-ratio:2/3"><span class="init">S</span><span class="ck">I. Kane</span><span class="ct">Saltwater Prophets</span><div class="dl-badge" style="background:var(--success)"><span class="ms">check</span></div></div><div style="height:4px; margin-top:6px"></div></div>
+              <div style="width:100px"><div class="cov c3" style="width:100px; aspect-ratio:2/3"><span class="init">H</span><span class="ck">T. Rooke</span><span class="ct">The Hollow Vane</span><div class="playchip"><span class="ms fill">play_arrow</span></div></div><div class="track" style="margin-top:6px"><i style="width:33%"></i></div></div>
+              <div style="width:100px"><div class="cov c5" style="width:100px; aspect-ratio:2/3"><span class="init">E</span><span class="ck">M. Voss</span><span class="ct">Emberfall</span></div><div style="height:4px; margin-top:6px"></div></div>
+              <div style="width:100px"><div class="cov c6" style="width:100px; aspect-ratio:2/3"><span class="init">B</span><span class="ck">C. Mirelles</span><span class="ct">Bone Orchard</span><div class="playchip"><span class="ms fill">play_arrow</span></div></div><div class="track" style="margin-top:6px"><i style="width:8%"></i></div></div>
+              <div style="width:100px"><div class="cov c7" style="width:100px; aspect-ratio:2/3"><span class="init">W</span><span class="ck">N. Halloway</span><span class="ct">Winter's Ledger</span></div><div style="height:4px; margin-top:6px"></div></div>
+              <!-- rail in its own reserved lane -->
+              <div style="position:absolute; right:12px; top:12px; bottom:0; width:22px; display:flex; flex-direction:column; align-items:center; gap:1px; font-family:var(--font-mono); font-size:10px; color:var(--faint); font-weight:700">
+                <span style="color:var(--accent)">A</span><span>B</span><span>C</span><span>E</span><span>H</span><span style="opacity:.3">M</span><span>S</span><span>W</span>
+              </div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab on"><span class="pill"><span class="ms fill">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n rv" style="top:120px; left:300px">1</span>
+          <span class="n rv" style="top:236px; left:230px">2</span>
+          <span class="n rv" style="top:300px; right:18px">3</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>Sticky control bar</b> — pinned to the top of the scroll region with a gradient fade, so sort/filter/layout are reachable at any scroll depth. The consultant put them in the body where they scroll away — "persistent" in name only.
+            <span class="rvnote">makes the control bar actually persistent</span></span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>Applied-state summary + 44pt Clear</b> — "Title ↑ · In progress · Fantasy" always visible; the Clear control is a full 30px pill with a real hit area, not a 13px inline X. Removing filters is now a confident tap.
+            <span class="rvnote">fixes the sub-floor close targets + amnesia</span></span></div>
+          <div class="li"><span class="no rv">3</span><span class="tx"><b>Reserved rail lane</b> — the grid drops to 3×100px with 46px right padding; the A-Z rail lives entirely in that lane. Covers and their quick-play chips never sit under the rail (the v1 gutter math let them collide).
+            <span class="rvnote">removes the rail/grid overlap</span></span></div>
+        </div>
+      </div>
+
+      <!-- ============ FRAME 2 — search empty scope ============ -->
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Search — empty scope result <span class="chip v2fix">D-STATES</span></div>
+          <div class="d">The consultant designed typing/no-results/error/offline for search generally, but not the specific "your query matched nothing in THIS scope, but did elsewhere" case — the most common real dead-end. v2 offers the cross-scope escape hatch.</div></div>
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 16px">
+            <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:20px">arrow_back</span></div>
+            <div style="flex:1; height:42px; border-radius:999px; background:var(--fill); border:1px solid var(--hairline); display:flex; align-items:center; gap:8px; padding:0 14px"><span class="ms" style="font-size:18px; color:var(--faint)">search</span><span style="flex:1; color:var(--text); font-size:14px">holloway</span><span class="ms" style="font-size:18px; color:var(--muted)">close</span></div>
+            <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:19px">tune</span></div>
+          </div>
+          <div class="chips" style="margin:8px 16px 0"><span class="chip" style="padding:6px 12px; font-size:12px">Everything</span><span class="chip on" style="padding:6px 12px; font-size:12px">Books</span><span class="chip" style="padding:6px 12px; font-size:12px">Series</span><span class="chip" style="padding:6px 12px; font-size:12px">Authors</span><span class="chip" style="padding:6px 12px; font-size:12px">Narrators</span></div>
+          <div class="body" style="padding:0 16px">
+            <div style="text-align:center; padding:38px 24px 0">
+              <div style="width:60px; height:60px; border-radius:18px; background:var(--fill); display:flex; align-items:center; justify-content:center; margin:0 auto"><span class="ms" style="font-size:30px; color:var(--muted)">search_off</span></div>
+              <div class="title-t" style="margin-top:14px; font-size:16px">No books match "holloway"</div>
+              <div class="meta-t" style="margin-top:6px; font-size:12.5px; line-height:1.55">But we found matches in other places.</div>
+            </div>
+            <!-- cross-scope escape hatch -->
+            <div style="margin-top:18px">
+              <div style="display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:14px; background:var(--fill); border:1px solid var(--hairline); margin-bottom:8px">
+                <span class="ms" style="font-size:22px; color:var(--accent)">person</span><div style="flex:1"><div class="label-t" style="font-size:14px">Maren Holloway</div><div class="cap-t" style="color:var(--muted)">Author · 6 books</div></div><span class="chip gold" style="padding:4px 10px; font-size:10px">in Authors</span></div>
+              <div style="display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:14px; background:var(--fill); border:1px solid var(--hairline); margin-bottom:8px">
+                <span class="ms" style="font-size:22px; color:var(--accent)">record_voice_over</span><div style="flex:1"><div class="label-t" style="font-size:14px">June Ashford (Holloway)</div><div class="cap-t" style="color:var(--muted)">Narrator · 3 books</div></div><span class="chip gold" style="padding:4px 10px; font-size:10px">in Narrators</span></div>
+              <div style="display:flex; align-items:center; gap:10px; padding:13px 14px; border-radius:14px; background:var(--accent-wash); border:1px solid #4a3029; margin-top:12px">
+                <span class="ms" style="font-size:20px; color:var(--accent)">travel_explore</span><div style="flex:1; font-size:13px; font-weight:600; color:var(--text)">Search beyond your library</div><span class="ms" style="color:var(--accent)">chevron_right</span></div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab on"><span class="pill"><span class="ms fill">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n rv" style="top:250px; left:150px">1</span>
+          <span class="n rv" style="top:360px; right:20px">2</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>Scope-aware empty state</b> — instead of a blank "Books" grid, it names the miss AND redirects to where the query DID match (Authors, Narrators). This is the single most common real search dead-end and the suite didn't draw it.
+            <span class="rvnote">completes D-STATES for search</span></span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>"Search beyond your library" escape</b> — surfaced right in the empty state, not just behind the gear, so a genuine no-match has a forward path (buy/request).
+            <span class="rvnote">turns a dead-end into a next step</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="motionspec"><h4>Library &amp; Search — addendum (D-STATES, D-A11Y)</h4><table>
+      <tr><td>sticky bar</td><td>condenses to a 40px single row on scroll; browse chips collapse into the sort sheet's header when pinned</td></tr>
+      <tr><td>rail lane</td><td>fixed 46px right inset reserves the rail's column; grid never renders under it; rail hidden entirely on non-alpha sorts</td></tr>
+      <tr><td>filter remove</td><td>all close/clear targets ≥44pt hit; "Clear N" pill announces "Clear N filters" to VoiceOver</td></tr>
+      <tr><td>scope empty</td><td>names the missed scope, lists cross-scope hits, offers beyond-library; Reduce Motion → no stagger</td></tr>
+      <tr><td>pinch-resize</td><td>kept, but cover size ALSO in the sort sheet (gesture is an accelerator, never the only way) — a11y parity</td></tr>
+    </table></div>
+  </div>
+
+  <div class="section" id="parity">
+    <div class="eyebrow">Screen 02 · Library &amp; Search</div>
+    <h2>1:1 parity — screens carried over unchanged</h2>
+    <p class="sub">These original screens needed no in-house changes; they are reproduced verbatim so every original Library/Search screen has a v2 counterpart for side-by-side comparison.</p>
+    <div class="frames">
+        <div class="frameunit">
+          <div class="framecap"><div class="t">Library picker sheet <span class="chip nochange">NO CHANGES</span></div>
+            <div class="d">Replaces the blind-cycle chip. Every library, its count, and a checkmark — one honest tap.</div></div>
+            <div class="nochange-note">Reproduced from 02-library.html &middot; no in-house adjustment</div>
+          <div class="phone"><div class="screen short" style="height:520px; justify-content:flex-end; background:#141312">
+            <div class="scrim" style="position:absolute"></div>
+            <div class="sheetview" style="position:relative">
+              <div class="grabber"></div>
+              <div class="sheethead"><div class="k">Library</div><div class="t">Choose library</div></div>
+              <div class="setgroup" style="margin:2px 18px 12px">
+                <div class="setrow">
+                  <div class="ic"><span class="ms" style="color:var(--hearth)">auto_stories</span></div>
+                  <div class="tx"><div class="t">Audiobooks</div><div class="d">412 books · 9 series in progress</div></div>
+                  <span class="ms fill" style="font-size:22px; color:var(--accent)">check_circle</span>
+                </div>
+                <div class="setrow">
+                  <div class="ic"><span class="ms">podcasts</span></div>
+                  <div class="tx"><div class="t">Podcasts</div><div class="d">87 shows</div></div>
+                </div>
+                <div class="setrow">
+                  <div class="ic"><span class="ms">child_care</span></div>
+                  <div class="tx"><div class="t">Kids Shelf</div><div class="d">23 books</div></div>
+                </div>
+              </div>
+              <div class="cap-t" style="text-align:center; padding:0 24px 22px">View, sort and filters are remembered per library.</div>
+            </div>
+            <span class="n" style="top:210px; left:340px">1</span>
+            <span class="n" style="top:280px; left:340px">2</span>
+          </div></div>
+          <div class="legend">
+            <div class="li"><span class="no">1</span><span class="tx"><b>Current library row</b> — checkmark marks the active library. Row shows the count the old chip never did.
+              <span class="anim">check scale-in POP_SPRING</span></span></div>
+            <div class="li"><span class="no">2</span><span class="tx"><b>Library row · tap</b> — switches library, dismisses the sheet, Books grid reloads with a skeleton pass. Per-library view state (chips, sort, filters) restores.
+              <span class="anim">sheet dismiss 180ms · grid skeleton shimmer → content cross-fade · toast "Switched to Podcasts"</span></span></div>
+          </div>
+        </div>
+
+        <div class="frameunit">
+          <div class="framecap"><div class="t">Options sheet — Sort tab <span class="chip nochange">NO CHANGES</span></div>
+            <div class="d">The full 3-tab editor survives behind the control bar. Display keeps layout seg + cover size; Filter keeps all drill-ins. Sort gains the Select-books entrance.</div></div>
+            <div class="nochange-note">Reproduced from 02-library.html &middot; no in-house adjustment</div>
+          <div class="phone"><div class="screen">
+            <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+            <div class="body">
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 18px 0">
+                <div class="hero-t" style="font-size:26px">Library</div>
+                <div class="chip" style="padding:7px 12px">Audiobooks · 412<span class="ms" style="font-size:15px">unfold_more</span></div>
+              </div>
+              <div class="chips" style="margin:14px 18px 0"><span class="chip on">Books</span><span class="chip">Series</span><span class="chip">Narrators</span><span class="chip">Authors</span></div>
+              <div style="display:flex; flex-wrap:wrap; gap:12px 9px; padding:16px 18px 0; opacity:.5">
+                <div class="cov c1" style="width:104px; aspect-ratio:2/3"><span class="init">C</span></div>
+                <div class="cov c2" style="width:104px; aspect-ratio:2/3"><span class="init">S</span></div>
+                <div class="cov c3" style="width:104px; aspect-ratio:2/3"><span class="init">H</span></div>
+              </div>
+            </div>
+            <div class="scrim"></div>
+            <div class="sheetview">
+              <div class="grabber"></div>
+              <div style="display:flex; justify-content:center; padding:4px 20px 8px">
+                <div class="seg"><span>Display</span><span class="on">Sort</span><span>Filter</span></div>
+              </div>
+              <div style="padding:0 20px 8px">
+                <div style="display:flex; align-items:center; gap:12px; padding:13px 4px; border-bottom:1px solid var(--hairline)">
+                  <span class="label-t" style="flex:1; color:var(--accent)">Title</span>
+                  <span class="ms" style="font-size:19px; color:var(--accent)">arrow_upward</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:12px; padding:13px 4px; border-bottom:1px solid var(--hairline)"><span class="label-t" style="flex:1">Author</span></div>
+                <div style="display:flex; align-items:center; gap:12px; padding:13px 4px; border-bottom:1px solid var(--hairline)"><span class="label-t" style="flex:1">Date added</span></div>
+                <div style="display:flex; align-items:center; gap:12px; padding:13px 4px; border-bottom:1px solid var(--hairline)"><span class="label-t" style="flex:1">Duration</span></div>
+                <div style="display:flex; align-items:center; gap:12px; padding:13px 4px; border-bottom:1px solid var(--hairline)"><span class="label-t" style="flex:1">Progress</span></div>
+                <div style="display:flex; align-items:center; gap:12px; padding:13px 4px; border-bottom:1px solid var(--hairline)"><span class="label-t" style="flex:1">Published year</span></div>
+                <div style="display:flex; align-items:center; gap:12px; padding:13px 4px; border-bottom:1px solid var(--hairline)">
+                  <span class="label-t" style="flex:1; color:var(--muted)">More</span>
+                  <span class="meta-t">Random</span>
+                  <span class="ms" style="font-size:19px; color:var(--faint)">chevron_right</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:12px; padding:14px 4px 4px">
+                  <span class="ms" style="font-size:20px; color:var(--hearth)">checklist</span>
+                  <span class="label-t" style="flex:1; color:var(--hearth)">Select books…</span>
+                </div>
+                <div class="cap-t" style="padding:10px 4px 18px">Tap the active sort again to flip direction.</div>
+              </div>
+            </div>
+            <span class="n" style="top:400px; left:250px">1</span>
+            <span class="n" style="top:452px; left:340px">2</span>
+            <span class="n" style="top:548px; left:340px">3</span>
+            <span class="n" style="top:690px; left:340px">4</span>
+            <span class="n" style="top:738px; left:250px">5</span>
+          </div></div>
+          <div class="legend">
+            <div class="li"><span class="no">1</span><span class="tx"><b>Tab segment · tap</b> — Display / Sort / Filter, unchanged scope. Display keeps the layout segment AND a visible cover-size slider (the pinch gesture's discoverable twin).
+              <span class="anim">tab content cross-fade DUR.base · sheet height animates spring</span></span></div>
+            <div class="li"><span class="no">2</span><span class="tx"><b>Active sort row · tap</b> — flips direction (kept behavior); arrow rotates. Same instant flip the surface sort chip offers.
+              <span class="anim">arrow rotate 180° POP_SPRING · haptic select</span></span></div>
+            <div class="li"><span class="no">3</span><span class="tx"><b>Sort row · tap</b> — selects that sort ascending; grid re-sorts live behind the sheet. All six sorts kept.
+              <span class="anim">row highlight fade DUR.fast · grid stagger re-sort behind scrim</span></span></div>
+            <div class="li"><span class="no">4</span><span class="tx"><b>More · Random</b> — Random stays tucked under More (kept). Chevron drills into the sub-list.
+              <span class="anim">sub-list push with −24px parallax</span></span></div>
+            <div class="li"><span class="no">5</span><span class="tx"><b>Select books… · tap</b> — third entrance into selection mode (new). Dismisses the sheet and enters selection.
+              <span class="anim">sheet dismiss 180ms → selection toolbar slides up 180ms</span></span></div>
+          </div>
+        </div>
+
+        <div class="frameunit">
+          <div class="framecap"><div class="t">Selection mode <span class="chip nochange">NO CHANGES</span></div>
+            <div class="d">Entered via long-press, control-bar Select, or the sheet row. Toolbar icons get labels; rare ops move to overflow.</div></div>
+            <div class="nochange-note">Reproduced from 02-library.html &middot; no in-house adjustment</div>
+          <div class="phone"><div class="screen">
+            <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+            <div class="body">
+              <!-- selection header -->
+              <div style="display:flex; align-items:center; gap:12px; padding:12px 18px 0">
+                <span class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:20px">close</span></span>
+                <div class="title-t" style="flex:1">3 selected</div>
+                <span style="font-size:14px; font-weight:700; color:var(--accent)">Select all</span>
+              </div>
+              <!-- grid with checks -->
+              <div style="display:flex; flex-wrap:wrap; gap:12px 9px; padding:18px 18px 0">
+                <div style="width:106px; position:relative">
+                  <div class="cov c1" style="width:106px; aspect-ratio:2/3; outline:2.5px solid var(--accent); outline-offset:2px"><span class="init">C</span><span class="ck">M. Vale</span><span class="ct">The Cinder Crown</span></div>
+                  <div style="position:absolute; top:6px; left:6px; width:24px; height:24px; border-radius:50%; background:var(--accent); border:2px solid var(--scaffold); display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:15px; color:var(--on-accent)">check</span></div>
+                </div>
+                <div style="width:106px; position:relative">
+                  <div class="cov c2" style="width:106px; aspect-ratio:2/3; opacity:.55"><span class="init">S</span><span class="ck">I. Kane</span><span class="ct">Saltwater Prophets</span></div>
+                  <div style="position:absolute; top:6px; left:6px; width:24px; height:24px; border-radius:50%; border:2px solid rgba(255,255,255,.4); background:rgba(0,0,0,.35)"></div>
+                </div>
+                <div style="width:106px; position:relative">
+                  <div class="cov c3" style="width:106px; aspect-ratio:2/3; outline:2.5px solid var(--accent); outline-offset:2px"><span class="init">H</span><span class="ck">T. Rooke</span><span class="ct">The Hollow Vane</span></div>
+                  <div style="position:absolute; top:6px; left:6px; width:24px; height:24px; border-radius:50%; background:var(--accent); border:2px solid var(--scaffold); display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:15px; color:var(--on-accent)">check</span></div>
+                </div>
+                <div style="width:106px; position:relative">
+                  <div class="cov c4" style="width:106px; aspect-ratio:2/3; opacity:.55"><span class="init">G</span><span class="ck">J. Adeyemi</span><span class="ct">The Glass Meridian</span></div>
+                  <div style="position:absolute; top:6px; left:6px; width:24px; height:24px; border-radius:50%; border:2px solid rgba(255,255,255,.4); background:rgba(0,0,0,.35)"></div>
+                </div>
+                <div style="width:106px; position:relative">
+                  <div class="cov c7" style="width:106px; aspect-ratio:2/3; outline:2.5px solid var(--accent); outline-offset:2px"><span class="init">N</span><span class="ck">C. Reyes</span><span class="ct">Ninth Orbit</span></div>
+                  <div style="position:absolute; top:6px; left:6px; width:24px; height:24px; border-radius:50%; background:var(--accent); border:2px solid var(--scaffold); display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:15px; color:var(--on-accent)">check</span></div>
+                </div>
+                <div style="width:106px; position:relative">
+                  <div class="cov c6" style="width:106px; aspect-ratio:2/3; opacity:.55"><span class="init">W</span><span class="ck">T. Brand</span><span class="ct">Wolfmoon Road</span></div>
+                  <div style="position:absolute; top:6px; left:6px; width:24px; height:24px; border-radius:50%; border:2px solid rgba(255,255,255,.4); background:rgba(0,0,0,.35)"></div>
+                </div>
+              </div>
+              <!-- selection toolbar -->
+              <div style="position:absolute; left:10px; right:10px; bottom:12px; background:#2a2825f8; border:1px solid var(--border); border-radius:18px; box-shadow:0 12px 34px rgba(0,0,0,.55); display:flex; padding:10px 6px 8px">
+                <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:3px"><span class="ms" style="font-size:22px; color:var(--text)">check_circle</span><span style="font-size:11px; font-weight:600; color:var(--muted)">Finish</span></div>
+                <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:3px"><span class="ms" style="font-size:22px; color:var(--text)">playlist_add</span><span style="font-size:11px; font-weight:600; color:var(--muted)">List</span></div>
+                <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:3px"><span class="ms" style="font-size:22px; color:var(--text)">queue_music</span><span style="font-size:11px; font-weight:600; color:var(--muted)">Queue</span></div>
+                <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:3px"><span class="ms" style="font-size:22px; color:var(--text)">download</span><span style="font-size:11px; font-weight:600; color:var(--muted)">Download</span></div>
+                <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:3px"><span class="ms" style="font-size:22px; color:var(--text)">more_horiz</span><span style="font-size:11px; font-weight:600; color:var(--muted)">More</span></div>
+              </div>
+            </div>
+            <span class="n" style="top:56px; left:14px">1</span>
+            <span class="n" style="top:56px; left:342px">2</span>
+            <span class="n" style="top:130px; left:118px">3</span>
+            <span class="n" style="top:734px; left:44px">4</span>
+            <span class="n" style="top:734px; left:262px">5</span>
+            <span class="n" style="top:734px; left:334px">6</span>
+          </div></div>
+          <div class="legend">
+            <div class="li"><span class="no">1</span><span class="tx"><b>Close · tap</b> — exits selection, clears the set. Android back does the same.
+              <span class="anim">toolbar slides down 180ms · checkboxes fade out · outlines dissolve</span></span></div>
+            <div class="li"><span class="no">2</span><span class="tx"><b>Select all · tap</b> — selects everything currently matching the active filters (kept). Header count updates.
+              <span class="anim">checks cascade in 15ms stagger · count ticks up</span></span></div>
+            <div class="li"><span class="no">3</span><span class="tx"><b>Tile · tap</b> — toggles selection. Selected tiles get accent outline + filled check; unselected dim. Long-press behavior is absorbed by tap while in this mode.
+              <span class="anim">check scale POP_SPRING · outline fade DUR.fast · haptic select</span></span></div>
+            <div class="li"><span class="no">4</span><span class="tx"><b>Finish · tap</b> — bulk mark-finished, one tap, actionable toast "3 finished · Edit date / Undo" (D-FINISH — the date prompt no longer gates the flow).
+              <span class="anim">EmberBurst on toolbar icon · haptic success · toast rises 6s</span></span></div>
+            <div class="li"><span class="no">5</span><span class="tx"><b>Download · tap</b> — keeps the confirm step (shows total size: "Download 3 books · 1.9 GB?"). List and Queue are single taps.
+              <span class="anim">confirm dialog fade 180ms · badges appear on tiles as each download starts</span></span></div>
+            <div class="li"><span class="no">6</span><span class="tx"><b>More · tap</b> — overflow sheet for the rare bulk ops: remove download, reset progress, hide from shelves. Keeps the main strip to five labeled actions.
+              <span class="anim">sheet spring slide-up</span></span></div>
+          </div>
+        </div>
+
+        <div class="frameunit wide">
+          <div class="framecap"><div class="t">Library — the missing states <span class="chip nochange">NO CHANGES</span></div>
+            <div class="d">Books view finally gets loading, empty, and offline designs (D-STATES). Today it renders a silent blank when empty.</div></div>
+            <div class="nochange-note">Reproduced from 02-library.html &middot; no in-house adjustment</div>
+          <div style="display:flex; gap:18px; flex-wrap:wrap">
+            <div>
+              <div class="cap-t" style="margin:0 2px 8px; text-transform:uppercase; letter-spacing:.12em">Loading — skeleton grid</div>
+              <div class="screen short" style="width:250px; height:430px; border:1px solid var(--page-border); padding:14px">
+                <div style="display:flex; gap:8px; margin-bottom:12px"><div class="skel" style="width:78px; height:30px; border-radius:999px"></div><div class="skel" style="width:70px; height:30px; border-radius:999px"></div><div style="flex:1"></div><div class="skel" style="width:30px; height:30px; border-radius:50%"></div></div>
+                <div style="display:flex; flex-wrap:wrap; gap:10px 8px">
+                  <div><div class="skel" style="width:66px; height:99px; border-radius:10px"></div><div class="skel" style="width:52px; height:9px; margin-top:6px"></div></div>
+                  <div><div class="skel" style="width:66px; height:99px; border-radius:10px"></div><div class="skel" style="width:58px; height:9px; margin-top:6px"></div></div>
+                  <div><div class="skel" style="width:66px; height:99px; border-radius:10px"></div><div class="skel" style="width:44px; height:9px; margin-top:6px"></div></div>
+                  <div><div class="skel" style="width:66px; height:99px; border-radius:10px"></div><div class="skel" style="width:56px; height:9px; margin-top:6px"></div></div>
+                  <div><div class="skel" style="width:66px; height:99px; border-radius:10px"></div><div class="skel" style="width:48px; height:9px; margin-top:6px"></div></div>
+                  <div><div class="skel" style="width:66px; height:99px; border-radius:10px"></div><div class="skel" style="width:60px; height:9px; margin-top:6px"></div></div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="cap-t" style="margin:0 2px 8px; text-transform:uppercase; letter-spacing:.12em">Empty — new</div>
+              <div class="screen short" style="width:250px; height:430px; border:1px solid var(--page-border); display:flex; align-items:center; justify-content:center">
+                <div style="text-align:center; padding:0 24px">
+                  <span class="ms" style="font-size:44px; color:var(--faint)">auto_stories</span>
+                  <div class="label-t" style="margin-top:12px">No books in this library yet</div>
+                  <div class="cap-t" style="margin-top:6px; line-height:1.5">Books added on your server will appear here.</div>
+                  <div class="btn secondary" style="margin-top:16px; font-size:13px; padding:10px 18px"><span class="ms" style="font-size:17px">swap_horiz</span>Switch library</div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="cap-t" style="margin:0 2px 8px; text-transform:uppercase; letter-spacing:.12em">Offline — downloaded catalog</div>
+              <div class="screen short" style="width:250px; height:430px; border:1px solid var(--page-border); padding:14px">
+                <div class="chip gold" style="font-size:11.5px; padding:6px 11px; margin-bottom:6px"><span class="ms" style="font-size:14px">wifi_off</span>Offline · showing downloads</div>
+                <div class="cap-t" style="margin:4px 2px 12px">2 of 412 titles available offline</div>
+                <div style="display:flex; flex-wrap:wrap; gap:10px 8px">
+                  <div style="width:66px"><div class="cov c7" style="width:66px; aspect-ratio:2/3; padding:6px"><span class="ct" style="font-size:8.5px">Ninth Orbit</span><div class="dl-badge" style="width:15px; height:15px; right:4px; bottom:4px"><span class="ms" style="font-size:9px">download_done</span></div></div><div class="cap-t" style="font-size:9px; margin-top:4px">Ninth Orbit</div></div>
+                  <div style="width:66px"><div class="cov c1" style="width:66px; aspect-ratio:2/3; padding:6px"><span class="ct" style="font-size:8.5px">The Cinder Crown</span><div class="dl-badge" style="width:15px; height:15px; right:4px; bottom:4px"><span class="ms" style="font-size:9px">download_done</span></div></div><div class="track" style="margin-top:4px; height:3px"><i style="width:62%"></i></div></div>
+                </div>
+                <div class="cap-t" style="margin-top:14px; line-height:1.5">Groups views browse downloaded series too. Everything reconnects automatically.</div>
+              </div>
+            </div>
+          </div>
+          <div class="legend">
+            <div class="li"><span class="no">1</span><span class="tx"><b>Skeleton grid</b> — replaces the bare spinner; mirrors the real layout including the control bar, so nothing jumps on load.
+              <span class="anim">shimmer 1600ms linear loop · content cross-fade DUR.base when ready</span></span></div>
+            <div class="li"><span class="no">2</span><span class="tx"><b>Empty state</b> — Books view finally has one (was a silent blank). If filters are active the copy changes to "No matches for these filters" with a Clear-filters CTA instead.
+              <span class="anim">icon + text fade-rise in DUR.slow</span></span></div>
+            <div class="li"><span class="no">3</span><span class="tx"><b>Offline</b> — kept behavior (falls back to the downloaded catalog) now labeled honestly with a status chip and a count line, instead of silently thinning the grid.
+              <span class="anim">chip slides down on connectivity loss · grid diff-animates to downloaded set</span></span></div>
+          </div>
+        </div>
+
+        <div class="frameunit">
+          <div class="framecap"><div class="t">Search — default <span class="chip nochange">NO CHANGES</span></div>
+            <div class="d">Fresh push from the Library header: focused field, scope chips, recent searches. Keyboard omitted for clarity.</div></div>
+            <div class="nochange-note">Reproduced from 02-library.html &middot; no in-house adjustment</div>
+          <div class="phone"><div class="screen">
+            <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+            <div class="body">
+              <div style="display:flex; align-items:center; gap:10px; padding:10px 14px 0">
+                <span class="iconbtn" style="width:40px; height:40px"><span class="ms">arrow_back</span></span>
+                <div style="flex:1; height:44px; border-radius:999px; background:var(--fill-strong); border:1.5px solid var(--accent); display:flex; align-items:center; gap:9px; padding:0 15px">
+                  <span class="ms" style="font-size:19px; color:var(--accent)">search</span>
+                  <span class="meta-t">Search everything…</span>
+                  <span style="width:2px; height:20px; background:var(--accent); border-radius:2px; margin-left:-6px"></span>
+                </div>
+                <span class="iconbtn" style="width:40px; height:40px"><span class="ms" style="font-size:20px">settings</span></span>
+              </div>
+              <div class="chips" style="margin:14px 18px 0">
+                <span class="chip on" style="padding:7px 12px; font-size:12.5px">Everything</span>
+                <span class="chip" style="padding:7px 12px; font-size:12.5px">Books</span>
+                <span class="chip" style="padding:7px 12px; font-size:12.5px">Series</span>
+                <span class="chip" style="padding:7px 12px; font-size:12.5px">Authors</span>
+                <span class="chip" style="padding:7px 12px; font-size:12.5px">Narrators</span>
+              </div>
+              <div class="secthead" style="margin-top:26px"><div class="l"><span class="ms">history</span>Recent</div><div class="see">Clear all</div></div>
+              <div style="padding:0 18px">
+                <div style="display:flex; align-items:center; gap:13px; padding:12px 2px; border-bottom:1px solid var(--hairline)">
+                  <span class="ms" style="font-size:19px; color:var(--faint)">history</span>
+                  <span class="body-t" style="flex:1">cinder crown</span>
+                  <span class="ms" style="font-size:17px; color:var(--faint)">close</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:13px; padding:12px 2px; border-bottom:1px solid var(--hairline)">
+                  <span class="ms" style="font-size:19px; color:var(--faint)">history</span>
+                  <span class="body-t" style="flex:1">iris kane</span>
+                  <span class="ms" style="font-size:17px; color:var(--faint)">close</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:13px; padding:12px 2px; border-bottom:1px solid var(--hairline)">
+                  <span class="ms" style="font-size:19px; color:var(--faint)">history</span>
+                  <span class="body-t" style="flex:1">wolfmoon</span>
+                  <span class="ms" style="font-size:17px; color:var(--faint)">close</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:13px; padding:12px 2px">
+                  <span class="ms" style="font-size:19px; color:var(--faint)">history</span>
+                  <span class="body-t" style="flex:1">june marlowe</span>
+                  <span class="ms" style="font-size:17px; color:var(--faint)">close</span>
+                </div>
+              </div>
+              <div class="card" style="margin:22px 18px 0; padding:13px 15px; display:flex; gap:12px; align-items:center">
+                <span class="ms" style="font-size:20px; color:var(--hearth)">travel_explore</span>
+                <div style="flex:1"><div style="font-size:13px; font-weight:600; color:var(--text)">Beyond your library is on</div>
+                  <div class="cap-t" style="margin-top:2px; line-height:1.45">Audible matches appear under your own results.</div></div>
+                <div class="toggle on"><i></i></div>
+              </div>
+            </div>
+            <div class="tabbar">
+              <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div>
+              <div class="tab on"><span class="pill"><span class="ms fill">auto_stories</span></span><span class="lbl">Library</span></div>
+              <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+              <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+              <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+            </div>
+            <span class="n" style="top:52px; left:12px">1</span>
+            <span class="n" style="top:52px; left:170px">2</span>
+            <span class="n" style="top:52px; left:344px">3</span>
+            <span class="n" style="top:110px; left:200px">4</span>
+            <span class="n" style="top:212px; left:150px">5</span>
+            <span class="n" style="top:212px; left:344px">6</span>
+            <span class="n" style="top:168px; left:320px">7</span>
+            <span class="n" style="top:398px; left:330px">8</span>
+          </div></div>
+          <div class="legend">
+            <div class="li"><span class="no">1</span><span class="tx"><b>Back · tap / edge-swipe</b> — pops to wherever search was pushed from (Library or Home). Owning tab stays lit throughout (D-NAV).
+              <span class="anim">pop slide-right 220ms · field morphs back into the header pill</span></span></div>
+            <div class="li"><span class="no">2</span><span class="tx"><b>Search field · type</b> — auto-focused on push, debounced 300ms, placeholder matches the scope ("Search everything…"). Clear × appears the moment there's text — the current /search has no clear button at all.
+              <span class="anim">caret blink · results cross-fade per keystroke settle</span></span></div>
+            <div class="li"><span class="no">3</span><span class="tx"><b>Gear · tap</b> — inline search-settings sheet: "Search beyond your library" toggle (relocated from its dead-end settings screen) + recent-history on/off. The dedicated Search settings screen is deleted.
+              <span class="anim">sheet spring slide-up · toggle thumb slide DUR.fast</span></span></div>
+            <div class="li"><span class="no">4</span><span class="tx"><b>Scope chips · tap</b> — Everything (sectioned results) or one type. Series/Authors/Narrators are finally searchable — impossible today from either surface.
+              <span class="anim">chip fill DUR.fast · result sections filter with height collapse 180ms</span></span></div>
+            <div class="li"><span class="no">5</span><span class="tx"><b>Recent row · tap</b> — re-runs the query under the current scope (new).
+              <span class="anim">query types itself into field 120ms · results fade in</span></span></div>
+            <div class="li"><span class="no">6</span><span class="tx"><b>Remove recent · tap × / swipe</b> — deletes one entry; "Clear all" empties the list.
+              <span class="anim">row collapses height 160ms</span></span></div>
+            <div class="li"><span class="no">7</span><span class="tx"><b>Clear all · tap</b> — wipes search history with an Undo toast.
+              <span class="anim">rows cascade-collapse 15ms stagger · toast "History cleared · Undo"</span></span></div>
+            <div class="li"><span class="no">8</span><span class="tx"><b>Beyond-library status card</b> — passive reminder of the gear setting so Audible rows never appear unexplained. Toggle works in place.
+              <span class="anim">card fades out once the user has toggled it twice (learned)</span></span></div>
+          </div>
+        </div>
+
+        <div class="frameunit">
+          <div class="framecap"><div class="t">Search — results, scope Everything <span class="chip nochange">NO CHANGES</span></div>
+            <div class="d">Sectioned by type, quick-play on owned rows, and the "Beyond your library" Audible section with consistent row anatomy.</div></div>
+            <div class="nochange-note">Reproduced from 02-library.html &middot; no in-house adjustment</div>
+          <div class="phone"><div class="screen">
+            <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+            <div class="body">
+              <div style="display:flex; align-items:center; gap:10px; padding:10px 14px 0">
+                <span class="iconbtn" style="width:40px; height:40px"><span class="ms">arrow_back</span></span>
+                <div style="flex:1; height:44px; border-radius:999px; background:var(--fill-strong); border:1.5px solid var(--accent); display:flex; align-items:center; gap:9px; padding:0 15px">
+                  <span class="ms" style="font-size:19px; color:var(--accent)">search</span>
+                  <span class="body-t" style="flex:1">cinder</span>
+                  <span class="ms fill" style="font-size:19px; color:var(--faint)">cancel</span>
+                </div>
+                <span class="iconbtn" style="width:40px; height:40px"><span class="ms" style="font-size:20px">settings</span></span>
+              </div>
+              <div class="chips" style="margin:12px 18px 0">
+                <span class="chip on" style="padding:6px 11px; font-size:12px">Everything</span>
+                <span class="chip" style="padding:6px 11px; font-size:12px">Books</span>
+                <span class="chip" style="padding:6px 11px; font-size:12px">Series</span>
+                <span class="chip" style="padding:6px 11px; font-size:12px">Authors</span>
+                <span class="chip" style="padding:6px 11px; font-size:12px">Narrators</span>
+              </div>
+              <div class="secthead" style="margin-top:16px; margin-bottom:8px"><div class="l"><span class="ms">book_2</span>Books · 3</div></div>
+              <div style="padding:0 18px">
+                <div style="display:flex; align-items:center; gap:12px; padding:8px 0">
+                  <div class="cov c1" style="width:46px; aspect-ratio:2/3; padding:5px; border-radius:8px"><span class="ct" style="font-size:6px">The Cinder Crown</span></div>
+                  <div style="flex:1; min-width:0"><div class="label-t">The Cinder Crown</div><div class="cap-t" style="margin-top:2px">Maren Vale · 62%</div>
+                    <div class="track" style="margin-top:5px; width:120px; height:3px"><i style="width:62%"></i></div></div>
+                  <span style="width:36px; height:36px; border-radius:50%; background:var(--accent-tile); display:flex; align-items:center; justify-content:center"><span class="ms fill" style="font-size:19px; color:var(--accent)">play_arrow</span></span>
+                </div>
+                <div style="display:flex; align-items:center; gap:12px; padding:8px 0">
+                  <div class="cov c5" style="width:46px; aspect-ratio:2/3; padding:5px; border-radius:8px"><span class="ct" style="font-size:6px">Emberfall</span></div>
+                  <div style="flex:1; min-width:0"><div class="label-t">Emberfall</div><div class="cap-t" style="margin-top:2px">Maren Vale · Finished</div></div>
+                  <span class="ms fill" style="font-size:19px; color:var(--success)">check_circle</span>
+                </div>
+              </div>
+              <div class="secthead" style="margin-top:10px; margin-bottom:8px"><div class="l"><span class="ms">stacks</span>Series · 1</div></div>
+              <div style="padding:0 18px">
+                <div style="display:flex; align-items:center; gap:12px; padding:6px 0">
+                  <div style="position:relative; width:62px; height:70px">
+                    <div class="cov c5" style="position:absolute; left:14px; top:0; width:42px; aspect-ratio:2/3; padding:4px; border-radius:7px; transform:rotate(5deg)"></div>
+                    <div class="cov c1" style="position:absolute; left:0; top:2px; width:44px; aspect-ratio:2/3; padding:4px; border-radius:7px"><span class="ct" style="font-size:6px">Cinder</span></div>
+                  </div>
+                  <div style="flex:1"><div class="label-t">The Cinder Crown Saga</div><div class="cap-t" style="margin-top:2px">5 books · 3 finished</div></div>
+                  <span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span>
+                </div>
+              </div>
+              <div class="secthead" style="margin-top:10px; margin-bottom:8px"><div class="l"><span class="ms">person</span>Authors · 1</div></div>
+              <div style="padding:0 18px">
+                <div style="display:flex; align-items:center; gap:12px; padding:6px 0">
+                  <div style="width:44px; height:44px; border-radius:50%; background:linear-gradient(155deg,#7a4536,#2b160f); display:flex; align-items:center; justify-content:center; font-weight:800; color:rgba(255,255,255,.75)">MV</div>
+                  <div style="flex:1"><div class="label-t">Maren Vale</div><div class="cap-t" style="margin-top:2px">14 books · 3 series</div></div>
+                  <span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span>
+                </div>
+              </div>
+              <div class="secthead" style="margin-top:10px; margin-bottom:8px"><div class="l"><span class="ms" style="color:var(--hearth)">travel_explore</span>Beyond your library · 2</div></div>
+              <div style="padding:0 18px">
+                <div style="display:flex; align-items:center; gap:12px; padding:8px 0; opacity:.92">
+                  <div class="cov c4" style="width:46px; aspect-ratio:2/3; padding:5px; border-radius:8px; opacity:.75"><span class="ct" style="font-size:6px">The Pale Court</span></div>
+                  <div style="flex:1; min-width:0"><div class="label-t">The Pale Court</div><div class="cap-t" style="margin-top:2px">Maren Vale · Book 4</div></div>
+                  <span class="chip gold" style="padding:5px 11px; font-size:11.5px"><span class="ms" style="font-size:13px">outgoing_mail</span>Request</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:12px; padding:8px 0; opacity:.92">
+                  <div class="cov c8" style="width:46px; aspect-ratio:2/3; padding:5px; border-radius:8px; opacity:.75"><span class="ct" style="font-size:6px">Cinderwake</span></div>
+                  <div style="flex:1; min-width:0"><div class="label-t">Cinderwake</div><div class="cap-t" style="margin-top:2px">R. J. Okafor</div></div>
+                  <span class="chip" style="padding:5px 11px; font-size:11.5px"><span class="ms" style="font-size:13px">shopping_cart</span>Audible</span>
+                </div>
+              </div>
+            </div>
+            <div class="tabbar">
+              <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div>
+              <div class="tab on"><span class="pill"><span class="ms fill">auto_stories</span></span><span class="lbl">Library</span></div>
+              <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+              <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+              <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+            </div>
+            <span class="n" style="top:52px; left:296px">1</span>
+            <span class="n" style="top:196px; left:100px">2</span>
+            <span class="n" style="top:224px; left:334px">3</span>
+            <span class="n" style="top:346px; left:200px">4</span>
+            <span class="n" style="top:436px; left:200px">5</span>
+            <span class="n" style="top:520px; left:200px">6</span>
+            <span class="n" style="top:600px; left:326px">7</span>
+            <span class="n" style="top:672px; left:322px">8</span>
+          </div></div>
+          <div class="legend">
+            <div class="li"><span class="no">1</span><span class="tx"><b>Clear × · tap</b> — empties the field and returns to the recents view. Present from the first character (fixes /search's missing clear).
+              <span class="anim">results fade out DUR.fast · recents fade in</span></span></div>
+            <div class="li"><span class="no">2</span><span class="tx"><b>Section header</b> — one per type under scope Everything, with match counts. Tapping a scope chip is the "see all" for a section.
+              <span class="anim">sections height-animate as counts change 180ms</span></span></div>
+            <div class="li"><span class="no">3</span><span class="tx"><b>Quick-play chip · tap</b> — one tap to audio on any owned in-progress result (D-PLAY). Finished rows show the green check instead.
+              <span class="anim">pop POP_SPRING · haptic transport · mini player rises</span></span></div>
+            <div class="li"><span class="no">4</span><span class="tx"><b>Book row · tap / long-press</b> — tap pushes book detail (Library tab stays lit, D-NAV); long-press opens the shared BookActionsSheet (D-ACTIONS).
+              <span class="anim">press scale .96 SpringPressable</span></span></div>
+            <div class="li"><span class="no">5</span><span class="tx"><b>Series row · tap</b> — pushes series detail. Series are searchable for the first time.
+              <span class="anim">push slide-left 220ms</span></span></div>
+            <div class="li"><span class="no">6</span><span class="tx"><b>Author row · tap</b> — pushes the redesigned author screen (section below). Narrator rows identical with a mic glyph.
+              <span class="anim">push slide-left 220ms</span></span></div>
+            <div class="li"><span class="no">7</span><span class="tx"><b>Request tag · tap</b> — ReadMeABook request via the NotOwnedSheet (kept flow, consistent row anatomy now).
+              <span class="anim">NotOwnedSheet spring slide-up · tag flips to "Requested ✓" on success</span></span></div>
+            <div class="li"><span class="no">8</span><span class="tx"><b>Audible tag · tap</b> — shown when ReadMeABook is off (replaces the cart "Not in library" tag); opens the same NotOwnedSheet with the Audible link.
+              <span class="anim">NotOwnedSheet spring slide-up</span></span></div>
+          </div>
+        </div>
+
+        <div class="frameunit wide">
+          <div class="framecap"><div class="t">Search — states <span class="chip nochange">NO CHANGES</span></div>
+            <div class="d">Today a failed search silently renders empty. Every state now speaks (D-STATES).</div></div>
+            <div class="nochange-note">Reproduced from 02-library.html &middot; no in-house adjustment</div>
+          <div style="display:flex; gap:18px; flex-wrap:wrap">
+            <div>
+              <div class="cap-t" style="margin:0 2px 8px; text-transform:uppercase; letter-spacing:.12em">Typing — skeleton</div>
+              <div class="screen short" style="width:235px; height:390px; border:1px solid var(--page-border); padding:14px">
+                <div class="skel" style="height:36px; border-radius:999px; margin-bottom:14px"></div>
+                <div class="skel" style="width:90px; height:11px; margin-bottom:12px"></div>
+                <div style="display:flex; gap:10px; margin-bottom:12px"><div class="skel" style="width:40px; height:60px; border-radius:8px"></div><div style="flex:1"><div class="skel" style="height:12px; width:80%"></div><div class="skel" style="height:9px; width:55%; margin-top:7px"></div></div></div>
+                <div style="display:flex; gap:10px; margin-bottom:12px"><div class="skel" style="width:40px; height:60px; border-radius:8px"></div><div style="flex:1"><div class="skel" style="height:12px; width:70%"></div><div class="skel" style="height:9px; width:45%; margin-top:7px"></div></div></div>
+                <div style="display:flex; gap:10px"><div class="skel" style="width:40px; height:60px; border-radius:8px"></div><div style="flex:1"><div class="skel" style="height:12px; width:85%"></div><div class="skel" style="height:9px; width:50%; margin-top:7px"></div></div></div>
+              </div>
+            </div>
+            <div>
+              <div class="cap-t" style="margin:0 2px 8px; text-transform:uppercase; letter-spacing:.12em">No results + suggestion</div>
+              <div class="screen short" style="width:235px; height:390px; border:1px solid var(--page-border); display:flex; align-items:center; justify-content:center">
+                <div style="text-align:center; padding:0 20px">
+                  <span class="ms" style="font-size:40px; color:var(--faint)">search_off</span>
+                  <div class="label-t" style="margin-top:10px">No matches for "zephyr"</div>
+                  <div class="cap-t" style="margin-top:5px; line-height:1.5">Nothing in your library. Want to look further?</div>
+                  <div class="btn secondary" style="margin-top:14px; font-size:12.5px; padding:9px 15px"><span class="ms" style="font-size:16px; color:var(--hearth)">travel_explore</span>Search beyond your library</div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="cap-t" style="margin:0 2px 8px; text-transform:uppercase; letter-spacing:.12em">Error — retry</div>
+              <div class="screen short" style="width:235px; height:390px; border:1px solid var(--page-border); display:flex; align-items:center; justify-content:center">
+                <div style="text-align:center; padding:0 20px">
+                  <span class="ms" style="font-size:40px; color:var(--destructive)">cloud_off</span>
+                  <div class="label-t" style="margin-top:10px">Search didn't go through</div>
+                  <div class="cap-t" style="margin-top:5px; line-height:1.5">The server didn't answer. Your library is fine.</div>
+                  <div class="btn secondary" style="margin-top:14px; font-size:12.5px; padding:9px 15px"><span class="ms" style="font-size:16px">refresh</span>Retry</div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="cap-t" style="margin:0 2px 8px; text-transform:uppercase; letter-spacing:.12em">Offline — downloads only</div>
+              <div class="screen short" style="width:235px; height:390px; border:1px solid var(--page-border); padding:14px">
+                <div class="chip gold" style="font-size:11px; padding:5px 10px; margin-bottom:12px"><span class="ms" style="font-size:13px">wifi_off</span>Offline · searching downloads</div>
+                <div style="display:flex; gap:10px; align-items:center; padding:6px 0">
+                  <div class="cov c7" style="width:40px; aspect-ratio:2/3; padding:4px; border-radius:7px"><span class="ct" style="font-size:5.5px">Ninth Orbit</span></div>
+                  <div style="flex:1"><div style="font-size:12.5px; font-weight:600; color:var(--text)">Ninth Orbit</div><div class="cap-t" style="margin-top:2px">Calder Reyes</div></div>
+                  <span style="width:30px; height:30px; border-radius:50%; background:var(--accent-tile); display:flex; align-items:center; justify-content:center"><span class="ms fill" style="font-size:16px; color:var(--accent)">play_arrow</span></span>
+                </div>
+                <div class="cap-t" style="margin-top:12px; line-height:1.5">Beyond-your-library results resume when you're back online.</div>
+              </div>
+            </div>
+          </div>
+          <div class="legend">
+            <div class="li"><span class="no">1</span><span class="tx"><b>Typing skeleton</b> — row-shaped shimmer while the debounce settles and the request runs; no spinner, no blank flash.
+              <span class="anim">shimmer 1600ms · cross-fade to results DUR.base</span></span></div>
+            <div class="li"><span class="no">2</span><span class="tx"><b>No results</b> — when "Beyond your library" is OFF, a one-tap suggestion runs the same query against Audible. When it's on and Audible also misses, the copy says so plainly.
+              <span class="anim">suggestion button pulse once after 600ms</span></span></div>
+            <div class="li"><span class="no">3</span><span class="tx"><b>Error</b> — failed requests finally say so with a retry (today they render a silent empty grid).
+              <span class="anim">icon shake 300ms on arrival · retry re-runs with skeleton</span></span></div>
+            <div class="li"><span class="no">4</span><span class="tx"><b>Offline</b> — searches the downloaded catalog only, labeled with the status chip; owned quick-play still works.
+              <span class="anim">chip slides in on connectivity edge</span></span></div>
+          </div>
+        </div>
+
+        <div class="frameunit">
+          <div class="framecap"><div class="t">Author screen <span class="chip nochange">NO CHANGES</span></div>
+            <div class="d">Hero + sort chip + series-aware grouping. Narrator variant is identical with a NARRATED BY eyebrow and mic avatar glyph.</div></div>
+            <div class="nochange-note">Reproduced from 02-library.html &middot; no in-house adjustment</div>
+          <div class="phone"><div class="screen">
+            <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+            <div class="body">
+              <div style="display:flex; align-items:center; padding:8px 14px 0">
+                <span class="iconbtn" style="width:40px; height:40px"><span class="ms">arrow_back</span></span>
+              </div>
+              <!-- hero -->
+              <div style="text-align:center; margin-top:-6px">
+                <div style="width:76px; height:76px; border-radius:50%; margin:0 auto; background:linear-gradient(155deg,#7a4536,#2b160f); display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:800; color:rgba(255,255,255,.78); box-shadow:0 10px 26px rgba(0,0,0,.4)">MV</div>
+                <div class="eyebrow-t" style="margin-top:12px">Author</div>
+                <div class="hero-t" style="margin-top:4px">Maren Vale</div>
+                <div class="meta-t" style="margin-top:5px">14 books · 3 series · 9 finished</div>
+              </div>
+              <!-- control row -->
+              <div style="display:flex; align-items:center; gap:8px; margin:16px 18px 0">
+                <span class="chip" style="padding:7px 12px"><span class="ms" style="font-size:15px; color:var(--accent)">arrow_upward</span>Series<span class="ms" style="font-size:15px">expand_more</span></span>
+                <span style="flex:1"></span>
+                <span class="cap-t">14 books</span>
+              </div>
+              <!-- series group 1 -->
+              <div style="display:flex; align-items:center; gap:8px; margin:16px 18px 8px">
+                <span class="label-t" style="color:var(--hearth)">The Cinder Crown Saga</span>
+                <span class="cap-t">· 5 books</span>
+                <span style="flex:1"></span>
+                <span class="ms" style="font-size:18px; color:var(--hearth)">chevron_right</span>
+              </div>
+              <div style="display:flex; gap:9px; padding:0 18px">
+                <div style="width:106px">
+                  <div class="cov c1" style="width:106px; aspect-ratio:2/3"><span class="init">1</span><span class="ck">Book 1</span><span class="ct">The Cinder Crown</span>
+                    <div class="playchip"><span class="ms fill">play_arrow</span></div></div>
+                  <div class="track" style="margin-top:6px"><i style="width:62%"></i></div>
+                </div>
+                <div style="width:106px">
+                  <div class="cov c5" style="width:106px; aspect-ratio:2/3"><span class="init">2</span><span class="ck">Book 2</span><span class="ct">Emberfall</span>
+                    <div class="dl-badge" style="background:var(--success)"><span class="ms">check</span></div></div>
+                  <div style="height:4px; margin-top:6px"></div>
+                </div>
+                <div style="width:106px">
+                  <div class="cov c6" style="width:106px; aspect-ratio:2/3"><span class="init">3</span><span class="ck">Book 3</span><span class="ct">Ashsong</span></div>
+                  <div style="height:4px; margin-top:6px"></div>
+                </div>
+              </div>
+              <!-- series group 2 -->
+              <div style="display:flex; align-items:center; gap:8px; margin:16px 18px 8px">
+                <span class="label-t" style="color:var(--hearth)">The Glass Meridian</span>
+                <span class="cap-t">· 2 books</span>
+                <span style="flex:1"></span>
+                <span class="ms" style="font-size:18px; color:var(--hearth)">chevron_right</span>
+              </div>
+              <div style="display:flex; gap:9px; padding:0 18px">
+                <div style="width:106px">
+                  <div class="cov c4" style="width:106px; aspect-ratio:2/3"><span class="init">1</span><span class="ck">Book 1</span><span class="ct">The Glass Meridian</span>
+                    <div class="playchip"><span class="ms fill">play_arrow</span></div></div>
+                  <div class="track" style="margin-top:6px"><i style="width:12%"></i></div>
+                </div>
+                <div style="width:106px">
+                  <div class="cov c7" style="width:106px; aspect-ratio:2/3"><span class="init">2</span><span class="ck">Book 2</span><span class="ct">The Iron Meridian</span></div>
+                  <div style="height:4px; margin-top:6px"></div>
+                </div>
+              </div>
+              <!-- standalone -->
+              <div style="display:flex; align-items:center; gap:8px; margin:16px 18px 8px">
+                <span class="label-t" style="color:var(--muted)">Standalone</span>
+                <span class="cap-t">· 4 books</span>
+              </div>
+              <div style="display:flex; gap:9px; padding:0 18px">
+                <div style="width:106px"><div class="cov c3" style="width:106px; aspect-ratio:2/3"><span class="init">V</span><span class="ct">The Verdant Hour</span></div></div>
+                <div style="width:106px"><div class="cov c8" style="width:106px; aspect-ratio:2/3"><span class="init">K</span><span class="ct">Kestrel's Wake</span></div></div>
+              </div>
+            </div>
+            <div class="tabbar">
+              <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div>
+              <div class="tab on"><span class="pill"><span class="ms fill">auto_stories</span></span><span class="lbl">Library</span></div>
+              <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+              <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+              <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+            </div>
+            <span class="n" style="top:50px; left:12px">1</span>
+            <span class="n" style="top:96px; left:238px">2</span>
+            <span class="n" style="top:250px; left:26px">3</span>
+            <span class="n" style="top:296px; left:230px">4</span>
+            <span class="n" style="top:390px; left:110px">5</span>
+            <span class="n" style="top:466px; left:98px">6</span>
+          </div></div>
+          <div class="legend">
+            <div class="li"><span class="no">1</span><span class="tx"><b>Back · tap / edge-swipe</b> — pops to wherever the credit was tapped. Library tab stays lit the whole time (D-NAV).
+              <span class="anim">pop slide-right 220ms</span></span></div>
+            <div class="li"><span class="no">2</span><span class="tx"><b>Hero</b> — avatar (initials fallback), AUTHOR or NARRATED BY eyebrow, name, real counts. The narrator variant uses a mic glyph in the avatar.
+              <span class="anim">hero fades-rises in DUR.slow on push · avatar scale from .9 POP_SPRING</span></span></div>
+            <div class="li"><span class="no">3</span><span class="tx"><b>Sort chip · tap / chevron</b> — Title / Series / Year, same flip-direction grammar as Library (new — no sort exists today). Series sort enables the grouped view shown.
+              <span class="anim">arrow rotate POP_SPRING · groups reflow 220ms</span></span></div>
+            <div class="li"><span class="no">4</span><span class="tx"><b>Series subhead · tap</b> — pushes the full series detail. Grouping appears only when the author has series; pure-standalone authors get a flat grid (new).
+              <span class="anim">push slide-left 220ms</span></span></div>
+            <div class="li"><span class="no">5</span><span class="tx"><b>Tile · tap / long-press</b> — user-aspect covers (fixes the square-cover inconsistency, D-CONSIST) with progress, finished badge, and book-number kicker. Long-press = BookActionsSheet (D-ACTIONS).
+              <span class="anim">press scale .96 SpringPressable</span></span></div>
+            <div class="li"><span class="no">6</span><span class="tx"><b>Quick-play chip · tap</b> — one tap to audio on in-progress tiles, same as everywhere (D-PLAY).
+              <span class="anim">pop POP_SPRING · haptic transport</span></span></div>
+          </div>
+        </div>
+
+        <div class="frameunit wide">
+          <div class="framecap"><div class="t">Author &amp; narrator — states <span class="chip nochange">NO CHANGES</span></div>
+            <div class="d">The narrator variant filters the whole library client-side — it needs the skeleton most.</div></div>
+            <div class="nochange-note">Reproduced from 02-library.html &middot; no in-house adjustment</div>
+          <div style="display:flex; gap:18px; flex-wrap:wrap">
+            <div>
+              <div class="cap-t" style="margin:0 2px 8px; text-transform:uppercase; letter-spacing:.12em">Loading — narrator filter</div>
+              <div class="screen short" style="width:250px; height:400px; border:1px solid var(--page-border); padding:16px">
+                <div class="skel" style="width:60px; height:60px; border-radius:50%; margin:8px auto 0"></div>
+                <div class="skel" style="width:120px; height:14px; margin:12px auto 0"></div>
+                <div class="skel" style="width:90px; height:10px; margin:8px auto 0"></div>
+                <div style="display:flex; gap:8px; margin-top:20px; flex-wrap:wrap; justify-content:center">
+                  <div class="skel" style="width:64px; height:96px; border-radius:10px"></div>
+                  <div class="skel" style="width:64px; height:96px; border-radius:10px"></div>
+                  <div class="skel" style="width:64px; height:96px; border-radius:10px"></div>
+                  <div class="skel" style="width:64px; height:96px; border-radius:10px"></div>
+                  <div class="skel" style="width:64px; height:96px; border-radius:10px"></div>
+                  <div class="skel" style="width:64px; height:96px; border-radius:10px"></div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="cap-t" style="margin:0 2px 8px; text-transform:uppercase; letter-spacing:.12em">Empty — new</div>
+              <div class="screen short" style="width:250px; height:400px; border:1px solid var(--page-border); display:flex; align-items:center; justify-content:center">
+                <div style="text-align:center; padding:0 24px">
+                  <span class="ms" style="font-size:42px; color:var(--faint)">record_voice_over</span>
+                  <div class="label-t" style="margin-top:12px">Nothing by this narrator yet</div>
+                  <div class="cap-t" style="margin-top:6px; line-height:1.5">Their books left your library or were hidden.</div>
+                  <div class="btn secondary" style="margin-top:15px; font-size:13px; padding:10px 17px"><span class="ms" style="font-size:17px">auto_stories</span>Back to Library</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="legend">
+            <div class="li"><span class="no">1</span><span class="tx"><b>Skeleton</b> — hero + grid shimmer while the narrator filter computes (today: silent blank on a slow full-library scan).
+              <span class="anim">shimmer 1600ms · content cross-fade when the filter completes</span></span></div>
+            <div class="li"><span class="no">2</span><span class="tx"><b>Empty</b> — reachable when the group's books were removed or hidden; icon + one-liner + CTA replaces today's nothing (D-STATES).
+              <span class="anim">fade-rise DUR.slow</span></span></div>
+          </div>
+        </div>
+
+        <div class="frameunit">
+          <div class="framecap"><div class="t">Series detail <span class="chip nochange">NO CHANGES</span></div>
+            <div class="d">The good bones untouched; author link, track legend, demoted mark-finished, and the missing-books section header are the changes.</div></div>
+            <div class="nochange-note">Reproduced from 02-library.html &middot; no in-house adjustment</div>
+          <div class="phone"><div class="screen">
+            <!-- cover glow -->
+            <div style="position:absolute; top:-60px; left:50%; transform:translateX(-50%); width:420px; height:300px; background:radial-gradient(closest-side, rgba(224,101,74,.28), transparent 72%); z-index:1"></div>
+            <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+            <div class="body">
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 14px 0">
+                <span class="iconbtn" style="width:40px; height:40px; background:#1b1a18cc"><span class="ms">arrow_back</span></span>
+                <span class="iconbtn" style="width:40px; height:40px; background:#1b1a18cc"><span class="ms">more_horiz</span></span>
+              </div>
+              <!-- hero covers fan -->
+              <div style="position:relative; height:150px; margin-top:2px">
+                <div class="cov c5" style="position:absolute; left:50%; top:14px; width:84px; aspect-ratio:2/3; margin-left:-108px; transform:rotate(-8deg); opacity:.85"><span class="ct" style="font-size:8px">Emberfall</span></div>
+                <div class="cov c6" style="position:absolute; left:50%; top:14px; width:84px; aspect-ratio:2/3; margin-left:24px; transform:rotate(8deg); opacity:.85"><span class="ct" style="font-size:8px">Ashsong</span></div>
+                <div class="cov c1" style="position:absolute; left:50%; top:2px; width:92px; aspect-ratio:2/3; margin-left:-46px; box-shadow:0 14px 34px rgba(0,0,0,.55)"><span class="init">C</span><span class="ck">Book 1</span><span class="ct">The Cinder Crown</span></div>
+                <div class="chip" style="position:absolute; right:64px; bottom:0; padding:4px 10px; font-size:11px; background:#141312d9">+2</div>
+              </div>
+              <!-- identity -->
+              <div style="text-align:center; margin-top:4px">
+                <div class="eyebrow-t">Series</div>
+                <div class="hero-t" style="margin-top:3px">The Cinder Crown Saga</div>
+                <div style="margin-top:5px; font-size:14px; font-weight:600; color:var(--accent)">Maren Vale <span class="ms" style="font-size:14px; vertical-align:-2px">chevron_right</span></div>
+              </div>
+              <!-- stat strip -->
+              <div style="display:flex; justify-content:center; gap:22px; margin-top:12px; font-family:var(--font-mono); font-size:12.5px; color:var(--muted)">
+                <span>5 books</span><span style="color:var(--faint)">|</span><span>62 hrs</span><span style="color:var(--faint)">|</span><span>3 of 5 done</span>
+              </div>
+              <!-- progress card -->
+              <div class="card" style="margin:14px 18px 0; padding:14px 16px">
+                <div style="display:flex; align-items:center; gap:14px">
+                  <div style="font-size:30px; font-weight:800; color:var(--accent); letter-spacing:-.02em">58%</div>
+                  <div style="flex:1; display:flex; gap:4px">
+                    <div style="flex:1; height:12px; border-radius:4px; background:var(--accent)"></div>
+                    <div style="flex:1; height:12px; border-radius:4px; background:var(--accent)"></div>
+                    <div style="flex:1; height:12px; border-radius:4px; background:linear-gradient(90deg, var(--accent) 34%, var(--fill-strong) 34%)"></div>
+                    <div style="flex:1; height:12px; border-radius:4px; background:var(--fill-strong)"></div>
+                    <div style="flex:1; height:12px; border-radius:4px; background:linear-gradient(135deg, transparent 42%, #d4544a88 42%, #d4544a88 58%, transparent 58%), rgba(212,84,74,.14)"></div>
+                  </div>
+                </div>
+                <div style="display:flex; gap:14px; margin-top:9px; font-size:10.5px; color:var(--muted)">
+                  <span><span style="display:inline-block; width:8px; height:8px; border-radius:2px; background:var(--accent); vertical-align:-1px"></span> finished</span>
+                  <span><span style="display:inline-block; width:8px; height:8px; border-radius:2px; background:linear-gradient(90deg, var(--accent) 50%, var(--fill-strong) 50%); vertical-align:-1px"></span> in progress</span>
+                  <span><span style="display:inline-block; width:8px; height:8px; border-radius:2px; background:linear-gradient(135deg, transparent 42%, #d4544a88 42%, #d4544a88 58%, transparent 58%), rgba(212,84,74,.14); vertical-align:-1px"></span> not owned</span>
+                </div>
+              </div>
+              <!-- continue CTA -->
+              <div class="btn primary" style="margin:12px 18px 0; display:flex"><span class="ms fill" style="font-size:20px">play_arrow</span>Continue · Book 3</div>
+              <!-- reading order -->
+              <div class="secthead" style="margin:16px 0 6px"><div class="l"><span class="ms">format_list_numbered</span>In reading order</div></div>
+              <div style="padding:0 18px">
+                <div style="display:flex; align-items:center; gap:11px; padding:7px 0">
+                  <span class="mono-t" style="width:14px; text-align:center">1</span>
+                  <div class="cov c1" style="width:44px; aspect-ratio:2/3; padding:4px; border-radius:8px"><span class="ct" style="font-size:5.5px">Cinder</span></div>
+                  <div style="flex:1; min-width:0">
+                    <div style="display:flex; align-items:center; gap:5px"><span class="label-t" style="font-size:13.5px">The Cinder Crown</span><span class="ms fill" style="font-size:14px; color:var(--success)">check_circle</span></div>
+                    <div class="cap-t" style="margin-top:1px">Wren Alcott · 12h 40m</div>
+                  </div>
+                  <span style="width:36px; height:36px; border-radius:50%; background:var(--accent-tile); display:flex; align-items:center; justify-content:center"><span class="ms fill" style="font-size:19px; color:var(--accent)">play_arrow</span></span>
+                </div>
+                <div style="display:flex; align-items:center; gap:11px; padding:7px 0">
+                  <span class="mono-t" style="width:14px; text-align:center">2</span>
+                  <div class="cov c5" style="width:44px; aspect-ratio:2/3; padding:4px; border-radius:8px"><span class="ct" style="font-size:5.5px">Emberfall</span></div>
+                  <div style="flex:1; min-width:0">
+                    <div style="display:flex; align-items:center; gap:5px"><span class="label-t" style="font-size:13.5px">Emberfall</span><span class="ms fill" style="font-size:14px; color:var(--success)">check_circle</span></div>
+                    <div class="cap-t" style="margin-top:1px">Wren Alcott · 13h 05m</div>
+                  </div>
+                  <span style="width:36px; height:36px; border-radius:50%; background:var(--accent-tile); display:flex; align-items:center; justify-content:center"><span class="ms fill" style="font-size:19px; color:var(--accent)">play_arrow</span></span>
+                </div>
+                <div style="display:flex; align-items:center; gap:11px; padding:7px 0">
+                  <span class="mono-t" style="width:14px; text-align:center">3</span>
+                  <div class="cov c6" style="width:44px; aspect-ratio:2/3; padding:4px; border-radius:8px"><span class="ct" style="font-size:5.5px">Ashsong</span><div class="dl-badge" style="width:14px; height:14px; right:3px; bottom:3px"><span class="ms" style="font-size:8px">download_done</span></div></div>
+                  <div style="flex:1; min-width:0">
+                    <div class="label-t" style="font-size:13.5px">Ashsong</div>
+                    <div class="cap-t" style="margin-top:1px">Davi Okoye · 11h 52m</div>
+                    <div class="track" style="margin-top:4px; width:130px; height:3px"><i style="width:34%"></i></div>
+                  </div>
+                  <span style="width:36px; height:36px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; box-shadow:0 6px 16px rgba(224,101,74,.35)"><span class="ms fill" style="font-size:19px; color:var(--on-accent)">play_arrow</span></span>
+                </div>
+              </div>
+              <!-- missing section header (collapsed) -->
+              <div class="card" style="margin:10px 18px 0; padding:12px 15px; display:flex; align-items:center; gap:11px">
+                <span class="ms" style="font-size:19px; color:var(--hearth)">travel_explore</span>
+                <span class="label-t" style="flex:1; font-size:13.5px">Not in your library</span>
+                <span class="chip gold" style="padding:3px 9px; font-size:11px">2</span>
+                <span class="ms" style="font-size:19px; color:var(--faint)">expand_more</span>
+              </div>
+            </div>
+            <div class="tabbar">
+              <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div>
+              <div class="tab on"><span class="pill"><span class="ms fill">auto_stories</span></span><span class="lbl">Library</span></div>
+              <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+              <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+              <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+            </div>
+            <span class="n" style="top:48px; left:12px">1</span>
+            <span class="n" style="top:48px; left:344px">2</span>
+            <span class="n" style="top:118px; left:288px">3</span>
+            <span class="n" style="top:262px; left:262px">4</span>
+            <span class="n" style="top:334px; left:344px">5</span>
+            <span class="n" style="top:376px; left:250px">6</span>
+            <span class="n" style="top:426px; left:300px">7</span>
+            <span class="n" style="top:498px; left:340px">8</span>
+            <span class="n" style="top:610px; left:120px">9</span>
+            <span class="n" style="top:700px; left:300px">10</span>
+          </div></div>
+          <div class="legend">
+            <div class="li"><span class="no">1</span><span class="tx"><b>Back · tap / edge-swipe</b> — circular button over the CoverGlow (kept). Library tab stays lit on this pushed route (D-NAV).
+              <span class="anim">pop slide-right 220ms · glow persists under the transition</span></span></div>
+            <div class="li"><span class="no">2</span><span class="tx"><b>Overflow · tap</b> — new home of the demoted "Mark series finished" (one tap + actionable toast per D-FINISH), plus share and hide-series. It also remains in the selection toolbar for partial-series bulk finishes.
+              <span class="anim">menu sheet spring slide-up · finish fires EmberBurst + haptic success</span></span></div>
+            <div class="li"><span class="no">3</span><span class="tx"><b>HeroCovers fan · tap +N</b> — kept exactly; the +2 chip scrolls to the reading-order list.
+              <span class="anim">covers settle with 40ms stagger on push · CoverGlow breathe PULSE_MS</span></span></div>
+            <div class="li"><span class="no">4</span><span class="tx"><b>Author line · tap</b> — now a real link (accent + chevron) to the author screen. Was plain dead text — the only unfollowable credit in the app.
+              <span class="anim">press scale .97 · push slide-left 220ms</span></span></div>
+            <div class="li"><span class="no">5</span><span class="tx"><b>SegmentTrack + micro-legend</b> — per-book cells kept (filled / partial / slashed); the new 10.5px legend row finally decodes them. Tapping a cell scrolls to that book's row (new).
+              <span class="anim">cells fill left-to-right 60ms stagger on mount · tapped cell pulses once</span></span></div>
+            <div class="li"><span class="no">6</span><span class="tx"><b>Continue · Book 3 · tap</b> — kept, and now the ONLY big button; mark-series-finished no longer competes below it. Resumes the in-progress book.
+              <span class="anim">press scale .96 · haptic transport · pushes player</span></span></div>
+            <div class="li"><span class="no">7</span><span class="tx"><b>BookRow · tap / long-press</b> — kept anatomy: index, cover, title + finished check, narrator · hours, progress bar. Tap = book detail; long-press = selection mode (kept).
+              <span class="anim">press scale .97 SpringPressable</span></span></div>
+            <div class="li"><span class="no">8</span><span class="tx"><b>Row play · tap</b> — on EVERY owned row, explicitly: downloaded (badge) or streaming alike. The in-progress row's button is solid accent; others are tinted. The app's best pattern, now unambiguous (D-PLAY).
+              <span class="anim">pop POP_SPRING · haptic transport · row briefly highlights as now-playing</span></span></div>
+            <div class="li"><span class="no">9</span><span class="tx"><b>Downloaded badge</b> — marks offline-ready rows. Offline, undownloaded siblings render as dimmed skeleton rows (kept behavior), now visually distinct from the missing-books section.
+              <span class="anim">badge scale-in POP_SPRING when a download completes</span></span></div>
+            <div class="li"><span class="no">10</span><span class="tx"><b>"Not in your library (2)" · tap</b> — missing Audible-roster books move out of the reading-order list into this collapsed expandable section. Expanded state in the next frame.
+              <span class="anim">card height-expands spring · chevron rotates 180°</span></span></div>
+          </div>
+        </div>
+
+        <div class="frameunit">
+          <div class="framecap"><div class="t">Missing books — expanded <span class="chip nochange">NO CHANGES</span></div>
+            <div class="d">The unowned roster in its own honest section: request, buy, and upcoming-countdown rows plus a Request-all hint.</div></div>
+            <div class="nochange-note">Reproduced from 02-library.html &middot; no in-house adjustment</div>
+          <div class="phone"><div class="screen short" style="height:560px; padding:16px 0">
+            <div class="secthead" style="margin-top:4px"><div class="l"><span class="ms">format_list_numbered</span>In reading order</div></div>
+            <div style="padding:0 18px; opacity:.45">
+              <div style="display:flex; align-items:center; gap:11px; padding:7px 0">
+                <span class="mono-t" style="width:14px; text-align:center">3</span>
+                <div class="cov c6" style="width:44px; aspect-ratio:2/3; padding:4px; border-radius:8px"></div>
+                <div style="flex:1"><div class="label-t" style="font-size:13.5px">Ashsong</div><div class="cap-t" style="margin-top:1px">Davi Okoye · 11h 52m</div></div>
+                <span style="width:36px; height:36px; border-radius:50%; background:var(--accent-tile); display:flex; align-items:center; justify-content:center"><span class="ms fill" style="font-size:19px; color:var(--accent)">play_arrow</span></span>
+              </div>
+            </div>
+            <!-- expanded missing section -->
+            <div class="card" style="margin:10px 18px 0; padding:13px 15px 15px; border-color:#4a3c25">
+              <div style="display:flex; align-items:center; gap:11px">
+                <span class="ms" style="font-size:19px; color:var(--hearth)">travel_explore</span>
+                <span class="label-t" style="flex:1; font-size:13.5px">Not in your library</span>
+                <span class="chip gold" style="padding:3px 9px; font-size:11px">2</span>
+                <span class="ms" style="font-size:19px; color:var(--faint)">expand_less</span>
+              </div>
+              <div class="cap-t" style="margin:8px 0 4px; line-height:1.5">From the series roster on Audible. Rows never mix into your reading order.</div>
+              <div style="display:flex; align-items:center; gap:11px; padding:9px 0; border-bottom:1px solid var(--hairline)">
+                <span class="mono-t" style="width:14px; text-align:center; color:var(--faint)">4</span>
+                <div class="cov c4" style="width:44px; aspect-ratio:2/3; padding:4px; border-radius:8px; opacity:.6"><span class="ct" style="font-size:5.5px">Pale Court</span></div>
+                <div style="flex:1; min-width:0"><div class="label-t" style="font-size:13.5px; color:var(--muted)">The Pale Court</div><div class="cap-t" style="margin-top:1px">14h 20m on Audible</div></div>
+                <span class="chip gold" style="padding:5px 11px; font-size:11.5px"><span class="ms" style="font-size:13px">outgoing_mail</span>Request</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:11px; padding:9px 0">
+                <span class="mono-t" style="width:14px; text-align:center; color:var(--faint)">5</span>
+                <div class="cov c8" style="width:44px; aspect-ratio:2/3; padding:4px; border-radius:8px; opacity:.6"><span class="ct" style="font-size:5.5px">Crownfall</span></div>
+                <div style="flex:1; min-width:0"><div class="label-t" style="font-size:13.5px; color:var(--muted)">Crownfall</div><div class="cap-t" style="margin-top:1px">Releases Nov 12</div></div>
+                <span class="chip" style="padding:5px 11px; font-size:11.5px"><span class="ms" style="font-size:13px">schedule</span>121 days</span>
+              </div>
+              <div class="btn secondary" style="margin-top:10px; display:flex; font-size:13px; padding:10px 16px"><span class="ms" style="font-size:17px; color:var(--hearth)">outgoing_mail</span>Request all missing</div>
+            </div>
+            <span class="n" style="top:158px; left:330px">1</span>
+            <span class="n" style="top:262px; left:322px">2</span>
+            <span class="n" style="top:346px; left:318px">3</span>
+            <span class="n" style="top:420px; left:200px">4</span>
+          </div></div>
+          <div class="legend">
+            <div class="li"><span class="no">1</span><span class="tx"><b>Collapse toggle · tap</b> — folds the section back to its one-line header. Collapsed state persists per series.
+              <span class="anim">height-collapse spring · chevron rotate 180°</span></span></div>
+            <div class="li"><span class="no">2</span><span class="tx"><b>Request tag / row · tap</b> — opens the NotOwnedSheet (kept flow: ReadMeABook request, or Audible link when requests are off). Roster index numbers keep reading-order context.
+              <span class="anim">NotOwnedSheet spring slide-up · tag flips to "Requested ✓" · haptic success</span></span></div>
+            <div class="li"><span class="no">3</span><span class="tx"><b>Countdown tag</b> — upcoming releases show a live day count (ticks daily); tap opens the upcoming-book page with follow/notify.
+              <span class="anim">count cross-fades on change · gold pulse at 7 days out</span></span></div>
+            <div class="li"><span class="no">4</span><span class="tx"><b>Request all missing · tap</b> — batch-requests every requestable row (new); confirm lists the titles first. Hidden when ReadMeABook is off.
+              <span class="anim">confirm sheet · per-row tags flip with 80ms stagger · toast "2 requested"</span></span></div>
+          </div>
+        </div>
+    </div>
+  </div>
+
+  <div class="footnav"><a href="01-home-v2.html" class="v2" style="color:var(--review)">← 01 · Home (v2)</a><a href="03-player-v2.html" class="v2" style="color:var(--review)">03 · Player (v2) →</a></div>
+</div>
+</body>
+</html>

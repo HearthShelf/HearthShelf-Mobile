@@ -1,0 +1,1308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HearthShelf Redesign v2 — Player</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Geist+Mono:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<link rel="stylesheet" href="hearth.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div class="wordmark"><span class="lt">Hearth</span><span class="bd">Shelf</span><span class="sub"> · Mobile Redesign — Player</span><span class="v2tag">In-house v2</span></div>
+    <div class="tagline">Second opinion on <b>03-player.html</b>. The thumb-zone rebalance and the two bug fixes are right —<br>we reverse two changes that traded away learned behavior and invited mis-taps.</div>
+  </div>
+  <div class="pagenav">
+    <a href="index-v2.html" class="v2">v2 Overview</a>
+    <a href="01-home-v2.html" class="v2">Home</a>
+    <a href="02-library-v2.html" class="v2">Library &amp; Search</a>
+    <a href="03-player-v2.html" class="v2 on">Player</a>
+    <a href="04-book-v2.html" class="v2">Book &amp; Reader</a>
+    <a href="05-stats-clubs-v2.html" class="v2">Stats &amp; Clubs</a>
+    <a href="06-settings-v2.html" class="v2">Settings</a>
+    <a href="07-system-v2.html" class="v2">Sign-in &amp; System</a>
+    <a href="03-player.html" style="margin-left:14px; opacity:.7">↩ consultant v1</a>
+  </div>
+
+  <div class="section" id="review">
+    <div class="eyebrow">Screen 03 · Player</div>
+    <h2>The in-house teardown</h2>
+    <p class="sub">The consultant fixed two real shipped bugs (disappearing skip buttons, the fake "car mode coming soon"
+    stub) and moved the queue into the thumb zone. All correct. But two of the redesign's decisions remove behavior users
+    already rely on. This is where a second opinion earns its keep.</p>
+
+    <div class="prodcheck">
+      <div class="lead"><span class="ms">fact_check</span>Verified against prod source (app/player.tsx · src/store/settings.ts · src/ui/theme.ts)</div>
+      <p>I personally read the player source. Results — the strongest finding held; the collapse claim was overstated:</p>
+      <table>
+        <tr><th>My / consultant claim</th><th>Verdict</th><th>Prod evidence</th></tr>
+        <tr><td>Skip buttons vanish on chapterless books (shipped bug)</td><td><span class="vd ok">confirmed</span></td><td class="src">player.tsx:627,644 <span class="mono-t">{hasChapters &amp;&amp; !immersive ? &lt;SkipButton&gt;}</span> — chapterless ⇒ no skips</td></tr>
+        <tr><td>Cover tap-to-play defaults OFF today; flipping it ON is a hair-trigger change</td><td><span class="vd ok">confirmed</span></td><td class="src">settings.ts:222 <span class="mono-t">tapArtworkTogglesPlay: false</span>. My regression call on the consultant flipping it ON stands.</td></tr>
+        <tr><td>"Collapse chevron removed orphans users who don't think in tabs"</td><td><span class="vd over">overstated</span></td><td class="src">Prod renders the player TWO ways: pushed <span class="mono-t">/player</span> WITH a collapse button (player.tsx:473) and embedded in the Now tab WITHOUT one (:108-109). Now-tab users already live without it today. Restoring a handle is still nice, but "orphans users" oversold the loss.</td></tr>
+        <tr><td>"No light mode for the phone player (dark-only again)"</td><td><span class="vd inv">invented</span></td><td class="src">The player uses <span class="mono-t">useColors()</span>, and prod ships a full light theme (theme.ts:123, OS-reactive). The player is ALREADY themed — unlike sign-in, which hardcodes. This point was wrong.</td></tr>
+      </table>
+      <p><b>Net:</b> the cover-tap-default and skip-bug findings are rock solid. I've softened the collapse-chevron severity and dropped the player "no light mode" claim (it's themed today). The driving-safe car lock still stands as a real safety add.</p>
+    </div>
+
+    <div class="ihreview">
+      <div class="lead"><span class="ms">reviews</span>Scored against the consultant's 03-player.html</div>
+      <p>The player is the screen users hold longest, so every change compounds. One decision is a clear regression; one was overstated.</p>
+      <div class="ihgrid">
+        <div class="ihcol keep"><h4><span class="ms">check_circle</span>Kept — ship as written</h4><ul>
+          <li><b>Skip buttons unconditional</b> (chapterless bug fix — verified real at player.tsx:627). Correct and overdue.</li>
+          <li><b>Queue → "Up next" in the thumb zone</b>, sync stays a header status. Right split.</li>
+          <li><b>Car mode unification</b> — one concept, kills the coming-soon lie. Yes.</li>
+          <li><b>Buffering ring</b> + no redundant chapter pill. Good restraint.</li>
+        </ul></div>
+        <div class="ihcol miss"><h4><span class="ms">construction</span>Still wrong — unaddressed</h4><ul>
+          <li><b>Car mode is not a driving-safe surface.</b> A 40px scrubber you can drag while moving is a hazard; there's no lock/simplify-further state.</li>
+          <li><b>Restore a lightweight dismiss handle.</b> Not urgent (Now-tab already ships with no collapse — verified), but a nicety for pushed-route users. <span class="mono-t">(downgraded from "regression")</span></li>
+          <li><b>Gesture density.</b> Tap, double-tap, two swipe axes, drag, long-press on one screen, taught only by a first-run overlay. Discoverability aid ≠ ongoing legibility.</li>
+        </ul></div>
+        <div class="ihcol regress"><h4><span class="ms">warning</span>Regressed — the redesign made it worse</h4><ul>
+          <li><b>Cover single-tap = play/pause by default.</b> Verified: prod defaults this OFF (settings.ts:222). Flipping it ON makes the biggest target a hair-trigger and forces a 250ms delay that laggs the double-tap lightbox. <span class="mono-t">(holds against prod)</span></li>
+          <li style="color:var(--regress)"><b>Softened: "collapse chevron removed."</b> Prod already ships the embedded Now-tab player with no collapse button, so the model isn't new. Restore a handle for pushed-route users, but it's a polish item, not an orphaning regression.</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================
+       FRAME 1 — player, corrected
+       ================================================================ -->
+  <div class="section" id="player-fix">
+    <div class="eyebrow">Screen 03 · Player</div>
+    <h2>Keep the rebalance, restore the safeguards</h2>
+    <p class="sub">v2 keeps the consultant's bigger artwork, thumb-zone "Up next", header sync + car entry, and buffering
+    ring. It changes two things: the cover's default tap is <b>open-scrubber-hint / lightbox</b> (not play), with a clear
+    dedicated 84px play button doing the playing; and a slim <b>dismiss handle</b> returns so the player can be closed by
+    the gesture people already know.</p>
+
+    <div class="frames">
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Full player <span class="chip v2fix">v2 fix</span></div>
+          <div class="d">Two changes from v1: (1) a grab handle at the very top restores swipe-down-to-dismiss; (2) cover tap defaults to lightbox/inspect, NOT play — play lives on the unmistakable 84px accent button. Everything else (art size, transport, Up-next, sync status, car entry) is the consultant's, kept.</div></div>
+        <div class="phone"><div class="screen">
+          <div style="position:absolute; inset:0; background:radial-gradient(120% 82% at 50% 24%, rgba(122,69,54,.42), transparent 64%), linear-gradient(180deg, rgba(43,22,15,.30), var(--scaffold) 70%);"></div>
+          <!-- restored dismiss handle -->
+          <div style="position:relative; z-index:9; display:flex; justify-content:center; padding-top:8px"><div class="grabber" style="margin:0"></div></div>
+          <div class="statusbar" style="height:30px"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms" style="font-size:15px">wifi</span><span class="ms" style="font-size:15px">battery_5_bar</span></span></div>
+          <div class="body" style="padding:0 18px;">
+            <div style="height:38px; display:flex; align-items:center; justify-content:space-between;">
+              <div class="eyebrow-t" style="color:var(--muted);">Now playing</div>
+              <div style="display:flex; align-items:center; gap:2px;">
+                <div class="iconbtn" style="width:40px;height:40px;background:transparent;border:none;"><span class="ms" style="font-size:22px; color:var(--muted);">directions_car</span></div>
+                <div class="iconbtn" style="width:40px;height:40px;background:transparent;border:none;"><span class="ms" style="font-size:21px; color:var(--success);">cloud_done</span></div>
+              </div>
+            </div>
+            <div style="margin:0 2px;">
+              <div class="track" style="height:2.5px;"><i style="width:46%;"></i></div>
+              <div style="display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:11.5px; color:var(--muted); margin-top:7px;">
+                <span>6h 02m</span><span style="color:var(--text); font-weight:700;">46%</span><span>−7h 04m</span>
+              </div>
+            </div>
+            <div style="display:flex; justify-content:center; margin-top:12px;">
+              <div class="cov c1" style="width:272px; aspect-ratio:1/1; border-radius:16px; padding:13px; box-shadow:0 26px 64px rgba(122,69,54,.42);">
+                <span class="init">E</span><span class="ck">Cinderfall Cycle · 3</span><span class="ct" style="font-size:16px;">The Ember Gate</span>
+                <!-- explicit inspect affordance top-center -->
+                <div style="position:absolute; top:9px; left:50%; transform:translateX(-50%); padding:3px 10px; border-radius:999px; background:#141312cc; border:1px solid rgba(255,255,255,.18); display:flex; align-items:center; gap:5px;"><span class="ms" style="font-size:14px; color:#fff;">zoom_in</span><span style="font-size:10px; font-weight:700; color:#fff;">Tap to inspect</span></div>
+                <div style="position:absolute; top:9px; left:9px; width:36px; height:36px; border-radius:50%; background:#141312cc; border:1px solid rgba(255,255,255,.18); display:flex; align-items:center; justify-content:center;"><span class="ms" style="font-size:19px; color:#fff;">groups</span></div>
+                <div style="position:absolute; top:9px; right:9px; width:36px; height:36px; border-radius:50%; background:#141312cc; border:1px solid rgba(255,255,255,.18); display:flex; align-items:center; justify-content:center;"><span class="ms" style="font-size:19px; color:#fff;">bookmark_add</span></div>
+              </div>
+            </div>
+            <div style="text-align:center; margin-top:10px;">
+              <div class="hero-t" style="font-size:21px;">The Ember Gate</div>
+              <div class="meta-t" style="margin-top:3px;">Maren Holloway · read by June Ashford</div>
+            </div>
+            <div style="margin-top:12px;">
+              <div style="height:30px; border-radius:999px; position:relative; overflow:hidden; background:linear-gradient(90deg, #e0654a, #bd863f);">
+                <div style="position:absolute; top:0; bottom:0; left:38%; right:0; background:rgba(15,12,10,.55);"></div>
+                <div style="position:absolute; left:38%; top:-3px; bottom:-3px; width:3px; background:var(--cream); box-shadow:0 0 12px rgba(255,230,207,.9); border-radius:2px;"></div>
+                <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:space-between; padding:0 13px; font-family:var(--font-mono); font-size:11px; color:#fff8f2;">
+                  <span>12:36</span><span style="opacity:.8;">Ch 12 · 33:12</span><span>−20:36</span>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; justify-content:center; gap:14px; margin-top:16px;">
+              <div class="iconbtn" style="width:46px; height:46px; background:transparent; border:none;"><span class="ms" style="font-size:27px; color:var(--muted);">skip_previous</span></div>
+              <div class="iconbtn" style="width:60px; height:60px;"><span class="ms" style="font-size:31px;">replay_30</span></div>
+              <div style="width:84px; height:84px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; box-shadow:0 16px 36px rgba(224,101,74,.42); position:relative;"><span class="ms fill" style="font-size:44px; color:var(--on-accent);">pause</span>
+                <span style="position:absolute; bottom:-19px; left:50%; transform:translateX(-50%); font-size:9px; font-weight:700; letter-spacing:.1em; color:var(--muted); text-transform:uppercase;">play · pause</span></div>
+              <div class="iconbtn" style="width:60px; height:60px;"><span class="ms" style="font-size:31px;">forward_30</span></div>
+              <div class="iconbtn" style="width:46px; height:46px; background:transparent; border:none;"><span class="ms" style="font-size:27px; color:var(--muted);">skip_next</span></div>
+            </div>
+            <div style="display:flex; align-items:center; justify-content:center; gap:14px; margin-top:22px;">
+              <div class="iconbtn" style="width:44px; height:44px;"><span class="ms">list</span></div>
+              <div class="iconbtn" style="width:44px; height:44px;"><span style="font-family:var(--font-mono); font-size:12px; font-weight:700;">1.25×</span></div>
+              <div class="iconbtn" style="width:44px; height:44px; position:relative; overflow:hidden; border-color:#5a3b32;"><div style="position:absolute; left:0; right:0; bottom:0; height:38%; background:var(--accent-wash);"></div><span class="ms" style="font-size:19px; color:var(--accent); position:relative;">bedtime</span></div>
+              <div class="iconbtn" style="width:44px; height:44px;"><span class="ms">history</span></div>
+              <div class="iconbtn" style="width:44px; height:44px;"><span class="ms">more_horiz</span></div>
+            </div>
+            <div style="display:flex; justify-content:center; margin-top:12px;">
+              <div class="chip" style="padding:10px 18px; gap:8px; background:var(--fill); border-color:var(--border);">
+                <span class="ms" style="font-size:18px; color:var(--accent);">queue_music</span><span style="font-size:13px; font-weight:700; color:var(--text);">Up next</span>
+                <span style="min-width:18px; height:18px; border-radius:999px; background:var(--accent); color:var(--on-accent); font-family:var(--font-mono); font-size:10px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; padding:0 4px;">3</span>
+              </div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab on"><span class="pill"><span class="ms fill">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n rv" style="top:10px; left:178px">1</span>
+          <span class="n rv" style="top:150px; left:180px">2</span>
+          <span class="n rv" style="top:452px; left:270px">3</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>Grab handle · swipe down</b> — restored. The player is still the Now tab (the consultant's model is fine), but the pushed /player route ships a collapse button today (player.tsx:473), while the embedded Now-tab player already has none. Restoring a 12px handle keeps the pull-down gesture for the pushed route without changing the tab model. (Correction: my first pass called this an orphaning regression; verified prod shows the loss is smaller than that.)
+            <span class="rvnote">polish for pushed-route users; not the orphaning I first claimed</span></span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>Cover · tap = inspect (default), NOT play</b> — the "Tap to inspect" pill states it. Play/pause is the big 84px button — labeled, unmistakable, impossible to confuse. Tap-to-play survives as an opt-in setting for power users, but it is not the default that a 272px hair-trigger demands.
+            <span class="rvnote">removes the mis-tap trap; kills the 250ms lightbox delay</span></span></div>
+          <div class="li"><span class="no rv">3</span><span class="tx"><b>Play button micro-label</b> — a tiny "play · pause" caption under the accent button. On a screen this gesture-dense, the one control everyone needs should never be ambiguous.
+            <span class="rvnote">addresses gesture-density legibility</span></span></div>
+        </div>
+      </div>
+
+      <!-- ============ FRAME 2 — car mode, driving-safe ============ -->
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Car mode — driving-safe lock <span class="chip v2fix">v2 fix</span></div>
+          <div class="d">The consultant's car mode is bigger but still exposes a draggable scrubber and multiple targets. v2 adds a "Driving" state: scrubber becomes non-draggable (skip buttons only), targets simplify to three, and a single large tap zone is play/pause. Precision seeking is disabled while moving.</div></div>
+        <div class="phone"><div class="screen" style="background:#080706;">
+          <div class="statusbar" style="color:var(--muted);"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms" style="font-size:15px">wifi</span><span class="ms" style="font-size:15px">battery_5_bar</span></span></div>
+          <div class="body" style="padding:0 22px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+              <div class="chip" style="background:rgba(127,168,107,.16); border-color:rgba(127,168,107,.5); color:var(--success); padding:8px 14px;"><span class="ms fill" style="font-size:17px; color:var(--success);">directions_car</span>Driving</div>
+              <div class="iconbtn" style="width:56px; height:56px; background:var(--fill);"><span class="ms" style="font-size:28px;">close</span></div>
+            </div>
+            <div style="text-align:center; margin-top:26px;">
+              <div style="font-size:34px; font-weight:800; letter-spacing:-.02em; color:var(--text); line-height:1.1;">The Ember Gate</div>
+              <div class="meta-t" style="font-size:16px; margin-top:6px;">Chapter 12 · The Ash Road</div>
+            </div>
+            <!-- non-draggable progress (display only while driving) -->
+            <div style="height:14px; border-radius:999px; margin-top:30px; background:#1c1917; position:relative; overflow:hidden;">
+              <div style="position:absolute; left:0; top:0; bottom:0; width:38%; background:linear-gradient(90deg,#e0654a,#bd863f);"></div>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:14px; color:var(--muted); margin-top:8px;"><span>12:36</span><span>−20:36 · seek off while driving</span></div>
+            <!-- giant three-target transport -->
+            <div style="display:flex; align-items:center; justify-content:center; gap:22px; margin-top:40px;">
+              <div class="iconbtn" style="width:96px; height:96px;"><span class="ms" style="font-size:48px;">replay_30</span></div>
+              <div style="width:140px; height:140px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; box-shadow:0 20px 48px rgba(224,101,74,.45);"><span class="ms fill" style="font-size:74px; color:var(--on-accent);">pause</span></div>
+              <div class="iconbtn" style="width:96px; height:96px;"><span class="ms" style="font-size:48px;">forward_30</span></div>
+            </div>
+            <div style="text-align:center; margin-top:44px;"><span class="cap-t" style="letter-spacing:.08em; font-size:13px;">TAP ANYWHERE TO PLAY / PAUSE · SWIPE DOWN TO EXIT</span></div>
+          </div>
+          <span class="n rv" style="top:56px; left:80px">1</span>
+          <span class="n rv" style="top:300px; left:340px">2</span>
+          <span class="n rv" style="top:470px; left:178px">3</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>"Driving" chip</b> — car mode auto-enters this stricter state when connected to Android Auto / CarPlay / a car BT profile. It's the difference between "big controls" and "safe to use at 70mph."
+            <span class="rvnote">addresses the driving-safety gap</span></span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>Scrubber is display-only while driving</b> — no drag target. Position moves by the ±30s skips only. Precise seeking returns the moment the car disconnects or the user taps "exit."
+            <span class="rvnote">removes the drag-while-moving hazard</span></span></div>
+          <div class="li"><span class="no rv">3</span><span class="tx"><b>Three targets, all ≥96px</b> — skip / play / skip, plus the whole background as a play/pause tap zone. Nothing smaller, nothing that opens a sheet mid-drive.
+            <span class="rvnote">glance-and-go, eyes-off</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="motionspec"><h4>Player — accessibility &amp; safety addendum (D-A11Y, D-REACH)</h4><table>
+      <tr><td>cover tap default</td><td>inspect/lightbox; play-on-cover-tap is an opt-in setting, OFF by default (reverses v1)</td></tr>
+      <tr><td>dismiss</td><td>grab handle + swipe-down restored; also leaves via tab bar (both work)</td></tr>
+      <tr><td>Reduce Motion</td><td>CoverGlow static; carousel parallax → instant page snap; buffering ring → static "Buffering…" text</td></tr>
+      <tr><td>VoiceOver order</td><td>handle → now-playing → title/author → scrubber (adjustable) → transport → action row → Up next → tab bar; every icon-only control labelled</td></tr>
+      <tr><td>car "Driving" lock</td><td>scrubber non-interactive, sheets suppressed, targets ≥96px, whole-screen play/pause; auto-on with car connection</td></tr>
+      <tr><td>sync status</td><td>never color-only: synced=cloud_done, pending=cloud_sync (pulsing), offline=cloud_off — shape carries meaning for color-blind users</td></tr>
+    </table></div>
+  </div>
+
+  <div class="section" id="parity">
+    <div class="eyebrow">Screen 03 · Player</div>
+    <h2>1:1 parity — screens carried over unchanged</h2>
+    <p class="sub">These original player screens needed no in-house changes; they are reproduced verbatim so every original Player screen has a v2 counterpart for side-by-side comparison.</p>
+    <div class="frames">
+            <div class="frameunit">
+              <div class="framecap"><div class="t">Gesture &amp; hotspot map <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">Every touch behavior on the full player, visualized. The margin skip hotspots are kept; first-open hint arcs (shown) teach them once, then never again. Nothing here conflicts: hotspots are double-tap only, carousel is horizontal, car mode is vertical.</div></div>
+              <div class="nochange-note">Reproduced from 03-player.html · no in-house adjustment</div>
+              <div class="phone"><div class="screen">
+                <div style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(43,22,15,.22), var(--scaffold) 70%);"></div>
+                <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms" style="font-size:15px">wifi</span><span class="ms" style="font-size:15px">battery_5_bar</span></span></div>
+                <div class="body" style="padding:0 18px; opacity:.5;">
+                  <div style="height:42px; display:flex; align-items:center; justify-content:space-between;"><span class="eyebrow-t" style="color:var(--muted);">Now playing</span><span style="display:flex; gap:6px;"><span class="ms" style="font-size:22px; color:var(--muted);">directions_car</span><span class="ms" style="font-size:21px; color:var(--success);">cloud_done</span></span></div>
+                  <div class="track" style="height:2.5px; margin:0 2px;"><i style="width:46%;"></i></div>
+                  <div style="display:flex; justify-content:center; margin-top:26px;">
+                    <div class="cov c1" style="width:264px; aspect-ratio:1/1; border-radius:14px;"><span class="init">E</span><span class="ck">Cinderfall Cycle · 3</span><span class="ct" style="font-size:16px;">The Ember Gate</span></div>
+                  </div>
+                  <div style="text-align:center; margin-top:16px;"><div class="hero-t" style="font-size:21px;">The Ember Gate</div><div class="meta-t" style="margin-top:3px;">Maren Holloway</div></div>
+                  <div style="height:30px; border-radius:999px; margin-top:52px; background:linear-gradient(90deg,#e0654a,#bd863f); position:relative; overflow:hidden;"><div style="position:absolute; top:0; bottom:0; left:38%; right:0; background:rgba(15,12,10,.55);"></div></div>
+                  <div style="display:flex; align-items:center; justify-content:center; gap:13px; margin-top:20px;">
+                    <span class="ms" style="font-size:26px; color:var(--muted);">skip_previous</span>
+                    <span class="ms" style="font-size:29px; color:var(--text);">replay_30</span>
+                    <div style="width:76px; height:76px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center;"><span class="ms fill" style="font-size:40px; color:var(--on-accent);">pause</span></div>
+                    <span class="ms" style="font-size:29px; color:var(--text);">forward_30</span>
+                    <span class="ms" style="font-size:26px; color:var(--muted);">skip_next</span>
+                  </div>
+                </div>
+                <!-- gesture zones -->
+                <div style="position:absolute; top:44px; left:236px; right:12px; height:44px; border:1.5px dashed rgba(255,230,207,.45); border-radius:14px; display:flex; align-items:center; justify-content:center;"><span style="font-family:var(--font-mono); font-size:10px; color:var(--cream); background:#141210d9; padding:3px 8px; border-radius:999px;">tap · car mode / sync</span></div>
+                <div style="position:absolute; top:120px; left:8px; width:52px; height:400px; border:1.5px dashed rgba(224,101,74,.6); border-radius:14px; background:rgba(224,101,74,.06);"></div>
+                <div style="position:absolute; top:120px; right:8px; width:52px; height:400px; border:1.5px dashed rgba(224,101,74,.6); border-radius:14px; background:rgba(224,101,74,.06);"></div>
+                <div style="position:absolute; top:300px; left:14px; transform:rotate(-90deg); transform-origin:left top; font-family:var(--font-mono); font-size:10.5px; color:var(--accent); white-space:nowrap;">×2 tap · −30s hotspot</div>
+                <div style="position:absolute; top:492px; right:-46px; transform:rotate(-90deg); font-family:var(--font-mono); font-size:10.5px; color:var(--accent); white-space:nowrap; width:180px;">×2 tap · +30s hotspot</div>
+                <!-- one-time hint arcs -->
+                <div style="position:absolute; top:206px; left:64px; width:56px; height:110px; border:2px dashed rgba(255,230,207,.7); border-right:none; border-radius:56px 0 0 56px;"></div>
+                <div style="position:absolute; top:206px; right:64px; width:56px; height:110px; border:2px dashed rgba(255,230,207,.7); border-left:none; border-radius:0 56px 56px 0;"></div>
+                <!-- cover zone -->
+                <div style="position:absolute; top:158px; left:96px; width:186px; height:206px; border:1.5px dashed rgba(255,230,207,.5); border-radius:14px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px;">
+                  <span style="font-family:var(--font-mono); font-size:10.5px; color:var(--cream); background:#141210d9; padding:3px 9px; border-radius:999px;">tap · play / pause</span>
+                  <span style="font-family:var(--font-mono); font-size:10.5px; color:var(--cream); background:#141210d9; padding:3px 9px; border-radius:999px;">×2 tap · lightbox</span>
+                  <span style="font-family:var(--font-mono); font-size:10.5px; color:var(--cream); background:#141210d9; padding:3px 9px; border-radius:999px;">swipe ← → · carousel</span>
+                </div>
+                <!-- scrubber zone -->
+                <div style="position:absolute; top:520px; left:24px; right:24px; height:56px; border:1.5px dashed rgba(255,230,207,.45); border-radius:16px; display:flex; align-items:flex-end; justify-content:center; padding-bottom:4px;"><span style="font-family:var(--font-mono); font-size:10.5px; color:var(--cream); background:#141210d9; padding:3px 9px; border-radius:999px;">tap to jump · drag to seek (glow while held)</span></div>
+                <!-- swipe up zone -->
+                <div style="position:absolute; bottom:14px; left:12px; right:12px; height:74px; border:1.5px dashed rgba(255,230,207,.45); border-radius:14px; display:flex; align-items:center; justify-content:center; gap:8px;"><span class="ms" style="font-size:17px; color:var(--cream);">keyboard_double_arrow_up</span><span style="font-family:var(--font-mono); font-size:10.5px; color:var(--cream);">swipe ↑ · car mode</span></div>
+                <span class="n" style="top:44px; left:300px;">1</span>
+                <span class="n" style="top:130px; left:20px;">2</span>
+                <span class="n" style="top:216px; left:104px;">3</span>
+                <span class="n" style="top:240px; left:178px;">4</span>
+                <span class="n" style="top:530px; left:340px;">5</span>
+                <span class="n" style="top:756px; left:340px;">6</span>
+              </div></div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>Header controls · tap</b> — car-mode entry + sync status, the only two header items. No collapse gesture: the player is the Now tab, so you leave via the tab bar, not a swipe-down. (Car mode also has the swipe-up gesture at the bottom of the screen.)
+                  <span class="anim">car mode: scale-up DUR.slow · sync: opens status sheet</span></span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>Skip hotspots · double-tap</b> — kept: left margin −30s, right margin +30s. Single tap in the margins still does nothing (prevents accidental seeks).
+                  <span class="anim">skip bloom: translucent circle expands from tap point 300ms ease-out with −30s label · haptic transport</span></span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>Hint arcs · first open only</b> <span class="chip gold" style="padding:1px 7px;font-size:9px;">new</span> — dashed arcs trace the hotspot edges once per install, with the ×2 labels; dismissed by any interaction, never shown again.
+                  <span class="anim">arcs draw in 600ms, breathe once PULSE_MS, fade DUR.slow</span></span></div>
+                <div class="li"><span class="no">4</span><span class="tx"><b>Cover gestures</b> — tap play/pause (new default), double-tap lightbox (kept), horizontal swipe pages the carousel deck. A 250ms tap-delay disambiguates single from double.
+                  <span class="anim">carousel pages with parallax; covers scale 0.94 mid-swipe</span></span></div>
+                <div class="li"><span class="no">5</span><span class="tx"><b>Scrubber zone · tap / drag</b> — generous 56px hit band around the 30px pill; scope (chapter vs whole book) follows the user setting (kept).
+                  <span class="anim">held: leading line glow thickens · release snaps audio with haptic select</span></span></div>
+                <div class="li"><span class="no">6</span><span class="tx"><b>Car-mode zone · swipe up</b> — the whole bottom band; also reachable from the carMode action button (see next section — the coming-soon stub dies).
+                  <span class="anim">chrome fades out DUR.base while transport scales up into the car layout</span></span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="motionspec"><h4>Motion &amp; haptics — full player</h4><table>
+            <tr><td>present / dismiss</td><td>full player slides up over mini DUR.slow; interactive swipe-down dismiss tracks finger, settles POP_SPRING</td></tr>
+            <tr><td>cover glow</td><td>CoverGlow breathe behind the cover, PULSE_MS loop — player only (kept, the signature)</td></tr>
+            <tr><td>play ↔ pause</td><td>icon cross-morph DUR.fast · button 0.94 POP_SPRING · haptic transport</td></tr>
+            <tr><td>scrubber held</td><td>leading line 3→5px + glow bloom over DUR.fast; interior labels tick live; release haptic select</td></tr>
+            <tr><td>skip bloom</td><td>hotspot double-tap: circle expands from touch point 300ms ease-out with ±30s label, haptic transport</td></tr>
+            <tr><td>sleep wash</td><td>action-row sleep slot drains its accent wash linearly across the countdown; last 2 min it pulses PULSE_MS</td></tr>
+            <tr><td>sync chip</td><td>synced ↔ pending ↔ offline cross-fade DUR.base; pending pulses PULSE_MS; offline turns red with haptic warn once</td></tr>
+            <tr><td>queue badge</td><td>count change: badge pops in/out POP_SPRING</td></tr>
+            <tr><td>buffering ring</td><td>1.5px arc orbits the play button 900ms linear loop; caption fades in after 400ms grace (no flash on tiny stalls)</td></tr>
+          </table></div>
+        </div>
+
+        <!-- ================================================================
+             SECTION 2 · CAR MODE
+             ================================================================ -->
+        <div class="section" id="car-mode">
+          <div class="eyebrow">Screen 03 · Player</div>
+          <h2>Car mode (was "immersive")</h2>
+          <p class="sub">Today the swipe-up "immersive" layout IS the car layout — big cover, centered transport, extra
+          chapter row — yet the action row ships a separate "Car mode" button that toasts "coming soon". One feature,
+          two names, one of them fake. The redesign merges them: one concept, one name, two entrances.</p>
+
+          <div class="audit">
+            <div class="crit"><h3>Teardown — what's wrong today</h3><ul>
+              <li><b>Duplicate concept</b> — immersive mode (swipe up, working) and the carMode action button ("coming soon" toast) are the same feature; users who tap the button are told it doesn't exist while it's one gesture away (D-CONSIST).</li>
+              <li><b>Exit is gesture-only</b> — swipe down works, but at arm's length in a dashboard mount an undiscoverable gesture is the wrong only-exit.</li>
+              <li><b>Good bones</b> — hidden chrome, bigger cover, centered transport and the second chapter row are already right for glanced-at use.</li>
+            </ul></div>
+            <div class="moves"><h3>Redesign moves</h3><ul>
+              <li><b>One name: Car mode</b> — entered by swipe-up OR the carMode action button, which now actually works (kills the stub). Exit by swipe-down or the big X (D-CONSIST).</li>
+              <li><b>Glance-first sizing</b> — 120px play, 88px skips, 34px title, 40px scrubber. Everything hits at arm's length without looking twice.</li>
+              <li><b>Chapter row promoted</b> — prev · chapter name · next as a full-width row above the transport; the name is the tap target for the chapters sheet.</li>
+              <li><b>Sleep + speed stay reachable</b> — two oversized pills at the bottom; everything else waits in the phone layout.</li>
+            </ul></div>
+          </div>
+
+          <div class="frames">
+
+            <div class="frameunit">
+              <div class="framecap"><div class="t">Carousel — up-next page <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">Swiped one page right of now-playing. The live book peeks 16px on the left edge (and the next-next book on the right) — the peek is the new affordance, present on every page including page 0.</div></div>
+              <div class="nochange-note">Reproduced from 03-player.html · no in-house adjustment</div>
+              <div class="phone"><div class="screen">
+                <div style="position:absolute; inset:0; background:radial-gradient(120% 82% at 50% 24%, rgba(62,93,110,.36), transparent 64%), linear-gradient(180deg, rgba(20,34,43,.30), var(--scaffold) 70%);"></div>
+                <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms" style="font-size:15px">wifi</span><span class="ms" style="font-size:15px">battery_5_bar</span></span></div>
+                <div class="body" style="padding:0 18px;">
+                  <div style="height:42px; display:flex; align-items:center;"><div class="iconbtn" style="width:40px;height:40px;background:transparent;border:none;"><span class="ms" style="font-size:26px">keyboard_arrow_down</span></div></div>
+                  <div style="text-align:center; margin-top:6px;"><span class="eyebrow-t" style="color:var(--hearth); letter-spacing:.24em;">UP NEXT · 1 OF 3</span></div>
+                  <!-- cover band with peeks -->
+                  <div style="position:relative; margin-top:16px; height:264px;">
+                    <div class="cov c1" style="position:absolute; left:-244px; top:14px; width:236px; aspect-ratio:1/1; border-radius:14px; opacity:.55;"><span class="ct">The Ember Gate</span></div>
+                    <div style="position:absolute; left:-18px; top:14px; width:34px; height:236px; border-radius:0 14px 14px 0; background:linear-gradient(155deg,#7a4536,#2b160f); opacity:.75; box-shadow:6px 0 18px rgba(0,0,0,.4);"></div>
+                    <div class="cov c2" style="position:absolute; left:57px; top:0; width:264px; aspect-ratio:1/1; border-radius:14px; padding:12px; opacity:.82; box-shadow:0 26px 64px rgba(62,93,110,.4);">
+                      <span class="init">W</span><span class="ck">Standalone</span><span class="ct" style="font-size:16px;">A Winter of Salt</span>
+                    </div>
+                    <div style="position:absolute; right:-18px; top:14px; width:34px; height:236px; border-radius:14px 0 0 14px; background:linear-gradient(155deg,#55683f,#1b2413); opacity:.6; box-shadow:-6px 0 18px rgba(0,0,0,.4);"></div>
+                  </div>
+                  <div style="text-align:center; margin-top:16px;">
+                    <div class="hero-t" style="font-size:21px; opacity:.85;">A Winter of Salt</div>
+                    <div class="meta-t" style="margin-top:3px;">Maren Holloway · 11h 48m · Continue series</div>
+                  </div>
+                  <div style="display:flex; justify-content:center; margin-top:20px;">
+                    <div class="btn primary" style="padding:14px 34px;"><span class="ms fill" style="font-size:20px;">play_arrow</span>Play this</div>
+                  </div>
+                  <div style="display:flex; justify-content:center; gap:6px; margin-top:26px;">
+                    <span style="width:6px; height:6px; border-radius:50%; background:var(--fill-strong);"></span>
+                    <span style="width:7px; height:7px; border-radius:50%; background:var(--accent);"></span>
+                    <span style="width:6px; height:6px; border-radius:50%; background:var(--fill-strong);"></span>
+                    <span style="width:6px; height:6px; border-radius:50%; background:var(--fill-strong);"></span>
+                  </div>
+                  <div style="display:flex; justify-content:center; margin-top:22px;">
+                    <div class="chip" style="background:var(--fill);"><span class="ms" style="font-size:16px; color:var(--accent);">graphic_eq</span>Back to now playing</div>
+                  </div>
+                </div>
+                <span class="n" style="top:104px; left:270px;">1</span>
+                <span class="n" style="top:230px; left:8px;">2</span>
+                <span class="n" style="top:230px; left:348px;">3</span>
+                <span class="n" style="top:534px; left:250px;">4</span>
+                <span class="n" style="top:600px; left:216px;">5</span>
+                <span class="n" style="top:650px; left:262px;">6</span>
+              </div></div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>UP NEXT kicker · display</b> — page position within the deck (kept). The player chrome (scrubber, transport) belongs to the live book and hides on up-next pages, as today.</span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>Left peek · swipe or tap</b> <span class="chip gold" style="padding:1px 7px;font-size:9px;">new</span> — 16px sliver of the now-playing cover; tap snaps back one page. On page 0 the sliver appears on the right edge only.
+                  <span class="anim">pages track finger with parallax; settle POP_SPRING</span></span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>Right peek · display</b> — next-next book's sliver; the deck reads as a deck at last.</span></div>
+                <div class="li"><span class="no">4</span><span class="tx"><b>Play this · tap</b> — starts this book and reorders the deck so it becomes page 0 (kept).
+                  <span class="anim">cover brightens from .82 to 1.0 + slides to center DUR.slow · haptic transport</span></span></div>
+                <div class="li"><span class="no">5</span><span class="tx"><b>Deck dots · display</b> — active dot enlarged and accent-tinted (kept).
+                  <span class="anim">active dot slides POP_SPRING</span></span></div>
+                <div class="li"><span class="no">6</span><span class="tx"><b>Back to now playing · tap</b> — jumps the deck home from any depth (kept); the equalizer glyph ticks with playback.
+                  <span class="anim">deck animates home ≤ DUR.slow regardless of depth</span></span></div>
+              </div>
+            </div>
+
+            <!-- ============ FRAME: mini player ============ -->
+
+            <div class="frameunit">
+              <div class="framecap"><div class="t">Mini player <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">The app-wide dock above the tab bar. New: chapter progress ring around the cover, and horizontal swipe on the row = skip with a bloom. Shown mid-swipe-right with the +30s feedback.</div></div>
+              <div class="nochange-note">Reproduced from 03-player.html · no in-house adjustment</div>
+              <div class="phone"><div class="screen short" style="height:400px; justify-content:flex-end;">
+                <div style="position:absolute; inset:0; padding:22px 18px;">
+                  <div class="skel" style="height:20px; width:180px;"></div>
+                  <div style="display:flex; gap:12px; margin-top:18px;">
+                    <div class="skel" style="width:104px; aspect-ratio:2/3;"></div>
+                    <div class="skel" style="width:104px; aspect-ratio:2/3;"></div>
+                    <div class="skel" style="width:104px; aspect-ratio:2/3;"></div>
+                  </div>
+                  <div class="skel" style="height:20px; width:140px; margin-top:22px;"></div>
+                </div>
+                <div class="mini">
+                  <div class="prog"><i style="width:46%;"></i></div>
+                  <div class="row">
+                    <div style="width:50px; height:50px; border-radius:50%; padding:3px; background:conic-gradient(var(--accent) 0 38%, var(--fill-strong) 38% 100%); flex:none;">
+                      <div class="cov c1" style="width:44px; height:44px; border-radius:50%; padding:0; display:flex; align-items:center; justify-content:center;"><span style="font-size:15px; font-weight:800; color:rgba(255,255,255,.75);">E</span></div>
+                    </div>
+                    <div style="flex:1; min-width:0;">
+                      <div class="label-t" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">The Ember Gate</div>
+                      <div class="cap-t" style="font-family:var(--font-mono); margin-top:2px;">Ch 12 · −20:36</div>
+                    </div>
+                    <div class="iconbtn" style="width:38px; height:38px; background:transparent; border:none;"><span class="ms" style="font-size:22px;">replay_30</span></div>
+                    <div class="iconbtn" style="width:42px; height:42px; background:var(--accent); border:none;"><span class="ms fill" style="font-size:22px; color:var(--on-accent);">pause</span></div>
+                    <div class="iconbtn" style="width:38px; height:38px; background:transparent; border:none;"><span class="ms" style="font-size:22px;">forward_30</span></div>
+                  </div>
+                  <!-- swipe bloom -->
+                  <div style="position:absolute; right:64px; top:50%; transform:translateY(-38%); width:64px; height:64px; border-radius:50%; background:rgba(224,101,74,.22); display:flex; align-items:center; justify-content:center; pointer-events:none;"><span style="font-family:var(--font-mono); font-size:12px; font-weight:700; color:var(--accent);">+30s</span></div>
+                </div>
+                <div class="tabbar">
+                  <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div>
+                  <div class="tab on"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+                  <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+                  <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+                  <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+                </div>
+                <span class="n" style="top:250px; left:2px;">1</span>
+                <span class="n" style="top:236px; left:40px;">2</span>
+                <span class="n" style="top:266px; left:140px;">3</span>
+                <span class="n" style="top:250px; left:352px;">4</span>
+                <span class="n" style="top:296px; left:290px;">5</span>
+              </div></div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>Whole-book hairline · display</b> — the 2px top-edge bar stays for whole-book progress (kept).</span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>Progress ring · display</b> <span class="chip gold" style="padding:1px 7px;font-size:9px;">new</span> — chapter progress as a conic ring around the cover; readable at a glance where the hairline isn't.
+                  <span class="anim">ring fills continuously; completes with a brief cream flash on chapter end</span></span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>Row body · tap / swipe ← →</b> — tap opens the full player (kept). NEW: horizontal swipe skips — left = back 30s, right = forward 30s, with a bloom under the finger.
+                  <span class="anim">bloom circle expands 300ms ease-out with ±30s label · haptic transport · row nudges 8px in swipe direction, springs back</span></span></div>
+                <div class="li"><span class="no">4</span><span class="tx"><b>Skip / play buttons · tap</b> — the three-button transport is kept for precise taps; swipe is the fast path.
+                  <span class="anim">POP_SPRING press · haptic transport</span></span></div>
+                <div class="li"><span class="no">5</span><span class="tx"><b>Now tab · tap</b> — also opens the full player; auto-loads the most recent book paused ("Warming up the hearth…") when nothing is playing — the IdleResolver behavior is kept as-is.</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="motionspec"><h4>Motion &amp; haptics — carousel &amp; mini</h4><table>
+            <tr><td>carousel page</td><td>tracks finger with −24px parallax on the outgoing cover; settle POP_SPRING; haptic select on page commit</td></tr>
+            <tr><td>peek idle</td><td>on first player open per session, the peek sliver nudges inward 6px once (breathe, PULSE_MS half-cycle) to advertise the deck</td></tr>
+            <tr><td>play-this commit</td><td>chosen cover slides to center + brightens DUR.slow; deck reorders behind the transition; EmberBurst withheld — reserved for finishes</td></tr>
+            <tr><td>mini swipe skip</td><td>bloom 300ms ease-out from touch point; row nudge 8px POP_SPRING; haptic transport per skip, repeatable on continued swipes</td></tr>
+            <tr><td>mini ↔ full</td><td>shared-element: mini cover expands into the full player cover DUR.slow; hairline hands off to the whole-book strip</td></tr>
+          </table></div>
+        </div>
+
+        <!-- ================================================================
+             SECTION 4 · SHEETS I — CHAPTERS · SPEED · SLEEP
+             ================================================================ -->
+        <div class="section" id="sheets-listen">
+          <div class="eyebrow">Screen 03 · Player</div>
+          <h2>Sheets I — chapters, speed, sleep</h2>
+          <p class="sub">The listening-control sheets. Chapters can't find "now" in a 50-chapter book; sleep's preset
+          pills look armed but aren't — the single worst trap in the app (users walk away thinking the timer runs).
+          Speed is already good and mostly keeps.</p>
+
+          <div class="audit">
+            <div class="crit"><h3>Teardown — what's wrong today</h3><ul>
+              <li><b>Chapters sheet opens at the top</b> — no scroll-to-current, no search; finding chapter 41 of 60 is a scroll safari. The row anatomy (now-playing icon / green check / index + title + duration, tap = seek + dismiss) is fine.</li>
+              <li><b>Sleep presets don't arm</b> — tapping "30 m" only moves the slider; without an explicit Start nothing happens. Shipped bug per the systemic teardown (#10).</li>
+              <li><b>No end-of-chapter quick action</b> — the most natural audiobook sleep boundary hides inside the Chapter segment's sub-list.</li>
+              <li><b>Speed sheet is good</b> — big label, 0.5–3.0 slider step .05 with ticks, presets 0.75/1/1.5/2. Only gap: no fast way home to 1× once you've wandered.</li>
+              <li><b>Sleep running mode is good</b> — kind label, 68px numeral, ends-at, +5/+10/+15/+30 pills, cancel. Kept whole.</li>
+            </ul></div>
+            <div class="moves"><h3>Redesign moves</h3><ul>
+              <li><b>Chapters auto-scroll to current, centered</b> <span class="chip gold" style="padding:2px 8px;font-size:9px">new</span> — plus a search field that appears for books with 50+ chapters. Finished chapters keep the green check (D-STATES: the list shows where you are, not just what exists).</li>
+              <li><b>Sleep presets arm instantly</b> — tap "30 m" → timer starts, sheet flips to running mode, toast "Sleeping in 30 min", haptic success (bug fix). Start stays for slider/custom/chapter/time values.</li>
+              <li><b>"End of chapter" pill in the presets row</b> <span class="chip gold" style="padding:2px 8px;font-size:9px">new</span> — one tap arms the chapter-boundary timer without switching segments.</li>
+              <li><b>"Reset 1×" ghost chip on speed</b> <span class="chip gold" style="padding:2px 8px;font-size:9px">new</span> — appears whenever rate ≠ 1.0.</li>
+            </ul></div>
+          </div>
+
+          <div class="frames">
+
+            <!-- ============ FRAME: chapters sheet ============ -->
+
+            <div class="frameunit">
+              <div class="framecap"><div class="t">Chapters sheet <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">Opened from the action-row chapters button — the list arrives pre-scrolled with Ch 12 centered. Search field shown (28+ chapters here; it appears at 50+ by default, or via pull-down).</div></div>
+              <div class="nochange-note">Reproduced from 03-player.html · no in-house adjustment</div>
+              <div class="phone"><div class="screen">
+                <div style="position:absolute; inset:0; background:radial-gradient(120% 60% at 50% 12%, rgba(122,69,54,.35), transparent 55%), var(--scaffold);"></div>
+                <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms" style="font-size:15px">wifi</span><span class="ms" style="font-size:15px">battery_5_bar</span></span></div>
+                <div style="display:flex; justify-content:center; margin-top:26px;"><div class="cov c1" style="width:170px; aspect-ratio:1/1; border-radius:12px;"><span class="init">E</span><span class="ct">The Ember Gate</span></div></div>
+                <div class="scrim"></div>
+                <div class="sheetview" style="height:600px;">
+                  <div class="grabber"></div>
+                  <div class="sheethead"><div class="k">The Ember Gate</div><div class="t">Chapters</div></div>
+                  <div style="margin:0 20px 12px; display:flex; align-items:center; gap:9px; background:var(--fill); border:1px solid var(--border); border-radius:12px; padding:11px 13px;">
+                    <span class="ms" style="font-size:18px; color:var(--faint);">search</span>
+                    <span class="meta-t">Search 28 chapters</span>
+                  </div>
+                  <div style="padding:0 12px;">
+                    <div class="setrow" style="border-bottom-color:var(--hairline);">
+                      <span class="ms" style="font-size:20px; color:var(--success); width:30px; text-align:center;">check_circle</span>
+                      <div class="tx"><div class="t" style="color:var(--muted);">10 · The Long Portage</div></div>
+                      <span class="mono-t" style="font-size:12px;">42:10</span>
+                    </div>
+                    <div class="setrow">
+                      <span class="ms" style="font-size:20px; color:var(--success); width:30px; text-align:center;">check_circle</span>
+                      <div class="tx"><div class="t" style="color:var(--muted);">11 · Smokefall</div></div>
+                      <span class="mono-t" style="font-size:12px;">38:55</span>
+                    </div>
+                    <div class="setrow" style="background:var(--accent-wash); border-radius:12px; border-bottom:none; margin:2px 0;">
+                      <span class="ms fill" style="font-size:20px; color:var(--accent); width:30px; text-align:center;">graphic_eq</span>
+                      <div class="tx"><div class="t">12 · The Ash Road</div><div class="d" style="color:var(--accent);">Now playing · 12:36 of 33:12</div></div>
+                      <span class="mono-t" style="font-size:12px; color:var(--text);">33:12</span>
+                    </div>
+                    <div class="setrow">
+                      <span class="mono-t" style="width:30px; text-align:center; font-size:12.5px;">13</span>
+                      <div class="tx"><div class="t">Under the Cinder Bell</div></div>
+                      <span class="mono-t" style="font-size:12px;">47:20</span>
+                    </div>
+                    <div class="setrow">
+                      <span class="mono-t" style="width:30px; text-align:center; font-size:12.5px;">14</span>
+                      <div class="tx"><div class="t">The Ferryman's Price</div></div>
+                      <span class="mono-t" style="font-size:12px;">29:04</span>
+                    </div>
+                    <div class="setrow">
+                      <span class="mono-t" style="width:30px; text-align:center; font-size:12.5px;">15</span>
+                      <div class="tx"><div class="t">Emberlight</div></div>
+                      <span class="mono-t" style="font-size:12px;">51:33</span>
+                    </div>
+                    <div class="setrow" style="border-bottom:none;">
+                      <span class="mono-t" style="width:30px; text-align:center; font-size:12.5px;">16</span>
+                      <div class="tx"><div class="t">The Sistren of the Kiln</div></div>
+                      <span class="mono-t" style="font-size:12px;">36:47</span>
+                    </div>
+                  </div>
+                </div>
+                <span class="n" style="top:344px; left:340px;">1</span>
+                <span class="n" style="top:412px; left:52px;">2</span>
+                <span class="n" style="top:494px; left:24px;">3</span>
+                <span class="n" style="top:522px; left:340px;">4</span>
+                <span class="n" style="top:590px; left:180px;">5</span>
+              </div></div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>Search field · tap</b> <span class="chip gold" style="padding:1px 7px;font-size:9px;">new</span> — filters titles live; shown automatically for 50+ chapter books, reachable by pull-down otherwise.
+                  <span class="anim">field focus grows 2px accent border DUR.fast · list filters with layout spring</span></span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>Finished rows · display</b> — green check + dimmed title (kept); the check reads as per-chapter progress.</span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>Now-playing row · centered on open</b> <span class="chip gold" style="padding:1px 7px;font-size:9px;">new behavior</span> — the sheet arrives scrolled so this row sits mid-viewport; accent wash + live equalizer glyph + elapsed sub-line.
+                  <span class="anim">equalizer bars tick with playback · wash fades in DUR.base after the scroll settles</span></span></div>
+                <div class="li"><span class="no">4</span><span class="tx"><b>Any chapter row · tap</b> — seeks to chapter start and dismisses (kept).
+                  <span class="anim">row flashes accent-wash · sheet dismisses · haptic transport</span></span></div>
+                <div class="li"><span class="no">5</span><span class="tx"><b>Future rows · display</b> — mono index instead of an icon (kept); durations right-aligned mono.</span></div>
+              </div>
+            </div>
+
+            <!-- ============ FRAME: speed sheet ============ -->
+
+            <div class="frameunit">
+              <div class="framecap"><div class="t">Speed sheet <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">Already one of the app's best sheets. Big live label, 0.5–3.0 slider in .05 steps with ticks, four presets. The only addition: a "Reset 1×" ghost chip whenever the rate isn't 1.0.</div></div>
+              <div class="nochange-note">Reproduced from 03-player.html · no in-house adjustment</div>
+              <div class="phone"><div class="screen">
+                <div style="position:absolute; inset:0; background:radial-gradient(120% 60% at 50% 12%, rgba(122,69,54,.35), transparent 55%), var(--scaffold);"></div>
+                <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms" style="font-size:15px">wifi</span><span class="ms" style="font-size:15px">battery_5_bar</span></span></div>
+                <div style="display:flex; justify-content:center; margin-top:26px;"><div class="cov c1" style="width:170px; aspect-ratio:1/1; border-radius:12px;"><span class="init">E</span><span class="ct">The Ember Gate</span></div></div>
+                <div class="scrim"></div>
+                <div class="sheetview" style="height:392px;">
+                  <div class="grabber"></div>
+                  <div class="sheethead"><div class="k">Playback</div><div class="t">Speed</div></div>
+                  <div style="text-align:center; margin-top:2px;">
+                    <span style="font-family:var(--font-mono); font-size:52px; font-weight:700; color:var(--text);">1.25×</span>
+                  </div>
+                  <div style="margin:22px 26px 0;">
+                    <div style="position:relative; height:28px;">
+                      <div style="position:absolute; left:0; right:0; top:12px; height:4px; border-radius:999px; background:var(--fill-strong);"></div>
+                      <div style="position:absolute; left:0; width:30%; top:12px; height:4px; border-radius:999px; background:var(--accent);"></div>
+                      <div style="position:absolute; left:0; right:0; top:20px; display:flex; justify-content:space-between; padding:0 1px;">
+                        <span style="width:1.5px; height:6px; background:var(--faint);"></span><span style="width:1.5px; height:6px; background:var(--faint);"></span><span style="width:1.5px; height:6px; background:var(--faint);"></span><span style="width:1.5px; height:6px; background:var(--faint);"></span><span style="width:1.5px; height:6px; background:var(--faint);"></span><span style="width:1.5px; height:6px; background:var(--faint);"></span>
+                      </div>
+                      <div style="position:absolute; left:30%; top:1px; width:26px; height:26px; margin-left:-13px; border-radius:50%; background:#fff; box-shadow:0 4px 12px rgba(0,0,0,.4);"></div>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:11px; color:var(--faint); margin-top:6px;"><span>0.5×</span><span>3.0×</span></div>
+                  </div>
+                  <div style="display:flex; justify-content:center; gap:9px; margin-top:20px;">
+                    <div class="chip">0.75×</div>
+                    <div class="chip">1×</div>
+                    <div class="chip on" style="background:var(--accent-wash); border-color:var(--accent); color:var(--accent);">1.25×</div>
+                    <div class="chip">1.5×</div>
+                    <div class="chip">2×</div>
+                  </div>
+                  <div style="display:flex; justify-content:center; margin-top:16px;">
+                    <div class="btn ghost" style="padding:9px 18px; font-size:13.5px; gap:6px;"><span class="ms" style="font-size:17px;">restart_alt</span>Reset 1×</div>
+                  </div>
+                </div>
+                <span class="n" style="top:540px; left:264px;">1</span>
+                <span class="n" style="top:614px; left:340px;">2</span>
+                <span class="n" style="top:684px; left:284px;">3</span>
+                <span class="n" style="top:734px; left:236px;">4</span>
+              </div></div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>Live label · display</b> — big mono readout tracks the slider in real time (kept). Rate applies live to playback, no confirm step.</span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>Slider · drag</b> — 0.5–3.0 in .05 steps with tick marks (kept).
+                  <span class="anim">haptic select on each .05 detent · label counts continuously</span></span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>Preset chips · tap</b> — 0.75 / 1 / 1.5 / 2 kept; the current custom value renders as a fifth highlighted chip when it's off-preset.
+                  <span class="anim">chip select cross-fade DUR.fast · thumb glides to the preset POP_SPRING</span></span></div>
+                <div class="li"><span class="no">4</span><span class="tx"><b>Reset 1× · tap</b> <span class="chip gold" style="padding:1px 7px;font-size:9px;">new</span> — ghost chip, rendered only while rate ≠ 1.0; one tap home.
+                  <span class="anim">appears/disappears with fade + 4px rise DUR.base · haptic select</span></span></div>
+              </div>
+            </div>
+
+            <!-- ============ FRAME: sleep setup ============ -->
+
+            <div class="frameunit">
+              <div class="framecap"><div class="t">Sleep — setup <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">Segments kept (Duration · Chapter · Time). The fix: preset pills arm the timer instantly. Start remains for the slider or the Chapter/Time segments' values. "End of chapter" joins the presets row.</div></div>
+              <div class="nochange-note">Reproduced from 03-player.html · no in-house adjustment</div>
+              <div class="phone"><div class="screen">
+                <div style="position:absolute; inset:0; background:radial-gradient(120% 60% at 50% 12%, rgba(122,69,54,.35), transparent 55%), var(--scaffold);"></div>
+                <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms" style="font-size:15px">wifi</span><span class="ms" style="font-size:15px">battery_5_bar</span></span></div>
+                <div style="display:flex; justify-content:center; margin-top:26px;"><div class="cov c1" style="width:170px; aspect-ratio:1/1; border-radius:12px;"><span class="init">E</span><span class="ct">The Ember Gate</span></div></div>
+                <div class="scrim"></div>
+                <div class="sheetview" style="height:470px;">
+                  <div class="grabber"></div>
+                  <div class="sheethead"><div class="k">Player</div><div class="t">Sleep timer</div></div>
+                  <div style="display:flex; justify-content:center;">
+                    <div class="seg"><span class="on">Duration</span><span>Chapter</span><span>Time</span></div>
+                  </div>
+                  <div style="display:flex; justify-content:center; flex-wrap:wrap; gap:9px; margin:20px 20px 0;">
+                    <div class="chip">10 m</div>
+                    <div class="chip">15 m</div>
+                    <div class="chip">30 m</div>
+                    <div class="chip">45 m</div>
+                    <div class="chip">60 m</div>
+                    <div class="chip gold"><span class="ms" style="font-size:15px;">auto_stories</span>End of chapter</div>
+                  </div>
+                  <div style="margin:26px 26px 0;">
+                    <div style="position:relative; height:28px;">
+                      <div style="position:absolute; left:0; right:0; top:12px; height:4px; border-radius:999px; background:var(--fill-strong);"></div>
+                      <div style="position:absolute; left:0; width:40%; top:12px; height:4px; border-radius:999px; background:var(--accent);"></div>
+                      <div style="position:absolute; left:40%; top:1px; width:26px; height:26px; margin-left:-13px; border-radius:50%; background:#fff; box-shadow:0 4px 12px rgba(0,0,0,.4);"></div>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:11px; color:var(--faint); margin-top:6px;"><span>10 min</span><span style="color:var(--text); font-weight:700; font-size:13px;">30 min</span><span>60 min</span></div>
+                  </div>
+                  <div style="margin:22px 20px 0;">
+                    <div class="btn primary" style="width:100%;">Start · 30 min</div>
+                  </div>
+                  <div style="text-align:center; margin-top:14px;">
+                    <span class="cap-t">Shake to extend · quiet hours auto-start — <span style="color:var(--accent); font-weight:600;">Sleep settings</span></span>
+                  </div>
+                </div>
+                <span class="n" style="top:472px; left:262px;">1</span>
+                <span class="n" style="top:518px; left:120px;">2</span>
+                <span class="n" style="top:518px; left:326px;">3</span>
+                <span class="n" style="top:594px; left:334px;">4</span>
+                <span class="n" style="top:672px; left:334px;">5</span>
+                <span class="n" style="top:732px; left:300px;">6</span>
+              </div></div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>Mode segment · tap</b> — Duration · Chapter · Time (kept). Chapter shows the future-boundaries list with the start/end sub-segment; Time opens the OS clock picker.
+                  <span class="anim">segment thumb slides POP_SPRING · panel cross-fades DUR.base</span></span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>Preset pill · tap</b> — ARMS THE TIMER IMMEDIATELY (bug fix): sheet flips to running mode, toast "Sleeping in 30 min".
+                  <span class="anim">content cross-fade 180ms · haptic success · toast slides up</span></span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>End of chapter · tap</b> <span class="chip gold" style="padding:1px 7px;font-size:9px;">new</span> — arms a chapter-boundary timer from the presets row; the Chapter segment survives for picking a farther boundary.
+                  <span class="anim">same instant-arm flow · toast "Sleeping at end of Ch 12"</span></span></div>
+                <div class="li"><span class="no">4</span><span class="tx"><b>Duration slider · drag</b> — for off-preset values; the readout above Start updates live (kept).
+                  <span class="anim">haptic select per 5-min detent</span></span></div>
+                <div class="li"><span class="no">5</span><span class="tx"><b>Start · tap</b> — arms whatever the slider / Chapter / Time value says. Label echoes the value so the button is never ambiguous.
+                  <span class="anim">flips to running mode · haptic success</span></span></div>
+                <div class="li"><span class="no">6</span><span class="tx"><b>Behavior note · tap link</b> — shake-to-extend and quiet-hours auto-start live in Sleep settings; the link deep-links there (kept).</span></div>
+              </div>
+            </div>
+
+            <!-- ============ FRAME: sleep running ============ -->
+
+            <div class="frameunit">
+              <div class="framecap"><div class="t">Sleep — running <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">The running mode was already right: kind label, 68px numeral, ends-at line, add-time pills, cancel. Presets now land here in one tap instead of two.</div></div>
+              <div class="nochange-note">Reproduced from 03-player.html · no in-house adjustment</div>
+              <div class="phone"><div class="screen">
+                <div style="position:absolute; inset:0; background:radial-gradient(120% 60% at 50% 12%, rgba(122,69,54,.35), transparent 55%), var(--scaffold);"></div>
+                <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms" style="font-size:15px">wifi</span><span class="ms" style="font-size:15px">battery_5_bar</span></span></div>
+                <div style="display:flex; justify-content:center; margin-top:26px;"><div class="cov c1" style="width:170px; aspect-ratio:1/1; border-radius:12px;"><span class="init">E</span><span class="ct">The Ember Gate</span></div></div>
+                <div class="scrim"></div>
+                <div class="sheetview" style="height:430px;">
+                  <div class="grabber"></div>
+                  <div class="sheethead" style="text-align:center;"><div class="k">Sleep timer · Duration</div></div>
+                  <div style="text-align:center; margin-top:4px;">
+                    <span style="font-family:var(--font-mono); font-size:68px; font-weight:700; color:var(--text); letter-spacing:-.02em;">23:41</span>
+                    <div class="meta-t" style="margin-top:6px;">Pausing at <b style="color:var(--text);">10:05 PM</b></div>
+                  </div>
+                  <div style="display:flex; justify-content:center; gap:9px; margin-top:24px;">
+                    <div class="chip">+5</div>
+                    <div class="chip">+10</div>
+                    <div class="chip">+15</div>
+                    <div class="chip">+30</div>
+                  </div>
+                  <div style="margin:24px 20px 0;">
+                    <div class="btn danger" style="width:100%;">Cancel timer</div>
+                  </div>
+                  <div style="text-align:center; margin-top:12px;">
+                    <span class="cap-t">Shake to add 15 min · beeps at 2 min &amp; 1 min</span>
+                  </div>
+                </div>
+                <span class="n" style="top:522px; left:272px;">1</span>
+                <span class="n" style="top:582px; left:284px;">2</span>
+                <span class="n" style="top:646px; left:290px;">3</span>
+                <span class="n" style="top:706px; left:334px;">4</span>
+              </div></div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>Countdown numeral · display</b> — 68px mono, ticks each second (kept). The kind label above names the mode (Duration / Chapter / Time).
+                  <span class="anim">final 2 min: numeral pulses PULSE_MS in sync with the action-row wash</span></span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>Ends-at line · display</b> — absolute wall-clock end (kept); recomputes when time is added.</span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>Add pills · tap</b> — +5 / +10 / +15 / +30 (kept). Total capped at 3h (the runaway-shake guard applies here too).
+                  <span class="anim">numeral counts up POP_SPRING · haptic select</span></span></div>
+                <div class="li"><span class="no">4</span><span class="tx"><b>Cancel timer · tap</b> — stops the timer, flips back to setup mode (kept).
+                  <span class="anim">cross-fade 180ms · haptic warn</span></span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="motionspec"><h4>Motion &amp; haptics — sheets I</h4><table>
+            <tr><td>sheet present</td><td>spring slide-up + scrim fade 180ms (all sheets); grabber drag dismisses interactively</td></tr>
+            <tr><td>chapters auto-scroll</td><td>instant pre-positioned (no visible scroll); now-playing wash fades in DUR.base after settle</td></tr>
+            <tr><td>chapter seek</td><td>row flash accent-wash DUR.fast → sheet dismiss → scrubber leading line glides to new position DUR.slow</td></tr>
+            <tr><td>speed detents</td><td>haptic select each .05; presets glide the thumb POP_SPRING</td></tr>
+            <tr><td>preset arm</td><td>content cross-fade 180ms; countdown numeral counts up from 0 spring; haptic success; toast "Sleeping in 30 min"</td></tr>
+            <tr><td>sleep final 2 min</td><td>numeral + action-row slot pulse PULSE_MS; warning beeps at 2 min / 1 min / end (native thresholds, kept)</td></tr>
+          </table></div>
+        </div>
+
+        <!-- ================================================================
+             SECTION 5 · SHEETS II — QUEUE · SYNC · RECENT · NOTES
+             ================================================================ -->
+        <div class="section" id="sheets-queue">
+          <div class="eyebrow">Screen 03 · Player</div>
+          <h2>Sheets II — queue, sync, recent, notes &amp; the More tray</h2>
+          <p class="sub">The "what plays next and what got saved" sheets, plus the <b>More action tray</b> — the sheet behind the
+          action row's More button, which the audit for the full player promised but never drew. The queue is the biggest
+          miss: there is no way to add a book from the player — you back out to the library, long-press, and come back. The
+          recent sheet crams three tap targets into every row. The More tray was a bare icon grid with no state; here it
+          becomes labeled rows that show each action's state and carry the in-context settings + button editor.</p>
+
+          <div class="audit">
+            <div class="crit"><h3>Teardown — what's wrong today</h3><ul>
+              <li><b>No add-books path in the queue</b> — Manual and Auto modes accept hand-added rows, but the only entry is the library long-press sheet. Mid-listen queueing means leaving the player entirely.</li>
+              <li><b>Rule reorder is buried</b> — the Auto rules sub-sheet has toggles only; priority reorder exists solely in the settings editor, two screens away from where you'd notice the order is wrong.</li>
+              <li><b>Recent rows have 3 crammed targets</b> — row tap resumes at session end, plus two inline timecodes jump to start/end. Mis-taps everywhere on a 54px row.</li>
+              <li><b>Queue mode segment is good</b> — Off · Manual · Auto · Playlist with captions, pinned now-playing row, bolt icons on rule rows, drag on hand-added rows. Kept whole.</li>
+              <li><b>Sync sheet is good</b> — plain-language status, last saved, queued offline sessions, Sync-now. Kept; its entry point is the header status indicator (unchanged position, formalized grammar).</li>
+            </ul></div>
+            <div class="moves"><h3>Redesign moves</h3><ul>
+              <li><b>"+ Add books" row</b> <span class="chip gold" style="padding:2px 8px;font-size:9px">new</span> — in Manual and Auto modes; opens a search/library picker sheet stacked on the queue. Queueing never leaves the player.</li>
+              <li><b>Rules sub-sheet gains drag-to-reorder</b> <span class="chip gold" style="padding:2px 8px;font-size:9px">new</span> — priority handles next to the toggles, full parity with the settings editor (D-CONSIST: one editor, not a full one and a crippled one).</li>
+              <li><b>Recent rows: one primary tap + "…"</b> — row tap resumes at session end (the common case); a small overflow per row holds jump-to-start (D-CONSIST, declutter).</li>
+              <li><b>Sync indicator grammar formalized</b> — green check-cloud synced / accent pending / red offline; it stays in the header as a status glyph (not an action button) and tap opens this sheet.</li>
+              <li><b>Notes sheet kept</b> — spoiler-gated thread + composer stamping the live position; entry points unchanged (club cover button, marker dots).</li>
+            </ul></div>
+          </div>
+
+          <div class="frames">
+
+            <!-- ============ FRAME: queue auto ============ -->
+
+            <div class="frameunit">
+              <div class="framecap"><div class="t">Queue — Auto mode <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">One merged up-next list: rule-built rows wear the bolt (read-only), hand-added rows keep drag + remove. New "+ Add books" row sits directly under now-playing.</div></div>
+              <div class="nochange-note">Reproduced from 03-player.html · no in-house adjustment</div>
+              <div class="phone"><div class="screen">
+                <div style="position:absolute; inset:0; background:radial-gradient(120% 60% at 50% 12%, rgba(122,69,54,.35), transparent 55%), var(--scaffold);"></div>
+                <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms" style="font-size:15px">wifi</span><span class="ms" style="font-size:15px">battery_5_bar</span></span></div>
+                <div style="display:flex; justify-content:center; margin-top:22px;"><div class="cov c1" style="width:150px; aspect-ratio:1/1; border-radius:12px;"><span class="init">E</span><span class="ct">The Ember Gate</span></div></div>
+                <div class="scrim"></div>
+                <div class="sheetview" style="height:648px;">
+                  <div class="grabber"></div>
+                  <div class="sheethead"><div class="k">On the hearth</div><div class="t">Up next</div></div>
+                  <div style="display:flex; justify-content:center;">
+                    <div class="seg"><span>Off</span><span>Manual</span><span class="on">Auto</span><span>Playlist</span></div>
+                  </div>
+                  <div style="text-align:center; margin-top:9px;"><span class="cap-t">Auto builds from your rules — add your own books anytime.</span></div>
+                  <!-- pinned now playing -->
+                  <div class="card" style="margin:14px 16px 0; display:flex; align-items:center; gap:11px; padding:10px 12px; border-color:#5a3b32; background:var(--accent-wash);">
+                    <div class="cov c1" style="width:42px; aspect-ratio:1/1; padding:5px;"><span class="ct" style="font-size:7px;">Ember Gate</span></div>
+                    <div style="flex:1; min-width:0;">
+                      <div class="label-t">The Ember Gate</div>
+                      <div class="cap-t" style="color:var(--accent);">Now playing · 46%</div>
+                    </div>
+                    <span class="ms fill" style="font-size:19px; color:var(--accent);">graphic_eq</span>
+                  </div>
+                  <!-- add books row -->
+                  <div style="margin:10px 16px 0; display:flex; align-items:center; gap:11px; padding:12px 12px; border:1.5px dashed var(--border); border-radius:12px;">
+                    <div style="width:42px; height:42px; border-radius:10px; background:var(--fill); display:flex; align-items:center; justify-content:center;"><span class="ms" style="font-size:21px; color:var(--accent);">add</span></div>
+                    <div class="label-t" style="color:var(--accent);">Add books…</div>
+                  </div>
+                  <!-- merged list -->
+                  <div style="padding:6px 16px 0;">
+                    <div class="setrow" style="padding-left:0; padding-right:0;">
+                      <div class="cov c2" style="width:42px; aspect-ratio:1/1; padding:5px;"><span class="ct" style="font-size:7px;">Winter of Salt</span></div>
+                      <div class="tx"><div class="t">A Winter of Salt</div><div class="d">Maren Holloway · 11h 48m</div></div>
+                      <span class="ms" style="font-size:17px; color:var(--hearth);">bolt</span>
+                    </div>
+                    <div class="setrow" style="padding-left:0; padding-right:0;">
+                      <div class="cov c4" style="width:42px; aspect-ratio:1/1; padding:5px;"><span class="ct" style="font-size:7px;">Cartographer's Oath</span></div>
+                      <div class="tx"><div class="t">The Cartographer's Oath</div><div class="d">Added by you · 9h 12m</div></div>
+                      <span class="ms" style="font-size:19px; color:var(--faint); margin-right:6px;">close</span>
+                      <span class="ms" style="font-size:19px; color:var(--faint);">drag_indicator</span>
+                    </div>
+                    <div class="setrow" style="padding-left:0; padding-right:0; border-bottom:none;">
+                      <div class="cov c3" style="width:42px; aspect-ratio:1/1; padding:5px;"><span class="ct" style="font-size:7px;">Nightjar</span></div>
+                      <div class="tx"><div class="t">Nightjar</div><div class="d">Petra Lindqvist · Book club pick</div></div>
+                      <span class="ms" style="font-size:17px; color:var(--hearth);">bolt</span>
+                    </div>
+                  </div>
+                  <div style="margin:8px 16px 0;">
+                    <div class="btn secondary" style="width:100%; gap:8px;"><span class="ms" style="font-size:19px;">tune</span>Auto rules</div>
+                  </div>
+                </div>
+                <span class="n" style="top:290px; left:270px;">1</span>
+                <span class="n" style="top:352px; left:334px;">2</span>
+                <span class="n" style="top:424px; left:32px;">3</span>
+                <span class="n" style="top:496px; left:334px;">4</span>
+                <span class="n" style="top:562px; left:300px;">5</span>
+                <span class="n" style="top:562px; left:344px;">6</span>
+                <span class="n" style="top:690px; left:300px;">7</span>
+              </div></div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>Mode segment · tap</b> — Off · Manual · Auto · Playlist with plain-language captions (kept). Playlist stays read-only; Off shows an explanatory empty state.
+                  <span class="anim">thumb slides POP_SPRING · list cross-fades DUR.base</span></span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>Now-playing row · pinned</b> — accent wash + live equalizer (kept); never draggable, never removable.</span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>Add books… · tap</b> <span class="chip gold" style="padding:1px 7px;font-size:9px;">new</span> — opens a search + library picker sheet stacked over the queue; picked books insert as hand-added rows. Available in Manual and Auto (the only modes that accept client-authored items).
+                  <span class="anim">stacked sheet pushes with −24px parallax on the queue · picked row flies into place POP_SPRING</span></span></div>
+                <div class="li"><span class="no">4</span><span class="tx"><b>Rule row · display, bolt</b> — built by Auto rules, read-only (kept); the sub-line names the rule that placed it.</span></div>
+                <div class="li"><span class="no">5</span><span class="tx"><b>Remove ✕ · tap</b> — hand-added rows only (kept).
+                  <span class="anim">row collapses with layout spring · haptic select</span></span></div>
+                <div class="li"><span class="no">6</span><span class="tx"><b>Drag handle · long-press drag</b> — reorders hand-added rows among the merged list (kept). Row tap anywhere jumps playback to that book (kept).
+                  <span class="anim">lifted row scales 1.03 + shadow · others part with layout springs</span></span></div>
+                <div class="li"><span class="no">7</span><span class="tx"><b>Auto rules · tap</b> — pushes the rules sub-sheet (next frame).
+                  <span class="anim">stacked sheet push, queue parallaxes back −24px</span></span></div>
+              </div>
+            </div>
+
+            <!-- ============ FRAME: rules sub-sheet ============ -->
+
+            <div class="frameunit">
+              <div class="framecap"><div class="t">Auto rules sub-sheet <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">Stacked over the queue. Toggles kept — drag-to-reorder priority added, so this editor finally matches the one buried in settings.</div></div>
+              <div class="nochange-note">Reproduced from 03-player.html · no in-house adjustment</div>
+              <div class="phone"><div class="screen">
+                <div style="position:absolute; inset:0; background:var(--scaffold);"></div>
+                <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms" style="font-size:15px">wifi</span><span class="ms" style="font-size:15px">battery_5_bar</span></span></div>
+                <!-- parallaxed queue sheet behind -->
+                <div class="sheetview" style="height:660px; bottom:auto; top:150px; opacity:.45; transform:scale(.94);">
+                  <div class="grabber"></div>
+                  <div class="sheethead"><div class="k">On the hearth</div><div class="t">Up next</div></div>
+                </div>
+                <div class="scrim" style="background:rgba(0,0,0,.35);"></div>
+                <div class="sheetview" style="height:560px;">
+                  <div class="grabber"></div>
+                  <div class="sheethead" style="display:flex; align-items:center; gap:10px;">
+                    <span class="ms" style="font-size:22px; color:var(--muted);">arrow_back</span>
+                    <div><div class="k">Up next</div><div class="t">Auto rules</div></div>
+                  </div>
+                  <div style="text-align:center; margin:-4px 0 10px;"><span class="cap-t">Higher rules fill the queue first. Drag to reprioritize.</span></div>
+                  <div class="setgroup" style="margin:0 16px;">
+                    <div class="setrow">
+                      <span class="ms" style="font-size:19px; color:var(--faint);">drag_indicator</span>
+                      <div class="tx"><div class="t">Continue series</div><div class="d">Next unfinished book in a series you're listening to.</div></div>
+                      <div class="toggle on"><i></i></div>
+                    </div>
+                    <div class="setrow">
+                      <span class="ms" style="font-size:19px; color:var(--faint);">drag_indicator</span>
+                      <div class="tx"><div class="t">Book club pick</div><div class="d">Your club's current book, when you haven't finished it.</div></div>
+                      <div class="toggle on"><i></i></div>
+                    </div>
+                    <div class="setrow">
+                      <span class="ms" style="font-size:19px; color:var(--faint);">drag_indicator</span>
+                      <div class="tx"><div class="t">New in series</div><div class="d">One newly added book per series you follow.</div></div>
+                      <div class="toggle on"><i></i></div>
+                    </div>
+                    <div class="setrow">
+                      <span class="ms" style="font-size:19px; color:var(--faint);">drag_indicator</span>
+                      <div class="tx"><div class="t">From Want to listen</div><div class="d">A pick from your want-to-listen shelf when the queue runs dry.</div></div>
+                      <div class="toggle"><i></i></div>
+                    </div>
+                  </div>
+                  <div style="text-align:center; margin-top:14px;"><span class="cap-t">Changes rebuild the queue immediately.</span></div>
+                </div>
+                <span class="n" style="top:308px; left:60px;">1</span>
+                <span class="n" style="top:398px; left:26px;">2</span>
+                <span class="n" style="top:398px; left:344px;">3</span>
+                <span class="n" style="top:648px; left:344px;">4</span>
+              </div></div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>Back · tap</b> — pops to the queue sheet; swipe-right on the sheet body does the same.
+                  <span class="anim">stacked sheet pops, queue parallaxes forward</span></span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>Drag handle · long-press drag</b> <span class="chip gold" style="padding:1px 7px;font-size:9px;">new</span> — reorders rule priority right here; previously reorder lived only in the settings editor (D-CONSIST).
+                  <span class="anim">lifted row 1.03 + shadow · haptic select on each position swap</span></span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>Rule toggle · tap</b> — enables/disables the rule (kept); each rule keeps its plain-language caption.
+                  <span class="anim">toggle thumb POP_SPRING · haptic select</span></span></div>
+                <div class="li"><span class="no">4</span><span class="tx"><b>Off rule · display</b> — dimmed toggle; the queue rebuild note below confirms edits apply live (server recomputes, clients display).</span></div>
+              </div>
+            </div>
+
+            <!-- ============ FRAME: sync sheet ============ -->
+
+            <div class="frameunit">
+              <div class="framecap"><div class="t">Sync status sheet <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">Opened from the header sync indicator. Plain-language status, last saved, queued offline sessions, Sync now. Shown in the "pending" state with 2 queued sessions.</div></div>
+              <div class="nochange-note">Reproduced from 03-player.html · no in-house adjustment</div>
+              <div class="phone"><div class="screen">
+                <div style="position:absolute; inset:0; background:radial-gradient(120% 60% at 50% 12%, rgba(122,69,54,.35), transparent 55%), var(--scaffold);"></div>
+                <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms" style="font-size:15px">wifi</span><span class="ms" style="font-size:15px">battery_5_bar</span></span></div>
+                <div style="display:flex; justify-content:center; margin-top:26px;"><div class="cov c1" style="width:170px; aspect-ratio:1/1; border-radius:12px;"><span class="init">E</span><span class="ct">The Ember Gate</span></div></div>
+                <div class="scrim"></div>
+                <div class="sheetview" style="height:420px;">
+                  <div class="grabber"></div>
+                  <div class="sheethead"><div class="k">Progress</div><div class="t">Sync status</div></div>
+                  <div style="display:flex; align-items:center; gap:13px; margin:4px 20px 0; padding:14px 15px; border-radius:14px; background:var(--accent-wash); border:1px solid #5a3b32;">
+                    <span class="ms" style="font-size:26px; color:var(--accent);">cloud_upload</span>
+                    <div>
+                      <div class="label-t">Catching up…</div>
+                      <div class="cap-t" style="margin-top:2px;">2 listening sessions from your offline evening are uploading.</div>
+                    </div>
+                  </div>
+                  <div class="setgroup" style="margin:14px 20px 0;">
+                    <div class="setrow">
+                      <div class="tx"><div class="t">Last saved to server</div></div>
+                      <span class="mono-t" style="font-size:12.5px;">12 s ago</span>
+                    </div>
+                    <div class="setrow">
+                      <div class="tx"><div class="t">Queued offline sessions</div></div>
+                      <span class="mono-t" style="font-size:12.5px; color:var(--accent);">2</span>
+                    </div>
+                    <div class="setrow" style="border-bottom:none;">
+                      <div class="tx"><div class="t">This device's position</div></div>
+                      <span class="mono-t" style="font-size:12.5px;">Ch 12 · 12:36</span>
+                    </div>
+                  </div>
+                  <div style="margin:16px 20px 0;">
+                    <div class="btn secondary" style="width:100%; gap:8px;"><span class="ms" style="font-size:19px;">sync</span>Sync now</div>
+                  </div>
+                </div>
+                <span class="n" style="top:508px; left:32px;">1</span>
+                <span class="n" style="top:600px; left:334px;">2</span>
+                <span class="n" style="top:712px; left:300px;">3</span>
+              </div></div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>Status banner · display</b> — plain-language state (kept): "All caught up" green / "Catching up…" accent / "Offline — saving on this device" red. Mirrors the chip's three states exactly (D-CONSIST).
+                  <span class="anim">banner tint cross-fades DUR.base on state change</span></span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>Detail rows · display</b> — last saved, queued offline sessions, device position (kept). Queued count links the mental model to the Recent sheet's orange rows.</span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>Sync now · tap</b> — forces an immediate flush (kept).
+                  <span class="anim">icon spins while in-flight · resolves to green check + haptic success, or error toast with Retry</span></span></div>
+              </div>
+            </div>
+
+            <!-- ============ FRAME: recent listens ============ -->
+
+            <div class="frameunit">
+              <div class="framecap"><div class="t">Recent listens sheet <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">Pinned live "Now" row ticking, orange unsynced rows, green synced rows with device icons — all kept. Fixed: rows carry ONE tap (resume at session end); jump-to-start moves into a per-row "…" menu.</div></div>
+              <div class="nochange-note">Reproduced from 03-player.html · no in-house adjustment</div>
+              <div class="phone"><div class="screen">
+                <div style="position:absolute; inset:0; background:radial-gradient(120% 60% at 50% 12%, rgba(122,69,54,.35), transparent 55%), var(--scaffold);"></div>
+                <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms" style="font-size:15px">wifi</span><span class="ms" style="font-size:15px">battery_5_bar</span></span></div>
+                <div style="display:flex; justify-content:center; margin-top:26px;"><div class="cov c1" style="width:170px; aspect-ratio:1/1; border-radius:12px;"><span class="init">E</span><span class="ct">The Ember Gate</span></div></div>
+                <div class="scrim"></div>
+                <div class="sheetview" style="height:530px;">
+                  <div class="grabber"></div>
+                  <div class="sheethead"><div class="k">The Ember Gate</div><div class="t">Recent listens</div></div>
+                  <div style="padding:0 16px;">
+                    <div class="card" style="display:flex; align-items:center; gap:12px; padding:11px 13px; border-color:#5a3b32; background:var(--accent-wash);">
+                      <span class="ms fill" style="font-size:20px; color:var(--accent);">graphic_eq</span>
+                      <div style="flex:1;">
+                        <div class="label-t">Now · this device</div>
+                        <div class="cap-t" style="font-family:var(--font-mono); margin-top:2px;">12:36 and counting</div>
+                      </div>
+                      <span class="mono-t" style="font-size:12px; color:var(--accent);">live</span>
+                    </div>
+                    <div class="setrow" style="padding-left:2px; padding-right:2px;">
+                      <span class="ms" style="font-size:20px; color:var(--accent); width:28px; text-align:center;">phone_iphone</span>
+                      <div class="tx"><div class="t">Yesterday · 10:12 PM</div><div class="d" style="color:var(--accent);">48 min · not synced yet — saved on this phone</div></div>
+                      <span class="mono-t" style="font-size:12px; margin-right:4px;">→ 11:44</span>
+                      <span class="ms" style="font-size:19px; color:var(--faint);">more_horiz</span>
+                    </div>
+                    <div class="setrow" style="padding-left:2px; padding-right:2px;">
+                      <span class="ms" style="font-size:20px; color:var(--success); width:28px; text-align:center;">computer</span>
+                      <div class="tx"><div class="t">Yesterday · 3:20 PM</div><div class="d">1h 12m · web</div></div>
+                      <span class="mono-t" style="font-size:12px; margin-right:4px;">→ 10:56</span>
+                      <span class="ms" style="font-size:19px; color:var(--faint);">more_horiz</span>
+                    </div>
+                    <div class="setrow" style="padding-left:2px; padding-right:2px; border-bottom:none;">
+                      <span class="ms" style="font-size:20px; color:var(--success); width:28px; text-align:center;">directions_car</span>
+                      <div class="tx"><div class="t">Monday · 7:44 AM</div><div class="d">26 min · car</div></div>
+                      <span class="mono-t" style="font-size:12px; margin-right:4px;">→ 9:44</span>
+                      <span class="ms" style="font-size:19px; color:var(--faint);">more_horiz</span>
+                    </div>
+                  </div>
+                  <!-- row overflow popover -->
+                  <div style="position:absolute; right:18px; top:238px; background:var(--highest); border:1px solid var(--border); border-radius:14px; box-shadow:0 14px 34px rgba(0,0,0,.5); padding:6px; width:196px;">
+                    <div style="display:flex; align-items:center; gap:9px; padding:10px 11px; border-radius:9px;"><span class="ms" style="font-size:18px; color:var(--muted);">start</span><span class="label-t" style="font-size:13.5px;">Jump to session start</span></div>
+                    <div style="display:flex; align-items:center; gap:9px; padding:10px 11px; border-radius:9px;"><span class="ms" style="font-size:18px; color:var(--muted);">last_page</span><span class="label-t" style="font-size:13.5px;">Jump to session end</span></div>
+                  </div>
+                </div>
+                <span class="n" style="top:398px; left:32px;">1</span>
+                <span class="n" style="top:472px; left:24px;">2</span>
+                <span class="n" style="top:472px; left:270px;">3</span>
+                <span class="n" style="top:492px; left:344px;">4</span>
+                <span class="n" style="top:560px; left:24px;">5</span>
+              </div></div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>Now row · pinned, display</b> — ticks live with the current session (kept); labeled "this device".
+                  <span class="anim">equalizer glyph animates with playback · counter ticks each second</span></span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>Unsynced row · display</b> — accent icon + "not synced yet" caption (was orange text; now the same accent grammar as the sync chip). Turns green when the queued session uploads.
+                  <span class="anim">accent → green cross-fade DUR.base on sync</span></span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>Row body · tap</b> — ONE primary action: resume at the session's end position (the "→ 11:44" mono suffix says exactly where). The two inline timecode targets are gone.
+                  <span class="anim">row flash accent-wash · dismiss · scrubber glides to position · haptic transport</span></span></div>
+                <div class="li"><span class="no">4</span><span class="tx"><b>"…" per row · tap</b> <span class="chip gold" style="padding:1px 7px;font-size:9px;">new</span> — small popover with jump-to-start / jump-to-end; the rare cases keep their door without crowding the row.
+                  <span class="anim">popover scales in from the dots POP_SPRING</span></span></div>
+                <div class="li"><span class="no">5</span><span class="tx"><b>Device icons · display</b> — phone / web / car per session (kept); green = on server, accent = local only.</span></div>
+              </div>
+            </div>
+
+            <!-- ============ FRAME: notes sheet ============ -->
+
+            <div class="frameunit">
+              <div class="framecap"><div class="t">Player notes sheet <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">The club-notes thread, spoiler-gated by listening position; the composer stamps the live timestamp. Entered from the cover's club button or a timeline marker dot. Behavior kept; drawn here so the marker → thread loop is on the record.</div></div>
+              <div class="nochange-note">Reproduced from 03-player.html · no in-house adjustment</div>
+              <div class="phone"><div class="screen">
+                <div style="position:absolute; inset:0; background:radial-gradient(120% 60% at 50% 12%, rgba(122,69,54,.35), transparent 55%), var(--scaffold);"></div>
+                <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms" style="font-size:15px">wifi</span><span class="ms" style="font-size:15px">battery_5_bar</span></span></div>
+                <div style="display:flex; justify-content:center; margin-top:26px;"><div class="cov c1" style="width:170px; aspect-ratio:1/1; border-radius:12px;"><span class="init">E</span><span class="ct">The Ember Gate</span></div></div>
+                <div class="scrim"></div>
+                <div class="sheetview" style="height:530px;">
+                  <div class="grabber"></div>
+                  <div class="sheethead"><div class="k">Cinder &amp; Verse book club</div><div class="t">Notes</div></div>
+                  <div style="padding:0 18px;">
+                    <div class="card" style="padding:12px 14px;">
+                      <div style="display:flex; align-items:center; gap:9px;">
+                        <div style="width:26px; height:26px; border-radius:50%; background:linear-gradient(155deg,#6e5a86,#241c31); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#fff;">K</div>
+                        <div class="label-t" style="font-size:13.5px;">Kestrel</div>
+                        <span class="chip" style="padding:3px 9px; font-size:11px; margin-left:auto; font-family:var(--font-mono);">Ch 9 · 5:12:40</span>
+                      </div>
+                      <div class="body-t" style="font-size:13.5px; margin-top:9px;">The ferryman's riddle has to be about the sister. Calling it now.</div>
+                    </div>
+                    <div class="card" style="padding:12px 14px; margin-top:10px; opacity:.65;">
+                      <div style="display:flex; align-items:center; gap:10px;">
+                        <span class="ms" style="font-size:19px; color:var(--faint);">visibility_off</span>
+                        <div class="tx">
+                          <div class="label-t" style="font-size:13.5px; color:var(--muted);">Hidden — ahead of you</div>
+                          <div class="cap-t" style="margin-top:2px;">Posted at Ch 18. Unlocks when you get there.</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="card" style="padding:12px 14px; margin-top:10px;">
+                      <div style="display:flex; align-items:center; gap:9px;">
+                        <div style="width:26px; height:26px; border-radius:50%; background:linear-gradient(155deg,#3e5d6e,#14222b); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#fff;">J</div>
+                        <div class="label-t" style="font-size:13.5px;">Jonas</div>
+                        <span class="chip" style="padding:3px 9px; font-size:11px; margin-left:auto; font-family:var(--font-mono);">Ch 12 · 6:02:10</span>
+                      </div>
+                      <div class="body-t" style="font-size:13.5px; margin-top:9px;">June Ashford's voice for the Kiln sisters is unreal.</div>
+                    </div>
+                    <!-- composer -->
+                    <div style="display:flex; align-items:center; gap:9px; margin-top:14px; background:var(--fill); border:1px solid var(--border); border-radius:14px; padding:10px 12px;">
+                      <span class="chip gold" style="padding:4px 10px; font-size:11px; font-family:var(--font-mono);">Ch 12 · 12:36</span>
+                      <span class="meta-t" style="flex:1;">Add a note…</span>
+                      <span class="ms" style="font-size:20px; color:var(--accent);">send</span>
+                    </div>
+                  </div>
+                </div>
+                <span class="n" style="top:404px; left:308px;">1</span>
+                <span class="n" style="top:490px; left:32px;">2</span>
+                <span class="n" style="top:700px; left:52px;">3</span>
+                <span class="n" style="top:700px; left:332px;">4</span>
+              </div></div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>Note timestamp chip · tap</b> — seeks playback to the note's position (kept); the same chip renders as the 16px marker dot on the player timeline.
+                  <span class="anim">dismiss + scrubber glide · haptic transport</span></span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>Spoiler-gated note · display</b> — posted ahead of your position, so body is withheld (kept); unlocks in place once you pass its timestamp.
+                  <span class="anim">unlock: blur dissolves DUR.slow + subtle glow</span></span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>Position stamp · display</b> — the composer stamps the live chapter + timecode automatically (kept); posting adds your marker dot to everyone's timeline.</span></div>
+                <div class="li"><span class="no">4</span><span class="tx"><b>Send · tap</b> — posts the note (kept).
+                  <span class="anim">note card slides into the thread POP_SPRING · haptic success</span></span></div>
+              </div>
+            </div>
+
+
+            <div class="frameunit wide">
+              <div class="framecap"><div class="t">"More" action tray &amp; button editor <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">The sheet behind the action row's <b>More</b> button. Peer quick-actions are a <b>grid of square tiles</b> (icon-first, ordered by how often you reach for them mid-listen) — <i>not</i> full-width rows, which would waste the width and force a vertical scan for what are one-tap launches. The only rows are the two "manage the player" items, pinned below a divider because they're a different category and drill into sub-sheets. Right: "Edit buttons" — drag actions between On&nbsp;screen / Tray / Hidden without leaving the player.</div></div>
+              <div class="nochange-note">Reproduced from 03-player.html · no in-house adjustment</div>
+              <div style="display:flex; gap:28px; flex-wrap:wrap;">
+
+                <!-- More tray sheet -->
+                <div class="phone"><div class="screen">
+                  <div style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(43,22,15,.22), var(--scaffold) 70%);"></div>
+                  <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms" style="font-size:15px">wifi</span><span class="ms" style="font-size:15px">battery_5_bar</span></span></div>
+                  <!-- dimmed player behind -->
+                  <div class="body" style="padding:0 18px; opacity:.4;">
+                    <div style="height:42px;"></div>
+                    <div style="display:flex; justify-content:center; margin-top:6px;"><div class="cov c1" style="width:150px; aspect-ratio:1/1; border-radius:12px;"><span class="init">E</span><span class="ct">The Ember Gate</span></div></div>
+                    <div style="text-align:center; margin-top:12px;"><div class="hero-t" style="font-size:19px;">The Ember Gate</div></div>
+                  </div>
+                  <div class="scrim"></div>
+                  <div class="sheetview">
+                    <div class="grabber"></div>
+                    <div class="sheethead"><div class="k">On the hearth</div><div class="t">More</div></div>
+                    <!-- QUICK-ACTION GRID: peer actions, icon-first, ordered by in-session frequency -->
+                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; padding:2px 16px 12px;">
+                      <!-- 1 Bookmarks (badge = count) -->
+                      <div style="position:relative; aspect-ratio:1/1; border-radius:14px; background:var(--fill); border:1px solid var(--hairline); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px;">
+                        <span class="ms" style="font-size:25px; color:var(--text);">bookmarks</span><span style="font-size:12px; font-weight:600; color:var(--text);">Bookmarks</span>
+                        <span style="position:absolute; top:8px; right:8px; min-width:17px; height:17px; border-radius:999px; background:var(--accent); color:var(--on-accent); font-family:var(--font-mono); font-size:9.5px; font-weight:700; display:flex; align-items:center; justify-content:center; padding:0 3px;">3</span>
+                      </div>
+                      <!-- 2 Notes (accent badge = club thread) -->
+                      <div style="position:relative; aspect-ratio:1/1; border-radius:14px; background:var(--fill); border:1px solid var(--hairline); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px;">
+                        <span class="ms" style="font-size:25px; color:var(--text);">forum</span><span style="font-size:12px; font-weight:600; color:var(--text);">Notes</span>
+                        <span style="position:absolute; top:8px; right:8px; min-width:17px; height:17px; border-radius:999px; background:var(--accent); color:var(--on-accent); font-family:var(--font-mono); font-size:9.5px; font-weight:700; display:flex; align-items:center; justify-content:center; padding:0 3px;">5</span>
+                      </div>
+                      <!-- 3 Add to list -->
+                      <div style="aspect-ratio:1/1; border-radius:14px; background:var(--fill); border:1px solid var(--hairline); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px;">
+                        <span class="ms" style="font-size:25px; color:var(--text);">playlist_add</span><span style="font-size:12px; font-weight:600; color:var(--text);">Add to list</span>
+                      </div>
+                      <!-- 4 Details -->
+                      <div style="aspect-ratio:1/1; border-radius:14px; background:var(--fill); border:1px solid var(--hairline); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px;">
+                        <span class="ms" style="font-size:25px; color:var(--text);">info</span><span style="font-size:12px; font-weight:600; color:var(--text);">Details</span>
+                      </div>
+                      <!-- 5 Downloaded (state: green tint, done glyph) -->
+                      <div style="aspect-ratio:1/1; border-radius:14px; background:rgba(127,168,107,.12); border:1px solid rgba(127,168,107,.3); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px;">
+                        <span class="ms" style="font-size:25px; color:var(--success);">download_done</span><span style="font-size:12px; font-weight:600; color:var(--text);">Downloaded</span>
+                      </div>
+                      <!-- 6 Cast -->
+                      <div style="aspect-ratio:1/1; border-radius:14px; background:var(--fill); border:1px solid var(--hairline); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px;">
+                        <span class="ms" style="font-size:25px; color:var(--text);">cast</span><span style="font-size:12px; font-weight:600; color:var(--text);">Cast</span>
+                      </div>
+                    </div>
+                    <!-- MANAGE: different category (configure the player itself) — pinned rows, separated -->
+                    <div style="height:1px; background:var(--hairline); margin:4px 20px 8px;"></div>
+                    <div class="setgroup" style="margin:0 16px 14px; background:transparent; border:none;">
+                      <div class="setrow" style="padding:11px 6px; border-color:var(--hairline)"><div class="ic" style="background:var(--accent-wash)"><span class="ms" style="color:var(--accent)">tune</span></div><div class="tx"><div class="t">Player settings</div><div class="d">Speed, skip, background, gestures</div></div><span class="ms" style="color:var(--faint)">chevron_right</span></div>
+                      <div class="setrow" style="padding:11px 6px"><div class="ic" style="background:var(--accent-wash)"><span class="ms" style="color:var(--accent)">edit</span></div><div class="tx"><div class="t">Edit these buttons</div><div class="d">Choose what shows on the player</div></div><span class="ms" style="color:var(--faint)">chevron_right</span></div>
+                    </div>
+                  </div>
+                  <span class="n" style="top:446px; left:12px">1</span>
+                  <span class="n" style="top:446px; left:130px">2</span>
+                  <span class="n" style="top:564px; left:130px">3</span>
+                  <span class="n" style="top:700px; left:8px">4</span>
+                  <span class="n" style="top:760px; left:8px">5</span>
+                </div></div>
+
+                <!-- Edit buttons (placement editor) -->
+                <div class="phone"><div class="screen">
+                  <div style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(43,22,15,.22), var(--scaffold) 70%);"></div>
+                  <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms" style="font-size:15px">wifi</span><span class="ms" style="font-size:15px">battery_5_bar</span></span></div>
+                  <div class="scrim" style="background:rgba(0,0,0,.35)"></div>
+                  <div class="sheetview" style="top:64px; border-radius:20px 20px 0 0;">
+                    <div class="grabber"></div>
+                    <div class="sheethead" style="display:flex; align-items:flex-start; justify-content:space-between;">
+                      <div><div class="k">On the hearth</div><div class="t">Edit buttons</div></div>
+                      <div class="chip on" style="padding:7px 13px; font-size:12px;">Done</div>
+                    </div>
+                    <!-- icon-only toggle -->
+                    <div class="setgroup" style="margin:0 14px 10px">
+                      <div class="setrow" style="padding:11px 15px"><div class="tx"><div class="t">Icon only</div><div class="d">Drop labels to fit more on screen</div></div><div class="toggle"><i></i></div></div>
+                    </div>
+                    <!-- On screen zone -->
+                    <div class="setlabel" style="display:flex; justify-content:space-between; margin:6px 20px 6px;"><span>On screen</span><span class="mono-t" style="font-size:11px; color:var(--accent);">4 / 6</span></div>
+                    <div class="setgroup" style="margin:0 14px 8px">
+                      <div class="setrow" style="padding:9px 12px"><span class="ms" style="color:var(--faint); font-size:20px">drag_indicator</span><div class="ic"><span class="ms">list</span></div><div class="tx"><div class="t">Chapters</div></div><span class="ms" style="color:var(--faint); font-size:19px">visibility_off</span></div>
+                      <div class="setrow" style="padding:9px 12px"><span class="ms" style="color:var(--faint); font-size:20px">drag_indicator</span><div class="ic"><span class="ms">speed</span></div><div class="tx"><div class="t">Speed</div></div><span class="ms" style="color:var(--faint); font-size:19px">visibility_off</span></div>
+                      <div class="setrow" style="padding:9px 12px; background:var(--accent-wash);"><span class="ms" style="color:var(--accent); font-size:20px">drag_indicator</span><div class="ic" style="background:var(--accent-tile)"><span class="ms" style="color:var(--accent)">bedtime</span></div><div class="tx"><div class="t">Sleep timer</div></div><span class="ms" style="color:var(--faint); font-size:19px">visibility_off</span></div>
+                      <div class="setrow" style="padding:9px 12px"><span class="ms" style="color:var(--faint); font-size:20px">drag_indicator</span><div class="ic"><span class="ms">history</span></div><div class="tx"><div class="t">Recent listens</div></div><span class="ms" style="color:var(--faint); font-size:19px">visibility_off</span></div>
+                    </div>
+                    <!-- In tray zone -->
+                    <div class="setlabel" style="margin:6px 20px 6px;">In the More tray</div>
+                    <div class="setgroup" style="margin:0 14px 8px">
+                      <div class="setrow" style="padding:9px 12px"><span class="ms" style="color:var(--faint); font-size:20px">drag_indicator</span><div class="ic"><span class="ms">bookmark</span></div><div class="tx"><div class="t">Bookmarks</div></div><span class="ms" style="color:var(--faint); font-size:19px">visibility_off</span></div>
+                      <div class="setrow" style="padding:9px 12px"><span class="ms" style="color:var(--faint); font-size:20px">drag_indicator</span><div class="ic"><span class="ms">sticky_note_2</span></div><div class="tx"><div class="t">Notes</div></div><span class="ms" style="color:var(--faint); font-size:19px">visibility_off</span></div>
+                    </div>
+                    <!-- Hidden zone -->
+                    <div class="setlabel" style="margin:6px 20px 6px;">Hidden</div>
+                    <div class="setgroup" style="margin:0 14px 14px">
+                      <div class="setrow" style="padding:9px 12px; opacity:.55"><span class="ms" style="color:var(--faint); font-size:20px">drag_indicator</span><div class="ic"><span class="ms">cast</span></div><div class="tx"><div class="t">Cast</div></div><span class="ms" style="color:var(--accent); font-size:19px">visibility</span></div>
+                    </div>
+                  </div>
+                  <span class="n" style="top:104px; left:328px">6</span>
+                  <span class="n" style="top:190px; left:8px">7</span>
+                  <span class="n" style="top:270px; left:328px">8</span>
+                  <span class="n" style="top:566px; left:8px">9</span>
+                  <span class="n" style="top:706px; left:328px">10</span>
+                </div></div>
+
+              </div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>Quick-action grid · tap a tile</b> — the tray is a <b>3-across grid of square icon tiles</b>, not a stack of rows: these actions are peers you launch in one tap, so they read by icon and pack into the thumb arc (same visual language as the on-screen action row they spilled from). Ordered by in-session frequency: <b>Bookmarks · Notes · Add to list · Details · Downloaded · Cast</b>. The grid is dynamic — it holds exactly the actions the user's placement leaves off-screen.
+                  <span class="anim">tiles stagger in 30ms · SpringPressable 0.96 per tile</span></span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>State badges on tiles · display</b> — a tile carries a small accent badge only when it has live state worth surfacing: Bookmarks shows its saved count, Notes shows the club-thread count. Cheap glanceable info without a description line.
+                  <span class="anim">badge pops POP_SPRING when the count changes</span></span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>Downloaded tile · tap</b> — the tri-state download control as a tile: a green tint + <span class="mono-t">download_done</span> means it's on the phone; tap → remove (Undo toast, D-ACTIONS). Not-downloaded shows a plain <span class="mono-t">download</span>; in-flight shows a ring + percent. The state lives in the tile's color, no sub-label needed.</span></div>
+                <div class="li"><span class="no">4</span><span class="tx"><b>Player settings · tap</b> — below a divider, a pinned <b>row</b> (not a grid tile) because it's a different category — configuring the player itself, and it drills into a sub-sheet. Opens player settings in context (D-THUMB): speed, skip amounts, background, gestures, without leaving the player.
+                  <span class="anim">stacked sheet push −24px parallax</span></span></div>
+                <div class="li"><span class="no">5</span><span class="tx"><b>Edit these buttons · tap</b> — the second pinned manage-row; opens the placement editor (right frame). Same editor as Settings → Player buttons, surfaced in-context. Rows (with chevrons) are the right shape for "drills into more," which is why these two sit apart from the launch grid.
+                  <span class="anim">stacked sheet push · handle grows to full-height editor</span></span></div>
+                <div class="li"><span class="no">6</span><span class="tx"><b>Done · tap</b> — commits the layout (persists to the settings store, syncs across devices) and returns to the tray. Changes are live behind the sheet as you drag.</span></div>
+                <div class="li"><span class="no">7</span><span class="tx"><b>Icon only · toggle</b> — drops labels from the on-screen row so more buttons fit (kept). A running sleep timer then shows its countdown in place of the icon.
+                  <span class="anim">toggle spring · on-screen row behind the sheet re-lays-out live</span></span></div>
+                <div class="li"><span class="no">8</span><span class="tx"><b>On-screen zone · count</b> — the cap indicator (4 / 6) turns accent at the max. Drag a row past the cap and it spills to the tray automatically — you can't overfill the row.</span></div>
+                <div class="li"><span class="no">9</span><span class="tx"><b>Drag handle · long-press + drag</b> — move any action between On&nbsp;screen / In the More tray / Hidden, or reorder within a zone. The three labeled zones are the drop targets.
+                  <span class="anim">lifted row scales 1.03 + shadow; zones highlight on hover; haptic select on drop</span></span></div>
+                <div class="li"><span class="no">10</span><span class="tx"><b>Quick hide / show eye · tap</b> — one-tap send-to-Hidden (or restore) without dragging, for fast pruning. Hidden rows dim; the eye flips to "show".</span></div>
+              </div>
+            </div>
+
+            <div class="frameunit wide">
+              <div class="framecap"><div class="t">States board — buffering · empty · offline <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">Left: stream stalls mid-play. Center: nothing in progress at all. Right: airplane mode with a downloaded book playing.</div></div>
+              <div class="nochange-note">Reproduced from 03-player.html · no in-house adjustment</div>
+              <div style="display:flex; gap:22px; flex-wrap:wrap; align-items:flex-start;">
+
+                <!-- buffering mini -->
+                <div class="phone" style="width:300px; padding:9px; border-radius:38px;"><div class="screen short" style="width:282px; height:480px; border-radius:30px;">
+                  <div style="position:absolute; inset:0; background:radial-gradient(120% 70% at 50% 20%, rgba(122,69,54,.4), transparent 60%), var(--scaffold);"></div>
+                  <div style="position:relative; padding:26px 18px 0; text-align:center;">
+                    <div style="display:flex; justify-content:center;"><div class="cov c1" style="width:150px; aspect-ratio:1/1; border-radius:12px;"><span class="init">E</span><span class="ct">The Ember Gate</span></div></div>
+                    <div class="title-t" style="margin-top:14px;">The Ember Gate</div>
+                    <div style="display:flex; align-items:center; justify-content:center; gap:14px; margin-top:22px;">
+                      <div class="iconbtn" style="width:46px; height:46px;"><span class="ms" style="font-size:24px;">replay_30</span></div>
+                      <div style="position:relative; width:78px; height:78px;">
+                        <div style="position:absolute; inset:0; border-radius:50%; border:2.5px solid rgba(224,101,74,.25); border-top-color:var(--accent); transform:rotate(40deg);"></div>
+                        <div style="position:absolute; inset:6px; border-radius:50%; background:var(--accent); opacity:.75; display:flex; align-items:center; justify-content:center;"><span class="ms fill" style="font-size:34px; color:var(--on-accent);">pause</span></div>
+                      </div>
+                      <div class="iconbtn" style="width:46px; height:46px;"><span class="ms" style="font-size:24px;">forward_30</span></div>
+                    </div>
+                    <div class="cap-t" style="margin-top:12px; letter-spacing:.06em; color:var(--accent);">BUFFERING…</div>
+                  </div>
+                  <span class="n" style="top:290px; left:196px;">1</span>
+                  <span class="n" style="top:388px; left:196px;">2</span>
+                </div></div>
+
+                <!-- empty mini -->
+                <div class="phone" style="width:300px; padding:9px; border-radius:38px;"><div class="screen short" style="width:282px; height:480px; border-radius:30px;">
+                  <div style="position:relative; padding:34px 18px 0; text-align:center;">
+                    <div style="width:76px; height:76px; border-radius:50%; background:var(--accent-wash); display:flex; align-items:center; justify-content:center; margin:0 auto;"><span class="ms fill" style="font-size:38px; color:var(--accent);">local_fire_department</span></div>
+                    <div class="title-t" style="margin-top:14px;">Nothing on the hearth</div>
+                    <div class="meta-t" style="margin-top:5px;">Pick something up and it plays here.</div>
+                    <div class="eyebrow-t" style="margin-top:22px; text-align:left; padding-left:2px;">Pick up where you left off</div>
+                    <div style="display:flex; gap:9px; margin-top:10px;">
+                      <div style="flex:1;"><div class="cov c2" style="aspect-ratio:1/1; padding:7px;"><span class="ct" style="font-size:8px;">Winter of Salt</span></div><div class="track" style="margin-top:5px;"><i style="width:12%;"></i></div></div>
+                      <div style="flex:1;"><div class="cov c5" style="aspect-ratio:1/1; padding:7px;"><span class="ct" style="font-size:8px;">Halligan's Reef</span></div><div class="track" style="margin-top:5px;"><i style="width:64%;"></i></div></div>
+                      <div style="flex:1;"><div class="cov c4" style="aspect-ratio:1/1; padding:7px;"><span class="ct" style="font-size:8px;">The Lantern Bearer</span></div><div class="track" style="margin-top:5px;"><i style="width:31%;"></i></div></div>
+                    </div>
+                    <div class="btn secondary" style="width:100%; margin-top:20px;"><span class="ms" style="font-size:19px;">auto_stories</span>Browse library</div>
+                  </div>
+                  <span class="n" style="top:118px; left:206px;">3</span>
+                  <span class="n" style="top:284px; left:8px;">4</span>
+                  <span class="n" style="top:392px; left:236px;">5</span>
+                </div></div>
+
+                <!-- offline mini -->
+                <div class="phone" style="width:300px; padding:9px; border-radius:38px;"><div class="screen short" style="width:282px; height:480px; border-radius:30px;">
+                  <div style="position:absolute; inset:0; background:radial-gradient(120% 70% at 50% 20%, rgba(122,69,54,.4), transparent 60%), var(--scaffold);"></div>
+                  <div style="position:relative; padding:26px 18px 0; text-align:center;">
+                    <div style="display:flex; justify-content:center;"><div class="cov c1" style="width:150px; aspect-ratio:1/1; border-radius:12px;"><span class="init">E</span><span class="ct">The Ember Gate</span><div class="dl-badge"><span class="ms">download_done</span></div></div></div>
+                    <div class="title-t" style="margin-top:14px;">The Ember Gate</div>
+                    <div style="display:flex; align-items:center; justify-content:center; gap:14px; margin-top:20px;">
+                      <div class="iconbtn" style="width:46px; height:46px;"><span class="ms" style="font-size:24px;">replay_30</span></div>
+                      <div style="width:66px; height:66px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center;"><span class="ms fill" style="font-size:32px; color:var(--on-accent);">pause</span></div>
+                      <div class="iconbtn" style="width:46px; height:46px;"><span class="ms" style="font-size:24px;">forward_30</span></div>
+                    </div>
+                    <div style="display:flex; justify-content:center; margin-top:18px;">
+                      <div class="chip" style="border-color:#5a3029; color:var(--destructive); gap:6px;"><span class="ms" style="font-size:16px; color:var(--destructive);">cloud_off</span>Offline</div>
+                    </div>
+                  </div>
+                  <div class="toast" style="bottom:26px;"><span class="ms" style="color:var(--destructive);">cloud_off</span><span class="tx">Offline — progress saved on this phone</span></div>
+                  <span class="n" style="top:352px; left:200px;">6</span>
+                  <span class="n" style="top:418px; left:236px;">7</span>
+                </div></div>
+
+              </div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>Buffering ring · display</b> <span class="chip gold" style="padding:1px 7px;font-size:9px;">new</span> — thin arc orbits the play button while the stream stalls; button dims to 75%. Transport stays tappable — pause during buffering still pauses.
+                  <span class="anim">arc orbits 900ms linear loop · appears only after a 400ms grace (no flash on micro-stalls)</span></span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>"Buffering…" caption · display</b> — micro-caption directly under the play button; fades out the instant audio resumes.
+                  <span class="anim">caption fades in/out DUR.base as the stall starts/clears</span></span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>Hearth flame mark · display</b> <span class="chip gold" style="padding:1px 7px;font-size:9px;">new</span> — the empty state gets the brand's flame in an accent-wash disc; "Nothing on the hearth" replaces the bare "Nothing playing" route.
+                  <span class="anim">flame breathes PULSE_MS</span></span></div>
+                <div class="li"><span class="no">4</span><span class="tx"><b>Continue tiles · tap</b> — the user's three most recent in-progress books with progress bars; one tap starts playback right here (D-PLAY). Shown only when in-progress books exist but none is loaded.
+                  <span class="anim">tile SpringPressable · player content fades in around the chosen book</span></span></div>
+                <div class="li"><span class="no">5</span><span class="tx"><b>Browse library · tap</b> — routes to the Library tab; the true zero-state CTA for brand-new accounts.</span></div>
+                <div class="li"><span class="no">6</span><span class="tx"><b>Offline sync indicator · display</b> — the header sync glyph in its red state; tap still opens the Sync sheet, which explains the local-session queue. Download badge on the cover confirms why playback works.
+                  <span class="anim">chip turns red with one haptic warn on the online→offline edge</span></span></div>
+                <div class="li"><span class="no">7</span><span class="tx"><b>Offline toast · display, once</b> — "Offline — progress saved on this phone" on the transition only; never nags again during the session.
+                  <span class="anim">toast slides up, holds 3s, slides away</span></span></div>
+              </div>
+            </div>
+
+
+    </div>
+  </div>
+  <div class="footnav"><a href="02-library-v2.html" class="v2" style="color:var(--review)">← 02 · Library (v2)</a><a href="04-book-v2.html" class="v2" style="color:var(--review)">04 · Book &amp; Reader (v2) →</a></div>
+</div>
+</body>
+</html>

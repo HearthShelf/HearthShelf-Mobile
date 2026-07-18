@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HearthShelf Mobile — In-House Review (v2)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Geist+Mono:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<link rel="stylesheet" href="hearth.css">
+<style>
+  .doctrine { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:14px; margin-top:26px; }
+  .doc { border-radius:16px; padding:18px 20px; background:var(--page-card); border:1px solid var(--page-border); }
+  .doc.rv { border-color:var(--review-border); background:linear-gradient(180deg, rgba(111,140,255,.06), transparent 70%), var(--page-card); }
+  .doc .id { font-family:var(--font-mono); font-size:11px; letter-spacing:.14em; color:var(--hearth); }
+  .doc.rv .id { color:var(--review); }
+  .doc h4 { margin:6px 0 7px; font-size:15px; color:var(--text); }
+  .doc p { margin:0; font-size:13px; line-height:1.6; color:#b6afa3; }
+  .toc { display:grid; grid-template-columns:repeat(auto-fill,minmax(400px,1fr)); gap:14px; margin-top:26px; }
+  .toc a { display:flex; gap:14px; align-items:flex-start; text-decoration:none; border-radius:16px; padding:17px 19px; background:var(--page-card); border:1px solid var(--review-border); transition:border-color .15s; }
+  .toc a:hover { border-color:#55628f; }
+  .toc .num { font-family:var(--font-mono); font-size:22px; font-weight:700; color:var(--review); line-height:1; padding-top:2px; }
+  .toc h4 { margin:0 0 5px; font-size:15.5px; color:var(--text); }
+  .toc p { margin:0; font-size:12.5px; line-height:1.55; color:#a49d90; }
+  .verdict { display:flex; gap:14px; flex-wrap:wrap; margin-top:20px; }
+  .vcard { flex:1; min-width:220px; border-radius:14px; padding:16px 18px; background:var(--page-card); border:1px solid var(--page-border); }
+  .vcard .big { font-family:var(--font-mono); font-size:30px; font-weight:700; color:var(--review); }
+  .vcard .lbl { font-size:12.5px; color:var(--muted); margin-top:4px; line-height:1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div class="wordmark" style="font-size:26px"><span class="lt">Hearth</span><span class="bd">Shelf</span><span class="sub"> · Mobile Redesign</span><span class="v2tag">In-house review</span></div>
+    <div class="tagline">A second pass over the consultant's redesign by the in-house UX team.<br>
+    The consultant's work is strong. This layer keeps what's right, fixes what's still wrong, and flags what the redesign <b>made worse</b>.</div>
+  </div>
+  <div class="pagenav">
+    <a href="index.html">Consultant overview</a>
+    <a href="index-v2.html" class="v2 on">v2 Overview</a>
+    <a href="01-home-v2.html" class="v2">Home</a>
+    <a href="02-library-v2.html" class="v2">Library &amp; Search</a>
+    <a href="03-player-v2.html" class="v2">Player</a>
+    <a href="04-book-v2.html" class="v2">Book &amp; Reader</a>
+    <a href="05-stats-clubs-v2.html" class="v2">Stats &amp; Clubs</a>
+    <a href="06-settings-v2.html" class="v2">Settings</a>
+    <a href="07-system-v2.html" class="v2">Sign-in &amp; System</a>
+  </div>
+
+  <!-- ============================== HOW TO READ ============================== -->
+  <div class="section" id="how">
+    <div class="eyebrow">Read this first</div>
+    <h2>What this review is</h2>
+    <p class="sub">The consultant delivered a thorough, feature-complete teardown and redesign. We are not throwing it out —
+    most of it ships. This review layer exists because a redesign this large introduces its own problems, and a few of the
+    consultant's "improvements" trade one usability cost for another. Each v2 page sits beside its v1, carries an
+    <b>in-house teardown</b> block (three columns below), and re-draws only the frames that need it.</p>
+
+    <div class="prodcheck">
+      <div class="lead"><span class="ms">fact_check</span>Correction — this review was re-audited against prod source</div>
+      <p>My first pass reviewed the consultant's mockups, not the shipping React Native code — a process failure this repo's
+      own rules forbid ("never rely on memory; confirm by observing code"). I've since read the prod source for every
+      surface. The headline corrections, applied across all seven v2 pages in their <span class="mono-t">Verified against prod</span> blocks:</p>
+      <table>
+        <tr><th>Original review claim</th><th>Verdict vs prod</th><th>Reality</th></tr>
+        <tr><td>"No light mode designed — the suite is dark-only, a D-CONSIST spec gap"</td><td><span class="vd inv">invented</span></td><td class="src">Prod ships a full light + OLED theme (theme.ts:123 <span class="mono-t">LIGHT_BASE</span>), OS-reactive via ThemeProvider.tsx:30. Light mode is REAL. The only surfaces that ignore it are sign-in + splash (hardcoded hex). My "draw the missing light mode" contribution collapses to "wire the two pre-auth screens to the theme that already exists."</td></tr>
+        <tr><td>"Home quick-play hijacks a stable hero" (regression)</td><td><span class="vd inv">invented</span></td><td class="src">Prod has no shelf quick-play (taps route to detail) and the hero is already volatile. No stable-hero baseline to break.</td></tr>
+        <tr><td>"Library A-Z rail overlaps the grid" (regression)</td><td><span class="vd inv">invented</span></td><td class="src">Prod reserves a 28px rail lane + shrinks tiles (AzRail.tsx:163). No collision.</td></tr>
+        <tr><td>"Book CTA = four 56px squares that overflow" (regression)</td><td><span class="vd inv">invented</span></td><td class="src">Prod uses flex <span class="mono-t">minWidth:52</span> squares (2–3, never 4). That geometry is the consultant's mockup, not prod.</td></tr>
+        <tr><td>"Book reader has no light/sepia theme parity"</td><td><span class="vd inv">invented</span></td><td class="src">read.tsx:244 ships light/sepia/paper/dark today. The real gap is the position slider.</td></tr>
+        <tr><td>"Stats 12px tappable-cell regression"</td><td><span class="vd inv">invented</span></td><td class="src">Prod heatmap is non-interactive; "tap a day" is the consultant's NEW feature, not shipped.</td></tr>
+        <tr><td>"Player collapse chevron removed orphans users"</td><td><span class="vd over">overstated</span></td><td class="src">Prod's Now-tab player already ships with no collapse; only the pushed route has one. Real but minor.</td></tr>
+        <tr><td>Cover-tap-to-play default · skip-button bug · 340px hero · finish-date gate · section reorder · dual search · blind switcher · 13px close · hardcoded sign-in · 24-ember splash · no reduce-motion · 2FA dead-end</td><td><span class="vd ok">confirmed</span></td><td class="src">All verified true in prod with file:line citations on their pages.</td></tr>
+      </table>
+      <p><b>Bottom line:</b> the consultant's teardown is accurate and their fixes are largely right. My value dropped from "6 regressions + a missing light mode" to <b>one solid regression (cover-tap default), one minor one (collapse handle), and a real a11y/reduce-motion + pre-auth-theming gap.</b> The rest of my in-house additions (D-REACH overlays, reduce-motion states, position slider, heatmap a11y) stand as improvements — just not as fixes to shipped regressions.</p>
+    </div>
+
+    <div class="ihreview">
+      <div class="lead"><span class="ms">reviews</span>How every v2 page is scored (post prod-audit)</div>
+      <p>Each surface is judged against measurable mobile standards — touch-target size (44pt iOS / 48dp Android),
+      thumb-reach zones, cognitive load, platform convention, and state coverage — not taste. Every claim now ties to a
+      specific control AND a prod file:line.</p>
+      <div class="ihgrid">
+        <div class="ihcol keep"><h4><span class="ms">check_circle</span>Kept — consultant was right</h4><ul>
+          <li><b>The eight doctrines are sound.</b> D-NAV, D-PLAY, D-STATES, D-FINISH especially — ship them as written.</li>
+          <li><b>Their teardown is factually accurate</b> — every prod claim I re-checked (340px hero, skip bug, finish gate, dual search) held.</li>
+          <li><b>State coverage</b> (loading/empty/error/offline everywhere) is best-in-class and non-negotiable.</li>
+        </ul></div>
+        <div class="ihcol miss"><h4><span class="ms">construction</span>Genuinely still wrong (verified)</h4><ul>
+          <li><b>Accessibility &amp; reduced motion.</b> Prod has NO reduce-motion fallback for the splash embers (verified) and the heatmap has no screen-reader path. Real gaps.</li>
+          <li><b>Sign-in + splash ignore the shipping theme.</b> Verified hardcoded hex; the rest of the app is themed.</li>
+          <li><b>One-handed reach unproven.</b> Still worth the D-REACH overlays.</li>
+        </ul></div>
+        <div class="ihcol regress"><h4><span class="ms">warning</span>Regressed — survived prod audit</h4><ul>
+          <li><b>Cover single-tap = play/pause by default</b> — verified: prod defaults it OFF (settings.ts:222), so flipping it ON is a genuine hair-trigger change. Holds.</li>
+          <li><b>Collapse handle</b> — downgraded to polish (Now-tab already has none in prod). Restore for the pushed route.</li>
+          <li style="color:var(--regress)"><b>Four other "regressions" WITHDRAWN</b> — see the correction table above.</li>
+        </ul></div>
+      </div>
+    </div>
+
+    <div class="verdict">
+      <div class="vcard"><div class="big">7 / 8</div><div class="lbl">consultant doctrines shipped unchanged. D-CONSIST already holds in prod (light theme ships); only sign-in/splash need wiring.</div></div>
+      <div class="vcard"><div class="big">+2</div><div class="lbl">new in-house doctrines that survive the audit: <b>D-REACH</b> (validated thumb zones) and <b>D-A11Y</b> (reduce-motion + screen-reader floor — real prod gaps).</div></div>
+      <div class="vcard"><div class="big">1 + 1</div><div class="lbl">regressions that held vs prod: one solid (cover-tap default) + one minor (collapse handle). Four were invented/overstated and are withdrawn.</div></div>
+    </div>
+  </div>
+
+  <!-- ============================== DOCTRINE ADDENDUM ============================== -->
+  <div class="section" id="doctrine">
+    <div class="eyebrow">Doctrine — the in-house addendum</div>
+    <h2>Two rules the redesign is missing</h2>
+    <p class="sub">The consultant's eight doctrines stand. These two close the gaps that a dark-only, gesture-heavy mockup
+    suite couldn't. Every v2 page cites them.</p>
+    <div class="doctrine">
+      <div class="doc rv"><div class="id">D-REACH <span style="color:var(--muted)">· extends D-THUMB</span></div><h4>Prove the thumb zone, don't assert it</h4>
+        <p>Every primary action must sit inside the bottom ~55% one-handed arc on a 6.7" phone, shown with a reach overlay. Destructive or irreversible actions sit OUTSIDE the fast-tap zone so they can't be fired by a stray thumb. "Reachable" is a measurement, not a claim.</p></div>
+      <div class="doc rv"><div class="id">D-A11Y <span style="color:var(--muted)">· new</span></div><h4>An accessibility &amp; theme floor on every surface</h4>
+        <p>Light mode already ships in prod (theme.ts LIGHT_BASE, OS-reactive) — the job is closing the surfaces that ignore it (sign-in, splash). Text respects Dynamic Type / font scaling up to 200% without clipping. Every icon-only control has a label for VoiceOver/TalkBack, in a logical focus order. EmberBurst, CoverGlow, and carousel parallax all honor Reduce Motion with a static fallback. Color never carries meaning alone (sync state gets an icon shape, not just red/green).</p></div>
+    </div>
+  </div>
+
+  <!-- ============================== SUMMARY OF PER-PAGE FINDINGS ============================== -->
+  <div class="section" id="findings">
+    <div class="eyebrow">The suite</div>
+    <h2>v2 pages &amp; headline findings</h2>
+    <p class="sub">Each v2 page copies its v1 counterpart and layers the in-house teardown plus re-drawn frames. Open them
+    side-by-side with the consultant's versions.</p>
+    <div class="toc">
+      <a href="01-home-v2.html" class="v2"><span class="num">01</span><span><h4>Home</h4><p><b>Verified vs prod:</b> the 340px hero + search-only header are real. My "quick-play hijacks a stable hero" regression was INVALID (prod has no shelf quick-play; hero already volatile). <b>Kept:</b> the earned-header status line + resume-into-dock design.</p></span></a>
+      <a href="02-library-v2.html" class="v2"><span class="num">02</span><span><h4>Library &amp; Search</h4><p><b>Verified vs prod:</b> dual divergent search, blind library cycle, and a 13px filter-close are real. My "rail overlaps the grid" and "control bar scrolls away" regressions were WITHDRAWN (prod reserves a 28px rail lane; controls are already a fixed sibling).</p></span></a>
+      <a href="03-player-v2.html" class="v2"><span class="num">03</span><span><h4>Player</h4><p><b>Verified vs prod:</b> cover-tap-to-play default is a real regression (prod defaults it OFF). The collapse-chevron point was OVERSTATED (Now-tab player already ships with none) - downgraded to polish. Skip-button bug confirmed real.</p></span></a>
+      <a href="04-book-v2.html" class="v2"><span class="num">04</span><span><h4>Book &amp; Reader</h4><p><b>Verified vs prod:</b> mandatory finish-date gate, section reorder, and Finish-beside-Resume are real. The "5-square overflow" was the consultant mockup (prod flexes 2-3 squares) and "reader has no light/sepia" was INVALID (prod ships 4 themes). Real reader gap: no position slider.</p></span></a>
+      <a href="05-stats-clubs-v2.html" class="v2"><span class="num">05</span><span><h4>Stats &amp; Clubs</h4><p><b>Verified vs prod:</b> the month-label bug, missing heatmap a11y, no pull-to-refresh, and bare club rows are real. My "12px tappable-cell regression" was INVALID (prod heatmap is non-interactive) - reframed as get-the-new-feature-right + add a screen-reader table.</p></span></a>
+      <a href="06-settings-v2.html" class="v2"><span class="num">06</span><span><h4>Settings</h4><p><b>Kept, mostly.</b> The IA cleanup is right. <b>Fix:</b> add settings search (a long list still needs it), and put light/dark/system at the very top of Appearance where users look first.</p></span></a>
+      <a href="07-system-v2.html" class="v2"><span class="num">07</span><span><h4>Sign-in &amp; System</h4><p><b>Verified vs prod:</b> sign-in IS hardcoded hex (real), 2FA dead-ends, 24-ember splash has no reduce-motion fallback (real). Correction: the app ALREADY ships a light theme - so this is "wire sign-in to the existing theme," not "prove light mode exists."</p></span></a>
+    </div>
+  </div>
+
+  <div class="footnav"><a href="index.html">← Consultant overview</a><a href="01-home-v2.html" class="v2" style="color:var(--review)">01 · Home (v2) →</a></div>
+</div>
+</body>
+</html>

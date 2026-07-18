@@ -1,0 +1,914 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HearthShelf Redesign v2 — Stats &amp; Clubs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Geist+Mono:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<link rel="stylesheet" href="hearth.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div class="wordmark"><span class="lt">Hearth</span><span class="bd">Shelf</span><span class="sub"> · Mobile Redesign — Stats &amp; Clubs</span><span class="v2tag">In-house v2</span></div>
+    <div class="tagline">Second opinion on <b>05-stats-clubs.html</b>. Fixing the never-rendered heatmap labels is right —<br>we make the heatmap actually tappable, and give it a screen-reader path.</div>
+  </div>
+  <div class="pagenav">
+    <a href="index-v2.html" class="v2">v2 Overview</a>
+    <a href="01-home-v2.html" class="v2">Home</a>
+    <a href="02-library-v2.html" class="v2">Library &amp; Search</a>
+    <a href="03-player-v2.html" class="v2">Player</a>
+    <a href="04-book-v2.html" class="v2">Book &amp; Reader</a>
+    <a href="05-stats-clubs-v2.html" class="v2 on">Stats &amp; Clubs</a>
+    <a href="06-settings-v2.html" class="v2">Settings</a>
+    <a href="07-system-v2.html" class="v2">Sign-in &amp; System</a>
+    <a href="05-stats-clubs.html" style="margin-left:14px; opacity:.7">↩ consultant v1</a>
+  </div>
+
+  <div class="section" id="review">
+    <div class="eyebrow">Screen 05 · Stats &amp; Clubs</div>
+    <h2>The in-house teardown</h2>
+    <p class="sub">The consultant found and fixed a genuine bug (heatmap month labels computed but never drawn) and added
+    pull-to-refresh, a goal ring, and club unread badges. All correct. But "tappable heatmap days" at ~12px is a new
+    accessibility problem, and a data visualization with no non-visual path fails a11y outright.</p>
+
+    <div class="prodcheck">
+      <div class="lead"><span class="ms">fact_check</span>Verified against prod source (app/(tabs)/stats.tsx · app/club/index.tsx)</div>
+      <p>Re-audited against shipping code. My headline "regression" was actually a critique of the consultant's proposed feature, not prod:</p>
+      <table>
+        <tr><th>My claim</th><th>Verdict</th><th>Prod evidence</th></tr>
+        <tr><td>Heatmap month labels computed but never rendered (a real bug)</td><td><span class="vd ok">confirmed</span></td><td class="src">stats.tsx:948-957 builds <span class="mono-t">monthCols</span>; render body (:963-988) never reads it. No weekday rail either.</td></tr>
+        <tr><td>Heatmap has no screen-reader / data-table fallback</td><td><span class="vd ok">confirmed</span></td><td class="src">stats.tsx:963-988 renders bare color <span class="mono-t">&lt;View&gt;</span> cells, no <span class="mono-t">accessibilityLabel/Role</span></td></tr>
+        <tr><td>No pull-to-refresh on Stats</td><td><span class="vd ok">confirmed</span></td><td class="src">stats.tsx:219 <span class="mono-t">Animated.ScrollView</span> with no <span class="mono-t">refreshControl</span> (Home/Library both have it)</td></tr>
+        <tr><td>Club list lacks unread badges / member count / last-activity</td><td><span class="vd ok">confirmed</span></td><td class="src">club/index.tsx:86-118 row shows only cover + name + current-book caption</td></tr>
+        <tr><td>"~12px tappable heatmap cells are a mis-tap generator / regression"</td><td><span class="vd inv">invented</span></td><td class="src">Prod heatmap cells are NON-interactive <span class="mono-t">&lt;View&gt;</span>s (stats.tsx:978-981), 11px (:1476), no <span class="mono-t">onPress</span>. "Tappable days" is the CONSULTANT's NEW feature (05-stats-clubs.html), not shipped. You can't regress a target that doesn't exist.</td></tr>
+        <tr><td>Compare/leaderboard uses color only</td><td><span class="vd over">overstated</span></td><td class="src">No rank-change UI exists at all; the "you" row is accent-tinted AND text-labelled "(you)" (stats.tsx:1341). Speculative, not a shipped defect.</td></tr>
+      </table>
+      <p><b>Net:</b> the heatmap fix is still worth building — but its value is "make the consultant's PROPOSED tap target usable + add a screen-reader path," not "fix a shipped mis-tap regression." Reframed below.</p>
+    </div>
+
+    <div class="ihreview">
+      <div class="lead"><span class="ms">reviews</span>Scored against the consultant's 05-stats-clubs.html</div>
+      <p>Charts are the hardest thing to get right for touch and for screen readers. The redesign improved the visuals but
+      left interaction and a11y underspecified.</p>
+      <div class="ihgrid">
+        <div class="ihcol keep"><h4><span class="ms">check_circle</span>Kept — ship as written</h4><ul>
+          <li><b>Month axis + weekday labels rendered</b> (the real bug fix — prod computes then drops them, verified). Yes.</li>
+          <li><b>Pull-to-refresh &amp; section-jump chips.</b> Good (prod Stats has no refresh today — verified).</li>
+          <li><b>Goal ring + EmberBurst on goal.</b> Earned emotional peak.</li>
+          <li><b>Club unread badges + timestamp chip + safer archive color.</b> All correct (prod club list lacks them — verified).</li>
+        </ul></div>
+        <div class="ihcol miss"><h4><span class="ms">construction</span>Still wrong — unaddressed</h4><ul>
+          <li><b>Heatmap has no screen-reader path.</b> Prod's grid of colored Views is invisible to VoiceOver/TalkBack; needs a data-table fallback (D-A11Y). Verified.</li>
+          <li><b>The consultant's PROPOSED tappable day is ~12px</b> — if they add day-tapping (their new feature), it must not ship at 12px. Fix the target before it lands.</li>
+          <li><b>Sticky jump chips</b> consume ~44px of vertical on a data-dense screen with no collapse.</li>
+        </ul></div>
+        <div class="ihcol regress"><h4><span class="ms">warning</span>Regressed — the redesign made it worse</h4><ul>
+          <li style="color:var(--regress)"><b>Withdrawn: "12px tappable-cell regression."</b> Prod's heatmap is non-interactive (verified stats.tsx:978); there is nothing shipped to regress. This is a "get the consultant's new feature right the first time" note, moved to the middle column.</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section" id="stats-fix">
+    <div class="eyebrow">Screen 05 · Stats</div>
+    <h2>A heatmap you can actually touch — and hear</h2>
+    <p class="sub">Keep the fixed labels and the visual. Make the whole <b>column</b> (a week) the tap target with a tooltip
+    that reveals the specific day, so a 12px cell never has to be hit precisely. Add a "View as list" toggle that exposes
+    the same data as an accessible table for screen readers and motor-impaired users.</p>
+
+    <div class="frames">
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Stats — heatmap, touch-safe <span class="chip v2fix">v2 fix</span></div>
+          <div class="d">Month axis + weekday letters kept. Tapping anywhere in a week-column opens a tooltip listing that week's days; the current selection is a full-height column highlight, not a 12px cell. A "View as list" affordance sits in the card header.</div></div>
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="body">
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 18px 0"><div class="hero-t" style="font-size:24px">Your year</div><div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:19px">refresh</span></div></div>
+            <!-- heatmap card -->
+            <div class="card" style="margin:14px 16px 0; padding:14px">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px">
+                <div class="label-t">Listening streak</div>
+                <span style="display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:700; color:var(--accent)"><span class="ms" style="font-size:16px">table_rows</span>View as list</span>
+              </div>
+              <!-- month axis -->
+              <div style="display:flex; margin-left:20px; font-family:var(--font-mono); font-size:9px; color:var(--faint); margin-bottom:4px"><span style="flex:1">Mar</span><span style="flex:1">Apr</span><span style="flex:1">May</span><span style="flex:1">Jun</span><span style="flex:1">Jul</span></div>
+              <div style="display:flex; gap:6px">
+                <!-- weekday letters -->
+                <div style="display:flex; flex-direction:column; gap:3px; font-family:var(--font-mono); font-size:8px; color:var(--faint); padding-top:1px"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+                <!-- columns; the 4th is selected (full-column highlight) -->
+                <div style="flex:1; display:flex; gap:3px; align-items:flex-start">
+                  <div style="display:flex; flex-direction:column; gap:3px; flex:1"><span style="height:11px; border-radius:2px; background:#2a2825"></span><span style="height:11px; border-radius:2px; background:#5a3a2e"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#2a2825"></span><span style="height:11px; border-radius:2px; background:#5a3a2e"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span></div>
+                  <div style="display:flex; flex-direction:column; gap:3px; flex:1"><span style="height:11px; border-radius:2px; background:#5a3a2e"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#2a2825"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#5a3a2e"></span></div>
+                  <div style="display:flex; flex-direction:column; gap:3px; flex:1"><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#2a2825"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#2a2825"></span><span style="height:11px; border-radius:2px; background:#5a3a2e"></span></div>
+                  <!-- selected column -->
+                  <div style="display:flex; flex-direction:column; gap:3px; flex:1; outline:2px solid var(--review); outline-offset:2px; border-radius:3px"><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#5a3a2e"></span><span style="height:11px; border-radius:2px; background:#2a2825"></span></div>
+                  <div style="display:flex; flex-direction:column; gap:3px; flex:1"><span style="height:11px; border-radius:2px; background:#2a2825"></span><span style="height:11px; border-radius:2px; background:#5a3a2e"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span></div>
+                  <div style="display:flex; flex-direction:column; gap:3px; flex:1"><span style="height:11px; border-radius:2px; background:#5a3a2e"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#2a2825"></span><span style="height:11px; border-radius:2px; background:#5a3a2e"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span></div>
+                </div>
+              </div>
+              <!-- tooltip for the selected week -->
+              <div style="margin-top:12px; padding:10px 12px; border-radius:12px; background:var(--review-wash); border:1px solid var(--review-border)">
+                <div style="font-size:12px; font-weight:700; color:var(--text)">Week of Jun 9 — 4h 12m</div>
+                <div class="cap-t" style="color:var(--muted); margin-top:3px">Mon 58m · Tue 22m · Wed 1h 04m · Thu 41m · Fri 1h 07m · Sat 0 · Sun 0</div>
+              </div>
+            </div>
+            <!-- goal ring row (kept) -->
+            <div class="card" style="margin:12px 16px 0; padding:14px; display:flex; align-items:center; gap:14px">
+              <div style="width:56px; height:56px; border-radius:50%; background:conic-gradient(var(--accent) 260deg, var(--fill-strong) 0); display:flex; align-items:center; justify-content:center"><div style="width:42px; height:42px; border-radius:50%; background:var(--high); display:flex; align-items:center; justify-content:center; font-family:var(--font-mono); font-size:13px; font-weight:700">72%</div></div>
+              <div style="flex:1"><div class="label-t">Daily goal · 45 min</div><div class="cap-t" style="color:var(--muted); margin-top:2px">32 min listened · 13 to go</div></div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab on"><span class="pill"><span class="ms fill">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n rv" style="top:170px; right:20px">1</span>
+          <span class="n rv" style="top:300px; left:250px">2</span>
+          <span class="n rv" style="top:390px; left:150px">3</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>"View as list" toggle</b> — swaps the grid for an accessible table (date · minutes rows) that VoiceOver/TalkBack can read linearly. A heatmap with no non-visual equivalent is an a11y failure; this is the fix.
+            <span class="rvnote">gives the chart a screen-reader path (D-A11Y)</span></span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>Whole-column tap target</b> — tapping anywhere in a week selects that column (full-height highlight), so you never need to land on a 12px cell. The column is ~48px wide × full height — a comfortable finger target.
+            <span class="rvnote">fixes the sub-floor tappable-day regression</span></span></div>
+          <div class="li"><span class="no rv">3</span><span class="tx"><b>Tooltip reveals the day detail</b> — the selected week's per-day breakdown appears in a readable card below the grid, not a tiny floating bubble over a cell your finger is covering.
+            <span class="rvnote">detail without precision-tapping</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="motionspec"><h4>Stats &amp; Clubs — addendum (D-A11Y, D-REACH)</h4><table>
+      <tr><td>heatmap target</td><td>whole week-column tappable (~48px wide); selection = column highlight; per-day detail in a card, not a cell bubble</td></tr>
+      <tr><td>list fallback</td><td>"View as list" renders an accessible date/minutes table; default view respects the last choice</td></tr>
+      <tr><td>rank changes</td><td>leaderboard up/down uses arrow_upward/arrow_downward shapes + color, never color alone</td></tr>
+      <tr><td>jump chips</td><td>collapse into a single "Jump to…" pill on scroll to reclaim vertical space on data-dense screens</td></tr>
+      <tr><td>Reduce Motion</td><td>goal-reached EmberBurst → static; ring fill → instant; pull-to-refresh spinner unaffected</td></tr>
+    </table></div>
+  </div>
+
+  <div class="section" id="parity">
+    <div class="eyebrow">Screen 05 · Stats &amp; Clubs</div>
+    <h2>1:1 parity — screens carried over unchanged</h2>
+    <p class="sub">These original Stats/Clubs screens needed no in-house changes; they are reproduced verbatim so every original screen has a v2 counterpart for side-by-side comparison.</p>
+    <div class="frames">
+            <div class="frameunit">
+              <div class="framecap"><div class="t">Stats — overview <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">Hero total kept, jump chips pinned beneath the header, tiles re-gridded with the odd tile spanning full width horizontally. Highlights row peeks at the bottom.</div></div>
+                <div class="nochange-note">Reproduced from 05-stats-clubs.html · no in-house adjustment</div>
+              <div class="phone"><div class="screen">
+                <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+                <div class="body" style="overflow:hidden">
+                  <div style="padding:8px 18px 0">
+                    <div class="eyebrow-t" style="color:var(--hearth)">Insights</div>
+                    <div class="hero-t" style="margin-top:4px">Your stats</div>
+                  </div>
+                  <!-- sticky jump chips -->
+                  <div class="chips" style="padding:12px 18px 2px">
+                    <span class="chip on" style="padding:7px 13px; font-size:12px">Overview</span>
+                    <span class="chip" style="padding:7px 13px; font-size:12px">Goal</span>
+                    <span class="chip" style="padding:7px 13px; font-size:12px">Charts</span>
+                    <span class="chip" style="padding:7px 13px; font-size:12px">Compare</span>
+                    <span class="chip" style="padding:7px 13px; font-size:12px">Leaders</span>
+                  </div>
+                  <!-- hero total -->
+                  <div class="card" style="margin:12px 18px 0; padding:18px 20px">
+                    <div class="cap-t" style="letter-spacing:.14em; text-transform:uppercase; color:var(--muted)">All-time listening</div>
+                    <div style="display:flex; align-items:baseline; gap:8px; margin-top:8px; font-family:var(--font-mono)">
+                      <span style="font-size:40px; font-weight:700; color:var(--text)">412</span><span style="font-size:16px; color:var(--muted)">h</span>
+                      <span style="font-size:40px; font-weight:700; color:var(--text)">36</span><span style="font-size:16px; color:var(--muted)">m</span>
+                    </div>
+                    <div class="meta-t" style="margin-top:6px">across 63 books</div>
+                  </div>
+                  <!-- stat tiles 2-col, odd tile spans -->
+                  <div style="display:flex; flex-wrap:wrap; gap:10px; padding:12px 18px 0">
+                    <div class="card" style="width:calc(50% - 5px); padding:12px 14px">
+                      <div style="font-family:var(--font-mono); font-size:20px; font-weight:700; color:var(--text)">63</div>
+                      <div class="cap-t" style="margin-top:3px; color:var(--muted)">Books listened</div>
+                    </div>
+                    <div class="card" style="width:calc(50% - 5px); padding:12px 14px">
+                      <div style="font-family:var(--font-mono); font-size:20px; font-weight:700; color:var(--text)">18</div>
+                      <div class="cap-t" style="margin-top:3px; color:var(--muted)">Books this year</div>
+                    </div>
+                    <div class="card" style="width:calc(50% - 5px); padding:12px 14px">
+                      <div style="font-family:var(--font-mono); font-size:20px; font-weight:700; color:var(--text)">201</div>
+                      <div class="cap-t" style="margin-top:3px; color:var(--muted)">Active days</div>
+                    </div>
+                    <div class="card" style="width:calc(50% - 5px); padding:12px 14px; border-color:#4a3c25">
+                      <div style="display:flex; align-items:center; gap:6px"><span class="ms fill" style="font-size:19px; color:var(--hearth)">local_fire_department</span><span style="font-family:var(--font-mono); font-size:20px; font-weight:700; color:var(--text)">12</span></div>
+                      <div class="cap-t" style="margin-top:3px; color:var(--muted)">Day streak</div>
+                    </div>
+                    <div class="card" style="width:calc(50% - 5px); padding:12px 14px">
+                      <div style="font-family:var(--font-mono); font-size:20px; font-weight:700; color:var(--text)">1h 47m</div>
+                      <div class="cap-t" style="margin-top:3px; color:var(--muted)">Avg / active day</div>
+                    </div>
+                    <div class="card" style="width:calc(50% - 5px); padding:12px 14px">
+                      <div style="font-family:var(--font-mono); font-size:20px; font-weight:700; color:var(--text)">38m</div>
+                      <div class="cap-t" style="margin-top:3px; color:var(--muted)">Avg session</div>
+                    </div>
+                    <!-- odd tile: full-width horizontal strip -->
+                    <div class="card" style="width:100%; padding:12px 16px; display:flex; align-items:center; gap:12px">
+                      <span class="ms" style="font-size:20px; color:var(--accent)">today</span>
+                      <span style="font-family:var(--font-mono); font-size:20px; font-weight:700; color:var(--text)">54m</span>
+                      <span class="cap-t" style="color:var(--muted)">Today</span>
+                      <span style="flex:1"></span>
+                      <span class="cap-t" style="color:var(--success)">streak safe</span>
+                    </div>
+                  </div>
+                  <!-- highlights peek -->
+                  <div class="secthead" style="margin-top:16px"><span class="l"><span class="ms">military_tech</span>Highlights</span></div>
+                  <div style="display:flex; gap:10px; padding:0 18px; overflow:hidden">
+                    <div class="card" style="width:150px; flex:none; padding:11px">
+                      <div class="cap-t" style="color:var(--muted); letter-spacing:.1em; text-transform:uppercase">Longest book</div>
+                      <div style="display:flex; gap:9px; margin-top:8px; align-items:center">
+                        <div class="cov c7" style="width:32px; height:46px; border-radius:6px; padding:3px"></div>
+                        <div style="min-width:0"><div style="font-size:12px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">Veils of Vantar</div><div class="mono-t" style="font-size:11px">41h 12m</div></div>
+                      </div>
+                    </div>
+                    <div class="card" style="width:150px; flex:none; padding:11px">
+                      <div class="cap-t" style="color:var(--muted); letter-spacing:.1em; text-transform:uppercase">Top narrator</div>
+                      <div style="font-size:13px; font-weight:700; color:var(--text); margin-top:8px">June Akkerman</div>
+                      <div class="mono-t" style="font-size:11px; margin-top:3px">14 books</div>
+                    </div>
+                    <div class="card" style="width:150px; flex:none; padding:11px">
+                      <div class="cap-t" style="color:var(--muted); letter-spacing:.1em; text-transform:uppercase">Most re-read</div>
+                      <div style="font-size:13px; font-weight:700; color:var(--text); margin-top:8px">Hollow Reign</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="tabbar">
+                  <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div>
+                  <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+                  <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+                  <div class="tab on"><span class="pill"><span class="ms fill">insights</span></span><span class="lbl">Stats</span></div>
+                  <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+                </div>
+                <span class="n" style="top:108px; left:110px">1</span>
+                <span class="n" style="top:180px; left:250px">2</span>
+                <span class="n" style="top:290px; right:26px">3</span>
+                <span class="n" style="top:448px; left:180px">4</span>
+                <span class="n" style="top:540px; left:110px">5</span>
+              </div></div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>Jump chips · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px">new</span> — scroll-animate to the section anchor; the row pins under the header once the hero scrolls off, and the active chip tracks scroll position.
+                  <span class="anim">chip select POP_SPRING · scroll 420ms ease-out · pin cross-fade DUR.fast</span></span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>Hero total · pull down</b> — pull-to-refresh re-fetches stats, history and compare (today: no refresh path at all, D-STATES). Mono H/M split at 40px kept as-is.
+                  <span class="anim">accent spinner · numerals count up from 0 on first load, 600ms ease-out</span></span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>Streak tile · tap</b> — kept, flame accent kept; tap opens the heatmap section scrolled to today. Gold border marks it as the emotional tile.
+                  <span class="anim">EmberBurst on milestone days (7/30/100), 760ms</span></span></div>
+                <div class="li"><span class="no">4</span><span class="tx"><b>Today strip</b> <span class="chip" style="font-size:9px; padding:2px 7px">redesigned</span> — the odd tile spans both columns horizontally: value + label + streak-status caption. No more accidental full-height orphan.
+                  <span class="anim">"streak safe" caption cross-fades in once today ≥ 1 min DUR.base</span></span></div>
+                <div class="li"><span class="no">5</span><span class="tx"><b>Highlight cards · tap cover</b> — longest/shortest book covers push the book detail (kept); top author / narrator / most re-read cards kept verbatim.
+                  <span class="anim">cards stagger FadeInDown 40ms</span></span></div>
+              </div>
+            </div>
+            <div class="frameunit">
+              <div class="framecap"><div class="t">Charts — bar chart &amp; fixed heatmap <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">Bar chart kept with animated Seg; heatmap gains month axis, weekday rail, 12px cells and a visible tap-tooltip (shown open on Jun&nbsp;18).</div></div>
+                <div class="nochange-note">Reproduced from 05-stats-clubs.html · no in-house adjustment</div>
+              <div class="phone"><div class="screen" style="height:760px">
+                <div class="statusbar"><span>9:42</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+                <div class="body" style="overflow:hidden; padding-top:4px">
+                  <!-- bar chart card -->
+                  <div class="card" style="margin:8px 18px 0; padding:14px 16px">
+                    <div style="display:flex; align-items:center; justify-content:space-between">
+                      <span class="label-t">Listening</span>
+                      <div class="seg"><span class="on">Last 7</span><span>Total</span><span>Average</span></div>
+                    </div>
+                    <div style="display:flex; align-items:flex-end; gap:10px; height:120px; margin-top:14px">
+                      <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:5px; height:100%; justify-content:flex-end"><span class="mono-t" style="font-size:10px">0:48</span><div style="width:100%; height:34%; border-radius:6px 6px 3px 3px; background:var(--fill-strong)"></div><span class="cap-t">Tue</span></div>
+                      <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:5px; height:100%; justify-content:flex-end"><span class="mono-t" style="font-size:10px">1:22</span><div style="width:100%; height:52%; border-radius:6px 6px 3px 3px; background:var(--fill-strong)"></div><span class="cap-t">Wed</span></div>
+                      <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:5px; height:100%; justify-content:flex-end"><span class="mono-t" style="font-size:10px">0:15</span><div style="width:100%; height:12%; border-radius:6px 6px 3px 3px; background:var(--fill-strong)"></div><span class="cap-t">Thu</span></div>
+                      <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:5px; height:100%; justify-content:flex-end"><span class="mono-t" style="font-size:10px; color:var(--accent)">2:41</span><div style="width:100%; height:92%; border-radius:6px 6px 3px 3px; background:var(--accent)"></div><span class="cap-t">Fri</span></div>
+                      <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:5px; height:100%; justify-content:flex-end"><span class="mono-t" style="font-size:10px">1:58</span><div style="width:100%; height:70%; border-radius:6px 6px 3px 3px; background:var(--fill-strong)"></div><span class="cap-t">Sat</span></div>
+                      <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:5px; height:100%; justify-content:flex-end"><span class="mono-t" style="font-size:10px">1:05</span><div style="width:100%; height:41%; border-radius:6px 6px 3px 3px; background:var(--fill-strong)"></div><span class="cap-t">Sun</span></div>
+                      <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:5px; height:100%; justify-content:flex-end"><span class="mono-t" style="font-size:10px">0:54</span><div style="width:100%; height:36%; border-radius:6px 6px 3px 3px; background:var(--fill-strong)"></div><span class="cap-t">Mon</span></div>
+                    </div>
+                  </div>
+                  <!-- heatmap card -->
+                  <div class="card" style="margin:12px 18px 0; padding:14px 16px; position:relative">
+                    <div class="label-t">Activity</div>
+                    <!-- month axis -->
+                    <div style="display:flex; gap:3px; margin:12px 0 4px 18px; font-family:var(--font-mono); font-size:10px; color:var(--faint)">
+                      <span style="width:60px">Apr</span><span style="width:60px">May</span><span style="width:60px">Jun</span><span style="width:45px">Jul</span>
+                    </div>
+                    <div style="display:flex; gap:3px">
+                      <!-- weekday rail -->
+                      <div style="display:flex; flex-direction:column; gap:3px; width:15px; font-family:var(--font-mono); font-size:9px; color:var(--faint)">
+                        <span style="height:12px"></span><span style="height:12px; line-height:12px">M</span><span style="height:12px"></span><span style="height:12px; line-height:12px">W</span><span style="height:12px"></span><span style="height:12px; line-height:12px">F</span><span style="height:12px"></span>
+                      </div>
+                      <!-- 15 week columns × 7, 12px cells -->
+                      <div style="display:flex; gap:3px">
+                        <div style="display:flex; flex-direction:column; gap:3px"><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.7)"></i></div>
+                        <div style="display:flex; flex-direction:column; gap:3px"><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.9)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i></div>
+                        <div style="display:flex; flex-direction:column; gap:3px"><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.7)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i></div>
+                        <div style="display:flex; flex-direction:column; gap:3px"><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.9)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.7)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i></div>
+                        <div style="display:flex; flex-direction:column; gap:3px"><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.7)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i></div>
+                        <div style="display:flex; flex-direction:column; gap:3px"><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.9)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.7)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i></div>
+                        <div style="display:flex; flex-direction:column; gap:3px"><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.7)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i></div>
+                        <div style="display:flex; flex-direction:column; gap:3px"><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.9)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.7)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i></div>
+                        <div style="display:flex; flex-direction:column; gap:3px"><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.9)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i></div>
+                        <div style="display:flex; flex-direction:column; gap:3px"><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.7)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.7)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i></div>
+                        <div style="display:flex; flex-direction:column; gap:3px"><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,1); box-shadow:0 0 0 2px var(--cream)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i></div>
+                        <div style="display:flex; flex-direction:column; gap:3px"><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.7)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.9)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i></div>
+                        <div style="display:flex; flex-direction:column; gap:3px"><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.7)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i></div>
+                        <div style="display:flex; flex-direction:column; gap:3px"><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.7)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i></div>
+                        <div style="display:flex; flex-direction:column; gap:3px"><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.9)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:var(--fill)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.5)"></i><i style="width:12px;height:12px;border-radius:3px;background:rgba(224,101,74,.28)"></i><i style="width:12px;height:12px;border-radius:3px;background:transparent"></i><i style="width:12px;height:12px;border-radius:3px;background:transparent"></i></div>
+                      </div>
+                    </div>
+                    <!-- tooltip bubble on selected cell -->
+                    <div style="position:absolute; left:130px; top:76px; z-index:5; background:rgba(20,17,15,.96); border:1px solid var(--border); border-radius:12px; padding:8px 12px; box-shadow:0 10px 26px rgba(0,0,0,.5)">
+                      <div style="font-size:12px; font-weight:700; color:var(--text)">Wed, Jun 18</div>
+                      <div class="mono-t" style="font-size:11px; color:var(--accent)">2h 06m listened</div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:5px; margin-top:12px; justify-content:flex-end">
+                      <span class="cap-t" style="color:var(--faint)">Less</span>
+                      <i style="width:10px;height:10px;border-radius:3px;background:var(--fill)"></i>
+                      <i style="width:10px;height:10px;border-radius:3px;background:rgba(224,101,74,.28)"></i>
+                      <i style="width:10px;height:10px;border-radius:3px;background:rgba(224,101,74,.5)"></i>
+                      <i style="width:10px;height:10px;border-radius:3px;background:rgba(224,101,74,.9)"></i>
+                      <span class="cap-t" style="color:var(--faint)">More</span>
+                    </div>
+                  </div>
+                  <!-- month card -->
+                  <div class="card" style="margin:12px 18px 0; padding:14px 16px">
+                    <div style="display:flex; align-items:baseline; justify-content:space-between">
+                      <span class="label-t">By month</span>
+                      <span class="mono-t" style="font-size:11px">avg 34h · 1.5 books / mo</span>
+                    </div>
+                    <div style="display:flex; align-items:flex-end; gap:6px; height:52px; margin-top:12px">
+                      <div style="flex:1; height:40%; background:var(--fill-strong); border-radius:4px 4px 2px 2px"></div>
+                      <div style="flex:1; height:62%; background:var(--fill-strong); border-radius:4px 4px 2px 2px"></div>
+                      <div style="flex:1; height:30%; background:var(--fill-strong); border-radius:4px 4px 2px 2px"></div>
+                      <div style="flex:1; height:55%; background:var(--fill-strong); border-radius:4px 4px 2px 2px"></div>
+                      <div style="flex:1; height:78%; background:var(--fill-strong); border-radius:4px 4px 2px 2px"></div>
+                      <div style="flex:1; height:44%; background:var(--fill-strong); border-radius:4px 4px 2px 2px"></div>
+                      <div style="flex:1; height:68%; background:var(--fill-strong); border-radius:4px 4px 2px 2px"></div>
+                      <div style="flex:1; height:36%; background:var(--fill-strong); border-radius:4px 4px 2px 2px"></div>
+                      <div style="flex:1; height:82%; background:var(--fill-strong); border-radius:4px 4px 2px 2px"></div>
+                      <div style="flex:1; height:58%; background:var(--fill-strong); border-radius:4px 4px 2px 2px"></div>
+                      <div style="flex:1; height:71%; background:var(--fill-strong); border-radius:4px 4px 2px 2px"></div>
+                      <div style="flex:1; height:90%; background:var(--accent); border-radius:4px 4px 2px 2px"></div>
+                    </div>
+                  </div>
+                </div>
+                <span class="n" style="top:66px; right:24px">1</span>
+                <span class="n" style="top:170px; left:210px">2</span>
+                <span class="n" style="top:298px; left:60px">3</span>
+                <span class="n" style="top:398px; left:290px">4</span>
+                <span class="n" style="top:352px; left:236px">5</span>
+                <span class="n" style="top:590px; left:100px">6</span>
+              </div></div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>Range Seg · tap</b> — Last 7 / Total / Average kept; bar heights now animate between datasets instead of teleporting.
+                  <span class="anim">bar heights spring to new values, 40ms stagger left-to-right</span></span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>Hottest bar</b> — accent fill + accent value label kept from today; mono value labels above every bar kept.</span></span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>Month axis + weekday rail</b> <span class="chip" style="font-size:9px; padding:2px 7px">new</span> — the labels the current code computes-and-drops finally render: months across the top, M/W/F down the left. The grid becomes a calendar.</span></span></div>
+                <div class="li"><span class="no">4</span><span class="tx"><b>Heatmap cell · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px">new</span> — 12px cells (up from 11) are tappable; the selected cell gets a cream ring and a bubble with date + time listened. Tap elsewhere dismisses.
+                  <span class="anim">bubble POP_SPRING in · select haptic · cell ring scale 0.6→1</span></span></div>
+                <div class="li"><span class="no">5</span><span class="tx"><b>Tooltip bubble</b> — anchored above the cell, flips below when near the card top; one bubble at a time.</span></span></div>
+                <div class="li"><span class="no">6</span><span class="tx"><b>Month card</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — avg hours + avg books/month + 12-month bars unchanged; current month keeps the accent bar.</span></span></div>
+              </div>
+            </div>
+            <div class="frameunit wide">
+              <div class="framecap"><div class="t">Goal card — three states <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">Left to right: no goal yet · inline editor · ring with the new EmberBurst at 100%. All three states exist today; the burst is the addition.</div></div>
+                <div class="nochange-note">Reproduced from 05-stats-clubs.html · no in-house adjustment</div>
+              <div style="display:flex; gap:18px; flex-wrap:wrap">
+                <!-- no goal -->
+                <div class="phone" style="width:260px; padding:8px; border-radius:34px"><div class="screen short" style="width:244px; height:300px; border-radius:26px">
+                  <div class="card" style="margin:16px 14px; padding:18px 16px; display:flex; flex-direction:column; align-items:center; text-align:center; flex:1; justify-content:center">
+                    <div style="width:52px; height:52px; border-radius:16px; background:var(--accent-wash); display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:28px; color:var(--hearth)">flag</span></div>
+                    <div style="font-size:15px; font-weight:700; color:var(--text); margin-top:12px">Set a reading goal</div>
+                    <div class="cap-t" style="color:var(--muted); margin-top:5px; line-height:1.5">Pick a number of books for the year<br>and watch the ring fill.</div>
+                    <div class="btn primary" style="margin-top:14px; font-size:13px; padding:10px 22px">Set goal</div>
+                  </div>
+                </div></div>
+                <!-- editor -->
+                <div class="phone" style="width:260px; padding:8px; border-radius:34px"><div class="screen short" style="width:244px; height:300px; border-radius:26px">
+                  <div class="card" style="margin:16px 14px; padding:18px 16px; flex:1; display:flex; flex-direction:column; justify-content:center">
+                    <div class="cap-t" style="letter-spacing:.12em; text-transform:uppercase; color:var(--muted)">2026 goal</div>
+                    <div style="display:flex; align-items:center; gap:10px; margin-top:12px">
+                      <div style="flex:1; border:1.5px solid var(--accent); border-radius:12px; padding:11px 14px; font-family:var(--font-mono); font-size:22px; font-weight:700; color:var(--text); background:var(--fill)">24<span style="opacity:.4; animation:shimmer 1s infinite">|</span></div>
+                      <span class="cap-t" style="color:var(--muted)">books</span>
+                    </div>
+                    <div style="display:flex; gap:8px; margin-top:14px">
+                      <div class="btn primary" style="flex:1; font-size:13px; padding:10px 0">Save</div>
+                      <div class="btn secondary" style="flex:1; font-size:13px; padding:10px 0">Cancel</div>
+                    </div>
+                  </div>
+                </div></div>
+                <!-- ring + burst -->
+                <div class="phone" style="width:260px; padding:8px; border-radius:34px"><div class="screen short" style="width:244px; height:300px; border-radius:26px">
+                  <div class="card" style="margin:16px 14px; padding:16px; flex:1; display:flex; align-items:center; gap:16px">
+                    <div style="position:relative; width:116px; height:116px; flex:none">
+                      <div style="position:absolute; inset:0; border-radius:50%; background:conic-gradient(var(--accent) 0 100%, var(--fill-strong) 0); -webkit-mask:radial-gradient(circle, transparent 42px, #000 43px)"></div>
+                      <div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center">
+                        <span style="font-family:var(--font-mono); font-size:24px; font-weight:700; color:var(--text)">100%</span>
+                        <span class="cap-t" style="color:var(--muted)">of 24</span>
+                      </div>
+                      <span class="ms fill" style="position:absolute; top:-8px; right:2px; font-size:15px; color:var(--hearth)">local_fire_department</span>
+                      <span class="ms fill" style="position:absolute; top:6px; right:-10px; font-size:11px; color:var(--accent)">local_fire_department</span>
+                      <span class="ms fill" style="position:absolute; top:-14px; right:22px; font-size:9px; color:var(--cream)">local_fire_department</span>
+                    </div>
+                    <div style="min-width:0">
+                      <div style="font-size:15px; font-weight:700; color:var(--success)">Goal reached</div>
+                      <div class="cap-t" style="color:var(--muted); margin-top:4px; line-height:1.5">24 of 24 books — with<br>five months to spare.</div>
+                      <div style="font-size:12px; font-weight:700; color:var(--accent); margin-top:8px">Raise goal</div>
+                    </div>
+                  </div>
+                </div></div>
+              </div>
+              <div class="legend">
+                <div class="li"><span class="no">·</span><span class="tx"><b>No-goal card · tap Set goal</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — flag icon + invitation, flips to the inline editor in place.
+                  <span class="anim">card content cross-fade DUR.base · input auto-focus</span></span></div>
+                <div class="li"><span class="no">·</span><span class="tx"><b>Editor · Save / Cancel</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — numeric input, Save writes and flips to the ring, Cancel restores prior state.</span></span></div>
+                <div class="li"><span class="no">·</span><span class="tx"><b>Ring at 100% · EmberBurst</b> <span class="chip" style="font-size:9px; padding:2px 7px">new</span> — the arc sweep completes into a particle burst at the ring's end-cap; pace caption swaps to "Goal reached" (success color, kept color grammar), "Edit goal" becomes "Raise goal". Fires once per goal; tapping the ring replays it.
+                  <span class="anim">ring sweep 600ms ease-out → EmberBurst 760ms · success haptic</span></span></div>
+              </div>
+            </div>
+            <div class="frameunit">
+              <div class="framecap"><div class="t">Compare &amp; leaderboard <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">Compare card with scrolling chips + search icon; You-vs-target dual bars kept; leaderboard kept with the me-row accent border.</div></div>
+                <div class="nochange-note">Reproduced from 05-stats-clubs.html · no in-house adjustment</div>
+              <div class="phone"><div class="screen" style="height:760px">
+                <div class="statusbar"><span>9:44</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+                <div class="body" style="overflow:hidden; padding-top:4px">
+                  <!-- compare card -->
+                  <div class="card" style="margin:8px 18px 0; padding:14px 16px">
+                    <div class="label-t">Compare</div>
+                    <div style="display:flex; align-items:center; gap:8px; margin-top:10px">
+                      <div class="chips" style="flex:1">
+                        <span class="chip on" style="padding:7px 12px; font-size:12px">Server average</span>
+                        <span class="chip" style="padding:7px 12px; font-size:12px">mara.reads</span>
+                        <span class="chip" style="padding:7px 12px; font-size:12px">TheNightShelf</span>
+                        <span class="chip" style="padding:7px 12px; font-size:12px">dadof3</span>
+                      </div>
+                      <div class="iconbtn" style="width:34px; height:34px"><span class="ms" style="font-size:17px">search</span></div>
+                    </div>
+                    <div style="margin-top:16px; display:flex; flex-direction:column; gap:12px">
+                      <div>
+                        <div style="display:flex; justify-content:space-between"><span class="cap-t" style="color:var(--muted)">Books finished</span><span class="mono-t" style="font-size:11px">63 vs 41</span></div>
+                        <div class="track" style="margin-top:5px"><i style="width:88%"></i></div>
+                        <div class="track" style="margin-top:3px"><i style="width:57%; background:var(--faint)"></i></div>
+                      </div>
+                      <div>
+                        <div style="display:flex; justify-content:space-between"><span class="cap-t" style="color:var(--muted)">Hours</span><span class="mono-t" style="font-size:11px">412 vs 355</span></div>
+                        <div class="track" style="margin-top:5px"><i style="width:82%"></i></div>
+                        <div class="track" style="margin-top:3px"><i style="width:70%; background:var(--faint)"></i></div>
+                      </div>
+                      <div>
+                        <div style="display:flex; justify-content:space-between"><span class="cap-t" style="color:var(--muted)">Active days</span><span class="mono-t" style="font-size:11px">201 vs 226</span></div>
+                        <div class="track" style="margin-top:5px"><i style="width:64%"></i></div>
+                        <div class="track" style="margin-top:3px"><i style="width:72%; background:var(--faint)"></i></div>
+                      </div>
+                    </div>
+                    <div style="display:flex; gap:12px; margin-top:12px; align-items:center">
+                      <span style="display:flex; align-items:center; gap:5px"><i style="width:14px; height:4px; border-radius:2px; background:var(--accent)"></i><span class="cap-t" style="color:var(--muted)">You</span></span>
+                      <span style="display:flex; align-items:center; gap:5px"><i style="width:14px; height:4px; border-radius:2px; background:var(--faint)"></i><span class="cap-t" style="color:var(--muted)">Server average</span></span>
+                    </div>
+                  </div>
+                  <!-- leaderboard -->
+                  <div class="card" style="margin:12px 18px 0; padding:14px 16px 6px">
+                    <div style="display:flex; align-items:center; justify-content:space-between">
+                      <span class="label-t">Leaderboard</span>
+                      <div class="seg"><span>Week</span><span class="on">Month</span><span>All</span></div>
+                    </div>
+                    <div style="margin-top:10px">
+                      <div style="display:flex; align-items:center; gap:11px; padding:9px 2px; border-bottom:1px solid var(--hairline)">
+                        <span class="mono-t" style="width:20px; font-size:13px; font-weight:700">1</span>
+                        <div style="width:30px; height:30px; border-radius:50%; background:linear-gradient(155deg,#3e5d6e,#14222b); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; color:#cfe5ef">M</div>
+                        <div style="flex:1; min-width:0"><div style="font-size:13.5px; font-weight:700; color:var(--text)">mara.reads</div><div class="cap-t" style="color:var(--muted)">6 finished</div></div>
+                        <span class="mono-t" style="font-size:12px">48h 20m</span>
+                      </div>
+                      <div style="display:flex; align-items:center; gap:11px; padding:9px 8px; margin:2px -6px; border:1px solid var(--accent); border-radius:12px; background:var(--accent-wash)">
+                        <span class="mono-t" style="width:20px; font-size:13px; font-weight:700; color:var(--accent)">2</span>
+                        <div style="width:30px; height:30px; border-radius:50%; background:linear-gradient(155deg,#7a4536,#2b160f); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; color:#ffd9c4">J</div>
+                        <div style="flex:1; min-width:0"><div style="font-size:13.5px; font-weight:700; color:var(--text)">jordan <span class="cap-t" style="color:var(--accent)">· you</span></div><div class="cap-t" style="color:var(--muted)">5 finished</div></div>
+                        <span class="mono-t" style="font-size:12px">44h 05m</span>
+                      </div>
+                      <div style="display:flex; align-items:center; gap:11px; padding:9px 2px; border-bottom:1px solid var(--hairline)">
+                        <span class="mono-t" style="width:20px; font-size:13px; font-weight:700">3</span>
+                        <div style="width:30px; height:30px; border-radius:50%; background:linear-gradient(155deg,#55683f,#1b2413); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; color:#dbe8cc">N</div>
+                        <div style="flex:1; min-width:0"><div style="font-size:13.5px; font-weight:700; color:var(--text)">TheNightShelf</div><div class="cap-t" style="color:var(--muted)">4 finished</div></div>
+                        <span class="mono-t" style="font-size:12px">39h 51m</span>
+                      </div>
+                      <div style="display:flex; align-items:center; gap:11px; padding:9px 2px">
+                        <span class="mono-t" style="width:20px; font-size:13px; font-weight:700">4</span>
+                        <div style="width:30px; height:30px; border-radius:50%; background:linear-gradient(155deg,#6e5a86,#241c31); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; color:#e2d6f2">D</div>
+                        <div style="flex:1; min-width:0"><div style="font-size:13.5px; font-weight:700; color:var(--text)">dadof3</div><div class="cap-t" style="color:var(--muted)">3 finished</div></div>
+                        <span class="mono-t" style="font-size:12px">22h 14m</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <span class="n" style="top:112px; right:24px">1</span>
+                <span class="n" style="top:112px; left:120px">2</span>
+                <span class="n" style="top:220px; left:260px">3</span>
+                <span class="n" style="top:404px; right:26px">4</span>
+                <span class="n" style="top:502px; left:60px">5</span>
+              </div></div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>Compare search · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px">new</span> — appears when the server has &gt;8 users; opens a picker sheet with a search field + user list. Picking a user selects their chip.
+                  <span class="anim">sheet spring slide-up · selected chip scrolls into view + POP_SPRING</span></span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>Compare chips · tap / swipe</b> — Server average + per-user chips kept, row now scrolls horizontally with an edge fade instead of clipping.</span></span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>Dual bars</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — You (accent) vs target (faint) per metric: Books finished, Hours, Books this year, Active days, Avg per active day. Legend added below.
+                  <span class="anim">bars grow from 0 on chip change, 400ms ease-out, 60ms stagger</span></span></div>
+                <div class="li"><span class="no">4</span><span class="tx"><b>Leaderboard Seg · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — Week / Month / All, top 20 rows.
+                  <span class="anim">rows cross-fade DUR.base; rank numbers count</span></span></div>
+                <div class="li"><span class="no">5</span><span class="tx"><b>Me row</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — accent border + wash + accent rank numeral; "· you" suffix. Unchanged from today because it already reads perfectly.</span></span></div>
+              </div>
+            </div>
+            <div class="frameunit wide">
+              <div class="framecap"><div class="t">Stats state board <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">Left to right: per-section skeletons · empty (new listener) · partial history failure with inline retry (the heatmap slot, not a blank).</div></div>
+                <div class="nochange-note">Reproduced from 05-stats-clubs.html · no in-house adjustment</div>
+              <div style="display:flex; gap:18px; flex-wrap:wrap">
+                <!-- skeleton -->
+                <div class="phone" style="width:260px; padding:8px; border-radius:34px"><div class="screen short" style="width:244px; height:430px; border-radius:26px">
+                  <div style="padding:16px 14px; display:flex; flex-direction:column; gap:12px">
+                    <div class="skel" style="height:12px; width:38%"></div>
+                    <div class="skel" style="height:86px; border-radius:16px"></div>
+                    <div style="display:flex; gap:8px"><div class="skel" style="flex:1; height:58px; border-radius:14px"></div><div class="skel" style="flex:1; height:58px; border-radius:14px"></div></div>
+                    <div style="display:flex; gap:8px"><div class="skel" style="flex:1; height:58px; border-radius:14px"></div><div class="skel" style="flex:1; height:58px; border-radius:14px"></div></div>
+                    <div class="skel" style="height:110px; border-radius:16px"></div>
+                  </div>
+                </div></div>
+                <!-- empty -->
+                <div class="phone" style="width:260px; padding:8px; border-radius:34px"><div class="screen short" style="width:244px; height:430px; border-radius:26px">
+                  <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px; text-align:center">
+                    <div style="width:64px; height:64px; border-radius:20px; background:var(--accent-wash); display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:32px; color:var(--hearth)">insights</span></div>
+                    <div style="font-size:16px; font-weight:700; color:var(--text); margin-top:14px">Nothing to count yet</div>
+                    <div style="font-size:12px; color:var(--muted); margin-top:6px; line-height:1.5">Listen for a few minutes and your<br>stats start filling in tonight.</div>
+                    <div class="btn primary" style="margin-top:16px; font-size:13px; padding:11px 20px"><span class="ms" style="font-size:17px">play_arrow</span>Start listening</div>
+                  </div>
+                </div></div>
+                <!-- partial failure -->
+                <div class="phone" style="width:260px; padding:8px; border-radius:34px"><div class="screen short" style="width:244px; height:430px; border-radius:26px">
+                  <div style="padding:16px 14px; display:flex; flex-direction:column; gap:12px">
+                    <div class="card" style="padding:12px 14px">
+                      <div class="cap-t" style="color:var(--muted); text-transform:uppercase; letter-spacing:.12em">All-time listening</div>
+                      <div style="font-family:var(--font-mono); font-size:24px; font-weight:700; color:var(--text); margin-top:6px">412h 36m</div>
+                    </div>
+                    <div class="card" style="padding:16px 14px; border-style:dashed; display:flex; flex-direction:column; align-items:center; text-align:center">
+                      <span class="ms" style="font-size:26px; color:var(--muted)">error</span>
+                      <div style="font-size:13px; font-weight:700; color:var(--text); margin-top:8px">Couldn't load history</div>
+                      <div class="cap-t" style="color:var(--muted); margin-top:3px">Heatmap and months are hiding here.</div>
+                      <div style="font-size:12px; font-weight:700; color:var(--accent); border:1px solid #4a3029; border-radius:999px; padding:6px 16px; margin-top:10px">Retry</div>
+                    </div>
+                    <div class="card" style="padding:12px 14px">
+                      <div class="label-t" style="font-size:13px">Leaderboard</div>
+                      <div class="cap-t" style="color:var(--muted); margin-top:4px">Still loaded fine — only the failed section is replaced.</div>
+                    </div>
+                  </div>
+                </div></div>
+              </div>
+              <div class="legend">
+                <div class="li"><span class="no">·</span><span class="tx"><b>Per-section skeletons</b> — each card shimmers and resolves independently; no more all-or-nothing spinner (D-STATES).
+                  <span class="anim">shimmer 1600ms → per-card cross-fade DUR.base</span></span></div>
+                <div class="li"><span class="no">·</span><span class="tx"><b>Empty</b> — a brand-new listener gets an invitation with a play CTA instead of a grid of zeros.</span></span></div>
+                <div class="li"><span class="no">·</span><span class="tx"><b>Inline history-failure card · tap Retry</b> — replaces today's silent vanish: the dashed card sits exactly where the heatmap + month cards belong and retries just that fetch. Surrounding sections stay live (D-STATES).
+                  <span class="anim">retry press POP_SPRING → card flips to skeleton → content</span></span></div>
+              </div>
+            </div>
+            <div class="frameunit">
+              <div class="framecap"><div class="t">My Book Clubs <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">Rows gain unread badges, member counts and last-activity. Night Shift Readers has 3 unread notes; Emberfall Fans is all caught up.</div></div>
+                <div class="nochange-note">Reproduced from 05-stats-clubs.html · no in-house adjustment</div>
+              <div class="phone"><div class="screen" style="height:640px">
+                <div class="statusbar"><span>21:02</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_5_bar</span></span></div>
+                <div style="display:flex; align-items:center; gap:12px; padding:6px 16px 10px">
+                  <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:20px">arrow_back</span></div>
+                  <div style="flex:1">
+                    <div style="font-size:19px; font-weight:700; color:var(--text)">My Book Clubs</div>
+                    <div class="cap-t" style="color:var(--muted)">3 clubs</div>
+                  </div>
+                  <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:20px">group_add</span></div>
+                </div>
+                <div class="body" style="padding:2px 16px 0">
+                  <div class="card" style="display:flex; align-items:center; gap:12px; padding:12px 14px; margin-bottom:10px">
+                    <div class="cov c1" style="width:46px; height:46px; border-radius:10px; padding:4px"><span class="init" style="font-size:30px">C</span></div>
+                    <div style="flex:1; min-width:0">
+                      <div style="font-size:14.5px; font-weight:700; color:var(--text)">Night Shift Readers</div>
+                      <div class="cap-t" style="color:var(--muted); margin-top:2px">Reading The Cinder Crown</div>
+                      <div class="cap-t" style="color:var(--faint); margin-top:2px">6 members · active 2h ago</div>
+                    </div>
+                    <span style="min-width:22px; height:22px; border-radius:999px; background:var(--accent); color:var(--on-accent); font-size:11.5px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; padding:0 6px">3</span>
+                    <span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span>
+                  </div>
+                  <div class="card" style="display:flex; align-items:center; gap:12px; padding:12px 14px; margin-bottom:10px">
+                    <div class="cov c5" style="width:46px; height:46px; border-radius:10px; padding:4px"><span class="init" style="font-size:30px">E</span></div>
+                    <div style="flex:1; min-width:0">
+                      <div style="font-size:14.5px; font-weight:700; color:var(--text)">Emberfall Fans</div>
+                      <div class="cap-t" style="color:var(--muted); margin-top:2px">Reading Emberfall: Kindling</div>
+                      <div class="cap-t" style="color:var(--faint); margin-top:2px">11 members · active yesterday</div>
+                    </div>
+                    <span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span>
+                  </div>
+                  <div class="card" style="display:flex; align-items:center; gap:12px; padding:12px 14px">
+                    <div style="width:46px; height:46px; border-radius:10px; background:var(--fill); display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:22px; color:var(--faint)">menu_book</span></div>
+                    <div style="flex:1; min-width:0">
+                      <div style="font-size:14.5px; font-weight:700; color:var(--text)">Sunday Slow Readers</div>
+                      <div class="cap-t" style="color:var(--muted); margin-top:2px">No current book</div>
+                      <div class="cap-t" style="color:var(--faint); margin-top:2px">3 members · quiet for 2 weeks</div>
+                    </div>
+                    <span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span>
+                  </div>
+                </div>
+                <div class="tabbar">
+                  <div class="tab on"><span class="pill"><span class="ms fill">home</span></span><span class="lbl">Home</span></div>
+                  <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+                  <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+                  <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+                  <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+                </div>
+                <span class="n" style="top:66px; right:16px">1</span>
+                <span class="n" style="top:128px; right:52px">2</span>
+                <span class="n" style="top:172px; left:200px">3</span>
+                <span class="n" style="top:314px; left:120px">4</span>
+                <span class="n" style="bottom:30px; left:28px">5</span>
+              </div></div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>New club · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px">new</span> — name-first creation sheet; the current book can be chosen later from any book's ClubCard. Creation no longer lives only on book detail.
+                  <span class="anim">sheet spring slide-up · name field auto-focus</span></span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>Unread badge</b> <span class="chip" style="font-size:9px; padding:2px 7px">new</span> — count of notes past your server-side unread cursor; clears when the room's unread divider scrolls into view.
+                  <span class="anim">badge enters scale 0.5→1 POP_SPRING · clears with fade DUR.fast</span></span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>Club row · tap</b> — into the club room (kept). Row now carries the current-book line (kept), plus member count and last-activity (new) so dormant vs alive is glanceable.</span></span></div>
+                <div class="li"><span class="no">4</span><span class="tx"><b>No-book row</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — the menu_book placeholder icon and "No current book" line stay; the activity caption ("quiet for 2 weeks") is honest about dormancy.</span></span></div>
+                <div class="li"><span class="no">5</span><span class="tx"><b>Home tab lit</b> — this pushed route keeps its owning tab (D-NAV); today the bar renders with no active tab.</span></span></div>
+              </div>
+            </div>
+            <div class="frameunit">
+              <div class="framecap"><div class="t">Club room — Night Shift Readers <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">Race with labeled listening-now, owner queue, discussion with unread divider and spoiler teaser, composer with the new timestamp chip.</div></div>
+                <div class="nochange-note">Reproduced from 05-stats-clubs.html · no in-house adjustment</div>
+              <div class="phone"><div class="screen">
+                <div class="statusbar"><span>21:03</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_5_bar</span></span></div>
+                <div style="display:flex; align-items:center; gap:10px; padding:6px 14px 8px">
+                  <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:20px">arrow_back</span></div>
+                  <div style="flex:1; min-width:0">
+                    <div style="font-size:16.5px; font-weight:700; color:var(--text)">Night Shift Readers</div>
+                    <div class="cap-t" style="color:var(--muted)">6 members</div>
+                  </div>
+                  <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:20px">group</span></div>
+                  <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:20px">more_horiz</span></div>
+                </div>
+                <div class="body" style="overflow:hidden">
+                  <!-- book header -->
+                  <div style="display:flex; align-items:center; gap:12px; padding:4px 16px 0">
+                    <div class="cov c1" style="width:54px; aspect-ratio:2/3; border-radius:8px; padding:5px"><span class="init" style="font-size:32px">C</span></div>
+                    <div style="flex:1; min-width:0">
+                      <div class="cap-t" style="letter-spacing:.14em; text-transform:uppercase; color:var(--accent)">Reading now</div>
+                      <div style="font-size:15px; font-weight:700; color:var(--text); margin-top:2px">The Cinder Crown</div>
+                      <div class="cap-t" style="color:var(--muted)">Maren Voss</div>
+                    </div>
+                    <div class="iconbtn" style="width:36px; height:36px"><span class="ms" style="font-size:18px">history</span></div>
+                  </div>
+                  <!-- progress race -->
+                  <div class="card" style="margin:12px 16px 0; padding:12px 14px">
+                    <div class="label-t" style="font-size:13.5px">Where everyone is</div>
+                    <div style="display:flex; align-items:center; gap:9px; margin-top:10px">
+                      <div style="position:relative; width:26px; height:26px; border-radius:50%; background:linear-gradient(155deg,#3e5d6e,#14222b); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:#cfe5ef">M<i style="position:absolute; right:-2px; bottom:-2px; width:9px; height:9px; border-radius:50%; background:var(--success); border:2px solid var(--high)"></i></div>
+                      <div style="width:118px; min-width:0"><span style="font-size:12px; font-weight:700; color:var(--text)">mara.reads</span><div class="cap-t" style="color:var(--success)">listening now</div></div>
+                      <div class="track" style="flex:1; height:5px"><i style="width:74%"></i></div>
+                      <span class="mono-t" style="font-size:11px; width:32px; text-align:right">74%</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:9px; margin-top:9px">
+                      <div style="width:26px; height:26px; border-radius:50%; background:linear-gradient(155deg,#7a4536,#2b160f); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:#ffd9c4">J</div>
+                      <div style="width:118px"><span style="font-size:12px; font-weight:700; color:var(--text)">jordan <span class="cap-t" style="color:var(--accent)">· you</span></span></div>
+                      <div class="track" style="flex:1; height:5px"><i style="width:38%"></i></div>
+                      <span class="mono-t" style="font-size:11px; width:32px; text-align:right">38%</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:9px; margin-top:9px">
+                      <div style="width:26px; height:26px; border-radius:50%; background:linear-gradient(155deg,#55683f,#1b2413); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:#dbe8cc">N</div>
+                      <div style="width:118px"><span style="font-size:12px; font-weight:700; color:var(--text)">TheNightShelf</span></div>
+                      <div class="track" style="flex:1; height:5px"><i style="width:100%; background:var(--success)"></i></div>
+                      <span class="ms" style="font-size:16px; color:var(--success); width:32px; text-align:right">check_circle</span>
+                    </div>
+                  </div>
+                  <!-- up next queue (owner) -->
+                  <div class="card" style="margin:10px 16px 0; padding:11px 14px; display:flex; align-items:center; gap:11px">
+                    <div class="cov c2" style="width:32px; height:46px; border-radius:6px; padding:3px"></div>
+                    <div style="flex:1; min-width:0">
+                      <div class="cap-t" style="letter-spacing:.12em; text-transform:uppercase; color:var(--muted)">Up next</div>
+                      <div style="font-size:13px; font-weight:700; color:var(--text); margin-top:2px">Saltwater Prophets</div>
+                    </div>
+                    <span style="font-size:12px; font-weight:700; color:var(--on-accent); background:var(--accent); border-radius:999px; padding:6px 14px">Start</span>
+                    <span class="ms" style="font-size:18px; color:var(--faint)">close</span>
+                  </div>
+                  <!-- discussion -->
+                  <div style="padding:12px 16px 0; flex:1">
+                    <div style="display:flex; gap:9px">
+                      <div style="width:26px; height:26px; border-radius:50%; background:linear-gradient(155deg,#55683f,#1b2413); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:#dbe8cc; flex:none">N</div>
+                      <div style="flex:1; min-width:0">
+                        <div style="display:flex; align-items:baseline; gap:6px"><span style="font-size:12.5px; font-weight:700; color:var(--text)">TheNightShelf</span><span class="mono-t" style="font-size:10.5px">Ch 9 · 3:41:12</span></div>
+                        <div style="font-size:13px; color:#d8d2c6; line-height:1.45; margin-top:3px">The ferry chapter broke me. Nobody warned me about the lantern scene.</div>
+                        <div style="display:flex; gap:10px; margin-top:4px"><span class="cap-t" style="color:var(--accent); font-weight:700">Reply</span><span class="cap-t" style="color:var(--faint)">2 replies</span></div>
+                      </div>
+                    </div>
+                    <!-- unread divider -->
+                    <div style="display:flex; align-items:center; gap:10px; margin:12px 0">
+                      <i style="flex:1; height:1px; background:#4a3029"></i>
+                      <span style="font-size:10.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--accent)">new since last visit</span>
+                      <i style="flex:1; height:1px; background:#4a3029"></i>
+                    </div>
+                    <div style="display:flex; gap:9px">
+                      <div style="width:26px; height:26px; border-radius:50%; background:linear-gradient(155deg,#3e5d6e,#14222b); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:#cfe5ef; flex:none">M</div>
+                      <div style="flex:1; min-width:0">
+                        <div style="display:flex; align-items:baseline; gap:6px"><span style="font-size:12.5px; font-weight:700; color:var(--text)">mara.reads</span><span class="mono-t" style="font-size:10.5px">Ch 11 · 4:58:03</span><span class="cap-t" style="border:1px solid var(--border); border-radius:999px; padding:1px 7px; color:var(--muted)">Safe</span></div>
+                        <div style="font-size:13px; color:#d8d2c6; line-height:1.45; margin-top:3px">No spoilers — but block out an evening for chapter 12.</div>
+                      </div>
+                    </div>
+                    <!-- spoiler teaser -->
+                    <div style="display:flex; align-items:center; gap:9px; margin-top:12px; padding:10px 12px; border-radius:12px; background:var(--fill); border:1px dashed var(--border)">
+                      <span class="ms" style="font-size:18px; color:var(--muted)">lock</span>
+                      <span class="cap-t" style="color:var(--muted); flex:1">4 notes ahead of you. Keep listening.</span>
+                    </div>
+                  </div>
+                  <!-- composer -->
+                  <div style="padding:8px 14px 10px; border-top:1px solid var(--hairline); background:var(--low)">
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:7px">
+                      <span style="display:inline-flex; align-items:center; gap:6px; padding:5px 11px; border-radius:999px; background:var(--accent-wash); border:1px solid #4a3029; font-family:var(--font-mono); font-size:11.5px; color:var(--accent)"><span class="ms" style="font-size:14px">schedule</span>Ch 12 · 4:32<span class="ms" style="font-size:14px; color:var(--muted)">close</span></span>
+                      <span class="cap-t" style="color:var(--faint)">attached to your note</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:9px">
+                      <div style="flex:1; border:1px solid var(--border); border-radius:14px; background:var(--fill); padding:10px 14px; font-size:13px; color:var(--faint)">Note at Ch 12 · 4:32…</div>
+                      <span class="cap-t" style="color:var(--muted)">Safe</span>
+                      <div class="toggle on" style="width:38px; height:22px"><i style="width:16px; height:16px"></i></div>
+                      <div style="width:38px; height:38px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center"><span class="ms fill" style="font-size:19px; color:var(--on-accent)">send</span></div>
+                    </div>
+                  </div>
+                </div>
+                <span class="n" style="top:60px; right:64px">1</span>
+                <span class="n" style="top:60px; right:14px">2</span>
+                <span class="n" style="top:118px; right:20px">3</span>
+                <span class="n" style="top:206px; left:130px">4</span>
+                <span class="n" style="top:296px; left:20px">5</span>
+                <span class="n" style="top:330px; right:66px">6</span>
+                <span class="n" style="top:428px; left:80px">7</span>
+                <span class="n" style="top:506px; left:186px">8</span>
+                <span class="n" style="top:560px; right:60px">9</span>
+                <span class="n" style="top:626px; left:40px">10</span>
+                <span class="n" style="top:690px; left:120px">11</span>
+                <span class="n" style="top:764px; right:74px">12</span>
+                <span class="n" style="top:764px; right:16px">13</span>
+              </div></div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>Members icon · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — opens the members sheet (avatar, Owner/Member, listening-now, owner kick).
+                  <span class="anim">sheet spring slide-up</span></span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>Overflow ⋯ · tap</b> — Archive (now neutral), Delete (destructive), Leave. See sheets frame below.</span></span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>History icon · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — book-history sheet; tapping a past book switches the room view to it. Book header cover taps to the item (kept).</span></span></div>
+                <div class="li"><span class="no">4</span><span class="tx"><b>"listening now" caption</b> <span class="chip" style="font-size:9px; padding:2px 7px">new</span> — race rows label the pulse dot in success color; the dot alone was undiscoverable.
+                  <span class="anim">dot pulse PULSE_MS 2600 · caption fades in with the dot</span></span></div>
+                <div class="li"><span class="no">5</span><span class="tx"><b>Race row</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — avatar, username (+you), track bar, N% or finished check. Finished rows go success-green.
+                  <span class="anim">bars grow to position on enter, 400ms ease-out, 60ms stagger</span></span></div>
+                <div class="li"><span class="no">6</span><span class="tx"><b>Up-next queue · Start / ✕</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — owner-only promote + drop; Start makes it the current book and re-anchors everyone's race.</span></span></div>
+                <div class="li"><span class="no">7</span><span class="tx"><b>Note row · Reply / long-press</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — Reply on top-level notes only; delete (✕) on your own or as moderator; "Only you" and "Safe" chips kept; "Chapter X · H:MM:SS" stamp taps to jump playback there.</span></span></div>
+                <div class="li"><span class="no">8</span><span class="tx"><b>Unread divider</b> <span class="chip" style="font-size:9px; padding:2px 7px">new</span> — drawn at your server-side cursor; the room opens scrolled to it, and scrolling past clears the club-list badge. Deep-link <span class="mono-t">?note=</span> scroll+flash kept.
+                  <span class="anim">divider label fades out DUR.slow ~2s after passing</span></span></div>
+                <div class="li"><span class="no">9</span><span class="tx"><b>Spoiler teaser</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — server sends only unlocked notes; the locked count ("4 notes ahead of you") is the carrot. Untouchable by design.</span></span></div>
+                <div class="li"><span class="no">10</span><span class="tx"><b>Timestamp chip · tap ✕</b> <span class="chip" style="font-size:9px; padding:2px 7px">new</span> — shows the exact stamp your note will carry (only appears while playing this book). ✕ removes it and the note sends unstamped. Today this behavior was invisible placeholder text.
+                  <span class="anim">chip enters FadeInDown DUR.base when playback matches · ✕ collapse-fade DUR.fast</span></span></div>
+                <div class="li"><span class="no">11</span><span class="tx"><b>Composer input</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — 2000 char max, reply banner when replying, placeholder mirrors the chip. Visibility toggle Public / Only me on top-level notes kept in the send flow.</span></span></div>
+                <div class="li"><span class="no">12</span><span class="tx"><b>SafeSwitch · toggle</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — marks the note spoiler-safe so members behind you can read it.</span></span></div>
+                <div class="li"><span class="no">13</span><span class="tx"><b>Send · tap</b> — posts with the chip's stamp (or none); thread scrolls to your note.
+                  <span class="anim">press POP_SPRING · note enters FadeInUp DUR.base · success haptic</span></span></div>
+              </div>
+            </div>
+            <div class="frameunit">
+              <div class="framecap"><div class="t">Members &amp; overflow sheets <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">Members sheet (top) and the overflow with Archive recolored neutral; only Delete stays destructive.</div></div>
+                <div class="nochange-note">Reproduced from 05-stats-clubs.html · no in-house adjustment</div>
+              <div class="phone"><div class="screen short" style="height:700px">
+                <div class="scrim"></div>
+                <div class="sheetview" style="position:relative; margin-top:24px">
+                  <div class="grabber"></div>
+                  <div class="sheethead"><div class="k">Night Shift Readers</div><div class="t">Members</div></div>
+                  <div style="padding:0 20px 18px">
+                    <div style="display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--hairline)">
+                      <div style="position:relative; width:34px; height:34px; border-radius:50%; background:linear-gradient(155deg,#3e5d6e,#14222b); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; color:#cfe5ef">M<i style="position:absolute; right:-2px; bottom:-2px; width:10px; height:10px; border-radius:50%; background:var(--success); border:2px solid var(--sheet)"></i></div>
+                      <div style="flex:1"><div style="font-size:14px; font-weight:700; color:var(--text)">mara.reads</div><div class="cap-t" style="color:var(--success)">Owner · listening now</div></div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--hairline)">
+                      <div style="width:34px; height:34px; border-radius:50%; background:linear-gradient(155deg,#7a4536,#2b160f); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; color:#ffd9c4">J</div>
+                      <div style="flex:1"><div style="font-size:14px; font-weight:700; color:var(--text)">jordan <span class="cap-t" style="color:var(--accent)">· you</span></div><div class="cap-t" style="color:var(--muted)">Member</div></div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:12px; padding:10px 0">
+                      <div style="width:34px; height:34px; border-radius:50%; background:linear-gradient(155deg,#55683f,#1b2413); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; color:#dbe8cc">N</div>
+                      <div style="flex:1"><div style="font-size:14px; font-weight:700; color:var(--text)">TheNightShelf</div><div class="cap-t" style="color:var(--muted)">Member</div></div>
+                      <span style="font-size:12px; font-weight:700; color:var(--destructive)">Remove</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="sheetview" style="position:relative; margin-top:20px">
+                  <div class="grabber"></div>
+                  <div class="sheethead"><div class="k">Club options</div><div class="t">Night Shift Readers</div></div>
+                  <div style="padding:0 8px 16px">
+                    <div class="setrow"><div class="ic"><span class="ms">inventory_2</span></div><div class="tx"><div class="t">Archive club</div><div class="d">Hides it from your list — can be restored anytime.</div></div></div>
+                    <div class="setrow"><div class="ic"><span class="ms">logout</span></div><div class="tx"><div class="t">Leave club</div><div class="d">Your notes stay; you can rejoin if invited.</div></div></div>
+                    <div class="setrow"><div class="ic" style="background:rgba(224,101,74,.14)"><span class="ms" style="color:var(--destructive)">delete_forever</span></div><div class="tx"><div class="t" style="color:var(--destructive)">Delete club</div><div class="d">Erases the club and all notes for everyone. Asks twice.</div></div></div>
+                  </div>
+                </div>
+                <span class="n" style="top:120px; left:200px">1</span>
+                <span class="n" style="top:262px; right:24px">2</span>
+                <span class="n" style="top:448px; left:60px">3</span>
+                <span class="n" style="top:560px; left:60px">4</span>
+              </div></div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>Member row</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — avatar, role, and the same success-color "listening now" caption grammar as the race rows.</span></span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>Remove · tap (owner only)</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — kick with a confirm dialog; destructive color is honest here.</span></span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>Archive · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px">redesigned</span> — neutral icon + text with a "can be restored" caption. Reversible actions never wear destructive red (D-CONSIST).
+                  <span class="anim">row press highlight · toast "Archived · Undo"</span></span></div>
+                <div class="li"><span class="no">4</span><span class="tx"><b>Delete · tap</b> — the only red row; the caption says the cost and it now confirms twice.
+                  <span class="anim">confirm dialog fade DUR.base · warning haptic</span></span></div>
+              </div>
+            </div>
+            <div class="frameunit">
+              <div class="framecap"><div class="t">ClubCard on book detail &amp; PopToast <span class="chip nochange">NO CHANGES</span></div>
+                <div class="d">The Book Club card on The Cinder Crown's detail page, with a live PopToast arriving above the mini dock.</div></div>
+                <div class="nochange-note">Reproduced from 05-stats-clubs.html · no in-house adjustment</div>
+              <div class="phone"><div class="screen" style="height:700px">
+                <div class="statusbar"><span>21:06</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_5_bar</span></span></div>
+                <div class="body" style="overflow:hidden">
+                  <div style="display:flex; gap:14px; padding:8px 18px 0; opacity:.5">
+                    <div class="cov c1" style="width:92px; aspect-ratio:2/3"><span class="init">C</span></div>
+                    <div style="flex:1"><div style="font-size:18px; font-weight:700; color:var(--text)">The Cinder Crown</div><div class="meta-t" style="margin-top:3px">Maren Voss</div><div class="skel" style="height:12px; width:70%; margin-top:12px"></div><div class="skel" style="height:12px; width:52%; margin-top:8px"></div></div>
+                  </div>
+                  <div class="secthead" style="margin-top:18px"><span class="l"><span class="ms">diversity_3</span>Book Club</span></div>
+                  <div class="setgroup">
+                    <div class="setrow">
+                      <div class="cov c1" style="width:34px; height:34px; border-radius:9px; padding:3px"></div>
+                      <div class="tx"><div class="t">Night Shift Readers</div><div class="d">Reading this now · 6 members</div></div>
+                      <span style="min-width:20px; height:20px; border-radius:999px; background:var(--accent); color:var(--on-accent); font-size:11px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; padding:0 6px">3</span>
+                      <span class="ms" style="font-size:19px; color:var(--faint)">chevron_right</span>
+                    </div>
+                    <div class="setrow">
+                      <div class="ic"><span class="ms">group</span></div>
+                      <div class="tx"><div class="t">Emberfall Fans</div><div class="d">Open club on your server</div></div>
+                      <span style="font-size:12px; font-weight:700; color:var(--on-accent); background:var(--accent); border-radius:999px; padding:6px 14px">Join</span>
+                    </div>
+                    <div class="setrow">
+                      <div class="ic"><span class="ms">group</span></div>
+                      <div class="tx"><div class="t">Sunday Slow Readers</div><div class="d">You're a member — reading something else</div></div>
+                      <span style="font-size:12px; font-weight:700; color:var(--muted); border:1px solid var(--border); border-radius:999px; padding:6px 12px">Queue</span>
+                      <span style="font-size:12px; font-weight:700; color:var(--on-accent); background:var(--accent); border-radius:999px; padding:6px 12px">Read now</span>
+                    </div>
+                    <div class="setrow" style="border:1.5px dashed var(--border); border-radius:12px; margin:8px; padding:11px 13px">
+                      <div class="ic" style="background:var(--accent-wash)"><span class="ms" style="color:var(--accent)">add</span></div>
+                      <div class="tx"><div class="t" style="color:var(--accent)">Start a club with this book</div></div>
+                    </div>
+                  </div>
+                </div>
+                <!-- pop toast above mini -->
+                <div style="position:absolute; left:14px; right:14px; bottom:150px; z-index:7; display:flex; align-items:center; gap:10px; padding:11px 14px; border-radius:16px; background:rgba(20,17,15,.96); border:1px solid var(--border); box-shadow:0 12px 32px rgba(0,0,0,.55)">
+                  <div style="width:28px; height:28px; border-radius:50%; background:linear-gradient(155deg,#3e5d6e,#14222b); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:#cfe5ef; flex:none">M</div>
+                  <div style="flex:1; min-width:0">
+                    <div style="font-size:12px; font-weight:700; color:var(--text)">mara.reads · Night Shift Readers</div>
+                    <div style="font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">"Block out an evening for chapter 12."</div>
+                  </div>
+                  <span class="ms" style="font-size:17px; color:var(--accent)">forum</span>
+                </div>
+                <div class="mini">
+                  <div class="prog"><i style="width:38%"></i></div>
+                  <div class="row">
+                    <div class="cov c1" style="width:38px; height:38px; border-radius:8px; padding:5px"></div>
+                    <div style="flex:1; min-width:0"><div style="font-size:13px; font-weight:700; color:var(--text)">The Cinder Crown</div><div class="mono-t" style="font-size:11px">4:32:10 / 11:52:30</div></div>
+                    <span class="ms fill" style="font-size:32px; color:var(--accent)">pause_circle</span>
+                  </div>
+                </div>
+                <div class="tabbar">
+                  <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div>
+                  <div class="tab on"><span class="pill"><span class="ms fill">auto_stories</span></span><span class="lbl">Library</span></div>
+                  <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+                  <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+                  <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+                </div>
+                <span class="n" style="top:274px; right:60px">1</span>
+                <span class="n" style="top:332px; right:26px">2</span>
+                <span class="n" style="top:392px; right:26px">3</span>
+                <span class="n" style="top:452px; left:120px">4</span>
+                <span class="n" style="bottom:186px; left:180px">5</span>
+              </div></div>
+              <div class="legend">
+                <div class="li"><span class="no">1</span><span class="tx"><b>Reading-this row · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — straight into the club room; unread badge matches the club list grammar (new detail).</span></span></div>
+                <div class="li"><span class="no">2</span><span class="tx"><b>Join pill · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — joins an open club reading this book; row converts to reading-this on success.
+                  <span class="anim">pill → spinner → check DUR.base · success haptic</span></span></div>
+                <div class="li"><span class="no">3</span><span class="tx"><b>Queue / Read now · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — for clubs you own that read something else: Queue adds this book to the club's up-next; Read now promotes it immediately.</span></span></div>
+                <div class="li"><span class="no">4</span><span class="tx"><b>Start a club · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — dashed row expands to an inline name input + Create; the book is pre-attached.
+                  <span class="anim">row expands to input DUR.base · field auto-focus</span></span></div>
+                <div class="li"><span class="no">5</span><span class="tx"><b>PopToast · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px">kept</span> — a new club note pops above the mini dock for 5200ms; tapping deep-links to the room scrolled+flashed at that note (<span class="mono-t">?note=</span>). Stacks in the shell's toast band: toast → dock → tabs.
+                  <span class="anim">FadeInUp DUR.base · hold 5200ms · FadeOutDown DUR.fast · soft notification haptic</span></span></div>
+              </div>
+            </div>
+    </div>
+  </div>
+
+  <div class="footnav"><a href="04-book-v2.html" class="v2" style="color:var(--review)">← 04 · Book (v2)</a><a href="06-settings-v2.html" class="v2" style="color:var(--review)">06 · Settings (v2) →</a></div>
+</div>
+</body>
+</html>

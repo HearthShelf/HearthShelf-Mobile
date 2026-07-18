@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HearthShelf Mobile — Redesign FINAL</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Geist+Mono:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<link rel="stylesheet" href="hearth.css">
+<style>
+  .doctrine { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:14px; margin-top:26px; }
+  .doc { border-radius:16px; padding:18px 20px; background:var(--page-card); border:1px solid var(--page-border); }
+  .doc .id { font-family:var(--font-mono); font-size:11px; letter-spacing:.14em; color:var(--hearth); }
+  .doc h4 { margin:6px 0 7px; font-size:15px; color:var(--text); }
+  .doc p { margin:0; font-size:13px; line-height:1.6; color:#b6afa3; }
+  .toc { display:grid; grid-template-columns:repeat(auto-fill,minmax(400px,1fr)); gap:14px; margin-top:26px; }
+  .toc a { display:flex; gap:14px; align-items:flex-start; text-decoration:none; border-radius:16px; padding:17px 19px; background:var(--page-card); border:1px solid var(--page-border); transition:border-color .15s; }
+  .toc a:hover { border-color:#55503f; }
+  .toc .num { font-family:var(--font-mono); font-size:22px; font-weight:700; color:var(--hearth); line-height:1; padding-top:2px; }
+  .toc h4 { margin:0 0 5px; font-size:15.5px; color:var(--text); }
+  .toc h4 .fchip { font-family:var(--font-mono); font-size:9.5px; font-weight:600; letter-spacing:.06em; padding:2px 7px; border-radius:999px; margin-left:8px; vertical-align:2px; text-transform:uppercase; }
+  .fchip.rev { color:#e0654a; background:#e0654a1a; border:1px solid #5a3029; }
+  .fchip.same { color:var(--muted); background:var(--fill); border:1px solid var(--border); }
+  .toc p { margin:0; font-size:12.5px; line-height:1.55; color:#a49d90; }
+  /* verdict table */
+  .vtab { width:100%; border-collapse:collapse; margin-top:18px; font-size:13px; max-width:1150px; }
+  .vtab th, .vtab td { text-align:left; padding:9px 12px; border-bottom:1px solid #24221e; vertical-align:top; line-height:1.5; }
+  .vtab th { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); font-weight:700; }
+  .vtab td b { color:var(--text); }
+  .vd { font-family:var(--font-mono); font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; white-space:nowrap; }
+  .vd.adopt { color:#7fa86b; background:#7fa86b1a; border:1px solid #3f5a33; }
+  .vd.rej { color:#d4544a; background:#d4544a1a; border:1px solid #5a3029; }
+  .vd.was { color:#bd863f; background:#bd863f1a; border:1px solid #4a3c25; }
+  .src { color:#8f887c; font-family:var(--font-mono); font-size:11px; }
+  .lede { max-width:1150px; border-radius:16px; padding:18px 22px; background:var(--page-card); border:1px solid var(--page-border); margin-top:6px; }
+  .lede p { font-size:13.5px; line-height:1.7; color:#cdc7bc; margin:0 0 10px; }
+  .lede p:last-child { margin-bottom:0; }
+  .lede b { color:var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div class="wordmark" style="font-size:26px"><span class="lt">Hearth</span><span class="bd">Shelf</span><span class="sub"> · Mobile Redesign — FINAL</span></div>
+    <div class="tagline">The consultant suite (v1), reconciled with the two in-house reviews (v2 Opus · v3 GPT) — every take re-checked against prod code.<br>
+    Adopts the verified-good, rejects the invented/overstated, records why for each.</div>
+  </div>
+  <div class="pagenav">
+    <a href="index-Final.html" class="on">FINAL overview</a>
+    <a href="01-home-Final.html">Home</a>
+    <a href="02-library.html">Library</a>
+    <a href="03-player-Final.html">Player</a>
+    <a href="04-book-Final.html">Book &amp; Reader</a>
+    <a href="05-stats-clubs-Final.html">Stats &amp; Clubs</a>
+    <a href="06-settings-Final.html">Settings</a>
+    <a href="07-system-Final.html">Sign-in &amp; System</a>
+    <a href="index.html" style="color:#6f6a62">· v1</a>
+    <a href="index-v2.html" style="color:#6f6a62">v2</a>
+    <a href="index-v3.html" style="color:#6f6a62">v3</a>
+  </div>
+
+  <!-- ============================== HOW FINAL WAS BUILT ============================== -->
+  <div class="section" id="how">
+    <div class="eyebrow">Read this first</div>
+    <h2>How FINAL was decided</h2>
+    <div class="lede">
+      <p>Two in-house reviews landed on top of the consultant suite. <b>v2 (Opus)</b> critiqued the consultant's <i>mockups</i>,
+      then honestly re-audited against the shipping React Native code and <b>withdrew most of its own "regression" findings as invented or overstated</b>.
+      <b>v3 (GPT)</b> was a production-beta audit whose through-line was "the beta already does this — keep it," conservative to the point of
+      walking back genuine UX wins.</p>
+      <p>FINAL does the reconciliation the right way: <b>every disputed take was checked against prod source directly</b> (file:line below), not taken
+      on either model's word. The good takes — nearly all of them accessibility, a real bug, or a naming distinction — are adopted. The rest are
+      rejected with a reason. Where the two reviews contradict each other, the code broke the tie.</p>
+      <p><b>Net:</b> FINAL changes 6 of 7 pages, but lightly — a focused set of ~12 adopted improvements (mostly the accessibility floor both
+      reviews agreed on, plus two real bugs and two naming corrections), and 9 explicit rejections. The consultant's eight doctrines and its
+      grid-actions / pure-tab-player / one-tap-finish / state-coverage work all stand.</p>
+    </div>
+  </div>
+
+  <!-- ============================== ADOPTED ============================== -->
+  <div class="section" id="adopted">
+    <div class="eyebrow">The verdict</div>
+    <h2>Adopted into FINAL — verified good</h2>
+    <p class="sub">Each was confirmed against prod code before adopting. "From" = which review raised it (both, when they agreed).</p>
+    <table class="vtab">
+      <tr><th>Change</th><th>Page</th><th>Verdict</th><th>Why it's in / prod evidence</th></tr>
+      <tr><td><b>Reduce-motion + low-end static splash</b> — swap the 24-ember animated field for one static radial glow + a determinate progress bar</td><td>07</td><td><span class="vd adopt">ADOPT</span></td><td>Both reviews agreed. <span class="src">grep reduceMotion → 0 hits; genuinely absent</span>. Vestibular-safety floor.</td></tr>
+      <tr><td><b>Accessibility floor everywhere</b> (D-A11Y) — icon-only controls get labels + focus order; Reduce-Motion fallbacks for EmberBurst / CoverGlow / carousel; color never sole meaning (sync = cloud shape, not just red/green); Dynamic-Type reflow up to ~200%</td><td>all</td><td><span class="vd adopt">ADOPT</span></td><td>Both reviews. <span class="src">accessibilityLabel in only 2 UI files; no reduce-motion anywhere</span>. The biggest real gap in the suite.</td></tr>
+      <tr><td><b>Ebook reader position slider</b> + "~N min left in chapter" + Chapter↔Book scope pill</td><td>04</td><td><span class="vd adopt">ADOPT</span></td><td>Both reviews' top pick. <span class="src">read.tsx:217 — prod has only ± chapter chevrons + a percent, no slider</span>.</td></tr>
+      <tr><td><b>Heatmap: "View as list" → dated day rows</b> + make the whole ~48px week column the tap target (not a 12px cell) + a screen-reader table</td><td>05</td><td><span class="vd adopt">ADOPT</span></td><td>Both reviews. Fixes the a11y dead-end and the 12px touch target on the consultant's own new tap-a-day feature.</td></tr>
+      <tr><td><b>Heatmap month + weekday labels</b> — render the axis prod already computes</td><td>05</td><td><span class="vd adopt">ADOPT</span></td><td>Real bug. <span class="src">stats.tsx:948 builds monthCols, never rendered</span>. (Consultant already flagged; FINAL keeps it.)</td></tr>
+      <tr><td><b>Cover-tap defaults to INSPECT, not play</b> — play-on-cover becomes an opt-in setting, default OFF; "tap to inspect" hint</td><td>03</td><td><span class="vd was">WAS WRONG → FIXED</span></td><td>v2 caught a genuine regression in the consultant version. <span class="src">settings.ts:222 tapArtworkTogglesPlay:false</span> — v1 flipped it ON (hair-trigger). Reverted.</td></tr>
+      <tr><td><b>Focus view ≠ Car mode</b> — the phone's big-control mode is renamed <b>"Focus view"</b> (a phone preference). The vehicle experience stays <b>native Android Auto / CarPlay</b>; the phone only reports "connected to car." Kills the "Car mode — coming soon" stub as a phone feature.</td><td>03</td><td><span class="vd was">WAS WRONG → FIXED</span></td><td>User: "Car mode and Focus view are two different things." v1 wrongly fused immersive→"Car mode". <span class="src">autoBridge.ts + immersive.ts already exist as separate concerns; actions.tsx:108 carMode stub</span>.</td></tr>
+      <tr><td><b>Settings search</b> — a search field pinned under the More title (fuzzy row titles + synonyms, deep-links the row)</td><td>06</td><td><span class="vd adopt">ADOPT (v2)</span></td><td>Tie broken by code: <span class="src">17 settings routes</span> is enough list to justify search. v3 rejected it; overruled.</td></tr>
+      <tr><td><b>Theme control first inside Appearance</b> (System/Dark/Light) — but NOT promoted to the More hub</td><td>06</td><td><span class="vd adopt">SPLIT</span></td><td>Middle path: v2 wanted it on the hub, v3 wanted it left alone. It's the most-changed setting, so it leads Appearance; the hub stays one-row-per-destination.</td></tr>
+      <tr><td><b>"Reset this section to defaults"</b> per settings group header, with an Undo toast</td><td>06</td><td><span class="vd adopt">ADOPT</span></td><td>Both reviews kept it; genuinely absent in prod.</td></tr>
+      <tr><td><b>A-Z rail only in alphabetical list view</b> — removed from grid (covers get full width), returns in list</td><td>02</td><td><span class="vd adopt">ADOPT (v3)</span></td><td>Cleaner than reserving a dead 28px lane. Already how the consultant Library behaves for non-title sorts; FINAL makes it explicit.</td></tr>
+      <tr><td><b>Standardized action/undo toast grammar</b> for destructive + reversible ops (delete, finish, hide, unfollow) replacing blocking Alerts</td><td>02·04·06·07</td><td><span class="vd adopt">ADOPT</span></td><td>Recurs across reviews; builds on the consultant's already-adopted action-toast (Task 0.3). Cheap consistency win.</td></tr>
+    </table>
+  </div>
+
+  <!-- ============================== REJECTED ============================== -->
+  <div class="section" id="rejected">
+    <div class="eyebrow">The verdict</div>
+    <h2>Rejected — with reason</h2>
+    <p class="sub">Mostly bad takes, as suspected: either v2 self-invalidated them against prod, or v3 was over-conservative and walked back a real win. Kept here so the decision is auditable.</p>
+    <table class="vtab">
+      <tr><th>Proposed change</th><th>From</th><th>Verdict</th><th>Why it's out</th></tr>
+      <tr><td>Phone-side <b>"Driving" Car-mode lock</b> with display-only scrubber, 96px targets, whole-screen play/pause</td><td>v2</td><td><span class="vd rej">REJECT</span></td><td>The vehicle UI is native Android Auto / CarPlay. The phone shouldn't become a competing driving surface. v3 reversed this too. (Focus view is a phone <i>preference</i>, not a driving mode.)</td></tr>
+      <tr><td><b>Swipe-down-to-dismiss handle</b> on the player</td><td>v2</td><td><span class="vd rej">REJECT</span></td><td>FINAL keeps the pure-tab player (player IS the Now tab; leave via the tab bar). A dismiss handle re-introduces the modal mental model we removed.</td></tr>
+      <tr><td>Book detail: <b>move Finish to overflow</b></td><td>v2</td><td><span class="vd rej">REJECT</span></td><td>v3 correctly reversed it. Finish stays a visible one-tap action (with the Undo/Edit-date toast) — hiding the most common completion action is worse, not safer.</td></tr>
+      <tr><td>Resume button labeled <b>"Resume · Ch 12"</b></td><td>v2</td><td><span class="vd rej">REJECT</span></td><td>v3's catch: the chapter number can disagree with a prologue / named chapter. Plain "Resume."</td></tr>
+      <tr><td>Home <b>status-line + avatar-merge + pin-on-scroll resume bar</b></td><td>v2</td><td><span class="vd rej">REJECT</span></td><td>Over-engineered, and built on v2's own "hero-hijack" regression which it later admitted was invented. FINAL takes the simpler v3 utility row instead.</td></tr>
+      <tr><td><b>Light-mode SIGN-IN</b> screen</td><td>v2</td><td><span class="vd rej">REJECT</span></td><td>User + v3 agree: the dark hearth-photo pre-auth screen is intentional brand identity. (The <i>fix</i> — wire sign-in off hardcoded hex onto the token system — stays; the screen just stays dark.)</td></tr>
+      <tr><td>Keep the current More hub with <b>no settings search</b></td><td>v3</td><td><span class="vd rej">REJECT</span></td><td>Overruled by code: 17 routes is a long enough list to warrant search. Adopted v2's search instead.</td></tr>
+      <tr><td>"Keep the beta as-is, no redesign" for Home / Player / Settings / Clubs</td><td>v3</td><td><span class="vd rej">REJECT</span></td><td>Conservative to a fault — it re-credits shipped code as the answer while walking back the consultant's verified wins (compact hero, one-tap finish, quick-play). The doctrines stand.</td></tr>
+      <tr><td>All v2 items marked <b>WITHDRAWN</b> (reserved A-Z lane, "controls scroll away", 4-square CTA overflow, "reader has no light/sepia", tappable-cell regression, "no light-mode player", "theme is buried", "offline has no Retry")</td><td>v2</td><td><span class="vd rej">REJECT</span></td><td>v2 self-invalidated these against prod — several describe the <i>consultant's mockup</i>, not the app. Not bugs.</td></tr>
+    </table>
+  </div>
+
+  <!-- ============================== PAGES ============================== -->
+  <div class="section" id="pages">
+    <div class="eyebrow">The suite</div>
+    <h2>FINAL pages</h2>
+    <p class="sub">Pages marked <span class="fchip rev">revised</span> carry the adopted changes above; <span class="fchip same">unchanged</span> means the consultant version already stands (open v1). Rejections are recorded here, not re-drawn.</p>
+    <div class="toc">
+      <a href="01-home-Final.html"><span class="num">01</span><span><h4>Home <span class="fchip rev">revised</span></h4><p>v3 utility row (server/library context · Search · Downloads) inside the bleed; light-mode board; reduce-motion + Dynamic-Type states. Rejects v2's status-line/avatar/resume-bar.</p></span></a>
+      <a href="02-library.html"><span class="num">02</span><span><h4>Library &amp; Search <span class="fchip same">unchanged + note</span></h4><p>Consultant version stands. FINAL note: A-Z rail is list-view-only (grid covers go full width); Clear-N pill ≥44pt; action/undo toasts. Opens the v1 page.</p></span></a>
+      <a href="03-player-Final.html"><span class="num">03</span><span><h4>Player <span class="fchip rev">revised</span></h4><p>Cover-tap defaults to inspect (play opt-in OFF); immersive renamed <b>Focus view</b> (phone pref) — <b>Car mode is separate &amp; native</b>, phone shows connected-status only; a11y + reduce-motion. Keeps pure-tab, rejects dismiss handle.</p></span></a>
+      <a href="04-book-Final.html"><span class="num">04</span><span><h4>Book &amp; Reader <span class="fchip rev">revised</span></h4><p>Reader position slider + "min left in chapter" + scope pill; reduce-motion + Dynamic Type. Keeps visible one-tap Finish; plain "Resume" label. Rejects v2's Finish-to-overflow.</p></span></a>
+      <a href="05-stats-clubs-Final.html"><span class="num">05</span><span><h4>Stats &amp; Clubs <span class="fchip rev">revised</span></h4><p>Heatmap: month/weekday axis, ~48px week-column tap target, "View as list" dated-rows + screen-reader table; rank arrows not color-only. Clubs unchanged from consultant.</p></span></a>
+      <a href="06-settings-Final.html"><span class="num">06</span><span><h4>Settings <span class="fchip rev">revised</span></h4><p>Settings search field; Theme leads Appearance (not the hub); "Reset section to defaults" + Undo per group; a11y row semantics. Keeps the consultant IA.</p></span></a>
+      <a href="07-system-Final.html"><span class="num">07</span><span><h4>Sign-in &amp; System <span class="fchip rev">revised</span></h4><p>Reduce-motion / low-end static splash + determinate progress; a11y semantics. Sign-in stays DARK (brand) but wired off hardcoded hex onto tokens. Rejects light-mode sign-in.</p></span></a>
+    </div>
+  </div>
+
+  <div class="footnav"><a href="index.html">← v1 consultant overview</a><a href="01-home-Final.html">01 · Home (FINAL) →</a></div>
+</div>
+</body>
+</html>

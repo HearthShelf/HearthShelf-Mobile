@@ -1,0 +1,667 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HearthShelf Redesign v2 — Home</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Geist+Mono:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<link rel="stylesheet" href="hearth.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div class="wordmark"><span class="lt">Hearth</span><span class="bd">Shelf</span><span class="sub"> · Mobile Redesign — Home</span><span class="v2tag">In-house v2</span></div>
+    <div class="tagline">Second opinion on <b>01-home.html</b>. The consultant's compact-hero direction is right —<br>we fix the quick-play regression, prove the thumb zone, and design the missing light mode.</div>
+  </div>
+  <div class="pagenav">
+    <a href="index-v2.html" class="v2">v2 Overview</a>
+    <a href="01-home-v2.html" class="v2 on">Home</a>
+    <a href="02-library-v2.html" class="v2">Library &amp; Search</a>
+    <a href="03-player-v2.html" class="v2">Player</a>
+    <a href="04-book-v2.html" class="v2">Book &amp; Reader</a>
+    <a href="05-stats-clubs-v2.html" class="v2">Stats &amp; Clubs</a>
+    <a href="06-settings-v2.html" class="v2">Settings</a>
+    <a href="07-system-v2.html" class="v2">Sign-in &amp; System</a>
+    <a href="01-home.html" style="margin-left:14px; opacity:.7">↩ consultant v1</a>
+  </div>
+
+  <!-- ================================================================ -->
+  <div class="section" id="review">
+    <div class="eyebrow">Screen 01 · Home</div>
+    <h2>The in-house teardown</h2>
+    <p class="sub">The consultant's Home is a real upgrade: the ~240px hero, the dashboard row, the four states, and
+    "See all" as a pushed screen are all correct and ship as-is. Two things need rework — one is an outright regression.</p>
+
+    <div class="ihreview">
+      <div class="lead"><span class="ms">reviews</span>Scored against the consultant's 01-home.html</div>
+      <p>The redesign's biggest new idea on Home — a quick-play chip that "swaps the hero" — introduces two problems the
+      v1 didn't have. Everything else is endorsed.</p>
+      <div class="ihgrid">
+        <div class="ihcol keep"><h4><span class="ms">check_circle</span>Kept — ship as written</h4><ul>
+          <li><b>Compact 240/190px hero</b> pulls content above the fold. Correct.</li>
+          <li><b>Dashboard row</b> (Up-next peek + streak) is a genuinely good glance surface.</li>
+          <li><b>Four designed states</b> replacing the swallowed <span class="mono-t">.catch</span>. Best part of the page.</li>
+          <li><b>"See all" pushes a real screen.</b> Right call over the 85% sheet.</li>
+        </ul></div>
+        <div class="ihcol miss"><h4><span class="ms">construction</span>Still wrong — unaddressed</h4><ul>
+          <li><b>No light-mode Home.</b> D-CONSIST promises reactive theme; the hero's white-on-dark gradient has no light variant. Drawn below.</li>
+          <li><b>Reach unproven.</b> The hero transport sits at ~mid-screen on a tall phone, not clearly in the thumb arc. We overlay it.</li>
+          <li><b>Greeting + search-only header</b> wastes the top-right; no way to reach More/profile without leaving Home.</li>
+        </ul></div>
+        <div class="ihcol regress"><h4><span class="ms">warning</span>Regressed — the redesign made it worse</h4><ul>
+          <li><b>Quick-play "swaps the hero."</b> Tapping a shelf chip silently reorders the whole screen's anchor — disorienting, and undoable only by hunting.</li>
+          <li><b>Silent audio start.</b> A single tap starting out-loud playback with no volume/route confirmation is a public-embarrassment risk (bus, office).</li>
+          <li><b>Chip vs tile target collision.</b> A 32px play chip on a 104px tile that ALSO opens detail on body-tap invites mis-taps at the corner.</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================
+       FRAME 1 — quick-play, fixed
+       ================================================================ -->
+  <div class="section" id="quickplay">
+    <div class="eyebrow">Screen 01 · Home</div>
+    <h2>Quick-play without hijacking the hero — and a header that earns its pixels</h2>
+    <p class="sub">Keep the one-tap-to-audio doctrine (D-PLAY) — just don't let it silently rearrange Home or blast audio.
+    In v2 the quick-play chip <b>resumes into the mini dock</b> with an explicit "now playing" state; the hero stays the
+    stable anchor it should be, and the first out-loud second is protected. <b>Revised after review:</b> my first pass
+    "fixed" the greeting + search-only header by dropping in a profile icon — that was a non-answer. The two frames below
+    show the real fix (a priority-ranked status line) and the alternative that honors the current app's "bleed the hero
+    up" instinct at 44px instead of 340px.</p>
+
+    <div class="prodcheck">
+      <div class="lead"><span class="ms">fact_check</span>Verified against prod source (app/(tabs)/index.tsx · src heroes · settings.ts)</div>
+      <p>Re-audited against shipping code after my first pass reviewed only the consultant's mockup:</p>
+      <table>
+        <tr><th>My / consultant claim</th><th>Verdict</th><th>Prod evidence</th></tr>
+        <tr><td>Consultant: "the current hero is ~340px"</td><td><span class="vd ok">confirmed</span></td><td class="src">index.tsx style <span class="mono-t">height: 340</span> — exact</td></tr>
+        <tr><td>Home has a search-only header (no profile/notifications)</td><td><span class="vd ok">confirmed</span></td><td class="src">index.tsx:557-573 greeting + single search <span class="mono-t">IconButton</span></td></tr>
+        <tr><td>"Quick-play hijacks a STABLE hero" (my regression)</td><td><span class="vd inv">invented</span></td><td class="src">Prod has NO quick-play on shelf tiles — tapping routes to <span class="mono-t">/item/{id}</span> (index.tsx:518). And the hero is already volatile: it re-derives as <span class="mono-t">visibleInProgress[0]</span> and drops finished books live (:476,:479). There is no stable-hero baseline to break. My "hero-hijack regression" critiques the consultant's proposal, not a prod behavior.</td></tr>
+      </table>
+      <p><b>Net:</b> the header work and "resume into the dock, don't blast audio" fix still stand as good design. But I've relabeled the quick-play frame from "fixes a regression" to "a safer way to add a feature prod doesn't have yet."</p>
+    </div>
+
+    <div class="ihreview" style="border-color:var(--regress); background:linear-gradient(180deg, rgba(217,138,61,.07), transparent 70%), var(--page-card)">
+      <div class="lead" style="color:var(--regress)"><span class="ms">u_turn_left</span>Revised recommendation — the header</div>
+      <p><b>You were right, and so was the current app's instinct.</b> Bleeding the hero up to "waste nothing" is the
+      correct value; a 340px hero was the wrong price. So the fix isn't "add an icon" (my non-answer) or "bleed the hero
+      up" (the old mistake) — it's <b>make the top strip carry state and a resume path</b>. My recommendation:
+      <b>ship Option A (status line) as the default</b>, and <b>layer Option B (pin-on-scroll resume bar) on top of it</b>
+      — they compose: A informs at rest, B keeps Resume + search one tap while browsing. Together they beat both the
+      consultant's calm-but-empty header and the current app's useful-but-oversized one.</p>
+    </div>
+
+    <div class="frames">
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Home — after quick-play <span class="chip v2fix">v2 fix</span></div>
+          <div class="d">Tapping a shelf tile's play chip starts the book in the <b>mini dock</b> (bottom, thumb zone) with an equalizer "playing" glyph — the hero does NOT swap. The dock is the ambassador; the tapped tile shows a playing ring so you can see what you started.</div></div>
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>9:30</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="body" style="overflow:hidden">
+            <!-- HEADER, earning its pixels: avatar (profile+notifs) · live status line · search -->
+            <div style="display:flex; align-items:center; gap:11px; padding:8px 16px 4px">
+              <div style="position:relative; width:38px; height:38px; flex:none">
+                <div class="cov c5" style="width:38px; height:38px; border-radius:50%; padding:0; display:flex; align-items:center; justify-content:center"><span style="font-size:15px; font-weight:800; color:rgba(255,255,255,.85)">J</span></div>
+                <span style="position:absolute; top:-1px; right:-1px; width:12px; height:12px; border-radius:50%; background:var(--accent); border:2px solid var(--scaffold)"></span>
+              </div>
+              <div style="flex:1; min-width:0">
+                <div style="font-size:14.5px; font-weight:700; color:var(--text); line-height:1.15">Good evening, Jordan</div>
+                <div style="display:flex; align-items:center; gap:6px; margin-top:2px">
+                  <span class="ms fill" style="font-size:13px; color:var(--hearth)">local_fire_department</span>
+                  <span style="font-size:11.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis"><b style="color:var(--text)">22 min</b> keeps your 12-day streak</span>
+                </div>
+              </div>
+              <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:19px">search</span></div>
+            </div>
+            <!-- hero — unchanged, stays the anchor -->
+            <div style="position:relative; height:190px; margin:8px 12px 0; border-radius:20px; overflow:hidden; background:linear-gradient(180deg, #6e3f30 0%, #46261c 45%, #241511 100%)">
+              <span style="position:absolute; right:-4%; top:-14%; font-size:160px; font-weight:800; line-height:1; color:rgba(255,255,255,.09)">C</span>
+              <div style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,.1), rgba(20,14,10,.55) 78%)"></div>
+              <div style="position:relative; padding:14px 18px 0">
+                <div style="font-size:10px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; color:rgba(255,255,255,.75)">Now playing</div>
+                <div style="font-size:20px; font-weight:700; color:#fff; margin-top:5px">The Cinder Crown</div>
+                <div style="font-size:12px; color:rgba(255,255,255,.78); margin-top:3px">Maren Voss · Ch 12</div>
+              </div>
+              <div style="position:absolute; left:18px; right:18px; bottom:16px; display:flex; align-items:center; gap:10px">
+                <div class="track" style="flex:1; background:rgba(255,255,255,.22)"><i style="width:38%; background:#ffd9c4"></i></div>
+                <span style="font-family:var(--font-mono); font-size:11px; color:rgba(255,255,255,.85)">38%</span>
+              </div>
+            </div>
+            <!-- Continue shelf: the tile we just started shows a playing ring, NOT the hero swapping -->
+            <div class="secthead" style="margin-top:16px"><span class="l"><span class="ms">history</span>Continue listening</span><span class="see">See all<span class="ms" style="font-size:16px">chevron_right</span></span></div>
+            <div style="display:flex; gap:12px; padding:0 18px; overflow:hidden">
+              <div style="width:104px; flex:none">
+                <div class="cov c2" style="width:104px; aspect-ratio:2/3; outline:2px solid var(--accent); outline-offset:2px"><span class="init">S</span><span class="ct">Saltwater Prophets</span>
+                  <div class="playchip" style="background:var(--accent); border-color:var(--accent)"><span class="ms fill" style="color:var(--on-accent)">graphic_eq</span></div></div>
+                <div class="track" style="margin-top:7px; height:3px"><i style="width:62%"></i></div>
+                <div class="cap-t" style="margin-top:6px; color:var(--accent); font-weight:700">Playing now</div>
+              </div>
+              <div style="width:104px; flex:none">
+                <div class="cov c3" style="width:104px; aspect-ratio:2/3"><span class="init">G</span><span class="ct">The Gray Harvest</span><div class="playchip"><span class="ms fill">play_arrow</span></div></div>
+                <div class="track" style="margin-top:7px; height:3px"><i style="width:21%"></i></div>
+                <div class="cap-t" style="margin-top:6px; color:var(--muted)">Tomas Ashe</div>
+              </div>
+              <div style="width:104px; flex:none">
+                <div class="cov c4" style="width:104px; aspect-ratio:2/3"><span class="init">V</span><span class="ct">Veils of Vantar</span><div class="playchip"><span class="ms fill">play_arrow</span></div></div>
+                <div class="track" style="margin-top:7px; height:3px"><i style="width:87%"></i></div>
+                <div class="cap-t" style="margin-top:6px; color:var(--muted)">R. K. Onwe</div>
+              </div>
+            </div>
+          </div>
+          <!-- mini dock = the ambassador for the just-started book -->
+          <div class="mini" style="bottom:80px">
+            <div class="prog"><i style="width:62%"></i></div>
+            <div class="row">
+              <div class="cov c2" style="width:38px; height:38px; border-radius:8px; padding:5px"><span class="init" style="font-size:26px">S</span></div>
+              <div style="flex:1; min-width:0">
+                <div style="font-size:13px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">Saltwater Prophets</div>
+                <div class="mono-t" style="font-size:11px">Started · tap to open player</div>
+              </div>
+              <span class="ms fill" style="font-size:32px; color:var(--accent)">pause_circle</span>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab on"><span class="pill"><span class="ms fill">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n rv" style="top:52px; left:150px">1</span>
+          <span class="n rv" style="top:322px; left:118px">2</span>
+          <span class="n rv" style="top:410px; left:98px">3</span>
+          <span class="n rv" style="bottom:120px; right:20px">4</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>The header does work now</b> — I withdraw the "just add a profile icon" note; that was a non-answer. The strip carries three real jobs: a leading <b>avatar</b> (profile + a live unread dot for notifications/club activity), a <b>status line</b> that answers the one question you open the app to check ("22 min keeps your streak" / "3 new in clubs" / "New release Friday"), and search. Nothing here is decoration — see the dedicated header section below for the full rationale and the pin-on-scroll variant.
+            <span class="rvnote">turns wasted chrome into the day's gl: streak, unread, releases</span></span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>Hero stays put</b> — it still shows The Cinder Crown. The consultant's mockup has quick-play swap this whole band, moving the anchor. (Prod has no shelf quick-play at all; and its hero is already volatile - it re-derives as books finish.) v2 never mutates the hero from a shelf tap.
+            <span class="rvnote">safer than the consultant's hero-swap proposal (prod has no quick-play baseline)</span></span></div>
+          <div class="li"><span class="no rv">3</span><span class="tx"><b>Quick-play chip · tap</b> — starts the book, but the confirmation is a <b>playing ring on the tile</b> + "Playing now" caption + the mini dock, not a silent full-screen rearrange. The chip glyph becomes an equalizer so the state is legible.
+            <span class="rvnote">D-PLAY kept; disorientation removed</span></span></div>
+          <div class="li"><span class="no rv">4</span><span class="tx"><b>Mini dock is the ambassador</b> — the started book lands here in the thumb zone with a pause affordance. First-second audio safety: if the phone is on speaker and headphones aren't connected, the dock shows a one-time "Playing out loud" chip with a mute toggle (see states note).
+            <span class="rvnote">public-embarrassment guard</span></span></div>
+        </div>
+      </div>
+
+      <!-- ============ HEADER, EARNING ITS PIXELS — Option A ============ -->
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Header · Option A — the status line <span class="chip v2fix">revised</span></div>
+          <div class="d">The revision. The greeting was prime real estate saying only "hello." Now it answers the question you opened the app to check. The current app bled the hero UP to avoid wasting this strip — right instinct, wrong cost (a 340px hero). This keeps the strip AND the compact hero: the strip does the informing, the hero does the resuming.</div></div>
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>9:30</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="body" style="overflow:hidden">
+            <div style="display:flex; align-items:center; gap:11px; padding:8px 16px 4px">
+              <div style="position:relative; width:38px; height:38px; flex:none">
+                <div class="cov c5" style="width:38px; height:38px; border-radius:50%; padding:0; display:flex; align-items:center; justify-content:center"><span style="font-size:15px; font-weight:800; color:rgba(255,255,255,.85)">J</span></div>
+                <span style="position:absolute; top:-1px; right:-1px; min-width:16px; height:16px; border-radius:999px; background:var(--accent); border:2px solid var(--scaffold); color:var(--on-accent); font-size:9px; font-weight:700; display:flex; align-items:center; justify-content:center; padding:0 3px">3</span>
+              </div>
+              <div style="flex:1; min-width:0">
+                <div style="font-size:14.5px; font-weight:700; color:var(--text); line-height:1.15">Good evening, Jordan</div>
+                <div style="display:flex; align-items:center; gap:6px; margin-top:2px">
+                  <span class="ms fill" style="font-size:13px; color:var(--hearth)">local_fire_department</span>
+                  <span style="font-size:11.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis"><b style="color:var(--text)">22 min</b> keeps your 12-day streak</span>
+                </div>
+              </div>
+              <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:19px">search</span></div>
+            </div>
+            <div style="position:relative; height:190px; margin:8px 12px 0; border-radius:20px; overflow:hidden; background:linear-gradient(180deg, #6e3f30 0%, #46261c 45%, #241511 100%)">
+              <span style="position:absolute; right:-4%; top:-14%; font-size:160px; font-weight:800; line-height:1; color:rgba(255,255,255,.09)">C</span>
+              <div style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,.1), rgba(20,14,10,.55) 78%)"></div>
+              <div style="position:relative; padding:14px 18px 0">
+                <div style="font-size:10px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; color:rgba(255,255,255,.75)">Now playing</div>
+                <div style="font-size:20px; font-weight:700; color:#fff; margin-top:5px">The Cinder Crown</div>
+                <div style="font-size:12px; color:rgba(255,255,255,.78); margin-top:3px">Maren Voss · Ch 12 · 3h 38m left</div>
+              </div>
+              <div style="position:absolute; left:18px; bottom:14px; display:inline-flex; align-items:center; gap:8px; padding:9px 18px; border-radius:13px; background:#ffd9c4; color:#3a1c12; font-weight:700; font-size:13px"><span class="ms fill" style="font-size:18px">play_arrow</span>Resume</div>
+            </div>
+            <!-- the status line's three rotating variants, shown stacked as a legend of what it can say -->
+            <div style="margin:14px 16px 0">
+              <div class="cap-t" style="color:var(--faint); letter-spacing:.14em; text-transform:uppercase; font-size:10px; font-weight:700">What the status line says, in priority order</div>
+              <div style="display:flex; flex-direction:column; gap:8px; margin-top:10px">
+                <div style="display:flex; align-items:center; gap:9px; padding:10px 12px; border-radius:12px; background:var(--accent-wash); border:1px solid #4a3029"><span class="ms fill" style="font-size:17px; color:var(--accent)">notifications_active</span><span style="font-size:12.5px; color:var(--text); flex:1"><b>3 new in your clubs</b> · Night Shift Readers replied</span><span class="cap-t" style="color:var(--accent); font-weight:700">now</span></div>
+                <div style="display:flex; align-items:center; gap:9px; padding:10px 12px; border-radius:12px; background:var(--fill); border:1px solid var(--hairline)"><span class="ms fill" style="font-size:17px; color:var(--hearth)">local_fire_department</span><span style="font-size:12.5px; color:var(--text); flex:1"><b>22 min</b> keeps your 12-day streak</span></div>
+                <div style="display:flex; align-items:center; gap:9px; padding:10px 12px; border-radius:12px; background:var(--fill); border:1px solid var(--hairline)"><span class="ms" style="font-size:17px; color:var(--info)">event_upcoming</span><span style="font-size:12.5px; color:var(--text); flex:1"><b>Ashes of the Deep</b> releases Friday</span></div>
+                <div style="display:flex; align-items:center; gap:9px; padding:10px 12px; border-radius:12px; background:var(--fill); border:1px solid var(--hairline); opacity:.7"><span class="ms" style="font-size:17px; color:var(--muted)">waving_hand</span><span style="font-size:12.5px; color:var(--muted); flex:1">Good evening, Jordan <span style="font-style:italic">(fallback — nothing urgent)</span></span></div>
+              </div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab on"><span class="pill"><span class="ms fill">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n rv" style="top:48px; left:26px">1</span>
+          <span class="n rv" style="top:60px; left:150px">2</span>
+          <span class="n rv" style="top:430px; left:150px">3</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>Avatar = profile + notifications</b> — one control, two jobs. The badge is a real unread count (club replies, follows, finished-download alerts), not decoration. Tap = account/More menu; long-press = jump straight to the notification list. This is the "way out that isn't the tab bar" I wanted, but now it also carries state.
+            <span class="rvnote">merges profile + notifications into one earned control</span></span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>Status line · priority-ranked, tappable</b> — it shows the single most useful thing right now, chosen by priority: (1) unread club/social activity → tap opens it, (2) streak-at-risk nudge → tap opens Stats, (3) upcoming release today/this week → tap opens the book, (4) plain greeting only when nothing is urgent. It replaces a dead "hello" with the one glanceable fact you'd otherwise scroll to find.
+            <span class="rvnote">the actual solution to "greeting + search-only"</span></span></div>
+          <div class="li"><span class="no rv">3</span><span class="tx"><b>Why not just bleed the hero up?</b> — because that's what made the old hero 340px and buried everything (the exact thing the consultant fixed). The strip informs; the compact hero resumes. You get the current app's "waste nothing" goal without its "hero eats the screen" cost.
+            <span class="rvnote">keeps the compact hero AND uses the strip</span></span></div>
+        </div>
+      </div>
+
+      <!-- ============ HEADER — Option B: pin-on-scroll resume bar ============ -->
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Header · Option B — resume bar pins on scroll <span class="chip v2fix">revised</span></div>
+          <div class="d">The current app's "bleed up, waste nothing" instinct, done at 44px instead of 340px. As you scroll the hero away to browse shelves, the header collapses into a slim persistent resume bar so getting back into your book is ALWAYS one tap — no scrolling back up, no hunting the mini dock. This is the strongest answer if "resume" is the #1 job.</div></div>
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>9:30</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="body" style="overflow:hidden">
+            <!-- pinned collapsed resume bar (what the header BECOMES after you scroll) -->
+            <div style="position:sticky; top:0; z-index:6; display:flex; align-items:center; gap:11px; padding:9px 14px; background:#201e1cf5; border-bottom:1px solid var(--hairline); box-shadow:0 6px 18px rgba(0,0,0,.35)">
+              <div class="cov c1" style="width:34px; height:34px; border-radius:9px; padding:4px; flex:none"><span class="init" style="font-size:22px">C</span></div>
+              <div style="flex:1; min-width:0">
+                <div style="font-size:13px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">The Cinder Crown</div>
+                <div style="height:3px; border-radius:999px; background:var(--fill-strong); margin-top:4px; width:120px"><i style="display:block; height:100%; width:38%; background:var(--accent); border-radius:999px"></i></div>
+              </div>
+              <div style="display:inline-flex; align-items:center; gap:6px; padding:8px 16px; border-radius:12px; background:var(--accent); color:var(--on-accent); font-weight:700; font-size:13px"><span class="ms fill" style="font-size:17px">play_arrow</span>Resume</div>
+              <div class="iconbtn" style="width:36px; height:36px"><span class="ms" style="font-size:18px">search</span></div>
+            </div>
+            <!-- content scrolled up under it: shelves -->
+            <div class="secthead" style="margin-top:14px"><span class="l"><span class="ms">history</span>Continue listening</span><span class="see">See all<span class="ms" style="font-size:16px">chevron_right</span></span></div>
+            <div style="display:flex; gap:12px; padding:0 18px; overflow:hidden">
+              <div style="width:104px; flex:none"><div class="cov c2" style="width:104px; aspect-ratio:2/3"><span class="init">S</span><span class="ct">Saltwater Prophets</span><div class="playchip"><span class="ms fill">play_arrow</span></div></div><div class="track" style="margin-top:7px; height:3px"><i style="width:62%"></i></div></div>
+              <div style="width:104px; flex:none"><div class="cov c3" style="width:104px; aspect-ratio:2/3"><span class="init">G</span><span class="ct">The Gray Harvest</span><div class="playchip"><span class="ms fill">play_arrow</span></div></div><div class="track" style="margin-top:7px; height:3px"><i style="width:21%"></i></div></div>
+              <div style="width:104px; flex:none"><div class="cov c4" style="width:104px; aspect-ratio:2/3"><span class="init">V</span><span class="ct">Veils of Vantar</span><div class="playchip"><span class="ms fill">play_arrow</span></div></div><div class="track" style="margin-top:7px; height:3px"><i style="width:87%"></i></div></div>
+            </div>
+            <div class="secthead" style="margin-top:18px"><span class="l"><span class="ms">stacks</span>Continue series</span><span class="see">See all<span class="ms" style="font-size:16px">chevron_right</span></span></div>
+            <div style="display:flex; gap:12px; padding:0 18px; overflow:hidden">
+              <div style="width:104px; flex:none"><div class="cov c5" style="width:104px; aspect-ratio:2/3"><span class="init">E</span><span class="ck">Book 3 of 9</span><span class="ct">Emberfall: Kindling</span></div></div>
+              <div style="width:104px; flex:none"><div class="cov c8" style="width:104px; aspect-ratio:2/3"><span class="init">W</span><span class="ck">Book 2 of 4</span><span class="ct">Winter's Ledger</span></div></div>
+              <div style="width:104px; flex:none"><div class="cov c6" style="width:104px; aspect-ratio:2/3"><span class="init">H</span><span class="ct">Hollow Reign</span></div></div>
+            </div>
+            <div class="secthead" style="margin-top:18px"><span class="l"><span class="ms">auto_awesome</span>Because you finished Hollow Reign</span></div>
+            <div style="display:flex; gap:12px; padding:0 18px; overflow:hidden">
+              <div style="width:104px; flex:none"><div class="cov c7" style="width:104px; aspect-ratio:2/3"><span class="init">B</span><span class="ct">Bone Orchard</span></div></div>
+              <div style="width:104px; flex:none"><div class="cov c5" style="width:104px; aspect-ratio:2/3"><span class="init">T</span><span class="ct">The Tidewalker</span></div></div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab on"><span class="pill"><span class="ms fill">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n rv" style="top:52px; left:180px">1</span>
+          <span class="n rv" style="top:52px; right:60px">2</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>Collapsed resume bar</b> — at the top of Home you see the full compact hero (Frame 1). The moment you scroll to browse, the hero shrinks into this 44px bar and pins. Cover + title + a live progress sliver + a Resume button. The current app's "don't waste the top" goal, delivered without a giant hero.
+            <span class="rvnote">the "bleed-up" instinct at 44px, not 340px</span></span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>Search survives the collapse</b> — it rides the pinned bar, so search is one tap at any scroll depth (same reasoning as the sticky Library control bar in 02-library-v2). The status line from Option A folds into the avatar's badge when collapsed — no information is lost, it just changes form.
+            <span class="rvnote">persistent search + resume, zero wasted pixels</span></span></div>
+        </div>
+      </div>
+
+      <!-- ============ FRAME 2 — reach overlay ============ -->
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Thumb-reach audit <span class="chip v2fix">D-REACH</span></div>
+          <div class="d">The consultant asserts Home is thumb-friendly. Overlaid on a 6.7" arc: the hero's transport (v1) sits near the top of the comfortable zone; primary reach lives in the dock + tab bar. Destructive shelf long-press actions correctly stay out of the fast-tap band.</div></div>
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>9:30</span><span class="dot"></span><span class="right"><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="body" style="opacity:.4; overflow:hidden">
+            <div style="padding:10px 18px"><div class="skel" style="height:14px; width:45%"></div></div>
+            <div class="skel" style="height:190px; margin:8px 12px 0; border-radius:20px"></div>
+            <div style="display:flex; gap:10px; padding:12px 12px 0"><div class="skel" style="flex:1.2; height:64px; border-radius:14px"></div><div class="skel" style="flex:1; height:64px; border-radius:14px"></div></div>
+            <div style="display:flex; gap:12px; padding:16px 18px 0"><div class="skel" style="width:104px; aspect-ratio:2/3"></div><div class="skel" style="width:104px; aspect-ratio:2/3"></div><div class="skel" style="width:104px; aspect-ratio:2/3"></div></div>
+          </div>
+          <div class="tabbar" style="opacity:.5">
+            <div class="tab on"><span class="pill"><span class="ms fill">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <div class="reach">
+            <div class="hard"></div>
+            <div class="hardlbl">stretch zone · glance only</div>
+            <div class="arc"></div>
+            <div class="lbl">one-handed comfortable arc (right thumb)</div>
+          </div>
+          <span class="n rv" style="top:200px; right:120px">1</span>
+          <span class="n rv" style="bottom:150px; right:30px">2</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>Hero content is glance-zone</b> — title, art and progress up top are fine to READ but should not host the only transport. v2 keeps the hero tap-to-open but relies on the dock for one-handed control.
+            <span class="rvnote">confirms the compact hero, adjusts control placement</span></span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>All frequent actions land in the arc</b> — dock transport, tab bar, and the search/profile buttons (which we kept at 44px hit even at 36px visual) sit inside the comfortable band.
+            <span class="rvnote">D-REACH satisfied and shown, not claimed</span></span></div>
+        </div>
+      </div>
+
+      <!-- ============ FRAME 3 — light mode ============ -->
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Home — light mode <span class="chip v2fix">D-A11Y</span></div>
+          <div class="d">The consultant's suite is dark-only, yet D-CONSIST promises reactive theming everywhere. Here is the light-mode Home the mockups never drew: warm paper surfaces, the hero art dimmed under a cream scrim, accent and text re-derived for AA contrast.</div></div>
+        <div class="phone"><div class="screen" style="background:#f6f1e8; color:#2a2621">
+          <div class="statusbar" style="color:#2a2621"><span>9:30</span><span class="dot" style="background:#2a2621"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="body" style="overflow:hidden">
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 18px 4px">
+              <div style="font-family:var(--font-brand); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:#7a5a2e">Good evening, Jordan</div>
+              <div style="display:flex; gap:8px">
+                <div style="width:36px; height:36px; border-radius:50%; background:#ece3d3; border:1px solid #ddd0bb; display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:19px; color:#5c554a">search</span></div>
+                <div style="width:36px; height:36px; border-radius:50%; background:#ece3d3; border:1px solid #ddd0bb; display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:19px; color:#5c554a">account_circle</span></div>
+              </div>
+            </div>
+            <div style="position:relative; height:190px; margin:8px 12px 0; border-radius:20px; overflow:hidden; background:linear-gradient(180deg, #b06a4f 0%, #8a4d38 55%, #6e3c2b 100%)">
+              <span style="position:absolute; right:-4%; top:-14%; font-size:160px; font-weight:800; line-height:1; color:rgba(255,255,255,.14)">C</span>
+              <div style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(255,240,225,.05), rgba(60,32,20,.45) 80%)"></div>
+              <div style="position:relative; padding:14px 18px 0">
+                <div style="font-size:10px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; color:rgba(255,246,238,.9)">Now playing</div>
+                <div style="font-size:20px; font-weight:700; color:#fff; margin-top:5px">The Cinder Crown</div>
+                <div style="font-size:12px; color:rgba(255,246,238,.85); margin-top:3px">Maren Voss · Ch 12</div>
+              </div>
+              <div style="position:absolute; left:18px; bottom:14px; display:inline-flex; align-items:center; gap:8px; padding:9px 18px; border-radius:13px; background:#fff2e6; color:#8a4d38; font-weight:700; font-size:13px"><span class="ms fill" style="font-size:18px">play_arrow</span>Resume</div>
+            </div>
+            <div style="display:flex; gap:10px; padding:12px 12px 0">
+              <div style="flex:1.2; padding:12px 14px; border-radius:16px; background:#fffdf9; border:1px solid #e6dcc9">
+                <div style="display:flex; align-items:center; justify-content:space-between"><span style="font-size:12px; font-weight:700">Up next</span><span class="ms" style="font-size:17px; color:#8a827254">queue_music</span></div>
+                <div class="cap-t" style="margin-top:9px; color:#7a7264">4 queued · Auto</div>
+              </div>
+              <div style="flex:1; padding:12px 14px; border-radius:16px; background:#fffdf9; border:1px solid #e6dcc9">
+                <div style="display:flex; align-items:center; gap:6px"><span class="ms fill" style="font-size:18px; color:#bd863f">local_fire_department</span><span style="font-family:var(--font-mono); font-size:19px; font-weight:700">12</span><span class="cap-t" style="color:#7a7264">days</span></div>
+                <div class="cap-t" style="margin-top:6px; color:#7a7264">this week 6h 40m</div>
+              </div>
+            </div>
+            <div class="secthead" style="margin-top:16px"><span class="l" style="color:#2a2621"><span class="ms" style="color:#a84a2b">history</span>Continue listening</span><span class="see" style="color:#a84a2b">See all<span class="ms" style="font-size:16px">chevron_right</span></span></div>
+            <div style="display:flex; gap:12px; padding:0 18px; overflow:hidden">
+              <div style="width:104px; flex:none"><div class="cov c2" style="width:104px; aspect-ratio:2/3"><span class="init">S</span><span class="ct">Saltwater Prophets</span><div class="playchip"><span class="ms fill">play_arrow</span></div></div><div style="height:3px; border-radius:999px; background:#e6dcc9; margin-top:7px"><i style="display:block; height:100%; width:62%; background:#a84a2b; border-radius:999px"></i></div></div>
+              <div style="width:104px; flex:none"><div class="cov c3" style="width:104px; aspect-ratio:2/3"><span class="init">G</span><span class="ct">The Gray Harvest</span><div class="playchip"><span class="ms fill">play_arrow</span></div></div><div style="height:3px; border-radius:999px; background:#e6dcc9; margin-top:7px"><i style="display:block; height:100%; width:21%; background:#a84a2b; border-radius:999px"></i></div></div>
+              <div style="width:104px; flex:none"><div class="cov c4" style="width:104px; aspect-ratio:2/3"><span class="init">V</span><span class="ct">Veils of Vantar</span></div></div>
+            </div>
+          </div>
+          <div class="tabbar" style="background:#fffdf9f2; border-top:1px solid #e6dcc9">
+            <div class="tab on" style="color:#2a2621"><span class="pill" style="background:#a84a2b22"><span class="ms fill" style="color:#a84a2b">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab" style="color:#a89f8f"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab" style="color:#a89f8f"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab" style="color:#a89f8f"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab" style="color:#a89f8f"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n rv" style="top:120px; left:60px">1</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>Light-mode tokens defined</b> — paper scaffold <span class="mono-t">#f6f1e8</span>, card <span class="mono-t">#fffdf9</span>, text <span class="mono-t">#2a2621</span> (13.4:1 measured), accent shifts to <span class="mono-t">#a84a2b</span> to hold 5.0:1 on cream (AA for links &amp; small text). The gold/cream wordmark rule is untouched (it's already brand-locked). This is the theme D-CONSIST always required and no v1 frame showed.
+            <span class="rvnote">proves reactive theming, not just claims it</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="motionspec"><h4>Reduced-motion &amp; theme addendum — Home (D-A11Y)</h4><table>
+      <tr><td>Reduce Motion ON</td><td>CoverGlow breathe → static wash; shelf stagger → single 120ms fade; EmberBurst on streak → one non-animated confetti frame then fade</td></tr>
+      <tr><td>quick-play feedback</td><td>tile playing-ring + "Playing now" caption + mini dock; hero never mutates from a shelf tap</td></tr>
+      <tr><td>first out-loud second</td><td>if output route = speaker and no BT/wired device, dock shows one-time "Playing out loud" chip with inline mute for 3s</td></tr>
+      <tr><td>Dynamic Type XXL</td><td>hero title clamps to 2 lines then truncates; dashboard cards grow vertically; shelf caption wraps, tile art size fixed</td></tr>
+      <tr><td>header status line</td><td>priority order: unread social &gt; streak-at-risk &gt; release this week &gt; plain greeting; cross-fades DUR.base when the top item changes; whole line is one tap target routing to its source</td></tr>
+      <tr><td>resume bar (Option B)</td><td>hero collapses to the 44px pinned bar on scroll &gt;120px; title + progress + Resume + search; expands back when scrolled to top; status line folds into the avatar badge while collapsed</td></tr>
+      <tr><td>avatar badge</td><td>real unread count (club replies, follows, finished downloads); tap = More/account, long-press = notifications list; announces "N unread" to VoiceOver</td></tr>
+    </table></div>
+  </div>
+
+  <div class="section" id="parity">
+    <div class="eyebrow">Screen 01 · Home</div>
+    <h2>1:1 parity — screens carried over unchanged</h2>
+    <p class="sub">These original screens needed no in-house changes; they are reproduced here verbatim so every original Home screen has a v2 counterpart for side-by-side comparison.</p>
+    <div class="frames">
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Shell anatomy <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">Bottom chrome stack on a browse screen: toast band → mini dock → tab bar. Library is lit because this book grid was pushed from Library.</div>
+          <div class="nochange-note">Reproduced from 01-home.html · no in-house adjustment</div></div>
+        <div class="phone"><div class="screen short" style="height:520px; justify-content:flex-end">
+          <div style="flex:1; padding:18px; display:flex; flex-direction:column; gap:12px; opacity:.35">
+            <div class="skel" style="height:26px; width:40%"></div>
+            <div style="display:flex; gap:12px">
+              <div class="skel" style="width:104px; aspect-ratio:2/3"></div>
+              <div class="skel" style="width:104px; aspect-ratio:2/3"></div>
+              <div class="skel" style="width:104px; aspect-ratio:2/3"></div>
+            </div>
+            <div class="skel" style="height:26px; width:55%"></div>
+          </div>
+          <div class="toast" style="position:relative; left:auto; transform:none; margin:0 auto 12px"><span class="ms">check_circle</span><span class="tx">Marked finished</span><span class="act">Edit date</span><span class="act" style="color:var(--muted)">Undo</span></div>
+          <div class="mini" style="position:relative; left:10px; right:10px; bottom:auto; margin:0 10px 8px">
+            <div class="prog"><i style="width:38%"></i></div>
+            <div class="row">
+              <div class="cov c1" style="width:38px; height:38px; border-radius:8px; padding:5px"><span class="init" style="font-size:26px">C</span></div>
+              <div style="flex:1; min-width:0">
+                <div style="font-size:13px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">The Cinder Crown</div>
+                <div class="mono-t" style="font-size:11px">2:14:06 / 5:52:30</div>
+              </div>
+              <span class="ms" style="font-size:24px; color:var(--text)">replay_30</span>
+              <span class="ms fill" style="font-size:32px; color:var(--accent)">play_circle</span>
+              <span class="ms" style="font-size:24px; color:var(--text)">forward_30</span>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab on"><span class="pill"><span class="ms fill">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n" style="bottom:196px; left:178px">1</span>
+          <span class="n" style="bottom:118px; right:20px">2</span>
+          <span class="n" style="bottom:30px; left:106px">3</span>
+          <span class="n" style="bottom:30px; left:218px">4</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Action toast · tap "Edit date" / "Undo"</b> — toasts can now carry actions (D-FINISH); action toasts live 4000ms vs 1900ms for plain confirms, and adopt the user's accent (D-CONSIST).
+            <span class="anim">slide-up + fade DUR.base · action press = POP_SPRING scale pop</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Mini dock transport · tap</b> — skip-back / play-pause / skip-forward inline; amounts follow the user's skip settings. Swipe the dock horizontally to skip (new). Tap cover or title opens the full player.
+            <span class="anim">FadeInUp DUR.slow on first mount · play glyph cross-fade DUR.fast · swipe-skip shows ± bloom</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Library tab (lit) · re-tap</b> — pushed book grid keeps Library lit (D-NAV); re-tap pops to the Library root and scrolls to top; re-tap again focuses search.
+            <span class="anim">pill pop POP_SPRING · select haptic</span></span></div>
+          <div class="li"><span class="no">4</span><span class="tx"><b>Now tab · tap</b> — the flagship player tab, unchanged as the center anchor. When nothing is playing it auto-loads your latest book paused ("warming the hearth"), never auto-plays.</span></span></div>
+        </div>
+      </div>
+
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Home — nothing playing <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">Paused state: the hero becomes a Continue card with a Resume pill; the club shelf and recommendation rows are visible. Mini dock stays hidden — Resume is the ambassador.</div>
+          <div class="nochange-note">Reproduced from 01-home.html · no in-house adjustment</div></div>
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>21:14</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_5_bar</span></span></div>
+          <div class="body" style="overflow:hidden">
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 18px 4px">
+              <div class="eyebrow-t" style="color:rgba(244,241,234,.85)">Good night, Jordan</div>
+              <div class="iconbtn" style="width:36px; height:36px"><span class="ms" style="font-size:19px">search</span></div>
+            </div>
+            <div style="position:relative; height:190px; margin:8px 12px 0; border-radius:20px; overflow:hidden; background:linear-gradient(180deg, #3e5d6e 0%, #22333c 50%, #141d22 100%)">
+              <span style="position:absolute; right:-3%; top:-16%; font-size:170px; font-weight:800; line-height:1; color:rgba(255,255,255,.09)">S</span>
+              <div style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,.08), rgba(10,14,17,.55) 80%)"></div>
+              <div style="position:relative; padding:15px 18px 0">
+                <div style="font-size:10px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; color:rgba(255,255,255,.72)">Continue</div>
+                <div style="font-size:21px; font-weight:700; color:#fff; margin-top:5px">Saltwater Prophets</div>
+                <div style="font-size:12.5px; color:rgba(255,255,255,.75); margin-top:3px">Ilsa Brandt · 3h 12m left</div>
+              </div>
+              <div style="position:absolute; left:18px; right:18px; bottom:56px; display:flex; align-items:center; gap:10px">
+                <div class="track" style="flex:1; background:rgba(255,255,255,.2)"><i style="width:62%; background:#cfe5ef"></i></div>
+                <span style="font-family:var(--font-mono); font-size:11px; color:rgba(255,255,255,.85)">62%</span>
+              </div>
+              <div style="position:absolute; left:18px; bottom:12px; display:inline-flex; align-items:center; gap:8px; padding:10px 22px; border-radius:14px; background:#cfe5ef; color:#12242e; font-weight:700; font-size:14px"><span class="ms fill" style="font-size:19px">play_arrow</span>Resume</div>
+            </div>
+            <div style="display:flex; gap:10px; padding:12px 12px 0">
+              <div class="card" style="flex:1.2; padding:12px 14px">
+                <div style="display:flex; align-items:center; justify-content:space-between"><span style="font-size:12px; font-weight:700; color:var(--text)">Up next</span><span class="ms" style="font-size:17px; color:var(--muted)">queue_music</span></div>
+                <div class="cap-t" style="margin-top:9px; color:var(--muted)">4 queued · Auto</div>
+              </div>
+              <div class="card" style="flex:1; padding:12px 14px">
+                <div style="display:flex; align-items:center; gap:6px"><span class="ms fill" style="font-size:18px; color:var(--hearth)">local_fire_department</span><span style="font-family:var(--font-mono); font-size:19px; font-weight:700; color:var(--text)">12</span><span class="cap-t" style="color:var(--muted)">days</span></div>
+                <div class="cap-t" style="margin-top:6px; color:var(--muted)">streak on the line — 22 min today keeps it</div>
+              </div>
+            </div>
+            <div class="secthead" style="margin-top:16px"><span class="l"><span class="ms">diversity_3</span>Your book clubs</span><span class="see">See all<span class="ms" style="font-size:16px">chevron_right</span></span></div>
+            <div style="display:flex; gap:12px; padding:0 18px">
+              <div class="card" style="width:150px; padding:10px; flex:none">
+                <div style="display:flex; gap:9px; align-items:center">
+                  <div class="cov c1" style="width:36px; height:36px; border-radius:8px; padding:4px"></div>
+                  <div style="min-width:0">
+                    <div style="font-size:12.5px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">Night Shift Readers</div>
+                    <div class="cap-t" style="color:var(--muted)">3 new notes</div>
+                  </div>
+                </div>
+              </div>
+              <div class="card" style="width:150px; padding:10px; flex:none">
+                <div style="display:flex; gap:9px; align-items:center">
+                  <div class="cov c4" style="width:36px; height:36px; border-radius:8px; padding:4px"></div>
+                  <div style="min-width:0">
+                    <div style="font-size:12.5px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">Emberfall Fans</div>
+                    <div class="cap-t" style="color:var(--muted)">Reading now</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="secthead" style="margin-top:16px"><span class="l"><span class="ms">auto_awesome</span>Because you finished Hollow Reign</span></div>
+            <div style="display:flex; gap:12px; padding:0 18px; overflow:hidden">
+              <div style="width:104px; flex:none"><div class="cov c5" style="width:104px; aspect-ratio:2/3"><span class="init">T</span><span class="ct">The Tidewalker</span></div><div class="cap-t" style="margin-top:6px; color:var(--muted)">N. Halloway</div></div>
+              <div style="width:104px; flex:none"><div class="cov c7" style="width:104px; aspect-ratio:2/3"><span class="init">B</span><span class="ct">Bone Orchard</span></div><div class="cap-t" style="margin-top:6px; color:var(--muted)">C. Mirelles</div></div>
+              <div style="width:104px; flex:none"><div class="cov c8" style="width:104px; aspect-ratio:2/3"><span class="init">L</span></div></div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab on"><span class="pill"><span class="ms fill">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n" style="top:238px; left:110px">1</span>
+          <span class="n" style="top:330px; right:26px">2</span>
+          <span class="n" style="top:436px; left:150px">3</span>
+          <span class="n" style="top:560px; left:210px">4</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Resume pill · tap</b> — 1-tap back into the book (kept), tinted from cover art. <b>Hero long-press</b> — actions sheet (kept).
+            <span class="anim">press POP_SPRING · on resume, pill morphs into the playing hero's transport</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Streak nudge</b> <span class="chip" style="font-size:9px; padding:2px 7px">new</span> — when today has no listening yet, the streak tile explains what keeps it alive. Honest, glanceable motivation.</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Club cards · tap</b> — into the club room. Cards now show an unread-notes count and reserve their height with skeletons while loading — no more layout shift.
+            <span class="anim">skeleton shimmer 1600ms → content cross-fade DUR.base</span></span></div>
+          <div class="li"><span class="no">4</span><span class="tx"><b>Recommendation shelf</b> — taste-engine rows keep their server-provided titles and now declare their own leading icon in shelf metadata (no more string-guessing).</span></span></div>
+        </div>
+      </div>
+
+      <div class="frameunit wide">
+        <div class="framecap"><div class="t">State board <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">Left to right: skeleton loading (replaces the full-screen spinner) · first-run empty · load error · offline.</div>
+          <div class="nochange-note">Reproduced from 01-home.html · no in-house adjustment</div></div>
+        <div style="display:flex; gap:18px; flex-wrap:wrap">
+          <!-- skeleton -->
+          <div class="phone" style="width:260px; padding:8px; border-radius:34px"><div class="screen short" style="width:244px; height:430px; border-radius:26px">
+            <div style="padding:16px 14px; display:flex; flex-direction:column; gap:12px">
+              <div class="skel" style="height:12px; width:45%"></div>
+              <div class="skel" style="height:150px; border-radius:16px"></div>
+              <div style="display:flex; gap:8px"><div class="skel" style="flex:1.2; height:64px; border-radius:14px"></div><div class="skel" style="flex:1; height:64px; border-radius:14px"></div></div>
+              <div class="skel" style="height:14px; width:55%"></div>
+              <div style="display:flex; gap:8px">
+                <div class="skel" style="width:66px; aspect-ratio:2/3"></div>
+                <div class="skel" style="width:66px; aspect-ratio:2/3"></div>
+                <div class="skel" style="width:66px; aspect-ratio:2/3"></div>
+              </div>
+            </div>
+          </div></div>
+          <!-- first run -->
+          <div class="phone" style="width:260px; padding:8px; border-radius:34px"><div class="screen short" style="width:244px; height:430px; border-radius:26px">
+            <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px; text-align:center">
+              <div style="width:64px; height:64px; border-radius:20px; background:var(--accent-wash); display:flex; align-items:center; justify-content:center"><span class="ms fill" style="font-size:34px; color:var(--hearth)">local_fire_department</span></div>
+              <div style="font-size:17px; font-weight:700; color:var(--text); margin-top:14px">Your hearth is ready</div>
+              <div style="font-size:12px; color:var(--muted); margin-top:6px; line-height:1.5">Pick a book and it'll be waiting here,<br>right where you left it.</div>
+              <div class="btn primary" style="margin-top:16px; font-size:13px; padding:11px 20px"><span class="ms" style="font-size:17px">auto_stories</span>Browse your library</div>
+              <div class="btn ghost" style="margin-top:4px; font-size:12px">Recently added ↓</div>
+            </div>
+          </div></div>
+          <!-- error -->
+          <div class="phone" style="width:260px; padding:8px; border-radius:34px"><div class="screen short" style="width:244px; height:430px; border-radius:26px">
+            <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px; text-align:center">
+              <div style="width:64px; height:64px; border-radius:20px; background:var(--fill); display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:32px; color:var(--muted)">cloud_off</span></div>
+              <div style="font-size:16px; font-weight:700; color:var(--text); margin-top:14px">Couldn't reach your server</div>
+              <div style="font-size:12px; color:var(--muted); margin-top:6px; line-height:1.5">Shelfside is not answering.<br>Your downloads still work.</div>
+              <div class="btn primary" style="margin-top:16px; font-size:13px; padding:11px 20px"><span class="ms" style="font-size:17px">refresh</span>Try again</div>
+              <div class="btn ghost" style="margin-top:4px; font-size:12px">Go to downloads</div>
+            </div>
+          </div></div>
+          <!-- offline -->
+          <div class="phone" style="width:260px; padding:8px; border-radius:34px"><div class="screen short" style="width:244px; height:430px; border-radius:26px">
+            <div style="display:flex; align-items:center; gap:8px; margin:12px 12px 0; padding:9px 12px; border-radius:12px; background:var(--fill); border:1px solid var(--border)">
+              <span class="ms" style="font-size:16px; color:var(--muted)">cloud_off</span>
+              <span style="flex:1; font-size:11px; font-weight:600; color:var(--muted)">Offline — downloaded books only</span>
+              <span style="font-size:11px; font-weight:700; color:var(--accent); border:1px solid #4a3029; border-radius:999px; padding:4px 10px">Retry</span>
+            </div>
+            <div style="padding:14px 14px 0">
+              <div style="font-size:13px; font-weight:700; color:var(--text)">Continue listening</div>
+              <div style="display:flex; gap:8px; margin-top:10px">
+                <div style="width:66px"><div class="cov c1" style="width:66px; aspect-ratio:2/3"><div class="dl-badge" style="width:16px; height:16px"><span class="ms" style="font-size:10px">download_done</span></div></div><div class="track" style="margin-top:5px; height:3px"><i style="width:38%"></i></div></div>
+                <div style="width:66px"><div class="cov c4" style="width:66px; aspect-ratio:2/3"><div class="dl-badge" style="width:16px; height:16px"><span class="ms" style="font-size:10px">download_done</span></div></div><div class="track" style="margin-top:5px; height:3px"><i style="width:87%"></i></div></div>
+                <div style="width:66px"><div class="cov c3" style="width:66px; aspect-ratio:2/3"><div class="dl-badge" style="width:16px; height:16px"><span class="ms" style="font-size:10px">download_done</span></div></div><div class="track" style="margin-top:5px; height:3px"><i style="width:12%"></i></div></div>
+              </div>
+              <div style="font-size:13px; font-weight:700; color:var(--text); margin-top:14px">On this device · 9 books</div>
+              <div style="display:flex; gap:8px; margin-top:10px">
+                <div class="cov c5" style="width:66px; aspect-ratio:2/3"></div>
+                <div class="cov c7" style="width:66px; aspect-ratio:2/3"></div>
+                <div class="cov c8" style="width:66px; aspect-ratio:2/3"></div>
+              </div>
+            </div>
+          </div></div>
+        </div>
+        <div class="legend">
+          <div class="li"><span class="no">·</span><span class="tx"><b>Skeleton loading</b> — mirrors the real layout (hero, dashboard, shelf) so content lands without reflow. Replaces the "Loading {server}…" full-screen spinner.
+            <span class="anim">shimmer 1600ms loop → per-block cross-fade DUR.base as data arrives</span></span></div>
+          <div class="li"><span class="no">·</span><span class="tx"><b>First-run empty</b> — a warm invitation instead of a lonely greeting; primary CTA to Library, secondary anchor to Recently-added below (server libraries are rarely truly empty).</span></span></div>
+          <div class="li"><span class="no">·</span><span class="tx"><b>Load error</b> — names the server, offers retry and a downloads escape hatch. Failure no longer masquerades as emptiness.</span></span></div>
+          <div class="li"><span class="no">·</span><span class="tx"><b>Offline</b> — status chip with an explicit bordered Retry button (today the whole pill is secretly the button); shelves rebuild from the downloaded catalog with progress + badges intact (kept behavior, now visibly framed).</span></span></div>
+        </div>
+      </div>
+
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Shelf screen <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">Pushed from "Continue listening · See all". Home stays lit (D-NAV). Same tiles, same quick-play, same long-press grammar.</div>
+          <div class="nochange-note">Reproduced from 01-home.html · no in-house adjustment</div></div>
+        <div class="phone"><div class="screen" style="height:640px">
+          <div class="statusbar"><span>9:31</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div style="display:flex; align-items:center; gap:12px; padding:6px 16px 10px">
+            <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:20px">arrow_back</span></div>
+            <div>
+              <div style="font-size:19px; font-weight:700; color:var(--text)">Continue listening</div>
+              <div class="cap-t" style="color:var(--muted)">11 books</div>
+            </div>
+          </div>
+          <div class="body" style="padding:4px 16px 0">
+            <div style="display:flex; flex-wrap:wrap; gap:12px">
+              <div style="width:104px"><div class="cov c2" style="width:104px; aspect-ratio:2/3"><span class="init">S</span><span class="ct">Saltwater Prophets</span><div class="playchip"><span class="ms fill">play_arrow</span></div></div><div class="track" style="margin-top:6px; height:3px"><i style="width:62%"></i></div><div class="cap-t" style="margin-top:5px; color:var(--muted)">Ilsa Brandt</div></div>
+              <div style="width:104px"><div class="cov c3" style="width:104px; aspect-ratio:2/3"><span class="init">G</span><span class="ct">The Gray Harvest</span><div class="playchip"><span class="ms fill">play_arrow</span></div></div><div class="track" style="margin-top:6px; height:3px"><i style="width:21%"></i></div><div class="cap-t" style="margin-top:5px; color:var(--muted)">Tomas Ashe</div></div>
+              <div style="width:104px"><div class="cov c4" style="width:104px; aspect-ratio:2/3"><span class="init">V</span><span class="ct">Veils of Vantar</span><div class="playchip"><span class="ms fill">play_arrow</span></div></div><div class="track" style="margin-top:6px; height:3px"><i style="width:87%"></i></div><div class="cap-t" style="margin-top:5px; color:var(--muted)">R. K. Onwe</div></div>
+              <div style="width:104px"><div class="cov c6" style="width:104px; aspect-ratio:2/3"><span class="init">H</span><span class="ct">Hollow Reign</span><div class="playchip"><span class="ms fill">play_arrow</span></div></div><div class="track" style="margin-top:6px; height:3px"><i style="width:44%"></i></div><div class="cap-t" style="margin-top:5px; color:var(--muted)">C. Mirelles</div></div>
+              <div style="width:104px"><div class="cov c5" style="width:104px; aspect-ratio:2/3"><span class="init">E</span><span class="ct">Emberfall: Kindling</span><div class="playchip"><span class="ms fill">play_arrow</span></div></div><div class="track" style="margin-top:6px; height:3px"><i style="width:9%"></i></div><div class="cap-t" style="margin-top:5px; color:var(--muted)">Maren Voss</div></div>
+              <div style="width:104px"><div class="cov c7" style="width:104px; aspect-ratio:2/3"><span class="init">W</span><span class="ct">Winter's Ledger</span><div class="playchip"><span class="ms fill">play_arrow</span></div></div><div class="track" style="margin-top:6px; height:3px"><i style="width:71%"></i></div><div class="cap-t" style="margin-top:5px; color:var(--muted)">N. Halloway</div></div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab on"><span class="pill"><span class="ms fill">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n" style="top:64px; left:18px">1</span>
+          <span class="n" style="top:200px; left:96px">2</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Back · tap or edge-swipe</b> — standard pop; the sheet version couldn't do this. Header carries the shelf's real name and count.</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Tiles</b> — identical grammar to Home and Library: tap = detail, quick-play chip = 1-tap audio, long-press = actions sheet (D-PLAY, D-ACTIONS). One grid engine everywhere.</span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footnav"><a href="index-v2.html" class="v2" style="color:var(--review)">← v2 Overview</a><a href="02-library-v2.html" class="v2" style="color:var(--review)">02 · Library &amp; Search (v2) →</a></div>
+</div>
+</body>
+</html>

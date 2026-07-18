@@ -1,0 +1,900 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HearthShelf Redesign v3 — Home</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Geist+Mono:wght@400..700&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+    />
+    <link rel="stylesheet" href="hearth.css" />
+    <link rel="stylesheet" href="hearth-v3.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="masthead">
+        <div class="wordmark">
+          <span class="lt">Hearth</span><span class="bd">Shelf</span
+          ><span class="sub"> · Mobile Redesign — Home</span><span class="v3tag">V3 proposal</span>
+        </div>
+        <div class="tagline">
+          V3 revision checked against the current Home implementation.<br />The bleeding live hero
+          stays; the safe-area header gains server/library context, Search, and Downloads.
+        </div>
+      </div>
+      <div class="pagenav">
+        <a href="index-v3.html" class="v3">v3 Overview</a>
+        <a href="01-home-v3.html" class="v3 on">Home</a>
+        <a href="02-library-v3.html" class="v3">Library &amp; Search</a>
+        <a href="03-player-v3.html" class="v3">Player</a>
+        <a href="04-book-v3.html" class="v3">Book &amp; Reader</a>
+        <a href="05-stats-clubs-v3.html" class="v3">Stats &amp; Clubs</a>
+        <a href="06-settings-v3.html" class="v3">Settings</a>
+        <a href="07-system-v3.html" class="v3">Sign-in &amp; System</a>
+        <a href="01-home.html" style="margin-left: 14px; opacity: 0.7">↩ v1</a>
+      </div>
+
+      <!-- ================================================================ -->
+
+      <div class="beta-audit">
+        <div class="beta-kicker">Production-beta code audit · 2026-07-14</div>
+        <h3><span class="beta-status">REVISE BETA</span> Preserve the bleed; add utility</h3>
+        <p>
+          Verified against <code>app/(tabs)/index.tsx</code> and
+          <code>src/player/MiniPlayerDock.tsx</code>.
+          <a href="PRODUCTION-BETA-AUDIT.md" style="color: var(--accent)">Read the code audit →</a>
+        </p>
+      </div>
+
+      <div class="section" id="quickplay">
+        <div class="eyebrow">Screen 01 · Home</div>
+        <h2>Keep the live hero. Make the header earn its space</h2>
+        <p class="sub">
+          The beta intentionally uses one rich, artwork-led hero for Resume and active playback, and
+          hides the global mini-player on Home. V3 keeps that behavior. The change is a compact
+          utility row inside the bleed: active server/library context, global Search, and Downloads.
+        </p>
+
+        <div class="frames">
+          <div class="frameunit">
+            <div class="framecap">
+              <div class="t">
+                Home — useful header + live playback hero
+                <span class="chip v3fix">v3 recommendation</span>
+              </div>
+              <div class="d">
+                The artwork still bleeds into the safe area. A compact overlay identifies the active
+                server/library and exposes Search and Downloads. The hero remains Home’s single live
+                playback surface, matching the beta architecture.
+              </div>
+            </div>
+            <div class="phone">
+              <div class="screen">
+                <!-- Artwork wash starts at y=0 so the hero truly bleeds behind status + utility. -->
+                <div
+                  style="
+                    position: absolute;
+                    z-index: 0;
+                    inset: 0 0 auto;
+                    height: 340px;
+                    background:
+                      radial-gradient(90% 72% at 78% 24%, rgba(146, 78, 56, 0.88), transparent 62%),
+                      linear-gradient(180deg, #5b3024 0%, #321d17 55%, var(--scaffold) 100%);
+                  "
+                ></div>
+                <div class="statusbar">
+                  <span>9:30</span><span class="dot"></span
+                  ><span class="right"
+                    ><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span
+                    ><span class="ms">battery_full</span></span
+                  >
+                </div>
+                <div class="body" style="overflow: hidden">
+                  <div
+                    style="
+                      display: flex;
+                      align-items: center;
+                      justify-content: space-between;
+                      padding: 7px 14px 5px 18px;
+                    "
+                  >
+                    <div style="min-width: 0">
+                      <div class="eyebrow-t" style="color: rgba(244, 241, 234, 0.88)">
+                        Good evening, Jordan
+                      </div>
+                      <div
+                        style="
+                          display: flex;
+                          align-items: center;
+                          gap: 5px;
+                          margin-top: 4px;
+                          color: rgba(244, 241, 234, 0.78);
+                          font-size: 11.5px;
+                          font-weight: 650;
+                        "
+                      >
+                        <span
+                          style="
+                            width: 7px;
+                            height: 7px;
+                            border-radius: 50%;
+                            background: var(--success);
+                            box-shadow: 0 0 0 2px rgba(127, 168, 107, 0.16);
+                          "
+                        ></span
+                        ><span>Shelfside · Audiobooks</span
+                        ><span class="ms" style="font-size: 15px">expand_more</span>
+                      </div>
+                    </div>
+                    <div style="display: flex; gap: 6px">
+                      <div class="iconbtn" style="width: 44px; height: 44px">
+                        <span class="ms" style="font-size: 21px">search</span>
+                      </div>
+                      <div class="iconbtn" style="width: 44px; height: 44px; position: relative">
+                        <span class="ms" style="font-size: 21px">download</span
+                        ><span
+                          style="
+                            position: absolute;
+                            right: 5px;
+                            top: 5px;
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 50%;
+                            background: var(--accent);
+                            border: 1.5px solid var(--high);
+                          "
+                        ></span>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- Current beta PlayerHero remains the single Home playback ambassador. -->
+                  <div
+                    style="
+                      position: relative;
+                      height: 205px;
+                      margin: 0;
+                      overflow: hidden;
+                      background: transparent;
+                    "
+                  >
+                    <span
+                      style="
+                        position: absolute;
+                        right: -4%;
+                        top: -14%;
+                        font-size: 160px;
+                        font-weight: 800;
+                        line-height: 1;
+                        color: rgba(255, 255, 255, 0.09);
+                      "
+                      >C</span
+                    >
+                    <div
+                      style="
+                        position: absolute;
+                        inset: 0;
+                        background: linear-gradient(
+                          180deg,
+                          rgba(0, 0, 0, 0.04),
+                          rgba(20, 14, 10, 0.18) 54%,
+                          var(--scaffold) 100%
+                        );
+                      "
+                    ></div>
+                    <div style="position: relative; padding: 14px 18px 0">
+                      <div
+                        style="
+                          font-size: 10px;
+                          font-weight: 700;
+                          letter-spacing: 0.18em;
+                          text-transform: uppercase;
+                          color: rgba(255, 255, 255, 0.75);
+                        "
+                      >
+                        Now playing
+                      </div>
+                      <div style="font-size: 20px; font-weight: 700; color: #fff; margin-top: 5px">
+                        The Cinder Crown
+                      </div>
+                      <div
+                        style="font-size: 12px; color: rgba(255, 255, 255, 0.78); margin-top: 3px"
+                      >
+                        Maren Voss · Ch 12
+                      </div>
+                    </div>
+                    <div style="position: absolute; left: 18px; right: 18px; bottom: 12px">
+                      <div style="display: flex; align-items: center; gap: 10px">
+                        <div class="track" style="flex: 1; background: rgba(255, 255, 255, 0.22)">
+                          <i style="width: 38%; background: #ffd9c4"></i>
+                        </div>
+                        <span
+                          style="
+                            font-family: var(--font-mono);
+                            font-size: 11px;
+                            color: rgba(255, 255, 255, 0.85);
+                          "
+                          >38%</span
+                        >
+                      </div>
+                      <div
+                        style="
+                          display: flex;
+                          align-items: center;
+                          justify-content: flex-end;
+                          gap: 9px;
+                          margin-top: 12px;
+                        "
+                      >
+                        <span class="ms" style="font-size: 24px; color: #fff">replay_30</span
+                        ><span
+                          style="
+                            width: 42px;
+                            height: 42px;
+                            border-radius: 50%;
+                            background: #fff0e6;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                          "
+                          ><span class="ms fill" style="font-size: 26px; color: #6e3f30"
+                            >pause</span
+                          ></span
+                        ><span class="ms" style="font-size: 24px; color: #fff">forward_30</span>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- Shelf state mirrors the live hero without introducing a second player. -->
+                  <div class="secthead" style="margin-top: 16px">
+                    <span class="l"><span class="ms">history</span>Continue listening</span
+                    ><span class="see"
+                      >See all<span class="ms" style="font-size: 16px">chevron_right</span></span
+                    >
+                  </div>
+                  <div style="display: flex; gap: 12px; padding: 0 18px; overflow: hidden">
+                    <div style="width: 104px; flex: none">
+                      <div
+                        class="cov c2"
+                        style="
+                          width: 104px;
+                          aspect-ratio: 2/3;
+                          outline: 2px solid var(--accent);
+                          outline-offset: 2px;
+                        "
+                      >
+                        <span class="init">S</span><span class="ct">Saltwater Prophets</span>
+                        <div
+                          class="playchip"
+                          style="background: var(--accent); border-color: var(--accent)"
+                        >
+                          <span class="ms fill" style="color: var(--on-accent)">graphic_eq</span>
+                        </div>
+                      </div>
+                      <div class="track" style="margin-top: 7px; height: 3px">
+                        <i style="width: 62%"></i>
+                      </div>
+                      <div
+                        class="cap-t"
+                        style="margin-top: 6px; color: var(--accent); font-weight: 700"
+                      >
+                        Playing now
+                      </div>
+                    </div>
+                    <div style="width: 104px; flex: none">
+                      <div class="cov c3" style="width: 104px; aspect-ratio: 2/3">
+                        <span class="init">G</span><span class="ct">The Gray Harvest</span>
+                        <div class="playchip"><span class="ms fill">play_arrow</span></div>
+                      </div>
+                      <div class="track" style="margin-top: 7px; height: 3px">
+                        <i style="width: 21%"></i>
+                      </div>
+                      <div class="cap-t" style="margin-top: 6px; color: var(--muted)">
+                        Tomas Ashe
+                      </div>
+                    </div>
+                    <div style="width: 104px; flex: none">
+                      <div class="cov c4" style="width: 104px; aspect-ratio: 2/3">
+                        <span class="init">V</span><span class="ct">Veils of Vantar</span>
+                        <div class="playchip"><span class="ms fill">play_arrow</span></div>
+                      </div>
+                      <div class="track" style="margin-top: 7px; height: 3px">
+                        <i style="width: 87%"></i>
+                      </div>
+                      <div class="cap-t" style="margin-top: 6px; color: var(--muted)">
+                        R. K. Onwe
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <!-- MiniPlayerDock is intentionally hidden on Home in the current beta. -->
+
+                <div class="tabbar">
+                  <div class="tab on">
+                    <span class="pill"><span class="ms fill">home</span></span
+                    ><span class="lbl">Home</span>
+                  </div>
+                  <div class="tab">
+                    <span class="pill"><span class="ms">auto_stories</span></span
+                    ><span class="lbl">Library</span>
+                  </div>
+                  <div class="tab">
+                    <span class="pill"><span class="ms">play_circle</span></span
+                    ><span class="lbl">Now</span>
+                  </div>
+                  <div class="tab">
+                    <span class="pill"><span class="ms">insights</span></span
+                    ><span class="lbl">Stats</span>
+                  </div>
+                  <div class="tab">
+                    <span class="pill"><span class="ms">menu</span></span
+                    ><span class="lbl">More</span>
+                  </div>
+                </div>
+                <span class="n rv" style="top: 52px; right: 16px">1</span>
+                <span class="n rv" style="top: 322px; left: 118px">2</span>
+                <span class="n rv" style="top: 410px; left: 98px">3</span>
+                <span class="n rv" style="bottom: 120px; right: 20px">4</span>
+              </div>
+            </div>
+            <div class="legend">
+              <div class="li">
+                <span class="no rv">1</span
+                ><span class="tx"
+                  ><b>Context header, not another navigation bar</b> — server/library status
+                  replaces decorative subcopy; tapping it opens the server switcher. Search stays
+                  global and Downloads gets a persistent 44px shortcut with activity status.
+                  <span class="rvnote"
+                    >adds real mobile utility without duplicating More</span
+                  ></span
+                >
+              </div>
+              <div class="li">
+                <span class="no rv">2</span
+                ><span class="tx"
+                  ><b>Live hero stays authoritative</b> — the existing PlayerHero continues to own
+                  active playback, including scrubber and transport.</span
+                >
+              </div>
+              <div class="li">
+                <span class="no rv">3</span
+                ><span class="tx"
+                  ><b>Shelf state mirrors playback</b> — the playing tile gets an equalizer and
+                  caption while the hero remains the only player on Home.</span
+                >
+              </div>
+              <div class="li">
+                <span class="no rv">4</span
+                ><span class="tx"
+                  ><b>No duplicate mini-player</b> — the current route-aware MiniPlayerDock remains
+                  hidden on Home.</span
+                >
+              </div>
+            </div>
+          </div>
+
+          <!-- ============ FRAME 2 — reach overlay ============ -->
+          <div class="frameunit">
+            <div class="framecap">
+              <div class="t">Thumb-reach audit <span class="chip v3fix">D-REACH</span></div>
+              <div class="d">
+                Overlaid on a 6.7" arc, the beta hero transport sits at the upper edge of
+                comfortable reach while navigation remains anchored at the bottom. Destructive shelf
+                long-press actions stay outside the fast-tap band.
+              </div>
+            </div>
+            <div class="phone">
+              <div class="screen">
+                <div class="statusbar">
+                  <span>9:30</span><span class="dot"></span
+                  ><span class="right"
+                    ><span class="ms">wifi</span><span class="ms">battery_full</span></span
+                  >
+                </div>
+                <div class="body" style="opacity: 0.4; overflow: hidden">
+                  <div style="padding: 10px 18px">
+                    <div class="skel" style="height: 14px; width: 45%"></div>
+                  </div>
+                  <div
+                    class="skel"
+                    style="height: 190px; margin: 8px 12px 0; border-radius: 20px"
+                  ></div>
+                  <div style="display: flex; gap: 10px; padding: 12px 12px 0">
+                    <div class="skel" style="flex: 1.2; height: 64px; border-radius: 14px"></div>
+                    <div class="skel" style="flex: 1; height: 64px; border-radius: 14px"></div>
+                  </div>
+                  <div style="display: flex; gap: 12px; padding: 16px 18px 0">
+                    <div class="skel" style="width: 104px; aspect-ratio: 2/3"></div>
+                    <div class="skel" style="width: 104px; aspect-ratio: 2/3"></div>
+                    <div class="skel" style="width: 104px; aspect-ratio: 2/3"></div>
+                  </div>
+                </div>
+                <div class="tabbar" style="opacity: 0.5">
+                  <div class="tab on">
+                    <span class="pill"><span class="ms fill">home</span></span
+                    ><span class="lbl">Home</span>
+                  </div>
+                  <div class="tab">
+                    <span class="pill"><span class="ms">auto_stories</span></span
+                    ><span class="lbl">Library</span>
+                  </div>
+                  <div class="tab">
+                    <span class="pill"><span class="ms">play_circle</span></span
+                    ><span class="lbl">Now</span>
+                  </div>
+                  <div class="tab">
+                    <span class="pill"><span class="ms">insights</span></span
+                    ><span class="lbl">Stats</span>
+                  </div>
+                  <div class="tab">
+                    <span class="pill"><span class="ms">menu</span></span
+                    ><span class="lbl">More</span>
+                  </div>
+                </div>
+                <div class="reach">
+                  <div class="hard"></div>
+                  <div class="hardlbl">stretch zone · glance only</div>
+                  <div class="arc"></div>
+                  <div class="lbl">one-handed comfortable arc (right thumb)</div>
+                </div>
+                <span class="n rv" style="top: 200px; right: 120px">1</span>
+                <span class="n rv" style="bottom: 150px; right: 30px">2</span>
+              </div>
+            </div>
+            <div class="legend">
+              <div class="li">
+                <span class="no rv">1</span
+                ><span class="tx"
+                  ><b>Hero content is glance-zone</b> — title, art and progress up top are fine to
+                  READ but should not host the only transport. v3 keeps the hero tap-to-open but
+                  relies on the dock for one-handed control.
+                  <span class="rvnote"
+                    >confirms the compact hero, adjusts control placement</span
+                  ></span
+                >
+              </div>
+              <div class="li">
+                <span class="no rv">2</span
+                ><span class="tx"
+                  ><b>All frequent actions land in the arc</b> — dock transport and tab bar stay in
+                  the comfortable band; Search and Downloads use full 44px targets even though the
+                  icons remain visually quiet.
+                  <span class="rvnote">D-REACH satisfied and shown, not claimed</span></span
+                >
+              </div>
+            </div>
+          </div>
+
+          <!-- ============ FRAME 3 — light mode ============ -->
+          <div class="frameunit">
+            <div class="framecap">
+              <div class="t">Home — light mode <span class="chip v3fix">D-A11Y</span></div>
+              <div class="d">
+                V1's suite is dark-only, yet D-CONSIST promises reactive theming everywhere. Here is
+                the light-mode Home the mockups never drew: warm paper surfaces, the hero art dimmed
+                under a cream scrim, accent and text re-derived for AA contrast.
+              </div>
+            </div>
+            <div class="phone">
+              <div class="screen" style="background: #f6f1e8; color: #2a2621">
+                <div
+                  style="
+                    position: absolute;
+                    z-index: 0;
+                    inset: 0 0 auto;
+                    height: 340px;
+                    background:
+                      radial-gradient(
+                        90% 72% at 78% 24%,
+                        rgba(176, 106, 79, 0.74),
+                        transparent 62%
+                      ),
+                      linear-gradient(180deg, #c9866a 0%, #dcb49f 54%, #f6f1e8 100%);
+                  "
+                ></div>
+                <div class="statusbar" style="color: #2a2621">
+                  <span>9:30</span><span class="dot" style="background: #2a2621"></span
+                  ><span class="right"
+                    ><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span
+                    ><span class="ms">battery_full</span></span
+                  >
+                </div>
+                <div class="body" style="overflow: hidden">
+                  <div
+                    style="
+                      display: flex;
+                      align-items: center;
+                      justify-content: space-between;
+                      padding: 7px 14px 5px 18px;
+                    "
+                  >
+                    <div style="min-width: 0">
+                      <div
+                        style="
+                          font-family: var(--font-brand);
+                          font-size: 11px;
+                          letter-spacing: 0.16em;
+                          text-transform: uppercase;
+                          color: #7a5a2e;
+                        "
+                      >
+                        Good evening, Jordan
+                      </div>
+                      <div
+                        style="
+                          display: flex;
+                          align-items: center;
+                          gap: 5px;
+                          margin-top: 4px;
+                          color: #655c4f;
+                          font-size: 11.5px;
+                          font-weight: 650;
+                        "
+                      >
+                        <span
+                          style="width: 7px; height: 7px; border-radius: 50%; background: #557a4b"
+                        ></span
+                        ><span>Shelfside · Audiobooks</span
+                        ><span class="ms" style="font-size: 15px">expand_more</span>
+                      </div>
+                    </div>
+                    <div style="display: flex; gap: 6px">
+                      <div
+                        style="
+                          width: 44px;
+                          height: 44px;
+                          border-radius: 50%;
+                          background: #ece3d3;
+                          border: 1px solid #ddd0bb;
+                          display: flex;
+                          align-items: center;
+                          justify-content: center;
+                        "
+                      >
+                        <span class="ms" style="font-size: 21px; color: #5c554a">search</span>
+                      </div>
+                      <div
+                        style="
+                          width: 44px;
+                          height: 44px;
+                          border-radius: 50%;
+                          background: #ece3d3;
+                          border: 1px solid #ddd0bb;
+                          display: flex;
+                          align-items: center;
+                          justify-content: center;
+                          position: relative;
+                        "
+                      >
+                        <span class="ms" style="font-size: 21px; color: #5c554a">download</span
+                        ><span
+                          style="
+                            position: absolute;
+                            right: 5px;
+                            top: 5px;
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 50%;
+                            background: #b64f3d;
+                            border: 1.5px solid #ece3d3;
+                          "
+                        ></span>
+                      </div>
+                    </div>
+                  </div>
+                  <div
+                    style="
+                      position: relative;
+                      height: 205px;
+                      margin: 0;
+                      overflow: hidden;
+                      background: transparent;
+                    "
+                  >
+                    <span
+                      style="
+                        position: absolute;
+                        right: -4%;
+                        top: -14%;
+                        font-size: 160px;
+                        font-weight: 800;
+                        line-height: 1;
+                        color: rgba(255, 255, 255, 0.14);
+                      "
+                      >C</span
+                    >
+                    <div
+                      style="
+                        position: absolute;
+                        inset: 0;
+                        background: linear-gradient(
+                          180deg,
+                          rgba(255, 240, 225, 0.04),
+                          rgba(255, 246, 238, 0.12) 54%,
+                          #f6f1e8 100%
+                        );
+                      "
+                    ></div>
+                    <div style="position: relative; padding: 14px 18px 0">
+                      <div
+                        style="
+                          font-size: 10px;
+                          font-weight: 700;
+                          letter-spacing: 0.18em;
+                          text-transform: uppercase;
+                          color: rgba(255, 246, 238, 0.9);
+                        "
+                      >
+                        Now playing
+                      </div>
+                      <div style="font-size: 20px; font-weight: 700; color: #fff; margin-top: 5px">
+                        The Cinder Crown
+                      </div>
+                      <div
+                        style="font-size: 12px; color: rgba(255, 246, 238, 0.85); margin-top: 3px"
+                      >
+                        Maren Voss · Ch 12
+                      </div>
+                    </div>
+                    <div
+                      style="
+                        position: absolute;
+                        left: 18px;
+                        bottom: 14px;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 8px;
+                        padding: 9px 18px;
+                        border-radius: 13px;
+                        background: #fff2e6;
+                        color: #8a4d38;
+                        font-weight: 700;
+                        font-size: 13px;
+                      "
+                    >
+                      <span class="ms fill" style="font-size: 18px">play_arrow</span>Resume
+                    </div>
+                  </div>
+                  <div style="display: flex; gap: 10px; padding: 12px 12px 0">
+                    <div
+                      style="
+                        flex: 1.2;
+                        padding: 12px 14px;
+                        border-radius: 16px;
+                        background: #fffdf9;
+                        border: 1px solid #e6dcc9;
+                      "
+                    >
+                      <div
+                        style="display: flex; align-items: center; justify-content: space-between"
+                      >
+                        <span style="font-size: 12px; font-weight: 700">Up next</span
+                        ><span class="ms" style="font-size: 17px; color: #8a827254"
+                          >queue_music</span
+                        >
+                      </div>
+                      <div class="cap-t" style="margin-top: 9px; color: #7a7264">
+                        4 queued · Auto
+                      </div>
+                    </div>
+                    <div
+                      style="
+                        flex: 1;
+                        padding: 12px 14px;
+                        border-radius: 16px;
+                        background: #fffdf9;
+                        border: 1px solid #e6dcc9;
+                      "
+                    >
+                      <div style="display: flex; align-items: center; gap: 6px">
+                        <span class="ms fill" style="font-size: 18px; color: #bd863f"
+                          >local_fire_department</span
+                        ><span
+                          style="font-family: var(--font-mono); font-size: 19px; font-weight: 700"
+                          >12</span
+                        ><span class="cap-t" style="color: #7a7264">days</span>
+                      </div>
+                      <div class="cap-t" style="margin-top: 6px; color: #7a7264">
+                        this week 6h 40m
+                      </div>
+                    </div>
+                  </div>
+                  <div class="secthead" style="margin-top: 16px">
+                    <span class="l" style="color: #2a2621"
+                      ><span class="ms" style="color: #a84a2b">history</span>Continue
+                      listening</span
+                    ><span class="see" style="color: #a84a2b"
+                      >See all<span class="ms" style="font-size: 16px">chevron_right</span></span
+                    >
+                  </div>
+                  <div style="display: flex; gap: 12px; padding: 0 18px; overflow: hidden">
+                    <div style="width: 104px; flex: none">
+                      <div class="cov c2" style="width: 104px; aspect-ratio: 2/3">
+                        <span class="init">S</span><span class="ct">Saltwater Prophets</span>
+                        <div class="playchip"><span class="ms fill">play_arrow</span></div>
+                      </div>
+                      <div
+                        style="
+                          height: 3px;
+                          border-radius: 999px;
+                          background: #e6dcc9;
+                          margin-top: 7px;
+                        "
+                      >
+                        <i
+                          style="
+                            display: block;
+                            height: 100%;
+                            width: 62%;
+                            background: #a84a2b;
+                            border-radius: 999px;
+                          "
+                        ></i>
+                      </div>
+                    </div>
+                    <div style="width: 104px; flex: none">
+                      <div class="cov c3" style="width: 104px; aspect-ratio: 2/3">
+                        <span class="init">G</span><span class="ct">The Gray Harvest</span>
+                        <div class="playchip"><span class="ms fill">play_arrow</span></div>
+                      </div>
+                      <div
+                        style="
+                          height: 3px;
+                          border-radius: 999px;
+                          background: #e6dcc9;
+                          margin-top: 7px;
+                        "
+                      >
+                        <i
+                          style="
+                            display: block;
+                            height: 100%;
+                            width: 21%;
+                            background: #a84a2b;
+                            border-radius: 999px;
+                          "
+                        ></i>
+                      </div>
+                    </div>
+                    <div style="width: 104px; flex: none">
+                      <div class="cov c4" style="width: 104px; aspect-ratio: 2/3">
+                        <span class="init">V</span><span class="ct">Veils of Vantar</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="tabbar" style="background: #fffdf9f2; border-top: 1px solid #e6dcc9">
+                  <div class="tab on" style="color: #2a2621">
+                    <span class="pill" style="background: #a84a2b22"
+                      ><span class="ms fill" style="color: #a84a2b">home</span></span
+                    ><span class="lbl">Home</span>
+                  </div>
+                  <div class="tab" style="color: #a89f8f">
+                    <span class="pill"><span class="ms">auto_stories</span></span
+                    ><span class="lbl">Library</span>
+                  </div>
+                  <div class="tab" style="color: #a89f8f">
+                    <span class="pill"><span class="ms">play_circle</span></span
+                    ><span class="lbl">Now</span>
+                  </div>
+                  <div class="tab" style="color: #a89f8f">
+                    <span class="pill"><span class="ms">insights</span></span
+                    ><span class="lbl">Stats</span>
+                  </div>
+                  <div class="tab" style="color: #a89f8f">
+                    <span class="pill"><span class="ms">menu</span></span
+                    ><span class="lbl">More</span>
+                  </div>
+                </div>
+                <span class="n rv" style="top: 120px; left: 60px">1</span>
+              </div>
+            </div>
+            <div class="legend">
+              <div class="li">
+                <span class="no rv">1</span
+                ><span class="tx"
+                  ><b>Light-mode tokens defined</b> — paper scaffold
+                  <span class="mono-t">#f6f1e8</span>, card <span class="mono-t">#fffdf9</span>,
+                  text <span class="mono-t">#2a2621</span> (13.4:1 measured), accent shifts to
+                  <span class="mono-t">#a84a2b</span> to hold 5.0:1 on cream (AA for links &amp;
+                  small text). The gold/cream wordmark rule is untouched (it's already
+                  brand-locked). This is the theme D-CONSIST always required and no v1 frame showed.
+                  <span class="rvnote">proves reactive theming, not just claims it</span></span
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="motionspec">
+          <h4>Reduced-motion &amp; theme addendum — Home (D-A11Y)</h4>
+          <table>
+            <tr>
+              <td>Reduce Motion ON</td>
+              <td>
+                CoverGlow breathe → static wash; shelf stagger → single 120ms fade; EmberBurst on
+                streak → one non-animated confetti frame then fade
+              </td>
+            </tr>
+            <tr>
+              <td>playback ownership</td>
+              <td>
+                the live hero owns Home playback; shelf tiles mirror state; MiniPlayerDock stays
+                hidden on Home
+              </td>
+            </tr>
+            <tr>
+              <td>Dynamic Type XXL</td>
+              <td>
+                hero title clamps to 2 lines then truncates; dashboard cards grow vertically; shelf
+                caption wraps, tile art size fixed
+              </td>
+            </tr>
+          </table>
+        </div>
+      </div>
+
+      <aside class="v3panel" aria-label="production beta design decision">
+        <div class="v3panel-kicker">V3 · production-beta decision</div>
+        <div class="v3decisions">
+          <div>
+            <span class="v3verb keep">Current beta</span>
+            <p>Keep the bleeding PlayerHero/ContinueHero and its real transport behavior.</p>
+          </div>
+          <div>
+            <span class="v3verb change">V3 delta</span>
+            <p>
+              Add server/library context plus Search and Downloads inside the safe-area overlay.
+            </p>
+          </div>
+          <div>
+            <span class="v3verb keep">Preserve</span>
+            <p>Keep the mini-player hidden on Home and avoid duplicate playback controls.</p>
+          </div>
+        </div>
+      </aside>
+
+      <div class="section" id="review">
+        <div class="eyebrow">Production-beta audit</div>
+        <h2>One focused Home change remains</h2>
+        <p class="sub">
+          Most of the beta Home architecture is already stronger than the consultant flow. V3 now
+          changes only the header utility layer.
+        </p>
+        <div class="motionspec">
+          <h4>Code-informed decision</h4>
+          <table>
+            <tr>
+              <td>keep</td>
+              <td>
+                artwork bleed, live PlayerHero, ContinueHero, stats, releases, clubs, and shelves
+              </td>
+            </tr>
+            <tr>
+              <td>change</td>
+              <td>safe-area utility row with server/library context, Search, and Downloads</td>
+            </tr>
+            <tr>
+              <td>ownership</td>
+              <td>Home hero owns playback; the global mini-player stays hidden on this route</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- ================================================================
+       FRAME 1 — quick-play, fixed
+       ================================================================ -->
+      <div class="footnav">
+        <a href="index-v3.html" class="v3" style="color: var(--review)">← v3 Overview</a
+        ><a href="02-library-v3.html" class="v3" style="color: var(--review)"
+          >02 · Library &amp; Search (v3) →</a
+        >
+      </div>
+    </div>
+  </body>
+</html>

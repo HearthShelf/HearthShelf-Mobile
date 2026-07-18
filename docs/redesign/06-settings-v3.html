@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HearthShelf Redesign v3 — Settings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Geist+Mono:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<link rel="stylesheet" href="hearth.css">
+<link rel="stylesheet" href="hearth-v3.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div class="wordmark"><span class="lt">Hearth</span><span class="bd">Shelf</span><span class="sub"> · Mobile Redesign — Settings</span><span class="v3tag">V3 proposal</span></div>
+    <div class="tagline">V3 revision checked against the current More and settings routes.<br>The beta already implements the recommended account hero and descriptive grouped destinations.</div>
+  </div>
+  <div class="pagenav">
+    <a href="index-v3.html" class="v3">v3 Overview</a>
+    <a href="01-home-v3.html" class="v3">Home</a>
+    <a href="02-library-v3.html" class="v3">Library &amp; Search</a>
+    <a href="03-player-v3.html" class="v3">Player</a>
+    <a href="04-book-v3.html" class="v3">Book &amp; Reader</a>
+    <a href="05-stats-clubs-v3.html" class="v3">Stats &amp; Clubs</a>
+    <a href="06-settings-v3.html" class="v3 on">Settings</a>
+    <a href="07-system-v3.html" class="v3">Sign-in &amp; System</a>
+    <a href="06-settings.html" style="margin-left:14px; opacity:.7">↩ v1</a>
+  </div>
+
+
+  <div class="beta-audit">
+    <div class="beta-kicker">Production-beta code audit · 2026-07-14</div>
+    <h3><span class="beta-status">CURRENT BETA — KEEP</span> No More-screen redesign required</h3>
+    <p>Verified against <code>app/(tabs)/more.tsx</code> and the current settings routes. <a href="PRODUCTION-BETA-AUDIT.md" style="color:var(--accent)">Read the code audit →</a></p>
+  </div>
+
+  <div class="section" id="settings-fix">
+    <div class="eyebrow">Screen 06 · Settings</div>
+    <h2>The current More screen is already the v3 answer</h2>
+    <p class="sub">The beta already ships an account hero, grouped destinations, and descriptions that name the controls inside. V3 keeps that screen. Future work belongs inside accessibility semantics and deep-link focus, not a new More layout.</p>
+
+    <div class="frames">
+      <div class="frameunit">
+        <div class="framecap"><div class="t">More — current beta, retained <span class="chip v3fix">v3 revision</span></div>
+          <div class="d">The current account hero and descriptive grouped destinations are retained. Theme remains inside Appearance; the More hub stays scannable and predictable.</div></div>
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="body">
+            <div style="padding:12px 18px 0"><div class="hero-t" style="font-size:26px">More</div><div class="meta-t" style="margin-top:4px">Settings, account, and this device</div></div><div class="card" style="margin:12px 16px 0; padding:12px; display:flex; align-items:center; gap:11px"><div style="width:42px;height:42px;border-radius:50%;background:var(--accent-wash);display:flex;align-items:center;justify-content:center;color:var(--hearth);font-weight:800">J</div><div style="flex:1"><div class="label-t">Jordan</div><div class="cap-t" style="color:var(--muted);margin-top:2px">Account &amp; sign-out</div></div><span class="ms" style="color:var(--faint)">chevron_right</span></div>
+            <div class="setlabel">You</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="ic"><span class="ms">palette</span></div><div class="tx"><div class="t">Appearance</div><div class="d">Theme, accent, covers, and haptics</div></div><span class="ms" style="color:var(--faint)">chevron_right</span></div>
+            </div>
+            <!-- v1 groups kept below -->
+            <div class="setlabel">Playback</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="ic"><span class="ms">play_circle</span></div><div class="tx"><div class="t">Player</div><div class="d">Speed, skip intervals, and button layout</div></div><span class="ms" style="color:var(--faint)">chevron_right</span></div>
+              <div class="setrow"><div class="ic"><span class="ms">bedtime</span></div><div class="tx"><div class="t">Sleep timer</div><div class="d">Default duration and end-of-chapter behavior</div></div><span class="ms" style="color:var(--faint)">chevron_right</span></div>
+              <div class="setrow"><div class="ic"><span class="ms">queue_music</span></div><div class="tx"><div class="t">Queue</div><div class="d">Auto rules and manual queue behavior</div></div><span class="ms" style="color:var(--faint)">chevron_right</span></div>
+              <div class="setrow"><div class="ic"><span class="ms">sd_storage</span></div><div class="tx"><div class="t">Downloads &amp; storage</div><div class="d">Offline books, auto-download, and space used</div></div><span class="ms" style="color:var(--faint)">chevron_right</span></div>
+            </div>
+            <div class="setlabel">Reading</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="ic"><span class="ms">menu_book</span></div><div class="tx"><div class="t">Reading</div><div class="d">Page theme, type, spacing, and progress</div></div><span class="ms" style="color:var(--faint)">chevron_right</span></div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab on"><span class="pill"><span class="ms fill">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n rv" style="top:110px; left:150px">1</span>
+          <span class="n rv" style="top:200px; right:60px">2</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>One row per destination</b> — More answers “where do I go?” rather than mixing navigation with live preference controls.
+            <span class="rvnote">keeps the hub predictable</span></span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>Descriptions carry findability</b> — Appearance names theme, accent, covers, and haptics; Player names speed, skips, and button layout.
+            <span class="rvnote">makes categories searchable by sight</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="motionspec"><h4>Settings — addendum (D-A11Y, D-CONSIST)</h4><table>
+      <tr><td>destinations</td><td>one row per category; descriptions name the most important controls inside</td></tr>
+      <tr><td>deep links</td><td>open the owning destination and briefly identify the referenced row</td></tr>
+      <tr><td>reset</td><td>each group header carries an overflow "Reset this section to defaults" with an Undo toast</td></tr>
+      <tr><td>a11y</td><td>every row is a labelled button; toggles announce on/off state; segments announce selected option</td></tr>
+    </table></div>
+  </div>
+
+  <aside class="v3panel" aria-label="production beta design decision">
+    <div class="v3panel-kicker">V3 · production-beta decision</div>
+    <div class="v3decisions">
+      <div><span class="v3verb keep">Current beta</span><p>Keep the current account hero, grouped destinations, descriptions, and conditional administration sections.</p></div>
+      <div><span class="v3verb change">V3 delta</span><p>No visual delta. Improve row semantics and deep-link focus within the existing structure.</p></div>
+      <div><span class="v3verb keep">Preserve</span><p>Keep values and controls inside the destination that owns them.</p></div>
+    </div>
+  </aside>
+
+  <div class="section" id="review">
+    <div class="eyebrow">Production-beta audit</div>
+    <h2>Current beta already satisfies the v3 settings direction</h2>
+    <p class="sub">The first v3 pass described shipped behavior as a recommendation. This page now records it as the baseline.</p>
+    <div class="motionspec"><h4>Code-informed decision</h4><table><tr><td>keep</td><td>account hero, grouped destination rows, descriptive copy, real settings routes</td></tr><tr><td>accessibility</td><td>label rows as buttons, announce toggle/segment state, focus deep-linked controls</td></tr><tr><td>layout</td><td>no new search or theme controls on the More hub</td></tr></table></div>
+  </div>
+
+  <div class="footnav"><a href="05-stats-clubs-v3.html" class="v3" style="color:var(--review)">← 05 · Stats &amp; Clubs (v3)</a><a href="07-system-v3.html" class="v3" style="color:var(--review)">07 · Sign-in &amp; System (v3) →</a></div>
+</div>
+</body>
+</html>

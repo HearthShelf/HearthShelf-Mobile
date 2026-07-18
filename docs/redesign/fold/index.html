@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HearthShelf Fold — Final Direction</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;600&family=Inter:wght@400;500;600;700&family=Libre+Baskerville:wght@400;700&family=Material+Symbols+Rounded:FILL@0..1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="fold.css">
+</head>
+<body>
+  <main class="page-shell">
+    <header class="page-header">
+      <div>
+        <div class="wordmark"><span>Hearth</span>Shelf <b>· Fold</b></div>
+        <div class="eyebrow">Final merged direction · interactive prototype</div>
+      </div>
+      <div class="header-copy">
+        <h1>Two leaves when context helps.<br>One canvas when focus matters.</h1>
+        <p>GPT’s spatial confidence, Opus’s connected library flow, and the shipping player’s real control hierarchy—held together by navigation that moves out of the way.</p>
+      </div>
+    </header>
+
+    <section class="decision-strip" aria-label="Final design decisions">
+      <article><span class="decision-no">01</span><div><b>Home · GPT</b><span>Continuation owns the left leaf; discovery gets room on the right.</span></div></article>
+      <article><span class="decision-no">02</span><div><b>Library · connected</b><span>Grid + detail by default, with a full-detail escape hatch.</span></div></article>
+      <article><span class="decision-no">03</span><div><b>Book · full canvas</b><span>The raw detail route keeps GPT’s generous, focused composition.</span></div></article>
+      <article><span class="decision-no">04</span><div><b>Player · current, expanded</b><span>The app’s player stays recognizable; sheets become a companion pane.</span></div></article>
+    </section>
+
+    <section class="prototype-section" id="prototype">
+      <div class="prototype-head">
+        <div>
+          <div class="eyebrow">Working prototype</div>
+          <h2>Move the dock. Change screens. Open a book.</h2>
+        </div>
+        <div class="prototype-hints">
+          <span><i class="ms">drag_indicator</i> Drag the grip</span>
+          <span><i class="ms">tune</i> Or choose Left · Both · Right</span>
+        </div>
+      </div>
+
+      <div class="device-scroll">
+        <div class="device" aria-label="Foldable app prototype">
+          <div class="camera camera-left"></div>
+          <div class="camera camera-right"></div>
+          <div class="fold-display" id="foldDisplay">
+            <div class="ambient-glow"></div>
+            <div class="hinge" aria-hidden="true"><i></i></div>
+
+            <!-- HOME -->
+            <section class="app-screen is-active" data-screen="home" aria-label="Home screen">
+              <div class="pane home-left">
+                <div class="statusbar"><span>9:41</span><span class="status-icons"><i class="ms">wifi</i><i class="ms">battery_full</i></span></div>
+                <header class="app-header">
+                  <div><span class="kicker">Tuesday · 72 day streak</span><h3>Good evening, Jeremy.</h3></div>
+                  <button class="avatar" aria-label="Open account">J</button>
+                </header>
+
+                <article class="continue-card">
+                  <div class="cover cover-ember sm"><span class="cover-series">Cinderfall · 3</span><strong>The Ember<br>Gate</strong></div>
+                  <div class="continue-copy">
+                    <div class="sync-chip"><i></i> Synced</div>
+                    <span class="kicker">Continue listening</span>
+                    <h4>The Ember Gate</h4>
+                    <p>Maren Holloway · Chapter 12</p>
+                    <div class="progress"><i style="width:46%"></i></div>
+                    <div class="progress-meta"><span>6h 02m</span><span>7h 04m left</span></div>
+                    <button class="primary wide" data-nav-target="player"><i class="ms fill">play_arrow</i> Continue</button>
+                  </div>
+                </article>
+
+                <div class="stats-row">
+                  <article><span class="kicker">This week</span><b>9h 14m</b><small>Listening</small></article>
+                  <article><span class="kicker">Finished</span><b>2</b><small>Books</small></article>
+                  <article><span class="kicker">Current</span><b>72</b><small>Day streak</small></article>
+                </div>
+
+                <section class="nearby-card">
+                  <div class="section-title"><span><i class="ms">history</i> Pick up nearby</span><button>See all</button></div>
+                  <div class="nearby-row"><div class="cover cover-blue xs"><strong>S</strong></div><div><b>Salt &amp; Shadow</b><small>18 min listened · yesterday</small></div><button class="round" aria-label="Play Salt and Shadow"><i class="ms fill">play_arrow</i></button></div>
+                </section>
+              </div>
+
+              <div class="pane home-right">
+                <div class="statusbar"><span>Inner display · Flat open</span><span>92%</span></div>
+                <header class="app-header compact"><div><span class="kicker">Your shelves</span><h3>Made for tonight</h3></div><button class="round" aria-label="Search"><i class="ms">search</i></button></header>
+                <div class="shelf-head"><b>Continue listening</b><button data-nav-target="library">Open library <i class="ms">chevron_right</i></button></div>
+                <div class="home-books">
+                  <button class="book-tile" data-nav-target="library"><span class="cover cover-teal"><span class="cover-series">Archive · 1</span><strong>A Quiet<br>Atlas</strong></span><b>A Quiet Atlas</b><small>31% · tap to inspect</small></button>
+                  <button class="book-tile" data-nav-target="library"><span class="cover cover-gold"><span class="cover-series">Foundry · 2</span><strong>Copper &amp;<br>Rain</strong></span><b>Copper &amp; Rain</b><small>64% · downloaded</small></button>
+                  <button class="book-tile" data-nav-target="library"><span class="cover cover-purple"><span class="cover-series">Night House</span><strong>The Long<br>Room</strong></span><b>The Long Room</b><small>12% · stream</small></button>
+                </div>
+                <div class="right-cards">
+                  <article class="club-card"><div class="section-title"><span><i class="ms">groups</i> Lanternlight Book Club</span><button>Open room</button></div><span class="kicker">April pick · 6 listening</span><h4>The Cartographer’s Fire</h4><p>Discussion opens in 4 days</p><div class="member-stack"><i>M</i><i>R</i><i>+4</i></div></article>
+                  <article class="release-card"><span class="kicker">Recently added</span><h4>Aster Wake</h4><p>Lena Voss · 11h 42m</p><button class="secondary">Browse releases</button></article>
+                </div>
+              </div>
+            </section>
+
+            <!-- LIBRARY + DETAIL -->
+            <section class="app-screen" data-screen="library" aria-label="Library split view">
+              <div class="pane library-left">
+                <div class="statusbar"><span>9:41</span><span>Library</span></div>
+                <header class="app-header compact"><div><span class="kicker">Your collection</span><h3>Library</h3></div><button class="round"><i class="ms">tune</i></button></header>
+                <label class="searchbox"><i class="ms">search</i><input aria-label="Search library" placeholder="Search library"><span>128</span></label>
+                <div class="filter-row"><button class="chip is-on">All</button><button class="chip">In progress</button><button class="chip">Not started</button><button class="chip"><i class="ms">sort</i> Recent</button></div>
+                <div class="library-meta"><span>128 books</span><span><button aria-label="Grid view"><i class="ms fill">grid_view</i></button><button aria-label="List view"><i class="ms">view_list</i></button></span></div>
+                <div class="library-grid" aria-label="Books">
+                  <button class="library-book is-selected" data-book="winter"><span class="cover cover-purple"><span class="cover-series">Cinderfall · 4</span><strong>A Winter<br>of Salt</strong><i class="quick-play ms fill">play_arrow</i></span><b>A Winter of Salt</b><small>Not started</small></button>
+                  <button class="library-book" data-book="ember"><span class="cover cover-ember"><span class="cover-series">Cinderfall · 3</span><strong>The Ember<br>Gate</strong><i class="quick-play ms fill">play_arrow</i></span><b>The Ember Gate</b><small>46% · downloaded</small></button>
+                  <button class="library-book" data-book="atlas"><span class="cover cover-teal"><span class="cover-series">Archive · 1</span><strong>A Quiet<br>Atlas</strong></span><b>A Quiet Atlas</b><small>31% · stream</small></button>
+                  <button class="library-book" data-book="copper"><span class="cover cover-gold"><span class="cover-series">Foundry · 2</span><strong>Copper &amp;<br>Rain</strong></span><b>Copper &amp; Rain</b><small>64% · downloaded</small></button>
+                  <button class="library-book" data-book="room"><span class="cover cover-purple"><span class="cover-series">Night House</span><strong>The Long<br>Room</strong></span><b>The Long Room</b><small>12% · stream</small></button>
+                  <button class="library-book" data-book="cedar"><span class="cover cover-green"><span class="cover-series">Field Notes</span><strong>North of<br>Cedar</strong></span><b>North of Cedar</b><small>8% · stream</small></button>
+                </div>
+              </div>
+
+              <div class="pane library-detail" aria-live="polite">
+                <div class="statusbar"><span>Selected book</span><span>Split view</span></div>
+                <div class="detail-hero">
+                  <div class="cover cover-purple detail-cover" id="detailCover"><span class="cover-series" id="detailSeries">Cinderfall · 4</span><strong id="detailCoverTitle">A Winter<br>of Salt</strong></div>
+                  <div class="detail-heading"><span class="kicker" id="detailCycle">Cinderfall cycle · book 4</span><h3 id="detailTitle">A Winter of Salt</h3><p id="detailAuthor">Maren Holloway · narrated by Aoife Doyle</p><div class="rating"><span>★★★★☆</span> 4.2</div></div>
+                </div>
+                <div class="detail-actions"><button class="primary"><i class="ms fill">play_arrow</i> Play</button><button class="secondary"><i class="ms">done_all</i> Finish</button><button class="square" aria-label="Download"><i class="ms">download</i></button><button class="square" aria-label="More actions"><i class="ms">more_horiz</i></button></div>
+                <p class="description" id="detailDescription">When the salt roads freeze over, the Ferryman calls in every debt owed to the Cinderfall. Maren must cross a sea that remembers her name to buy back a single winter—and the price is climbing with the tide.</p>
+                <div class="detail-links"><button><i class="ms">auto_stories</i><span><b>Cinderfall Cycle</b><small>Book 4 of 6</small></span><i class="ms">chevron_right</i></button><button><i class="ms">menu_book</i><span><b>Read along</b><small>Continue in the reader</small></span><i class="ms">chevron_right</i></button></div>
+                <div class="section-title chapters-preview"><span><i class="ms">format_list_numbered</i> Chapters</span><span>18 chapters</span></div>
+                <div class="chapter-preview"><span>01</span><div><b>The Debt Road</b><small>34:06</small></div></div>
+                <button class="open-full" id="openFullBook"><span><i class="ms">open_in_full</i><b>Open full book page</b></span><small>Focus on this book across both leaves</small></button>
+              </div>
+            </section>
+
+            <!-- RAW BOOK DETAIL -->
+            <section class="app-screen" data-screen="book" aria-label="Full book detail">
+              <div class="pane book-left">
+                <div class="statusbar"><span>9:41</span><span>Book</span></div>
+                <header class="book-topbar"><button class="round" id="backToLibrary" aria-label="Back to Library"><i class="ms">arrow_back</i></button><span class="kicker">Full detail</span><button class="round" aria-label="More"><i class="ms">more_horiz</i></button></header>
+                <div class="full-book-hero"><div class="cover cover-ember xl"><span class="cover-series">Cinderfall · 3</span><strong>The Ember<br>Gate</strong></div><div><span class="kicker">Cinderfall cycle · book 3</span><h3>The Ember Gate</h3><p>Maren Holloway · narrated by Ada Vale</p><div class="tag-row"><span>Fantasy</span><span>13h 06m</span><span class="success">Downloaded</span></div></div></div>
+                <article class="resume-card"><div><span class="kicker">In progress · 46%</span><b>Chapter 12 · 20:37 left</b></div><button class="primary" data-nav-target="player"><i class="ms fill">play_arrow</i> Resume</button><div class="progress"><i style="width:46%"></i></div></article>
+                <div class="action-grid"><button><i class="ms">done_all</i>Finish</button><button><i class="ms">playlist_add</i>Add to</button><button><i class="ms">bookmark</i>Bookmarks</button><button><i class="ms">share</i>Share</button><button><i class="ms">history</i>Recent</button><button><i class="ms">download_done</i>Offline</button></div>
+                <section class="about"><h4><i class="ms">description</i> About</h4><p>Beyond the city’s last furnace, a door appears in the ash. Elian has carried its map for years—without knowing the map remembers him too.</p></section>
+              </div>
+              <div class="pane book-right">
+                <div class="statusbar"><span>Book contents</span><span>41 chapters</span></div>
+                <div class="panel-tabs static-tabs"><button class="is-on">Chapters</button><button>Series</button><button>Notes</button><button>Club</button></div>
+                <header class="panel-heading"><div><h3>Chapters</h3><p>Centered on your current position</p></div><button class="round" aria-label="Search chapters"><i class="ms">search</i></button></header>
+                <div class="chapter-list spacious">
+                  <button><span>10</span><div><b>Ash at the Threshold</b><small>Finished</small></div><time>34:06</time></button>
+                  <button><span>11</span><div><b>The Bell Under Glass</b><small>Finished</small></div><time>26:51</time></button>
+                  <button class="is-current"><span><i class="ms fill">graphic_eq</i></span><div><b>Seriously, What’s Behind the Door?</b><small>Listening now · 12:36 of 33:13</small><div class="progress"><i style="width:41%"></i></div></div><time>33:13</time></button>
+                  <button><span>13</span><div><b>The Ember Cartographer</b><small>Up next</small></div><time>41:08</time></button>
+                  <button><span>14</span><div><b>A Door Learns Your Name</b></div><time>29:44</time></button>
+                  <button><span>15</span><div><b>Cinderfall</b></div><time>37:20</time></button>
+                </div>
+              </div>
+            </section>
+
+            <!-- PLAYER -->
+            <section class="app-screen player-screen" data-screen="player" aria-label="Now playing">
+              <div class="pane player-left">
+                <div class="player-backdrop"></div>
+                <div class="statusbar"><span>9:41</span><span><i class="ms">cloud_done</i> <i class="ms">battery_full</i></span></div>
+                <header class="player-header">
+                  <button class="queue-chip" data-panel-target="queue"><i class="ms">queue_music</i><b>3</b></button>
+                  <div><b>The Ember Gate</b><small>Maren Holloway</small></div>
+                  <span><button class="round" aria-label="Focus view"><i class="ms">center_focus_strong</i></button><button class="round synced" aria-label="Progress synced"><i class="ms">cloud_done</i></button></span>
+                </header>
+                <div class="book-progress"><div class="progress"><i style="width:46%"></i></div><div><span>6:02:14</span><b>46%</b><span>−7:04:02</span></div></div>
+                <div class="player-art"><div class="cover cover-ember player-cover"><span class="cover-series">Cinderfall cycle · 3</span><strong>The<br>Ember<br>Gate</strong><button class="art-bookmark" aria-label="Bookmark"><i class="ms">bookmark</i></button><span class="inspect"><i class="ms">search</i> tap to inspect</span></div></div>
+                <div class="player-controls">
+                  <div class="scrubber"><div class="progress"><i style="width:41%"></i><b></b></div><div class="scrub-meta"><span>12:36</span><strong>Seriously, What’s Behind the Door?</strong><span>−20:37</span></div></div>
+                  <div class="transport"><button aria-label="Previous chapter"><i class="ms fill">skip_previous</i></button><button aria-label="Back 15 seconds"><i class="ms">replay_10</i><small>15</small></button><button class="play" aria-label="Pause"><i class="ms fill">pause</i></button><button aria-label="Forward 30 seconds"><i class="ms">forward_30</i><small>30</small></button><button aria-label="Next chapter"><i class="ms fill">skip_next</i></button></div>
+                  <div class="player-actions"><button class="is-on" data-panel-target="chapters"><i class="ms">format_list_numbered</i><span>Chapters</span></button><button><i class="ms">speed</i><span>1.25×</span></button><button><i class="ms">bedtime</i><span>19:51</span></button><button><i class="ms">bookmark_add</i><span>Save</span></button><button data-panel-target="more"><i class="ms">more_horiz</i><span>More</span></button></div>
+                </div>
+              </div>
+              <div class="pane player-panel">
+                <div class="statusbar"><span>Companion pane</span><span>Player stays fixed</span></div>
+                <div class="panel-tabs" role="tablist" aria-label="Player companion panels"><button class="is-on" role="tab" aria-selected="true" data-panel="chapters"><i class="ms">format_list_numbered</i> Chapters</button><button role="tab" aria-selected="false" data-panel="queue"><i class="ms">queue_music</i> Queue</button><button role="tab" aria-selected="false" data-panel="recent"><i class="ms">history</i> Recent</button><button role="tab" aria-selected="false" data-panel="notes"><i class="ms">edit_note</i> Notes</button></div>
+                <div class="player-panel-view is-active" data-panel-view="chapters">
+                  <header class="panel-heading"><div><h3>Chapters</h3><p>Current chapter stays centered</p></div><button class="round"><i class="ms">search</i></button></header>
+                  <div class="chapter-list"><button><span>10</span><div><b>Ash at the Threshold</b><small>Finished</small></div><time>34:06</time></button><button><span>11</span><div><b>The Bell Under Glass</b><small>Finished</small></div><time>26:51</time></button><button class="is-current"><span><i class="ms fill">graphic_eq</i></span><div><b>Seriously, What’s Behind the Door?</b><small>12:36 of 33:13</small><div class="progress"><i style="width:41%"></i></div></div><time>33:13</time></button><button><span>13</span><div><b>The Ember Cartographer</b><small>Up next</small></div><time>41:08</time></button><button><span>14</span><div><b>A Door Learns Your Name</b></div><time>29:44</time></button></div>
+                </div>
+                <div class="player-panel-view" data-panel-view="queue">
+                  <header class="panel-heading"><div><h3>Up next</h3><p>Auto · continue series</p></div><button class="round"><i class="ms">tune</i></button></header>
+                  <div class="segmented"><button class="is-on">Auto</button><button>Manual</button><button>Off</button></div>
+                  <div class="queue-now"><div class="cover cover-ember xs"><strong>E</strong></div><div><b>The Ember Gate</b><small>Now playing · 46%</small></div><i class="ms fill">graphic_eq</i></div>
+                  <div class="queue-list"><span class="kicker">Queued next</span><button><span>1</span><div class="cover cover-purple xs"><strong>W</strong></div><div><b>A Winter of Salt</b><small>New in series</small></div><i class="ms">drag_indicator</i></button><button><span>2</span><div class="cover cover-teal xs"><strong>A</strong></div><div><b>A Quiet Atlas</b><small>Continue listening</small></div><i class="ms">drag_indicator</i></button></div>
+                </div>
+                <div class="player-panel-view" data-panel-view="recent"><header class="panel-heading"><div><h3>Recent listens</h3><p>Your last seven sessions</p></div></header><div class="recent-list"><article><b>Today · 6:02 PM</b><span>42 min · Chapter 12</span></article><article><b>Yesterday · 9:14 PM</b><span>1h 08m · Chapters 10–11</span></article><article><b>Monday · 7:40 AM</b><span>26 min · Chapter 9</span></article></div></div>
+                <div class="player-panel-view" data-panel-view="notes"><header class="panel-heading"><div><h3>Player notes</h3><p>Notes follow the listening timeline</p></div><button class="primary">Add note</button></header><div class="empty-note"><i class="ms">edit_note</i><b>No note at this moment</b><p>Add a thought at 12:36. It will stay attached to this point in the chapter.</p></div></div>
+                <div class="player-panel-view" data-panel-view="more"><header class="panel-heading"><div><h3>More player actions</h3><p>Matches the app’s customizable action tray</p></div></header><div class="action-grid panel-action-grid"><button><i class="ms">speed</i>Speed</button><button><i class="ms">bedtime</i>Sleep</button><button><i class="ms">groups</i>Club</button><button><i class="ms">notes</i>Notes</button><button><i class="ms">download</i>Download</button><button><i class="ms">tune</i>Edit buttons</button></div></div>
+              </div>
+            </section>
+
+            <!-- SUPPORTING PLACEHOLDERS -->
+            <section class="app-screen support-screen" data-screen="stats" aria-label="Stats"><div class="pane support-pane"><div class="statusbar"><span>9:41</span><span>Stats</span></div><span class="kicker">Listening history</span><h3>Your hearth at a glance.</h3><div class="big-stat">72<small>day streak</small></div><p>The final foldable direction keeps Stats available without allowing a permanent rail to tax every other screen.</p></div><div class="pane support-pane secondary-support"><i class="ms">insights</i><h4>9h 14m this week</h4><div class="bar-chart"><i style="height:32%"></i><i style="height:55%"></i><i style="height:42%"></i><i style="height:84%"></i><i style="height:68%"></i><i style="height:96%"></i><i style="height:61%"></i></div></div></section>
+            <section class="app-screen support-screen" data-screen="more" aria-label="More"><div class="pane support-pane"><div class="statusbar"><span>9:41</span><span>More</span></div><span class="kicker">HearthShelf</span><h3>More</h3><div class="menu-list"><button><i class="ms">person</i><span><b>Account</b><small>Profile, server, household</small></span><i class="ms">chevron_right</i></button><button><i class="ms">settings</i><span><b>Settings</b><small>Appearance, playback, downloads</small></span><i class="ms">chevron_right</i></button><button><i class="ms">groups</i><span><b>Book clubs</b><small>Rooms and shared progress</small></span><i class="ms">chevron_right</i></button></div></div><div class="pane support-pane secondary-support"><i class="ms">local_fire_department</i><h4>Dock position is a preference.</h4><p>Drag it for an immediate adjustment, or use the placement control for a reliable, accessible choice.</p></div></section>
+
+            <!-- MOVABLE NAVIGATION -->
+            <nav class="fold-dock dock-both" id="foldDock" aria-label="App navigation">
+              <button class="dock-grip" id="dockGrip" aria-label="Drag navigation dock"><i class="ms">drag_indicator</i></button>
+              <div class="dock-tabs">
+                <button class="dock-tab is-on" data-nav-target="home" aria-label="Home"><i class="ms fill">home</i><span>Home</span></button>
+                <button class="dock-tab" data-nav-target="library" aria-label="Library"><i class="ms">auto_stories</i><span>Library</span></button>
+                <button class="dock-tab" data-nav-target="player" aria-label="Now playing"><i class="ms">play_circle</i><span>Now</span></button>
+                <span class="dock-seam-gap" aria-hidden="true"></span>
+                <button class="dock-tab" data-nav-target="stats" aria-label="Stats"><i class="ms">insights</i><span>Stats</span></button>
+                <button class="dock-tab" data-nav-target="more" aria-label="More"><i class="ms">menu</i><span>More</span></button>
+              </div>
+              <button class="dock-settings" id="dockSettings" aria-expanded="false" aria-controls="dockPopover" aria-label="Change dock position"><i class="ms">tune</i></button>
+              <div class="dock-popover" id="dockPopover" hidden>
+                <div><span class="kicker">Dock position</span><button id="closeDockPopover" aria-label="Close"><i class="ms">close</i></button></div>
+                <div class="position-picker" role="group" aria-label="Dock position"><button data-dock-position="left" aria-label="Left screen"><i class="ms">align_horizontal_left</i>Left</button><button class="is-on" data-dock-position="both" aria-label="Both screens"><i class="ms">view_week</i>Both</button><button data-dock-position="right" aria-label="Right screen"><i class="ms">align_horizontal_right</i>Right</button></div>
+                <p>Saved on this device. Dragging the grip snaps to the nearest choice.</p>
+              </div>
+            </nav>
+            <div class="toast" id="toast" role="status" aria-live="polite">Dock moved to both screens</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="rationale">
+      <article><span class="eyebrow">Why this menu</span><h3>Floating, but not mysterious.</h3><p>The dock reuses the app’s existing floating-glass language and gives it a foldable-specific placement preference. It never permanently narrows a pane, and drag has visible button alternatives.</p></article>
+      <article><span class="eyebrow">Library rule</span><h3>Connected first. Focus on demand.</h3><p>Selecting a cover updates the right leaf without losing grid position. “Open full book page” promotes that selection to the full two-leaf detail route when the listener wants depth.</p></article>
+      <article><span class="eyebrow">Player rule</span><h3>The app still feels like itself.</h3><p>Queue count, title/author header, whole-book progress, cover, chapter scrubber, five-part transport, and customizable actions remain in their current order. Only the former sheets move beside it.</p></article>
+    </section>
+
+    <footer><span>HearthShelf Fold · final merged prototype</span><span>48dp targets · seam-safe gutter · independent pane state</span></footer>
+  </main>
+  <script src="fold.js"></script>
+</body>
+</html>

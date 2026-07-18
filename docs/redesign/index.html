@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HearthShelf Mobile — Redesign Overview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Geist+Mono:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<link rel="stylesheet" href="hearth.css">
+<style>
+  .doctrine { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:14px; margin-top:26px; }
+  .doc { border-radius:16px; padding:18px 20px; background:var(--page-card); border:1px solid var(--page-border); }
+  .doc .id { font-family:var(--font-mono); font-size:11px; letter-spacing:.14em; color:var(--hearth); }
+  .doc h4 { margin:6px 0 7px; font-size:15px; color:var(--text); }
+  .doc p { margin:0; font-size:13px; line-height:1.6; color:#b6afa3; }
+  .toc { display:grid; grid-template-columns:repeat(auto-fill,minmax(400px,1fr)); gap:14px; margin-top:26px; }
+  .toc a { display:flex; gap:14px; align-items:flex-start; text-decoration:none; border-radius:16px; padding:17px 19px; background:var(--page-card); border:1px solid var(--page-border); transition:border-color .15s; }
+  .toc a:hover { border-color:#55503f; }
+  .toc .num { font-family:var(--font-mono); font-size:22px; font-weight:700; color:var(--hearth); line-height:1; padding-top:2px; }
+  .toc h4 { margin:0 0 5px; font-size:15.5px; color:var(--text); }
+  .toc p { margin:0; font-size:12.5px; line-height:1.55; color:#a49d90; }
+  .bigcrit li { padding:6px 0 6px 26px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div class="wordmark" style="font-size:26px"><span class="lt">Hearth</span><span class="bd">Shelf</span><span class="sub"> · Mobile Redesign</span></div>
+    <div class="tagline">Full UX teardown &amp; redesign — every page, every panel, every action, every animation.<br>
+    Built against the shipping app (Expo RN, July 2026) · mockup format matches the HearthShelf Design System handoff bundle.</div>
+  </div>
+  <div class="pagenav">
+    <a href="index.html" class="on">Overview</a>
+    <a href="01-home.html">Home</a>
+    <a href="02-library.html">Library &amp; Search</a>
+    <a href="03-player.html">Player</a>
+    <a href="04-book.html">Book &amp; Reader</a>
+    <a href="05-stats-clubs.html">Stats &amp; Clubs</a>
+    <a href="06-settings.html">Settings</a>
+    <a href="07-system.html">Sign-in &amp; System</a>
+  </div>
+
+  <!-- ============================== THE BIG TEARDOWN ============================== -->
+  <div class="section" id="teardown">
+    <div class="eyebrow">Read this first</div>
+    <h2>The ten cross-cutting problems</h2>
+    <p class="sub">The app's individual screens are feature-complete — the pain is systemic. These ten issues repeat
+    across surfaces, and fixing them once fixes them everywhere. Every section page cites these by doctrine ID.</p>
+
+    <div class="audit" style="max-width:100%; grid-template-columns:1fr 1fr;">
+      <div class="crit bigcrit"><h3>Systemic teardown</h3><ul>
+        <li><b>Two search experiences.</b> Library's inline search and the pushed /search route differ in placeholder, external results, clear button, and back behavior. Users learn two tools for one job.</li>
+        <li><b>Playing a book costs 2–3 taps almost everywhere.</b> Only the Home hero and Series rows have 1-tap play; every shelf/grid/search tile detours through the detail screen.</li>
+        <li><b>The tab bar forgets where you are.</b> Every pushed route re-renders the bar with no active tab; re-tapping a tab does nothing. Navigation gives zero location feedback on drilldowns.</li>
+        <li><b>Buried controls.</b> Library's entire sort/filter/display model sits behind one button → 3-tab sheet. Player queue &amp; sync live at the top of the screen, out of thumb reach. Reset-progress/hide exist only behind long-press on specific shelves.</li>
+        <li><b>Mandatory interstitial on every finish.</b> The "When did you finish?" prompt gates all mark-finished paths — the common "just now" case pays an extra tap, and bulk flows pay it too.</li>
+        <li><b>Missing states.</b> Home has no empty or error state; Books grid, Group screens, and search failures render silently blank. Loading is a spinner, never a skeleton.</li>
+        <li><b>Undiscoverable gestures.</b> Long-press-to-select, pinch-to-resize columns, swipe-up immersive, long-press-for-default-server — none has a visible affordance; one ("Car mode") even ships as a fake coming-soon button while the feature already exists as swipe-up.</li>
+        <li><b>Inconsistent primitives.</b> Square covers on Group screens vs 2:3 everywhere else; Seg controls for booleans on Community vs toggles elsewhere; three theming systems (reactive, static import, hardcoded hex) — sign-in, toast, and splash ignore the user's theme and accent.</li>
+        <li><b>Thin and dead settings destinations.</b> A screen for one toggle (Search), a placeholder screen with six disabled rows (Reading), a temp Diagnostics screen, and stub Admin rows — all consuming top-level navigation slots.</li>
+        <li><b>Real bugs shipped as UX.</b> Skip-back/forward buttons vanish on chapterless books; sleep presets don't arm without Start; heatmap month labels computed but never rendered; the upcoming-book countdown never ticks.</li>
+      </ul></div>
+      <div class="moves"><h3>What stays — the good bones</h3><ul>
+        <li><b>The hearth identity.</b> CoverGlow blooms, EmberBurst on finish, the Scrubber's ember pill, TypesetCover fallbacks, the splash — distinctive and worth amplifying, not diluting.</li>
+        <li><b>Series detail.</b> Per-row play buttons, segment progress track, Continue CTA — the strongest screen in the app; the redesign exports its patterns outward.</li>
+        <li><b>Tri-state download control</b> (download → cancel → remove) consistent across detail and long-press.</li>
+        <li><b>Offline resilience.</b> Downloaded books open, play, and browse from cached catalog; optimistic-with-rollback on bookmarks, follows, dismissals.</li>
+        <li><b>The configurable player action row</b> with on-screen / tray / hidden placement, editable in-context from the player itself — this is the pattern the rest of settings should copy.</li>
+        <li><b>Self-hiding sections</b> on book detail (no dead taps), spoiler-gated club notes, promise-based singleton prompts.</li>
+        <li><b>Motion vocabulary</b> already centralized (POP_SPRING, DUR, SpringPressable) — the redesign specs against it.</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <!-- ============================== DOCTRINE ============================== -->
+  <div class="section" id="doctrine">
+    <div class="eyebrow">Redesign doctrine</div>
+    <h2>Eight rules, applied everywhere</h2>
+    <p class="sub">Each section page cites these IDs in its teardown and redesign notes.</p>
+    <div class="doctrine">
+      <div class="doc"><div class="id">D-NAV</div><h4>The tab bar always knows where you are</h4>
+        <p>One dock, five tabs. Pushed routes keep their owning tab lit (book opened from Library lights Library). Re-tap the active tab to scroll to top. Labels 11px minimum. "Now" remains the flagship center player tab.</p></div>
+      <div class="doc"><div class="id">D-SEARCH</div><h4>One search</h4>
+        <p>A single search surface with scope chips (Everything · Books · Series · Authors · Narrators) and a "Beyond your library" Audible section. Reached from Home and Library headers. Search settings live in its own header gear.</p></div>
+      <div class="doc"><div class="id">D-PLAY</div><h4>One tap to audio</h4>
+        <p>Quick-play chip on every continue/in-progress tile. Tiles show progress and finished badges. Long-press = the same actions sheet, everywhere books appear.</p></div>
+      <div class="doc"><div class="id">D-STATES</div><h4>Design the four states</h4>
+        <p>Every screen ships loading (skeleton shimmer), empty (icon + one line + CTA), error (message + retry), and offline (cached content + status chip). No more silent blanks.</p></div>
+      <div class="doc"><div class="id">D-ACTIONS</div><h4>One action grammar</h4>
+        <p>The same BookActionsSheet from every surface, same order. The detail screen's overflow carries the full set — reset progress, hide, bookmarks (always visible), recent listens, share, add to list.</p></div>
+      <div class="doc"><div class="id">D-FINISH</div><h4>Finish is one tap</h4>
+        <p>Mark finished instantly; an actionable toast offers "Edit date" and "Undo". The date prompt survives for backdating and bulk imports — as an option, not a gate.</p></div>
+      <div class="doc"><div class="id">D-THUMB</div><h4>Controls live in the thumb zone</h4>
+        <p>Frequent actions in the bottom half of the screen. The player's queue and sync move from the header down to the transport zone. Headers get lighter, content starts higher.</p></div>
+      <div class="doc"><div class="id">D-CONSIST</div><h4>One way to do each thing</h4>
+        <p>Toggles for booleans, segments for enums, chips for presets. One cover aspect (the user's setting) on every surface. Reactive theme everywhere — sign-in, toasts, and splash respect accent and light mode.</p></div>
+    </div>
+  </div>
+
+  <!-- ============================== TOC ============================== -->
+  <div class="section" id="toc">
+    <div class="eyebrow">The suite</div>
+    <h2>Section pages</h2>
+    <p class="sub">Each page: per-screen teardown → redesigned annotated frames (every action numbered) → motion &amp; haptic spec. All current features preserved; additions tagged <span class="chip gold" style="padding:3px 9px; font-size:10px">new</span>.</p>
+    <div class="toc">
+      <a href="01-home.html"><span class="num">01</span><span><h4>Home</h4><p>Hearth hero (compact), dashboard tiles, shelves with quick-play, release banner, club shelf, see-all as pushed screens, first-run / error / offline states.</p></span></a>
+      <a href="02-library.html"><span class="num">02</span><span><h4>Library &amp; Search</h4><p>Surface-level sort/filter/view bar, library switcher sheet, A-Z rail everywhere alphabetical, unified search with scopes + Audible section, author/narrator screens, series detail refinements, selection mode.</p></span></a>
+      <a href="03-player.html"><span class="num">03</span><span><h4>Player</h4><p>Rebalanced full player (queue &amp; sync in thumb zone, chapter pill, buffering state), car mode unification, carousel, mini player, and every sheet: chapters, speed, sleep (instant presets), queue with add-books, sync, recent, bookmarks.</p></span></a>
+      <a href="04-book.html"><span class="num">04</span><span><h4>Book &amp; Reader</h4><p>Stable section order, CTA row with download size, one-tap finish, full overflow, upcoming page with live countdown + glow, ebook reader with progress slider, actions sheet, multi-select, lightbox, not-owned flow.</p></span></a>
+      <a href="05-stats-clubs.html"><span class="num">05</span><span><h4>Stats &amp; Clubs</h4><p>Stats with labeled heatmap + tappable days, pull-to-refresh, goal ring, compare, leaderboard; club list with unread badges, club room (race, queue, discussion), composer with timestamp chip, join/create flows.</p></span></a>
+      <a href="06-settings.html"><span class="num">06</span><span><h4>Settings</h4><p>Consolidated More tab IA (Appearance &amp; feel, functional Reading prefs, Advanced group), in-context player settings, servers with visible default control, storage manager, notifications + following, integrations.</p></span></a>
+      <a href="07-system.html"><span class="num">07</span><span><h4>Sign-in &amp; System</h4><p>Themed sign-in with full email flow, username step, splash phases (connect / select server / error), offline mode, actionable toast system, invite landing.</p></span></a>
+    </div>
+  </div>
+
+  <!-- ============================== MOTION FOUNDATION ============================== -->
+  <div class="section" id="motion">
+    <div class="eyebrow">Foundation</div>
+    <h2>Motion &amp; haptic vocabulary</h2>
+    <p class="sub">Everything specs against the existing tokens in <span class="mono-t">src/ui/motion.tsx</span> — no new timing systems.</p>
+    <div class="motionspec" style="margin-top:0"><h4>Shared tokens</h4><table>
+      <tr><td>DUR.fast / base / slow</td><td>120 / 180 / 220 ms — fades, cross-fades, chip state changes</td></tr>
+      <tr><td>POP_SPRING</td><td>damping 13 · stiffness 380 · mass 0.5 — press pops, pill focus, badge entrances</td></tr>
+      <tr><td>SpringPressable</td><td>scale to 0.96 on press-in, spring back on release — every tappable card/button</td></tr>
+      <tr><td>PULSE_MS</td><td>2600 ms sin — CoverGlow breathe (player only), listening-now dots</td></tr>
+      <tr><td>skeleton shimmer</td><td>1600 ms linear loop — all loading states (replaces bare spinners)</td></tr>
+      <tr><td>sheet present</td><td>spring slide-up + scrim fade 180 ms; stacked sheets push with parallax −24 px</td></tr>
+      <tr><td>EmberBurst</td><td>7 particles, 760 ms ease-out — reserved for emotional peaks: finish, goal reached, streak milestones <span class="chip gold" style="padding:2px 8px;font-size:9px">new uses</span></td></tr>
+      <tr><td>haptics</td><td>select = chip/tab/slider ticks · transport = play/skip · success = finish/save · warn = destructive confirm</td></tr>
+    </table></div>
+  </div>
+
+  <div class="footnav"><span></span><a href="01-home.html">01 · Home →</a></div>
+</div>
+</body>
+</html>

@@ -1,0 +1,732 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HearthShelf Redesign v2 — Sign-in &amp; System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Geist+Mono:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<link rel="stylesheet" href="hearth.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div class="wordmark"><span class="lt">Hearth</span><span class="bd">Shelf</span><span class="sub"> · Mobile Redesign — Sign-in &amp; System</span><span class="v2tag">In-house v2</span></div>
+    <div class="tagline">Second opinion on <b>07-system.html</b>. Bottom-aligned themed sign-in and the ember optimization are right —<br>this page is where we PROVE D-A11Y: the light-mode sign-in and a reduced-motion fallback the suite promised but never drew.</div>
+  </div>
+  <div class="pagenav">
+    <a href="index-v2.html" class="v2">v2 Overview</a>
+    <a href="01-home-v2.html" class="v2">Home</a>
+    <a href="02-library-v2.html" class="v2">Library &amp; Search</a>
+    <a href="03-player-v2.html" class="v2">Player</a>
+    <a href="04-book-v2.html" class="v2">Book &amp; Reader</a>
+    <a href="05-stats-clubs-v2.html" class="v2">Stats &amp; Clubs</a>
+    <a href="06-settings-v2.html" class="v2">Settings</a>
+    <a href="07-system-v2.html" class="v2 on">Sign-in &amp; System</a>
+    <a href="07-system.html" style="margin-left:14px; opacity:.7">↩ consultant v1</a>
+  </div>
+
+  <div class="section" id="review">
+    <div class="eyebrow">Screen 07 · Sign-in &amp; System</div>
+    <h2>The in-house teardown</h2>
+    <p class="sub">The consultant's sign-in rework is strong: bottom-aligned auth block, keyboard-avoidance, real 2FA and
+    forgot-password, theme tokens instead of hardcoded hex, and a serious ember-performance plan. The real gap — and my
+    original framing of it was <b>wrong</b>, corrected after reading prod — is not that "light mode doesn't exist." It does:
+    prod ships a full <span class="mono-t">LIGHT_BASE</span> palette (<span class="mono-t">theme.ts:123</span>), OS-reactive
+    via <span class="mono-t">ThemeProvider.tsx:30</span>. The actual finding is narrower and stronger: <b>sign-in and the
+    splash are hardcoded pre-auth screens that never consume the app's existing light theme</b>.</p>
+
+    <div class="prodcheck">
+      <div class="lead"><span class="ms">fact_check</span>Verified against prod source (app/sign-in.tsx · src/ui/theme.ts · SplashScreen.tsx)</div>
+      <p>I originally reviewed only the consultant's mockup, not the shipping code. Re-audited against prod, here is what held and what I got wrong:</p>
+      <table>
+        <tr><th>My claim</th><th>Verdict</th><th>Prod evidence</th></tr>
+        <tr><td>Sign-in is hardcoded hex, ignores the theme</td><td><span class="vd ok">confirmed</span></td><td class="src">sign-in.tsx:426,462 — literals <span class="mono-t">#0e0d0c/#bd863f</span>, no <span class="mono-t">useColors</span></td></tr>
+        <tr><td>"A light-mode sign-in is asserted but never drawn / its existence is unproven"</td><td><span class="vd inv">invented</span></td><td class="src">A full light theme SHIPS: theme.ts:123 <span class="mono-t">LIGHT_BASE</span>, resolved live at ThemeProvider.tsx:30. My "net-new / unproven" framing was false. Correct finding: sign-in ignores the existing light palette.</td></tr>
+        <tr><td>Ember field = 24 individually-animated SVG Ellipse nodes, per-node clocks</td><td><span class="vd ok">confirmed</span></td><td class="src">SplashScreen.tsx:38 <span class="mono-t">EMBER_COUNT=24</span>, :137-147 per-ember <span class="mono-t">withRepeat</span>, :192 <span class="mono-t">&lt;Ellipse&gt;</span></td></tr>
+        <tr><td>No reduced-motion fallback for the ember animation</td><td><span class="vd ok">confirmed</span></td><td class="src">No <span class="mono-t">AccessibilityInfo/useReducedMotion</span> anywhere in SplashScreen.tsx; embers always run</td></tr>
+        <tr><td>2FA dead-ends on a raw status string; no forgot-pw; no show/hide; Terms not tappable</td><td><span class="vd ok">confirmed</span></td><td class="src">sign-in.tsx:230 raw <span class="mono-t">status</span>, :341 <span class="mono-t">secureTextEntry</span> no toggle, :416 plain <span class="mono-t">&lt;Text&gt;</span> Terms</td></tr>
+        <tr><td>Offline banner: "no explicit Retry button"</td><td><span class="vd over">overstated</span></td><td class="src">OfflineBanner.tsx:21 — whole pill IS the tap target (true), but a "Retry" label + icon ARE drawn (:26). Tighten wording: it's not a separate control, but Retry is visible.</td></tr>
+      </table>
+      <p><b>Net:</b> the light-mode frame below is still worth keeping — but as "wire sign-in to the theme prod already has," not "prove a light theme exists." I've relabeled it accordingly.</p>
+    </div>
+
+    <div class="ihreview">
+      <div class="lead"><span class="ms">reviews</span>Scored against the consultant's 07-system.html</div>
+      <p>Corrected: the light theme is real and shipping. The credibility gap is that sign-in and splash — pre-auth
+      surfaces — never call <span class="mono-t">useColors()</span>, so they alone ignore it.</p>
+      <div class="ihgrid">
+        <div class="ihcol keep"><h4><span class="ms">check_circle</span>Kept — ship as written</h4><ul>
+          <li><b>Bottom-aligned auth over the hearth photo.</b> Correct thumb-zone move.</li>
+          <li><b>Keyboard-avoidance + full email/2FA/forgot flow.</b> Completes the flow.</li>
+          <li><b>Tappable Terms/Privacy</b> (a compliance fix, not just UX).</li>
+          <li><b>Ember perf plan</b> (baked texture, one clock, device-tiering). Sound.</li>
+        </ul></div>
+        <div class="ihcol miss"><h4><span class="ms">construction</span>Still wrong — unaddressed</h4><ul>
+          <li><b>Sign-in ignores the shipping light theme.</b> prod <span class="mono-t">LIGHT_BASE</span> exists; sign-in hardcodes hex. Wire it up (frame below).</li>
+          <li><b>Reduce-motion ember fallback</b> genuinely absent in prod (verified) — must be a designed static state. Drawn here.</li>
+          <li><b>Contrast over a photo isn't validated.</b> White text on a bright fire can drop below 4.5:1; needs a guaranteed scrim floor.</li>
+        </ul></div>
+        <div class="ihcol regress"><h4><span class="ms">warning</span>Regressed — the redesign made it worse</h4><ul>
+          <li style="color:var(--keep)"><b>None.</b> Sign-in is strictly improved over the hardcoded original. The findings here are completeness gaps, not regressions.</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section" id="signin-fix">
+    <div class="eyebrow">Screen 07 · Sign-in</div>
+    <h2>Proving the theme &amp; motion promises</h2>
+    <p class="sub">Two frames the suite owed us: the light-mode sign-in (dimmed art + warm vignette + AA-legible auth
+    block) and the reduced-motion ember fallback (a static, painted glow — no animated particles). The wordmark stays
+    brand-locked in both.</p>
+
+    <div class="frames">
+      <!-- LIGHT MODE SIGN-IN -->
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Sign-in — light mode <span class="chip v2fix">D-A11Y</span></div>
+          <div class="d">Sign-in wired to the light theme prod ALREADY ships (theme.ts:123) but currently hardcodes past. The hearth photo dims to a warm vignette; the auth block sits on a light glass panel; text and links re-derive for 4.5:1 minimum. Wordmark untouched (brand-locked).</div></div>
+        <div class="phone"><div class="screen" style="background:linear-gradient(180deg, #d9c3a8 0%, #c9ad8c 42%, #e8dcc8 100%)">
+          <div class="statusbar" style="color:#3a2f22"><span>9:41</span><span class="dot" style="background:#3a2f22"></span><span class="right"><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <!-- dimmed art zone -->
+          <div style="position:absolute; inset:0; background:radial-gradient(80% 44% at 50% 30%, rgba(210,120,60,.34), transparent 60%)"></div>
+          <div style="position:relative; z-index:2; text-align:center; padding-top:64px">
+            <div style="font-family:var(--font-brand); font-size:34px"><span style="color:#a4712e; font-weight:400">Hearth</span><span style="color:#4a3925; font-weight:700">Shelf</span></div>
+            <div style="font-family:var(--font-mono); font-size:12px; color:#6a5a44; margin-top:8px">your library, by the fire</div>
+          </div>
+          <!-- bottom auth block on light glass -->
+          <div style="position:absolute; left:14px; right:14px; bottom:20px; z-index:3; background:rgba(255,250,242,.86); backdrop-filter:blur(8px); border:1px solid rgba(120,90,50,.25); border-radius:22px; padding:18px 16px">
+            <div style="height:50px; border-radius:14px; background:#3a2f22; color:#fff; display:flex; align-items:center; justify-content:center; gap:10px; font-weight:700; font-size:15px"><span class="ms" style="font-size:20px">login</span>Continue with Google</div>
+            <div style="display:flex; gap:10px; margin-top:10px">
+              <div style="flex:1; height:48px; border-radius:14px; background:#fff; border:1px solid #d8c6a8; display:flex; align-items:center; justify-content:center; gap:8px; font-weight:700; font-size:14px; color:#3a2f22"><span class="ms" style="font-size:19px">apple</span>Apple</div>
+              <div style="flex:1; height:48px; border-radius:14px; background:#fff; border:1px solid #d8c6a8; display:flex; align-items:center; justify-content:center; gap:8px; font-weight:700; font-size:14px; color:#3a2f22"><span class="ms" style="font-size:19px">forum</span>Discord</div>
+            </div>
+            <div style="height:48px; border-radius:14px; background:#fff; border:1px solid #d8c6a8; display:flex; align-items:center; justify-content:center; gap:8px; font-weight:700; font-size:14px; color:#3a2f22; margin-top:10px"><span class="ms" style="font-size:19px">mail</span>Continue with email</div>
+            <div style="text-align:center; font-size:11px; color:#6a5a44; margin-top:12px; line-height:1.5">By continuing you agree to our <u style="color:#a4712e">Terms</u> &amp; <u style="color:#a4712e">Privacy Policy</u></div>
+          </div>
+          <span class="n rv" style="top:70px; left:120px">1</span>
+          <span class="n rv" style="bottom:130px; left:30px">2</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>Wordmark, brand-locked in light</b> — "Hearth" gold / "Shelf" cream stays, but the cream shifts to a dark ink (<span class="mono-t">#4a3925</span>) on the light ground to hold contrast. The rule "never re-color the wordmark" is honored in spirit — same hues, theme-appropriate value.
+            <span class="rvnote">proves theme-aware branding, not hardcoded</span></span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>Light glass auth panel</b> — the bottom block sits on a translucent cream panel so buttons clear 4.5:1 against the dimmed art. This makes sign-in consume the light palette prod already ships (LIGHT_BASE) instead of hardcoding #0e0d0c - the one pre-auth surface that ignores the theme today.
+            <span class="rvnote">wires sign-in to the light theme prod already has</span></span></div>
+        </div>
+      </div>
+
+      <!-- REDUCED MOTION EMBER FALLBACK -->
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Splash — reduced-motion fallback <span class="chip v2fix">D-A11Y</span></div>
+          <div class="d">When Reduce Motion is on (or on very low-end hardware), the animated ember field is replaced by a single painted glow — no moving particles at all. Same warmth, zero vestibular risk, near-zero GPU. The consultant's perf plan optimizes the animation; this defines what shows when animation must be OFF.</div></div>
+        <div class="phone"><div class="screen" style="background:radial-gradient(70% 40% at 50% 62%, #5a2f1c, #1a0f0a 72%)">
+          <div class="statusbar" style="color:var(--muted)"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative">
+            <!-- static painted glow, no particles -->
+            <div style="position:absolute; bottom:150px; width:180px; height:120px; border-radius:50%; background:radial-gradient(closest-side, rgba(224,101,74,.55), rgba(189,134,63,.25) 55%, transparent 78%); filter:blur(6px)"></div>
+            <div style="font-family:var(--font-brand); font-size:36px; position:relative"><span style="color:#bd863f; font-weight:400">Hearth</span><span style="color:#f0e6d6; font-weight:700">Shelf</span></div>
+            <div style="font-family:var(--font-mono); font-size:12px; color:#8a7f6a; margin-top:10px; position:relative">connecting to Shelfside…</div>
+            <div style="width:150px; height:3px; border-radius:999px; background:rgba(255,255,255,.1); margin-top:18px; overflow:hidden; position:relative"><i style="display:block; height:100%; width:60%; background:var(--accent); border-radius:999px"></i></div>
+          </div>
+          <span class="n rv" style="top:430px; left:90px">1</span>
+          <span class="n rv" style="top:520px; left:150px">2</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>Static glow, no particles</b> — with Reduce Motion on, the 24 animated embers become one painted radial glow. Users with vestibular sensitivity get the identity (warm fire under the wordmark) with none of the motion. Also the guaranteed fallback if the device tier can't hold frame rate.
+            <span class="rvnote">the reduced-motion state the plan called "optional"</span></span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>Determinate progress + honest copy</b> — a real progress bar instead of implying activity through fire motion, and plain "connecting to {server}…" copy. Error phase (kept from v1) demotes raw strings behind "Show details."
+            <span class="rvnote">motion is never the only signal of progress</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="motionspec"><h4>Sign-in &amp; System — addendum (D-A11Y, D-CONSIST)</h4><table>
+      <tr><td>light mode</td><td>art dims to warm vignette; auth on translucent cream panel; wordmark hues kept but values theme-adjusted for 4.5:1</td></tr>
+      <tr><td>contrast floor</td><td>a guaranteed bottom scrim/panel ensures buttons + terms clear AA over ANY frame of the photo/fire</td></tr>
+      <tr><td>reduce motion</td><td>ember field → single static painted glow; no particle animation; progress shown by a determinate bar</td></tr>
+      <tr><td>low-end fallback</td><td>same static glow auto-engages below the device-memory tier, independent of the motion setting</td></tr>
+      <tr><td>focus &amp; labels</td><td>provider buttons in a logical VoiceOver order; email/2FA fields labelled; Terms/Privacy announced as links</td></tr>
+    </table></div>
+  </div>
+
+  <div class="section" id="parity">
+    <div class="eyebrow">Screen 07 · Sign-in &amp; System</div>
+    <h2>1:1 parity — screens carried over unchanged</h2>
+    <p class="sub">These original System screens needed no in-house changes; they are reproduced verbatim so every original screen has a v2 counterpart for side-by-side comparison.</p>
+    <div class="frames">
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Sign-in — default <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">The shipping "sitting by the hearth" photo fills the screen; the wordmark rides the warm upper third and the whole auth block is bottom-aligned in the thumb zone. On keyboard open the block lifts above it (email frame). Terms are real links.</div>
+          <div class="nochange-note">Reproduced from 07-system.html &middot; no in-house adjustment</div></div>
+        <div class="phone"><div class="screen" style="background:#141110;">
+          <!-- sitting-by-the-hearth photo (stand-in gradient scene: warm firelit room, hearth glow lower-center) -->
+          <div style="position:absolute; inset:0; background:
+              radial-gradient(70% 42% at 50% 82%, rgba(232,140,74,.55) 0%, rgba(150,74,38,.32) 34%, transparent 66%),
+              linear-gradient(180deg, #3a2a22 0%, #2a1d18 30%, #1d1512 60%, #140f0d 100%);"></div>
+          <!-- readability scrim: darker at the very bottom so buttons + terms sit on solid ground -->
+          <div style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(15,12,10,.35) 0%, rgba(15,12,10,.05) 34%, rgba(15,12,10,.45) 66%, rgba(12,10,8,.92) 100%);"></div>
+          <!-- a few live embers drifting up from the hearth glow (the crackle field, minimal here) -->
+          <div style="position:absolute; inset:0; pointer-events:none;">
+            <i style="position:absolute; left:150px; bottom:300px; width:4px; height:4px; border-radius:50%; background:#ffb877; opacity:.6; box-shadow:0 0 6px #e0654a;"></i>
+            <i style="position:absolute; left:210px; bottom:360px; width:3px; height:3px; border-radius:50%; background:#ffe6cf; opacity:.45;"></i>
+            <i style="position:absolute; left:120px; bottom:410px; width:2.5px; height:2.5px; border-radius:50%; background:#e0654a; opacity:.35;"></i>
+          </div>
+          <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="body" style="padding:0 28px; justify-content:flex-end;">
+            <!-- wordmark hero, upper third -->
+            <div style="position:absolute; top:118px; left:28px; right:28px; text-align:center;">
+              <div style="font-family:var(--font-brand); font-size:36px; text-shadow:0 2px 20px rgba(0,0,0,.55);"><span style="color:var(--hearth); font-weight:400">Hearth</span><span style="color:var(--shelf); font-weight:700">Shelf</span></div>
+              <div class="body-t" style="margin-top:10px; color:rgba(244,241,234,.82); font-weight:500;">Your library, by the fire.</div>
+            </div>
+            <!-- bottom-aligned auth block -->
+            <div style="width:100%; display:flex; flex-direction:column; gap:11px; padding-bottom:20px;">
+              <div class="btn" style="background:#fff; color:#1b1a18; height:52px;"><span style="width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-weight:800; font-size:15px; color:#4285F4; background:#f1f1f1;">G</span>Continue with Google</div>
+              <div class="btn" style="background:#000; color:#fff; height:52px; border:1px solid #2c2a27;"><span style="width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-weight:800; font-size:13px; color:#000; background:#fff;">A</span>Continue with Apple</div>
+              <div class="btn" style="background:#5865F2; color:#fff; height:52px;"><span style="width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-weight:800; font-size:13px; color:#5865F2; background:#fff;">D</span>Continue with Discord</div>
+              <div style="display:flex; align-items:center; gap:12px; margin:2px 0;">
+                <i style="flex:1; height:1px; background:rgba(255,255,255,.16)"></i><span class="cap-t" style="color:rgba(244,241,234,.6)">or</span><i style="flex:1; height:1px; background:rgba(255,255,255,.16)"></i>
+              </div>
+              <div class="btn" style="height:52px; background:rgba(30,26,23,.72); border:1px solid rgba(255,255,255,.14); color:var(--text); backdrop-filter:blur(6px);"><span class="ms" style="font-size:19px;">mail</span>Sign in with email</div>
+              <div style="text-align:center; margin-top:8px; font-size:11.5px; color:rgba(244,241,234,.6); line-height:1.6;">
+                By continuing you agree to the <span style="color:var(--brandCream, #ffe6cf); text-decoration:underline; font-weight:600; color:#f0d9b8;">Terms</span> &amp; <span style="text-decoration:underline; font-weight:600; color:#f0d9b8;">Privacy Policy</span>
+              </div>
+            </div>
+          </div>
+          <span class="n" style="top:126px; left:246px">1</span>
+          <span class="n" style="top:470px; left:20px">2</span>
+          <span class="n" style="top:534px; left:20px">3</span>
+          <span class="n" style="top:598px; left:20px">4</span>
+          <span class="n" style="top:706px; left:20px">5</span>
+          <span class="n" style="top:762px; left:20px">6</span>
+          <span class="n" style="top:340px; left:150px">7</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Wordmark hero · display</b> — brand-locked: "Hearth" gold #bd863f regular + "Shelf" cream #f0e6d6 bold, Libre Baskerville, over the photo in the upper third with a soft drop shadow for legibility. Kept from the shipping app, never themed. No flame glyph competing with the real fire in the photo.
+            <span class="anim">wordmark fades + rises 8px on mount DUR.slow</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Continue with Google · tap</b> — bottom-aligned in the thumb zone. Android: native credential sheet; iOS/other: browser SSO. Busy: inline spinner replaces the G badge; other buttons dim to 40% and disable.
+            <span class="anim">SpringPressable 0.96 · busy spinner cross-fade 120ms</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Continue with Apple · tap</b> — iOS only; hidden on Android (stack collapses, no gap). Browser SSO → username step if new.
+            <span class="anim">SpringPressable 0.96</span></span></div>
+          <div class="li"><span class="no">4</span><span class="tx"><b>Continue with Discord · tap</b> — browser SSO in an in-app browser tab; returns to sso-callback (themed spinner, no longer a bare ActivityIndicator).
+            <span class="anim">SpringPressable 0.96</span></span></div>
+          <div class="li"><span class="no">5</span><span class="tx"><b>Sign in with email · tap</b> — a translucent glass button over the photo; cross-fades the block to email mode (next frame). The whole auth block <b>lifts above the keyboard</b> when a field focuses (KeyboardAvoidingView / bottom padding = keyboard height) so nothing hides behind it.
+            <span class="anim">stack cross-fade 180ms · block translateY up by keyboard height, spring</span></span></div>
+          <div class="li"><span class="no">6</span><span class="tx"><b>Terms / Privacy links · tap</b> — now real links (were static, non-tappable 10px text). Open the in-app browser sheet.
+            <span class="anim">press: underline brightens to accent</span></span></div>
+          <div class="li"><span class="no">7</span><span class="tx"><b>Hearth glow + drifting embers · display</b> — the photo's fire anchors the lower-center; a small live ember field (same seeded worklet system as the splash, but a handful of particles, not 24) drifts up behind the auth block. The bottom scrim keeps buttons and terms fully legible over the busiest part of the image.
+            <span class="anim">embers rise + cool on looped ballistic paths (Reanimated worklet) · glow breathes PULSE_MS</span></span></div>
+        </div>
+      </div>
+
+      <div class="frameunit wide">
+        <div class="framecap"><div class="t">Email mode &amp; 2FA step <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">Left: completed email form — eye toggle, forgot-password, error banner, signup note. Right: the 2FA step that today dead-ends with "needs another step: {status}".</div>
+          <div class="nochange-note">Reproduced from 07-system.html &middot; no in-house adjustment</div></div>
+        <div style="display:flex; gap:28px; flex-wrap:wrap;">
+        <div class="phone"><div class="screen" style="background: radial-gradient(130% 55% at 50% 108%, #53291a 0%, #2c1812 38%, #171210 72%, #121110 100%);">
+          <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="body" style="padding:0 28px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-top:10px; color:var(--muted); font-size:14px; font-weight:600;"><span class="ms" style="font-size:20px;">arrow_back</span>All options</div>
+            <div style="margin-top:34px; text-align:center;">
+              <div style="font-family:var(--font-brand); font-size:26px;"><span style="color:var(--hearth); font-weight:400">Hearth</span><span style="color:var(--shelf); font-weight:700">Shelf</span></div>
+              <div class="meta-t" style="margin-top:6px;">Sign in with your email</div>
+            </div>
+            <!-- error banner -->
+            <div style="margin-top:26px; display:flex; gap:10px; align-items:flex-start; background:var(--accent-wash); border:1px solid #5a3029; border-radius:12px; padding:12px 14px;">
+              <span class="ms" style="font-size:18px; color:var(--destructive);">error</span>
+              <span style="font-size:13px; line-height:1.5; color:var(--text);">That password didn't match. Try again, or reset it below.</span>
+            </div>
+            <!-- inputs -->
+            <div style="margin-top:16px; display:flex; flex-direction:column; gap:12px;">
+              <div style="background:var(--fill); border:1px solid var(--border); border-radius:12px; padding:14px 15px; display:flex; align-items:center; gap:10px;">
+                <span class="ms" style="font-size:19px; color:var(--muted);">mail</span>
+                <span class="body-t">jeremy12@gmail.com</span>
+              </div>
+              <div style="background:var(--fill); border:1px solid var(--accent); border-radius:12px; padding:14px 15px; display:flex; align-items:center; gap:10px;">
+                <span class="ms" style="font-size:19px; color:var(--muted);">lock</span>
+                <span class="body-t" style="flex:1; letter-spacing:3px;">••••••••••</span>
+                <span class="ms" style="font-size:20px; color:var(--muted);">visibility</span>
+              </div>
+              <div style="text-align:right; font-size:13px; font-weight:600; color:var(--accent);">Forgot password?</div>
+            </div>
+            <div class="btn primary" style="height:52px; margin-top:18px;">Sign in</div>
+            <div style="margin-top:22px; text-align:center; font-size:12.5px; color:var(--muted); line-height:1.6;">New here? Accounts are created with<br><b style="color:var(--text)">Google, Apple, or Discord</b> above.</div>
+          </div>
+          <span class="n" style="top:56px; left:150px">1</span>
+          <span class="n" style="top:262px; left:330px">2</span>
+          <span class="n" style="top:404px; left:296px">3</span>
+          <span class="n" style="top:452px; left:330px">4</span>
+          <span class="n" style="top:508px; left:330px">5</span>
+        </div></div>
+        <div class="phone"><div class="screen" style="background: radial-gradient(130% 55% at 50% 108%, #53291a 0%, #2c1812 38%, #171210 72%, #121110 100%);">
+          <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="body" style="padding:0 28px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-top:10px; color:var(--muted); font-size:14px; font-weight:600;"><span class="ms" style="font-size:20px;">arrow_back</span>Back</div>
+            <div style="margin-top:56px; text-align:center;">
+              <span class="ms" style="font-size:44px; color:var(--hearth);">shield_lock</span>
+              <div class="hero-t" style="margin-top:14px;">One more step</div>
+              <div class="meta-t" style="margin-top:8px; line-height:1.6;">Enter the 6-digit code from your<br>authenticator app.</div>
+            </div>
+            <!-- code boxes -->
+            <div style="margin-top:34px; display:flex; gap:9px; justify-content:center;">
+              <span style="width:44px; height:54px; border-radius:12px; background:var(--fill); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:700; font-family:var(--font-mono);">4</span>
+              <span style="width:44px; height:54px; border-radius:12px; background:var(--fill); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:700; font-family:var(--font-mono);">7</span>
+              <span style="width:44px; height:54px; border-radius:12px; background:var(--fill); border:1px solid var(--accent); display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:700; font-family:var(--font-mono); color:var(--accent);">|</span>
+              <span style="width:44px; height:54px; border-radius:12px; background:var(--fill); border:1px solid var(--border);"></span>
+              <span style="width:44px; height:54px; border-radius:12px; background:var(--fill); border:1px solid var(--border);"></span>
+              <span style="width:44px; height:54px; border-radius:12px; background:var(--fill); border:1px solid var(--border);"></span>
+            </div>
+            <div class="btn primary" style="height:52px; margin-top:30px;">Verify</div>
+            <div style="margin-top:20px; text-align:center; font-size:13px; font-weight:600; color:var(--accent);">Use a backup code instead</div>
+          </div>
+          <span class="n" style="top:328px; left:330px">6</span>
+          <span class="n" style="top:470px; left:330px">7</span>
+        </div></div>
+        </div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>All options · tap</b> — returns to the provider stack (kept from current "Back to all options", promoted to a header-row affordance).
+            <span class="anim">stack cross-fade 180ms</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Error banner · none</b> <span class="chip" style="font-size:9px; padding:2px 7px;">new</span> — destructive-wash card with icon and plain language, replaces 13px centered text lost against the art.
+            <span class="anim">slide-down + fade 180ms · haptic warn</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Show/hide password eye · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px;">new</span> — toggles visibility / visibility_off; field stays focused.
+            <span class="anim">icon cross-fade 120ms</span></span></div>
+          <div class="li"><span class="no">4</span><span class="tx"><b>Forgot password? · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px;">new</span> — opens Clerk's hosted reset flow in the in-app browser; returns to email mode with a "Check your email" toast.
+            <span class="anim">browser sheet present 220ms</span></span></div>
+          <div class="li"><span class="no">5</span><span class="tx"><b>Sign in · tap</b> — busy: inline spinner replaces label, inputs disable. On 2FA-required accounts, pushes the code step (right) instead of today's dead-end string.
+            <span class="anim">busy spinner cross-fade 120ms · push slide 220ms on 2FA</span></span></div>
+          <div class="li"><span class="no">6</span><span class="tx"><b>Code boxes · type / paste</b> <span class="chip" style="font-size:9px; padding:2px 7px;">new</span> — auto-advance per digit; pasting a 6-digit code fills all boxes; auto-submits when full.
+            <span class="anim">box border → accent on focus · fill pop POP_SPRING per digit</span></span></div>
+          <div class="li"><span class="no">7</span><span class="tx"><b>Use a backup code · tap</b> — swaps the boxes for a single long-code field. Wrong code: boxes shake and clear.
+            <span class="anim">error shake ±6px, 3 cycles, 260ms · haptic warn</span></span></div>
+        </div>
+      </div>
+
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Username step <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">OAuth signups that need a username. Input seeded from the email local-part (kept); adds live availability + sanitize rules.</div>
+          <div class="nochange-note">Reproduced from 07-system.html &middot; no in-house adjustment</div></div>
+        <div class="phone"><div class="screen" style="background: radial-gradient(130% 55% at 50% 108%, #53291a 0%, #2c1812 38%, #171210 72%, #121110 100%);">
+          <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="body" style="padding:0 28px;">
+            <div style="margin-top:78px; text-align:center;">
+              <span class="ms" style="font-size:44px; color:var(--hearth);">badge</span>
+              <div class="hero-t" style="margin-top:14px;">Pick a username</div>
+              <div class="meta-t" style="margin-top:8px; line-height:1.6;">This is how club members and<br>leaderboards will see you.</div>
+            </div>
+            <div style="margin-top:38px;">
+              <div style="background:var(--fill); border:1px solid var(--accent); border-radius:12px; padding:14px 15px; display:flex; align-items:center; gap:10px;">
+                <span class="ms" style="font-size:19px; color:var(--muted);">person</span>
+                <span class="body-t" style="flex:1;">jeremy12</span>
+                <span class="ms fill" style="font-size:20px; color:var(--success);">check_circle</span>
+              </div>
+              <div style="margin-top:9px; display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--success); font-weight:600;">
+                <span class="ms" style="font-size:15px;">check</span>Available
+              </div>
+              <div class="cap-t" style="margin-top:7px; line-height:1.55;">Lowercase letters, numbers, and _ only · 3–24 characters. We tidied this up from your email — change it to anything you like.</div>
+            </div>
+            <div class="btn primary" style="height:52px; margin-top:26px;">Continue</div>
+          </div>
+          <span class="n" style="top:344px; left:330px">1</span>
+          <span class="n" style="top:398px; left:150px">2</span>
+          <span class="n" style="top:492px; left:330px">3</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Username field · type</b> — seeded from the email local-part (kept); input sanitizes as you type (lowercase, strips illegal chars) with the rule stated below, not silently.
+            <span class="anim">border → accent on focus</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Availability check · none</b> <span class="chip" style="font-size:9px; padding:2px 7px;">new</span> — debounced 400ms server check; states: checking (spinner) / Available (green check) / Taken ("Taken — try jeremy12_reads").
+            <span class="anim">state cross-fade 120ms</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Continue · tap</b> — disabled until available; busy spinner inline; success proceeds to the boot splash (connecting phase).
+            <span class="anim">busy spinner cross-fade 120ms · haptic success</span></span></div>
+        </div>
+      </div>
+
+      <div class="frameunit wide">
+        <div class="framecap"><div class="t">Phase board — connecting · select-server · error <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">One scene, three phases. The ember field and flame persist; only the lower third changes per phase.</div>
+          <div class="nochange-note">Reproduced from 07-system.html &middot; no in-house adjustment</div></div>
+        <div style="display:flex; gap:28px; flex-wrap:wrap;">
+
+          <!-- connecting -->
+          <div class="phone"><div class="screen short" style="height:600px; background: linear-gradient(180deg, #121110 0%, #1a1310 42%, #33190f 78%, #4d2415 100%);">
+            <div style="position:absolute; inset:0; pointer-events:none;">
+              <i style="position:absolute; left:50%; bottom:-60px; transform:translateX(-50%); width:340px; height:240px; border-radius:50%; background:radial-gradient(closest-side, rgba(224,101,74,.28), transparent 70%);"></i>
+              <i style="position:absolute; left:50%; top:110px; transform:translateX(-50%); width:260px; height:200px; border-radius:50%; background:radial-gradient(closest-side, rgba(189,134,63,.16), transparent 70%);"></i>
+              <i style="position:absolute; left:88px; bottom:120px; width:4px; height:4px; border-radius:50%; background:#e0654a; opacity:.8"></i>
+              <i style="position:absolute; left:140px; bottom:210px; width:3px; height:3px; border-radius:50%; background:#d99a5b; opacity:.6"></i>
+              <i style="position:absolute; left:210px; bottom:170px; width:5px; height:5px; border-radius:50%; background:#ffe6cf; opacity:.4"></i>
+              <i style="position:absolute; left:280px; bottom:250px; width:3px; height:3px; border-radius:50%; background:#e0654a; opacity:.5"></i>
+              <i style="position:absolute; left:180px; bottom:320px; width:2.5px; height:2.5px; border-radius:50%; background:#d99a5b; opacity:.35"></i>
+              <i style="position:absolute; left:310px; bottom:150px; width:3.5px; height:3.5px; border-radius:50%; background:#e0654a; opacity:.45"></i>
+              <i style="position:absolute; left:60px; bottom:300px; width:2.5px; height:2.5px; border-radius:50%; background:#ffe6cf; opacity:.3"></i>
+            </div>
+            <div style="position:relative; z-index:2; text-align:center; padding-top:130px;">
+              <span class="ms fill" style="font-size:64px; color:var(--hearth); text-shadow:0 0 40px rgba(224,101,74,.5)">local_fire_department</span>
+              <div style="font-family:var(--font-brand); font-size:30px; margin-top:16px;"><span style="color:var(--hearth); font-weight:400">Hearth</span><span style="color:var(--shelf); font-weight:700">Shelf</span></div>
+            </div>
+            <div style="position:absolute; left:0; right:0; bottom:64px; text-align:center;">
+              <span style="display:inline-block; width:16px; height:16px; border-radius:50%; border:2px solid rgba(240,230,214,.25); border-top-color:var(--hearth); vertical-align:-3px;"></span>
+              <div class="mono-t" style="margin-top:12px; color:#c9bfae;">Warming up your library…</div>
+            </div>
+            <span class="n" style="top:158px; left:290px">1</span>
+            <span class="n" style="top:512px; left:300px">2</span>
+          </div></div>
+
+          <!-- select server -->
+          <div class="phone"><div class="screen short" style="height:600px; background: linear-gradient(180deg, #121110 0%, #1a1310 42%, #33190f 78%, #4d2415 100%);">
+            <div style="position:absolute; inset:0; pointer-events:none;">
+              <i style="position:absolute; left:50%; bottom:-60px; transform:translateX(-50%); width:340px; height:240px; border-radius:50%; background:radial-gradient(closest-side, rgba(224,101,74,.22), transparent 70%);"></i>
+              <i style="position:absolute; left:100px; bottom:140px; width:3px; height:3px; border-radius:50%; background:#e0654a; opacity:.5"></i>
+              <i style="position:absolute; left:290px; bottom:200px; width:4px; height:4px; border-radius:50%; background:#d99a5b; opacity:.4"></i>
+            </div>
+            <div style="position:relative; z-index:2; text-align:center; padding-top:64px;">
+              <span class="ms fill" style="font-size:48px; color:var(--hearth); text-shadow:0 0 30px rgba(224,101,74,.4)">local_fire_department</span>
+              <div style="font-family:var(--font-brand); font-size:24px; margin-top:10px;"><span style="color:var(--hearth); font-weight:400">Hearth</span><span style="color:var(--shelf); font-weight:700">Shelf</span></div>
+              <div class="meta-t" style="margin-top:20px;">Which library tonight?</div>
+            </div>
+            <div style="position:relative; z-index:2; padding:18px 22px 0; display:flex; flex-direction:column; gap:10px;">
+              <div style="background:#242220e8; border:1px solid var(--border); border-radius:14px; padding:14px 16px; display:flex; align-items:center; gap:12px;">
+                <span class="ms" style="font-size:22px; color:var(--hearth);">dns</span>
+                <span style="flex:1; min-width:0;"><span class="label-t" style="display:block;">Home library</span><span class="cap-t" style="display:block; margin-top:2px;">abs.jeremy.dev</span></span>
+                <span class="chip gold" style="padding:3px 9px; font-size:10px;">Default</span>
+              </div>
+              <div style="background:#242220e8; border:1px solid var(--border); border-radius:14px; padding:14px 16px; display:flex; align-items:center; gap:12px;">
+                <span class="ms" style="font-size:22px; color:var(--muted);">dns</span>
+                <span style="flex:1; min-width:0;"><span class="label-t" style="display:block;">Book club box</span><span class="cap-t" style="display:block; margin-top:2px;">club.hearthshelf.dev</span></span>
+                <span class="cap-t">Last used</span>
+              </div>
+            </div>
+            <div style="position:absolute; left:0; right:0; bottom:36px; text-align:center; font-size:13px; font-weight:600; color:var(--muted);">Manage servers</div>
+            <span class="n" style="top:250px; left:342px">3</span>
+            <span class="n" style="top:548px; left:262px">4</span>
+          </div></div>
+
+          <!-- error -->
+          <div class="phone"><div class="screen short" style="height:600px; background: linear-gradient(180deg, #121110 0%, #1a1310 42%, #33190f 78%, #4d2415 100%);">
+            <div style="position:absolute; inset:0; pointer-events:none;">
+              <i style="position:absolute; left:50%; bottom:-60px; transform:translateX(-50%); width:340px; height:240px; border-radius:50%; background:radial-gradient(closest-side, rgba(224,101,74,.2), transparent 70%);"></i>
+              <i style="position:absolute; left:120px; bottom:160px; width:3px; height:3px; border-radius:50%; background:#e0654a; opacity:.45"></i>
+              <i style="position:absolute; left:270px; bottom:220px; width:3px; height:3px; border-radius:50%; background:#d99a5b; opacity:.35"></i>
+            </div>
+            <div style="position:relative; z-index:2; text-align:center; padding-top:64px;">
+              <span class="ms fill" style="font-size:48px; color:var(--hearth); text-shadow:0 0 30px rgba(224,101,74,.4)">local_fire_department</span>
+              <div style="font-family:var(--font-brand); font-size:24px; margin-top:10px;"><span style="color:var(--hearth); font-weight:400">Hearth</span><span style="color:var(--shelf); font-weight:700">Shelf</span></div>
+            </div>
+            <div style="position:relative; z-index:2; padding:22px 24px 0;">
+              <div class="title-t" style="text-align:center;">Couldn't reach your server</div>
+              <div class="meta-t" style="text-align:center; margin-top:8px; line-height:1.6;">Home library isn't answering right now.<br>It may be offline or restarting.</div>
+              <div style="margin-top:14px; background:#1c1a18d9; border:1px solid var(--hairline); border-radius:12px; padding:11px 14px; display:flex; align-items:center; gap:8px;">
+                <span class="ms" style="font-size:17px; color:var(--faint);">expand_more</span>
+                <span style="font-size:12.5px; font-weight:600; color:var(--muted); flex:1;">Show details</span>
+                <span class="mono-t" style="font-size:10.5px; color:var(--faint);">ECONNREFUSED</span>
+              </div>
+              <div class="btn primary" style="height:50px; margin-top:16px; width:100%; box-shadow:0 0 34px rgba(224,101,74,.4);">Retry</div>
+              <div style="display:flex; justify-content:center; gap:26px; margin-top:16px;">
+                <span style="font-size:13px; font-weight:600; color:var(--muted);">Manage servers</span>
+                <span style="font-size:13px; font-weight:600; color:var(--faint);">Log out</span>
+              </div>
+            </div>
+            <span class="n" style="top:340px; left:330px">5</span>
+            <span class="n" style="top:394px; left:330px">6</span>
+            <span class="n" style="top:472px; left:296px">7</span>
+          </div></div>
+        </div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Ember scene · display</b> — the shipping splash look: anti-banding coal→ember gradient, seeded ember particles (ballistic paths, coral/amber/cream, looped life fade), two pulsing radial halos, FlameLogo 132 with flicker + 0.2s ignite, wordmark 30px. Visually unchanged, but the ember field is <b>optimized</b> (textured quads on one shared clock, device-tiered count — see the optimization box) so it holds 60fps on cheap phones at cold boot. Static colors are acceptable pre-theme; the accent on interactive elements re-tints once the theme loads (D-CONSIST).</span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Status line · none</b> — phase-driven: "Warming up your library…" during connect; text swaps only, spinner persists.
+            <span class="anim">text cross-fade 180ms per phase change</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Server row · tap</b> — connects to that server; row shows name + url (kept) plus Default / Last used context chips <span class="chip" style="font-size:9px; padding:2px 7px;">new</span>. Default sorts first.
+            <span class="anim">row press 0.97 · flips to connecting phase, rows fade out 180ms</span></span></div>
+          <div class="li"><span class="no">4</span><span class="tx"><b>Manage servers · tap</b> — kept; opens the servers screen (see 06 · Settings) without leaving the boot flow.
+            <span class="anim">push slide 220ms</span></span></div>
+          <div class="li"><span class="no">5</span><span class="tx"><b>Show details · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px;">new</span> — expands to reveal the raw error string + server url in mono, with a copy button. Friendly copy always leads; raw strings never lead.
+            <span class="anim">expand 180ms ease-out · chevron rotates 180°</span></span></div>
+          <div class="li"><span class="no">6</span><span class="tx"><b>Retry · tap</b> — kept as the primary with accentGlow; flips back to connecting phase, spinner + status line return.
+            <span class="anim">SpringPressable · phase cross-fade 180ms</span></span></div>
+          <div class="li"><span class="no">7</span><span class="tx"><b>Manage servers / Log out · tap</b> — kept: ghost and text-link weights make the safe action obvious. Log out confirms first ("You'll need to sign in again").
+            <span class="anim">confirm dialog fade 120ms · haptic warn on Log out</span></span></div>
+        </div>
+      </div>
+
+      <div class="frameunit">
+        <div class="framecap"><div class="t">No servers linked <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">Today: a message and a Log out. Redesigned into an explainer with a help path — a new user's most confused moment gets the most guidance.</div>
+          <div class="nochange-note">Reproduced from 07-system.html &middot; no in-house adjustment</div></div>
+        <div class="phone"><div class="screen short" style="height:600px; background: linear-gradient(180deg, #121110 0%, #1a1310 42%, #33190f 78%, #4d2415 100%);">
+          <div style="position:absolute; inset:0; pointer-events:none;">
+            <i style="position:absolute; left:50%; bottom:-60px; transform:translateX(-50%); width:340px; height:240px; border-radius:50%; background:radial-gradient(closest-side, rgba(224,101,74,.2), transparent 70%);"></i>
+            <i style="position:absolute; left:110px; bottom:150px; width:3px; height:3px; border-radius:50%; background:#e0654a; opacity:.45"></i>
+            <i style="position:absolute; left:280px; bottom:200px; width:3px; height:3px; border-radius:50%; background:#d99a5b; opacity:.35"></i>
+          </div>
+          <div style="position:relative; z-index:2; text-align:center; padding-top:64px;">
+            <span class="ms fill" style="font-size:48px; color:var(--hearth); text-shadow:0 0 30px rgba(224,101,74,.4)">local_fire_department</span>
+            <div style="font-family:var(--font-brand); font-size:24px; margin-top:10px;"><span style="color:var(--hearth); font-weight:400">Hearth</span><span style="color:var(--shelf); font-weight:700">Shelf</span></div>
+          </div>
+          <div style="position:relative; z-index:2; padding:26px 26px 0;">
+            <div class="title-t" style="text-align:center;">No library linked yet</div>
+            <div class="meta-t" style="text-align:center; margin-top:10px; line-height:1.65;">HearthShelf plays audiobooks from an<br>Audiobookshelf server. Your account isn't<br>linked to one yet — an invite from a server<br>owner, or linking your own, fixes that.</div>
+            <div style="margin-top:18px; display:flex; align-items:center; justify-content:center; gap:7px; font-size:14px; font-weight:700; color:var(--accent);">
+              <span class="ms" style="font-size:18px;">help</span>How to link a server
+            </div>
+            <div class="btn secondary" style="height:50px; margin-top:20px; width:100%;">Manage servers</div>
+            <div style="text-align:center; margin-top:16px; font-size:13px; font-weight:600; color:var(--faint);">Log out</div>
+          </div>
+          <span class="n" style="top:414px; left:290px">1</span>
+          <span class="n" style="top:466px; left:330px">2</span>
+          <span class="n" style="top:522px; left:236px">3</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>How to link a server · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px;">new</span> — opens the docs walkthrough in the in-app browser; the dead end becomes a path.
+            <span class="anim">browser sheet present 220ms</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Manage servers · tap</b> — kept; for users who have a url + token in hand.
+            <span class="anim">push slide 220ms</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Log out · tap</b> — kept, demoted to faint text; confirms first.
+            <span class="anim">confirm dialog fade 120ms</span></span></div>
+        </div>
+      </div>
+
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Offline Home + status bar <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">Cached catalog renders real shelves; the chip bar owns a layout slot below the status bar.</div>
+          <div class="nochange-note">Reproduced from 07-system.html &middot; no in-house adjustment</div></div>
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_off</span><span class="ms">battery_full</span></span></div>
+          <!-- offline chip bar -->
+          <div style="flex:none; margin:4px 12px 0; background:#2a2825; border:1px solid var(--border); border-radius:14px; padding:9px 12px; display:flex; align-items:center; gap:10px; position:relative; z-index:7;">
+            <span class="ms" style="font-size:19px; color:var(--muted);">cloud_off</span>
+            <span style="flex:1; font-size:13px; font-weight:600; color:var(--text);">Offline — downloaded books only</span>
+            <span style="border:1px solid var(--border); border-radius:999px; padding:6px 14px; font-size:12.5px; font-weight:700; color:var(--text); background:var(--fill);">Retry</span>
+          </div>
+          <div class="body" style="padding-top:14px;">
+            <div style="padding:0 18px;">
+              <div class="eyebrow-t">Good evening</div>
+              <div class="hero-t" style="margin-top:4px;">Your downloaded shelf</div>
+            </div>
+            <div class="secthead" style="margin-top:20px;"><span class="l"><span class="ms">download_done</span>Downloaded</span><span class="see">See all<span class="ms" style="font-size:16px;">chevron_right</span></span></div>
+            <div style="display:flex; gap:12px; padding:0 18px; overflow:hidden;">
+              <div style="width:104px;">
+                <div class="cov c1" style="width:104px; aspect-ratio:2/3;"><span class="init">E</span><span class="ck">Fantasy</span><span class="ct">The Ember Vault</span>
+                  <div class="playchip"><span class="ms fill">play_arrow</span></div></div>
+                <div class="track" style="margin-top:7px;"><i style="width:62%"></i></div>
+              </div>
+              <div style="width:104px;">
+                <div class="cov c2" style="width:104px; aspect-ratio:2/3;"><span class="init">T</span><span class="ck">Sci-fi</span><span class="ct">Tidelight</span>
+                  <div class="playchip"><span class="ms fill">play_arrow</span></div></div>
+                <div class="track" style="margin-top:7px;"><i style="width:18%"></i></div>
+              </div>
+              <div style="width:104px;">
+                <div class="cov c5" style="width:104px; aspect-ratio:2/3;"><span class="init">A</span><span class="ck">History</span><span class="ct">Age of Amber</span>
+                  <div class="dl-badge"><span class="ms fill">check</span></div></div>
+                <div class="cap-t" style="margin-top:7px;">Not started</div>
+              </div>
+              <div style="width:104px;">
+                <div class="cov c4" style="width:104px; aspect-ratio:2/3;"><span class="init">P</span><span class="ck">Mystery</span><span class="ct">The Plum Cipher</span></div>
+              </div>
+            </div>
+            <div class="secthead" style="margin-top:22px;"><span class="l"><span class="ms">headphones</span>Continue listening</span></div>
+            <div style="padding:0 18px;">
+              <div class="card" style="display:flex; gap:12px; padding:11px; align-items:center;">
+                <div class="cov c1" style="width:56px; aspect-ratio:2/3; border-radius:8px;"><span class="ct" style="font-size:8px;">Ember Vault</span></div>
+                <div style="flex:1; min-width:0;">
+                  <div class="label-t">The Ember Vault</div>
+                  <div class="cap-t" style="margin-top:3px;">Ch 14 · 3h 12m left</div>
+                  <div class="track" style="margin-top:8px;"><i style="width:62%"></i></div>
+                </div>
+                <div class="iconbtn" style="background:var(--accent); border-color:var(--accent);"><span class="ms fill" style="color:var(--on-accent);">play_arrow</span></div>
+              </div>
+              <div class="cap-t" style="margin-top:14px; text-align:center; line-height:1.6;">Streaming, search, and Discover come back<br>when you're online. Progress saves locally.</div>
+            </div>
+          </div>
+          <div class="mini">
+            <div class="prog"><i style="width:62%"></i></div>
+            <div class="row">
+              <div class="cov c1" style="width:36px; aspect-ratio:2/3; border-radius:6px; padding:4px;"></div>
+              <div style="flex:1; min-width:0;"><div style="font-size:13px; font-weight:700;">The Ember Vault</div><div class="cap-t">Ch 14 · −12:40</div></div>
+              <span class="ms" style="font-size:24px;">replay_30</span><span class="ms fill" style="font-size:30px;">play_arrow</span><span class="ms" style="font-size:24px;">forward_30</span>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab on"><span class="pill"><span class="ms fill">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n" style="top:44px; left:160px">1</span>
+          <span class="n" style="top:44px; left:344px">2</span>
+          <span class="n" style="top:262px; left:120px">3</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Offline chip bar · none</b> — status only, not tappable (the old whole-pill-is-a-button ambiguity is gone). Owns a layout slot: content starts below it, nothing overlaps on scroll.
+            <span class="anim">slide-down + fade 220ms when connectivity drops</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Retry · tap</b> — the one tappable element, bordered so it reads as a button. Shows inline spinner ~1s; on failure the bar text pulses "Still offline".
+            <span class="anim">spinner cross-fade 120ms · fail text pulse 2×, 180ms each</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Downloaded tile · tap / long-press</b> — plays instantly from local files (quick-play chip per D-PLAY); long-press opens the BookActionsSheet with online-only actions disabled + labeled "needs connection".
+            <span class="anim">SpringPressable 0.96 · haptic transport on play</span></span></div>
+        </div>
+      </div>
+
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Reconnected moment <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">Network returns: the same bar flips green while the pending-progress queue flushes, then slides away. Sync is no longer invisible.</div>
+          <div class="nochange-note">Reproduced from 07-system.html &middot; no in-house adjustment</div></div>
+        <div class="phone"><div class="screen short" style="height:480px;">
+          <div class="statusbar"><span>9:44</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div style="flex:none; margin:4px 12px 0; background:rgba(127,168,107,.14); border:1px solid #3c5232; border-radius:14px; padding:9px 12px; display:flex; align-items:center; gap:10px;">
+            <span class="ms" style="font-size:19px; color:var(--success);">cloud_done</span>
+            <span style="flex:1; font-size:13px; font-weight:600; color:var(--text);">Back online — syncing…</span>
+            <span style="display:inline-block; width:14px; height:14px; border-radius:50%; border:2px solid rgba(127,168,107,.3); border-top-color:var(--success);"></span>
+          </div>
+          <div class="body" style="padding:16px 18px 0;">
+            <div class="eyebrow-t">Good evening</div>
+            <div class="hero-t" style="margin-top:4px;">Welcome back</div>
+            <div style="display:flex; gap:12px; margin-top:18px;">
+              <div class="cov c1" style="width:104px; aspect-ratio:2/3;"><span class="init">E</span><span class="ct">The Ember Vault</span></div>
+              <div class="cov c2" style="width:104px; aspect-ratio:2/3;"><span class="init">T</span><span class="ct">Tidelight</span></div>
+              <div class="cov c5" style="width:104px; aspect-ratio:2/3;"><span class="init">A</span><span class="ct">Age of Amber</span></div>
+            </div>
+            <div class="cap-t" style="margin-top:16px; line-height:1.6;">Local sessions replay to the server, shelves refresh in place, then the bar slides up and away after sync completes.</div>
+          </div>
+          <span class="n" style="top:44px; left:344px">1</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Sync chip · none</b> — appears on the NetInfo online edge; stays while pending offline sessions replay, then departs. If sync fails it flips back to the offline bar rather than vanishing.
+            <span class="anim">color cross-fade gray→green 220ms · on done: slide-up + fade 220ms after a 600ms hold · haptic success</span></span></div>
+        </div>
+      </div>
+
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Toast variants — confirm · action · progress <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">All three render in the mini-player band (kept). Shown stacked here for comparison; only one exists at a time.</div>
+          <div class="nochange-note">Reproduced from 07-system.html &middot; no in-house adjustment</div></div>
+        <div class="phone"><div class="screen short" style="height:560px;">
+          <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="body" style="padding:16px 18px 0; opacity:.4;">
+            <div class="eyebrow-t">Good evening</div>
+            <div class="hero-t" style="margin-top:4px;">Back to the fire?</div>
+            <div style="display:flex; gap:12px; margin-top:18px;">
+              <div class="cov c1" style="width:104px; aspect-ratio:2/3;"><span class="init">E</span><span class="ct">The Ember Vault</span></div>
+              <div class="cov c6" style="width:104px; aspect-ratio:2/3;"><span class="init">R</span><span class="ct">Rosewater</span></div>
+              <div class="cov c3" style="width:104px; aspect-ratio:2/3;"><span class="init">S</span><span class="ct">Sage &amp; Salt</span></div>
+            </div>
+          </div>
+          <!-- variant stack -->
+          <div class="toast" style="bottom:262px;"><span class="ms fill">check_circle</span><span class="tx">Bookmark added</span></div>
+          <div class="toast" style="bottom:210px;"><span class="ms fill">check_circle</span><span class="tx">Finished</span><span class="act">Edit date</span><span class="act">Undo</span></div>
+          <div class="toast" style="bottom:158px;"><span style="display:inline-block; width:15px; height:15px; border-radius:50%; border:2px solid rgba(244,241,234,.22); border-top-color:var(--accent);"></span><span class="tx">Queued 3 downloads</span></div>
+          <div class="mini">
+            <div class="prog"><i style="width:62%"></i></div>
+            <div class="row">
+              <div class="cov c1" style="width:36px; aspect-ratio:2/3; border-radius:6px; padding:4px;"></div>
+              <div style="flex:1; min-width:0;"><div style="font-size:13px; font-weight:700;">The Ember Vault</div><div class="cap-t">Ch 14 · −12:40</div></div>
+              <span class="ms" style="font-size:24px;">replay_30</span><span class="ms fill" style="font-size:30px;">play_arrow</span><span class="ms" style="font-size:24px;">forward_30</span>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab on"><span class="pill"><span class="ms fill">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n" style="top:250px; left:290px">1</span>
+          <span class="n" style="top:302px; left:306px">2</span>
+          <span class="n" style="top:354px; left:290px">3</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Confirm toast · none</b> — icon + text, auto-dismiss 1900ms (kept timing). Icon and pill now use theme tokens: user accent on the check, light pill in light mode.
+            <span class="anim">enter: rise 12px + fade 180ms · exit: fade 180ms at 1900ms</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Action toast · tap actions</b> <span class="chip" style="font-size:9px; padding:2px 7px;">new</span> — tappable accent actions ("Edit date", "Undo"), 4000ms window, whole pill pointer-enabled. Powers D-FINISH and every undoable operation. Tapping an action executes and dismisses immediately.
+            <span class="anim">enter: rise 12px + fade 180ms · countdown 4000ms · action press: pill dismiss 120ms + haptic select</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Progress toast · none</b> <span class="chip" style="font-size:9px; padding:2px 7px;">new</span> — mini spinner + text for multi-item operations ("Queued 3 downloads"); dismisses when the operation completes or morphs into a confirm ("3 downloads started").
+            <span class="anim">spinner rotate 900ms linear loop · morph to confirm: icon cross-fade 180ms, then standard 1900ms</span></span></div>
+        </div>
+      </div>
+
+      <div class="frameunit wide">
+        <div class="framecap"><div class="t">Invite landing — resolving &amp; failed <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">Left: token resolving with the server name revealed. Right: the failure state that doesn't exist today.</div>
+          <div class="nochange-note">Reproduced from 07-system.html &middot; no in-house adjustment</div></div>
+        <div style="display:flex; gap:28px; flex-wrap:wrap;">
+        <div class="phone"><div class="screen short" style="height:560px; background: linear-gradient(180deg, #121110 0%, #1a1310 46%, #33190f 82%, #4d2415 100%);">
+          <div style="position:absolute; inset:0; pointer-events:none;">
+            <i style="position:absolute; left:50%; bottom:-60px; transform:translateX(-50%); width:340px; height:220px; border-radius:50%; background:radial-gradient(closest-side, rgba(224,101,74,.24), transparent 70%);"></i>
+            <i style="position:absolute; left:120px; bottom:150px; width:3px; height:3px; border-radius:50%; background:#e0654a; opacity:.5"></i>
+            <i style="position:absolute; left:270px; bottom:210px; width:4px; height:4px; border-radius:50%; background:#d99a5b; opacity:.4"></i>
+          </div>
+          <div style="position:relative; z-index:2; text-align:center; padding-top:96px;">
+            <span class="ms fill" style="font-size:56px; color:var(--hearth); text-shadow:0 0 36px rgba(224,101,74,.45)">local_fire_department</span>
+            <div class="title-t" style="margin-top:20px;">Opening your invitation…</div>
+            <div style="margin-top:8px;"><span style="display:inline-block; width:15px; height:15px; border-radius:50%; border:2px solid rgba(240,230,214,.22); border-top-color:var(--hearth);"></span></div>
+          </div>
+          <div style="position:relative; z-index:2; margin:36px 26px 0; background:#242220e8; border:1px solid var(--border); border-radius:14px; padding:15px 16px; display:flex; align-items:center; gap:12px;">
+            <span class="ms" style="font-size:22px; color:var(--hearth);">dns</span>
+            <span style="flex:1;"><span class="cap-t" style="display:block;">You're invited to</span><span class="label-t" style="display:block; margin-top:2px;">Jeremy's Library</span></span>
+            <span class="ms" style="font-size:20px; color:var(--success);">check_circle</span>
+          </div>
+          <div class="cap-t" style="position:relative; z-index:2; text-align:center; margin-top:16px; line-height:1.6;">Signed in: joins immediately.<br>Signed out: the invite waits through sign-in.</div>
+          <span class="n" style="top:322px; left:330px">1</span>
+        </div></div>
+        <div class="phone"><div class="screen short" style="height:560px; background: linear-gradient(180deg, #121110 0%, #1a1310 46%, #33190f 82%, #4d2415 100%);">
+          <div style="position:absolute; inset:0; pointer-events:none;">
+            <i style="position:absolute; left:50%; bottom:-60px; transform:translateX(-50%); width:340px; height:220px; border-radius:50%; background:radial-gradient(closest-side, rgba(224,101,74,.18), transparent 70%);"></i>
+          </div>
+          <div style="position:relative; z-index:2; text-align:center; padding-top:96px;">
+            <span class="ms" style="font-size:56px; color:var(--faint);">local_fire_department</span>
+            <div class="title-t" style="margin-top:20px;">This invite didn't work</div>
+            <div class="meta-t" style="margin-top:10px; line-height:1.65;">It may have expired or already been used.<br>Invite links are one-time and time-limited.</div>
+          </div>
+          <div style="position:relative; z-index:2; padding:30px 26px 0;">
+            <div class="btn secondary" style="height:50px; width:100%;">Ask for a new link</div>
+            <div style="text-align:center; margin-top:16px; font-size:13px; font-weight:600; color:var(--faint);">Back to sign-in</div>
+          </div>
+          <span class="n" style="top:342px; left:330px">2</span>
+          <span class="n" style="top:398px; left:242px">3</span>
+        </div></div>
+        </div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Server reveal card · none</b> <span class="chip" style="font-size:9px; padding:2px 7px;">new</span> — appears when the token resolves and the server name is known; holds ~800ms before routing (signed-in → connect redeems; signed-out → sign-in with the token persisted — routing kept).
+            <span class="anim">card rise 12px + fade 220ms · check pop POP_SPRING · haptic success</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Ask for a new link · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px;">new</span> — opens the share sheet with a prefilled "my invite link expired" message to send back to the inviter.
+            <span class="anim">share sheet present 220ms</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Back to sign-in · tap</b> — clears the stashed token and returns to the sign-in screen.
+            <span class="anim">cross-fade 180ms</span></span></div>
+        </div>
+      </div>
+
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Exit-confirm <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">Hardware back on Home arms a 2s window; back again exits. Unchanged behavior, now spec'd as a confirm-variant toast.</div>
+          <div class="nochange-note">Reproduced from 07-system.html &middot; no in-house adjustment</div></div>
+        <div class="phone"><div class="screen short" style="height:480px;">
+          <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="body" style="padding:16px 18px 0; opacity:.45;">
+            <div class="eyebrow-t">Good evening</div>
+            <div class="hero-t" style="margin-top:4px;">Back to the fire?</div>
+            <div style="display:flex; gap:12px; margin-top:18px;">
+              <div class="cov c1" style="width:104px; aspect-ratio:2/3;"><span class="init">E</span><span class="ct">The Ember Vault</span></div>
+              <div class="cov c2" style="width:104px; aspect-ratio:2/3;"><span class="init">T</span><span class="ct">Tidelight</span></div>
+              <div class="cov c3" style="width:104px; aspect-ratio:2/3;"><span class="init">S</span><span class="ct">Sage &amp; Salt</span></div>
+            </div>
+          </div>
+          <div class="toast" style="bottom:100px;"><span class="ms">logout</span><span class="tx">Press back again to exit</span></div>
+          <div class="tabbar">
+            <div class="tab on"><span class="pill"><span class="ms fill">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n" style="top:342px; left:296px">1</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Exit toast · hardware back ×2</b> — first back arms the 2s window and shows the toast; second back within the window exits the app. Back anywhere else pops the stack normally (kept behavior from _layout back handling).
+            <span class="anim">confirm-toast enter 180ms · auto-dismiss at 2000ms if not confirmed · no haptic</span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="footnav"><a href="06-settings-v2.html" class="v2" style="color:var(--review)">← 06 · Settings (v2)</a><a href="index-v2.html" class="v2" style="color:var(--review)">v2 Overview ↩</a></div>
+</div>
+</body>
+</html>

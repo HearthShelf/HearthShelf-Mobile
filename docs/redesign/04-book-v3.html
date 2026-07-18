@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HearthShelf Redesign v3 — Book &amp; Reader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Geist+Mono:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<link rel="stylesheet" href="hearth.css">
+<link rel="stylesheet" href="hearth-v3.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div class="wordmark"><span class="lt">Hearth</span><span class="bd">Shelf</span><span class="sub"> · Mobile Redesign — Book &amp; Reader</span><span class="v3tag">V3 proposal</span></div>
+    <div class="tagline">V3 revision checked against the current book-detail implementation.<br>The beta action model stays; compact widths receive a two-row CTA layout.</div>
+  </div>
+  <div class="pagenav">
+    <a href="index-v3.html" class="v3">v3 Overview</a>
+    <a href="01-home-v3.html" class="v3">Home</a>
+    <a href="02-library-v3.html" class="v3">Library &amp; Search</a>
+    <a href="03-player-v3.html" class="v3">Player</a>
+    <a href="04-book-v3.html" class="v3 on">Book &amp; Reader</a>
+    <a href="05-stats-clubs-v3.html" class="v3">Stats &amp; Clubs</a>
+    <a href="06-settings-v3.html" class="v3">Settings</a>
+    <a href="07-system-v3.html" class="v3">Sign-in &amp; System</a>
+    <a href="04-book.html" style="margin-left:14px; opacity:.7">↩ v1</a>
+  </div>
+
+
+  <div class="beta-audit">
+    <div class="beta-kicker">Production-beta code audit · 2026-07-14</div>
+    <h3><span class="beta-status">REVISE BETA</span> Adaptive CTA, not a new action model</h3>
+    <p>Verified against <code>app/item/[id].tsx</code>, <code>FinishDatePrompt</code>, and <code>BookActionsSheet</code>. <a href="PRODUCTION-BETA-AUDIT.md" style="color:var(--accent)">Read the code audit →</a></p>
+  </div>
+
+  <div class="section" id="book-fix">
+    <div class="eyebrow">Screen 04a · Book detail</div>
+    <h2>Let the beta CTA wrap instead of squeeze</h2>
+    <p class="sub">The beta already has state-dependent section order, a dominant Resume action, a visible Finish action with date prompt, Read/Download, and Add to list in overflow. V3 keeps that model. On compact widths, the secondary actions wrap below Resume instead of shrinking.</p>
+
+    <div class="frames">
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Book detail — in progress <span class="chip v3fix">v3 revision</span></div>
+          <div class="d">On compact widths Resume takes the first row. Finish, Read, and Download wrap into a second row with full touch targets. Finish stays visible and continues to open the existing completion-date prompt; Add to list stays in overflow.</div></div>
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_5_bar</span></span></div>
+          <div class="body">
+            <div style="position:absolute; top:-90px; left:-21px; width:420px; height:360px; background:radial-gradient(closest-side, rgba(122,69,54,.5), transparent 72%); filter:blur(26px); pointer-events:none"></div>
+            <div style="display:flex; align-items:center; gap:10px; padding:8px 16px; position:relative">
+              <div class="iconbtn"><span class="ms">arrow_back</span></div>
+              <div style="flex:1"></div>
+              <div class="iconbtn" style="position:relative"><span class="ms">bookmarks</span><span style="position:absolute; top:-4px; right:-4px; min-width:18px; height:18px; border-radius:999px; background:var(--accent); color:var(--on-accent); font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; padding:0 4px; border:2px solid var(--scaffold)">3</span></div>
+              <div class="iconbtn"><span class="ms">more_horiz</span></div>
+            </div>
+            <div style="position:relative; text-align:center; padding:4px 24px 0">
+              <div class="cov c1" style="width:120px; aspect-ratio:2/3; margin:0 auto; box-shadow:0 18px 44px rgba(0,0,0,.55)"><span class="init">A</span><span class="ck">Mira Kestrel</span><span class="ct">The Ashfall Protocol</span></div>
+              <div class="hero-t" style="margin-top:12px; font-size:20px">The Ashfall Protocol</div>
+              <div class="meta-t" style="margin-top:3px">by <span style="color:var(--accent); font-weight:600">Mira Kestrel</span></div>
+              <div style="margin-top:5px; color:var(--hearth); font-size:13px; letter-spacing:2px">★★★★<span style="opacity:.32">★</span> <span class="cap-t" style="letter-spacing:0">4.3</span></div>
+              <div class="mono-t" style="font-size:11.5px; margin-top:4px">11 h 04 m · 41 chapters · Sci-Fi · 2024</div>
+            </div>
+            <div class="card" style="margin:12px 16px 0; padding:14px">
+              <div style="display:flex; justify-content:space-between; align-items:baseline">
+                <span class="mono-t" style="color:var(--text); font-weight:700">42%</span>
+                <span class="mono-t" style="font-size:11px">18 chapters left · 6 h 21 m remaining</span>
+              </div>
+              <div class="track" style="margin-top:8px"><i style="width:42%"></i></div>
+              <!-- TIER 1: full width primary -->
+              <div class="btn primary" style="width:100%; margin-top:14px; height:54px"><span class="ms fill" style="font-size:22px">play_arrow</span>Resume</div>
+              <!-- TIER 2: labeled secondary row, 3 equal buttons, generous -->
+              <div style="display:flex; gap:10px; margin-top:10px">
+                <div style="flex:1; height:48px; border-radius:13px; background:rgba(127,168,107,.14); border:1px solid rgba(127,168,107,.4); display:flex; align-items:center; justify-content:center; gap:7px"><span class="ms" style="font-size:19px; color:var(--success)">task_alt</span><span style="font-size:13px; font-weight:700; color:var(--success)">Finish</span></div>
+                <div style="flex:1; height:48px; border-radius:13px; background:var(--fill); border:1px solid var(--hairline); display:flex; align-items:center; justify-content:center; gap:7px"><span class="ms" style="font-size:19px; color:var(--muted)">menu_book</span><span style="font-size:13px; font-weight:700; color:var(--text)">Read</span></div>
+                <div style="flex:1; height:48px; border-radius:13px; background:var(--accent-wash); border:1px solid rgba(224,101,74,.35); display:flex; align-items:center; justify-content:center; gap:7px"><span style="width:20px; height:20px; border-radius:50%; background:conic-gradient(var(--accent) 223deg, rgba(255,255,255,.14) 0); display:flex; align-items:center; justify-content:center"><span style="width:12px; height:12px; border-radius:50%; background:var(--high); display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:9px; color:var(--text)">close</span></span></span><span style="font-size:12px; font-weight:700; color:var(--accent)">62%</span></div>
+              </div>
+            </div>
+            <div class="secthead" style="margin:18px 0 8px; padding:0 16px"><div class="l"><span class="ms">format_list_numbered</span>Chapters</div><div class="see">View all 41 <span class="ms" style="font-size:16px">chevron_right</span></div></div>
+            <div style="margin:0 16px">
+              <div style="display:flex; align-items:center; gap:10px; padding:11px 12px; border-radius:12px; background:var(--accent-wash); border:1px solid rgba(224,101,74,.35); margin-bottom:6px">
+                <span class="mono-t" style="width:22px; color:var(--accent); font-weight:700">12</span><span class="label-t" style="flex:1">The Long Descent</span><span class="chip" style="padding:3px 9px; font-size:11px; background:var(--accent); border-color:var(--accent); color:var(--on-accent)">Now</span><span class="mono-t" style="font-size:11.5px">18:44</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px; padding:11px 12px; border-radius:12px; background:var(--fill); border:1px solid var(--hairline)">
+                <span class="mono-t" style="width:22px">13</span><span class="label-t" style="flex:1; font-weight:500">Greyline</span><span class="mono-t" style="font-size:11.5px">15:02</span><span class="ms" style="font-size:18px; color:var(--faint)">play_arrow</span>
+              </div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab on"><span class="pill"><span class="ms fill">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n rv" style="top:56px; left:344px">1</span>
+          <span class="n rv" style="top:346px; left:150px">2</span>
+          <span class="n rv" style="top:404px; left:70px">3</span>
+          <span class="n rv" style="top:404px; left:300px">4</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>Reset &amp; Hide moved to overflow ONLY</b> — the v1 plan put them one sheet away, which is fine, but v3 makes the rule explicit: nothing that resets progress or hides content lives in the fast-tap card. Irreversible-feeling actions stay behind the deliberate ⋯ (D-REACH).
+            <span class="rvnote">destructive actions out of the thumb's fast path</span></span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>Full-width primary on compact widths</b> — Resume gets the first row without duplicating a chapter number that can disagree with a prologue or named chapter.
+            <span class="rvnote">fixes the row-width overflow</span></span></div>
+          <div class="li"><span class="no rv">3</span><span class="tx"><b>Finish stays visible</b> — it wraps below Resume with Read and Download, retains a 48px target, and continues into the beta completion-date prompt.
+            <span class="rvnote">existing completion flow retained</span></span></div>
+          <div class="li"><span class="no rv">4</span><span class="tx"><b>Download over cellular guards</b> — tapping "1.2 GB" on mobile data shows a one-line "Download 1.2 GB over cellular?" confirm (respects the user's data-saver setting); on Wi-Fi it just starts.
+            <span class="rvnote">adds the missing cellular guard</span></span></div>
+        </div>
+      </div>
+
+      <!-- ============ FRAME 2 — reader sepia/light parity ============ -->
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Ebook reader — light / sepia parity <span class="chip v3fix">D-A11Y</span></div>
+          <div class="d">The v1 added a real position slider (correct). But a reader is exactly where theme parity matters most, and the suite only showed dark. Here's the reader honoring system light + a sepia option, with the same slider.</div></div>
+        <div class="phone"><div class="screen" style="background:#f3e9d6; color:#2a2418">
+          <div class="statusbar" style="color:#5a5240"><span>9:41</span><span class="dot" style="background:#5a5240"></span><span class="right"><span class="ms">wifi</span><span class="ms">battery_5_bar</span></span></div>
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 16px">
+            <div style="width:38px; height:38px; border-radius:50%; background:#e7dabf; display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:20px; color:#5a5240">arrow_back</span></div>
+            <div style="flex:1; text-align:center"><div style="font-size:13px; font-weight:700">The Ashfall Protocol</div><div style="font-size:11px; color:#8a7f65">Chapter 12 · 62%</div></div>
+            <div style="width:38px; height:38px; border-radius:50%; background:#e7dabf; display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:20px; color:#5a5240">format_size</span></div>
+          </div>
+          <div class="body" style="padding:6px 24px 0">
+            <div style="font-family:var(--font-brand); font-size:15.5px; line-height:1.85; color:#2a2418">
+              The ash came down like a second winter, soft and grey, settling on the ferry rails until the whole world
+              went quiet. Kestrel pulled her collar up and counted the buoys she could still see through it — three,
+              then two, then the harbor was gone entirely, swallowed in a curtain the color of old paper.
+              <br><br>She had been told the crossing would take an hour. She had not been told the water would be warm.
+            </div>
+          </div>
+          <!-- bottom bar with slider + theme swatches -->
+          <div style="padding:12px 18px 18px; border-top:1px solid #e0d3b6; background:#efe4cf">
+            <div style="display:flex; align-items:center; gap:12px">
+              <span class="ms" style="font-size:22px; color:#8a7f65">chevron_left</span>
+              <div style="flex:1; height:6px; border-radius:999px; background:#ddceac; position:relative"><i style="position:absolute; left:0; top:0; bottom:0; width:62%; background:#b0642f; border-radius:999px"></i><span style="position:absolute; left:62%; top:50%; transform:translate(-50%,-50%); width:18px; height:18px; border-radius:50%; background:#b0642f; border:2px solid #f3e9d6"></span></div>
+              <span class="ms" style="font-size:22px; color:#8a7f65">chevron_right</span>
+            </div>
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-top:10px">
+              <span style="font-family:var(--font-mono); font-size:11px; color:#8a7f65">~7 min left in chapter</span>
+              <div style="display:flex; gap:8px">
+                <span style="width:22px; height:22px; border-radius:50%; background:#141110; border:1.5px solid #ddceac"></span>
+                <span style="width:22px; height:22px; border-radius:50%; background:#f3e9d6; border:2px solid #b0642f"></span>
+                <span style="width:22px; height:22px; border-radius:50%; background:#fff; border:1.5px solid #ddceac"></span>
+              </div>
+            </div>
+          </div>
+          <span class="n rv" style="top:520px; left:150px">1</span>
+          <span class="n rv" style="top:640px; right:24px">2</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>Position slider on paper</b> — v1's new slider, shown in the theme they didn't draw. Same metaphor as the audio scrubber, "min left in chapter" estimate included.
+            <span class="rvnote">theme parity for the reader</span></span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>Dark · Sepia · Light swatches</b> — inline theme swatches (the "make Reading settings real" task, surfaced in-context). Respects system theme by default, overridable per reader session. Font-scale via the format_size button honors Dynamic Type.
+            <span class="rvnote">D-A11Y for the reading surface</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="motionspec"><h4>Book &amp; Reader — addendum (D-REACH, D-A11Y)</h4><table>
+      <tr><td>CTA tiers</td><td>compact widths use a full-width primary plus Finish/Read/Download, all targets ≥48px; Add to list stays in overflow</td></tr>
+      <tr><td>finish safety</td><td>Finish stays visible and opens the existing completion-date prompt; recovery toast remains</td></tr>
+      <tr><td>cellular download</td><td>size tap on mobile data → inline "Download NGB over cellular?" confirm; Wi-Fi starts immediately</td></tr>
+      <tr><td>reader themes</td><td>Dark/Sepia/Light swatches inline; follows system by default; font scale honors Dynamic Type without clipping</td></tr>
+      <tr><td>Reduce Motion</td><td>EmberBurst-on-finish → single static confetti frame; section stagger → one fade</td></tr>
+    </table></div>
+  </div>
+
+  <aside class="v3panel" aria-label="production beta design decision">
+    <div class="v3panel-kicker">V3 · production-beta decision</div>
+    <div class="v3decisions">
+      <div><span class="v3verb keep">Current beta</span><p>Keep state-dependent ordering, visible Finish, date prompt, Read/Download, sheets, lightbox, and tabs.</p></div>
+      <div><span class="v3verb change">V3 delta</span><p>Wrap the compact-width CTA into two rows so targets never collapse.</p></div>
+      <div><span class="v3verb keep">Preserve</span><p>Keep Add to list in overflow and keep Finish visible rather than burying it.</p></div>
+    </div>
+  </aside>
+
+  <div class="section" id="review">
+    <div class="eyebrow">Production-beta audit</div>
+    <h2>The beta book detail is already functionally complete</h2>
+    <p class="sub">V3 now changes responsive CTA layout only; it no longer moves the implemented Finish flow into overflow.</p>
+    <div class="motionspec"><h4>Code-informed decision</h4><table><tr><td>keep</td><td>Resume/Start, visible Finish with date prompt, Read, Download, Add to list, bookmarks, notes, tabs</td></tr><tr><td>change</td><td>wrap secondary actions below the primary CTA on compact widths</td></tr><tr><td>reader</td><td>retain light/sepia options, scalable type, and direct position control</td></tr></table></div>
+  </div>
+
+  <div class="footnav"><a href="03-player-v3.html" class="v3" style="color:var(--review)">← 03 · Player (v3)</a><a href="05-stats-clubs-v3.html" class="v3" style="color:var(--review)">05 · Stats &amp; Clubs (v3) →</a></div>
+</div>
+</body>
+</html>

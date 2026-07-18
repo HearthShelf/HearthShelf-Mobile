@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HearthShelf Redesign v3 — Stats &amp; Clubs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Geist+Mono:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<link rel="stylesheet" href="hearth.css">
+<link rel="stylesheet" href="hearth-v3.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div class="wordmark"><span class="lt">Hearth</span><span class="bd">Shelf</span><span class="sub"> · Mobile Redesign — Stats &amp; Clubs</span><span class="v3tag">V3 proposal</span></div>
+    <div class="tagline">V3 proposal against <b>05-stats-clubs.html</b>. Fixing the never-rendered heatmap labels is right —<br>we make the heatmap actually tappable, and give it a screen-reader path.</div>
+  </div>
+  <div class="pagenav">
+    <a href="index-v3.html" class="v3">v3 Overview</a>
+    <a href="01-home-v3.html" class="v3">Home</a>
+    <a href="02-library-v3.html" class="v3">Library &amp; Search</a>
+    <a href="03-player-v3.html" class="v3">Player</a>
+    <a href="04-book-v3.html" class="v3">Book &amp; Reader</a>
+    <a href="05-stats-clubs-v3.html" class="v3 on">Stats &amp; Clubs</a>
+    <a href="06-settings-v3.html" class="v3">Settings</a>
+    <a href="07-system-v3.html" class="v3">Sign-in &amp; System</a>
+    <a href="05-stats-clubs.html" style="margin-left:14px; opacity:.7">↩ v1</a>
+  </div>
+
+
+  <div class="beta-audit">
+    <div class="beta-kicker">Production-beta code audit · 2026-07-14</div>
+    <h3><span class="beta-status">REVISE BETA</span> The heatmap is the real remaining gap</h3>
+    <p>Verified against <code>app/(tabs)/stats.tsx</code> and the implemented club list/room routes. <a href="PRODUCTION-BETA-AUDIT.md" style="color:var(--accent)">Read the code audit →</a></p>
+  </div>
+
+  <div class="section" id="stats-fix">
+    <div class="eyebrow">Screen 05 · Stats</div>
+    <h2>A heatmap you can actually touch — and hear</h2>
+    <p class="sub">Keep the fixed labels and the visual. Make the whole <b>column</b> (a week) the tap target with a tooltip
+    that reveals the specific day, so a 12px cell never has to be hit precisely. Add a "View as list" toggle that exposes
+    the same data as an accessible table for screen readers and motor-impaired users.</p>
+
+    <div class="frames">
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Stats — heatmap, touch-safe <span class="chip v3fix">v3 revision</span></div>
+          <div class="d">Month axis + weekday letters kept. Tapping anywhere in a week-column opens a tooltip listing that week's days; the current selection is a full-height column highlight, not a 12px cell. A "View as list" affordance sits in the card header.</div></div>
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="body">
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 18px 0"><div class="hero-t" style="font-size:24px">Your year</div><div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:19px">refresh</span></div></div>
+            <!-- heatmap card -->
+            <div class="card" style="margin:14px 16px 0; padding:14px">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px">
+                <div class="label-t">Listening streak</div>
+                <span style="display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:700; color:var(--accent)"><span class="ms" style="font-size:16px">table_rows</span>View as list</span>
+              </div>
+              <!-- month axis -->
+              <div style="display:flex; margin-left:20px; font-family:var(--font-mono); font-size:9px; color:var(--faint); margin-bottom:4px"><span style="flex:1">Mar</span><span style="flex:1">Apr</span><span style="flex:1">May</span><span style="flex:1">Jun</span><span style="flex:1">Jul</span></div>
+              <div style="display:flex; gap:6px">
+                <!-- weekday letters -->
+                <div style="display:flex; flex-direction:column; gap:3px; font-family:var(--font-mono); font-size:8px; color:var(--faint); padding-top:1px"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+                <!-- columns; the 4th is selected (full-column highlight) -->
+                <div style="flex:1; display:flex; gap:3px; align-items:flex-start">
+                  <div style="display:flex; flex-direction:column; gap:3px; flex:1"><span style="height:11px; border-radius:2px; background:#2a2825"></span><span style="height:11px; border-radius:2px; background:#5a3a2e"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#2a2825"></span><span style="height:11px; border-radius:2px; background:#5a3a2e"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span></div>
+                  <div style="display:flex; flex-direction:column; gap:3px; flex:1"><span style="height:11px; border-radius:2px; background:#5a3a2e"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#2a2825"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#5a3a2e"></span></div>
+                  <div style="display:flex; flex-direction:column; gap:3px; flex:1"><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#2a2825"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#2a2825"></span><span style="height:11px; border-radius:2px; background:#5a3a2e"></span></div>
+                  <!-- selected column -->
+                  <div style="display:flex; flex-direction:column; gap:3px; flex:1; outline:2px solid var(--review); outline-offset:2px; border-radius:3px"><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#5a3a2e"></span><span style="height:11px; border-radius:2px; background:#2a2825"></span></div>
+                  <div style="display:flex; flex-direction:column; gap:3px; flex:1"><span style="height:11px; border-radius:2px; background:#2a2825"></span><span style="height:11px; border-radius:2px; background:#5a3a2e"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span></div>
+                  <div style="display:flex; flex-direction:column; gap:3px; flex:1"><span style="height:11px; border-radius:2px; background:#5a3a2e"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#2a2825"></span><span style="height:11px; border-radius:2px; background:#5a3a2e"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span><span style="height:11px; border-radius:2px; background:#8a4a34"></span><span style="height:11px; border-radius:2px; background:#e0654a"></span></div>
+                </div>
+              </div>
+              <!-- tooltip for the selected week -->
+              <div style="margin-top:12px; padding:10px 12px; border-radius:12px; background:var(--review-wash); border:1px solid var(--review-border)">
+                <div style="font-size:12px; font-weight:700; color:var(--text)">Week of Jun 9 — 4h 12m</div>
+                <div class="cap-t" style="color:var(--muted); margin-top:3px">Mon 58m · Tue 22m · Wed 1h 04m · Thu 41m · Fri 1h 07m · Sat 0 · Sun 0</div>
+              </div>
+            </div>
+            <!-- goal ring row (kept) -->
+            <div class="card" style="margin:12px 16px 0; padding:14px; display:flex; align-items:center; gap:14px">
+              <div style="width:56px; height:56px; border-radius:50%; background:conic-gradient(var(--accent) 260deg, var(--fill-strong) 0); display:flex; align-items:center; justify-content:center"><div style="width:42px; height:42px; border-radius:50%; background:var(--high); display:flex; align-items:center; justify-content:center; font-family:var(--font-mono); font-size:13px; font-weight:700">72%</div></div>
+              <div style="flex:1"><div class="label-t">Daily goal · 45 min</div><div class="cap-t" style="color:var(--muted); margin-top:2px">32 min listened · 13 to go</div></div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab on"><span class="pill"><span class="ms fill">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n rv" style="top:170px; right:20px">1</span>
+          <span class="n rv" style="top:300px; left:250px">2</span>
+          <span class="n rv" style="top:390px; left:150px">3</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>"View as list" toggle</b> — swaps the grid for an accessible table (date · minutes rows) that VoiceOver/TalkBack can read linearly. A heatmap with no non-visual equivalent is an a11y failure; this is the fix.
+            <span class="rvnote">gives the chart a screen-reader path (D-A11Y)</span></span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>Whole-column tap target</b> — tapping anywhere in a week selects that column (full-height highlight), so you never need to land on a 12px cell. The column is ~48px wide × full height — a comfortable finger target.
+            <span class="rvnote">fixes the sub-floor tappable-day regression</span></span></div>
+          <div class="li"><span class="no rv">3</span><span class="tx"><b>Tooltip reveals the day detail</b> — the selected week's per-day breakdown appears in a readable card below the grid, not a tiny floating bubble over a cell your finger is covering.
+            <span class="rvnote">detail without precision-tapping</span></span></div>
+        </div>
+      </div>
+
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Week detail — accessible rows <span class="chip v3fix">shown, not implied</span></div>
+          <div class="d">Selecting a week opens seven dated rows with plain-language totals. This is also the screen-reader and large-text presentation behind “View as list.”</div></div>
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="body">
+            <div style="display:flex; align-items:center; gap:10px; padding:10px 14px 6px"><div class="iconbtn" style="width:44px; height:44px"><span class="ms">arrow_back</span></div><div><div class="hero-t" style="font-size:22px">June 9–15</div><div class="meta-t">4h 12m · 5 listening days</div></div></div>
+            <div class="card" style="margin:12px 16px 0; padding:4px 14px">
+              <div style="min-height:58px; display:flex; align-items:center; gap:12px; border-bottom:1px solid var(--hairline)"><div style="width:38px; text-align:center"><div class="mono-t" style="color:var(--text); font-weight:700">MON</div><div class="cap-t">09</div></div><div style="flex:1"><div class="label-t">58 minutes</div><div class="cap-t">The Cinder Crown · Chapter 11</div></div><span class="ms" style="color:var(--accent)">equalizer</span></div>
+              <div style="min-height:58px; display:flex; align-items:center; gap:12px; border-bottom:1px solid var(--hairline)"><div style="width:38px; text-align:center"><div class="mono-t" style="color:var(--text); font-weight:700">TUE</div><div class="cap-t">10</div></div><div style="flex:1"><div class="label-t">22 minutes</div><div class="cap-t">The Cinder Crown · Chapter 12</div></div><span class="ms" style="color:var(--accent)">equalizer</span></div>
+              <div style="min-height:58px; display:flex; align-items:center; gap:12px; border-bottom:1px solid var(--hairline)"><div style="width:38px; text-align:center"><div class="mono-t" style="color:var(--text); font-weight:700">WED</div><div class="cap-t">11</div></div><div style="flex:1"><div class="label-t">1h 04m</div><div class="cap-t">Saltwater Prophets · Chapter 4</div></div><span class="ms" style="color:var(--accent)">equalizer</span></div>
+              <div style="min-height:58px; display:flex; align-items:center; gap:12px; border-bottom:1px solid var(--hairline)"><div style="width:38px; text-align:center"><div class="mono-t" style="color:var(--text); font-weight:700">THU</div><div class="cap-t">12</div></div><div style="flex:1"><div class="label-t">41 minutes</div><div class="cap-t">Saltwater Prophets · Chapter 5</div></div><span class="ms" style="color:var(--accent)">equalizer</span></div>
+              <div style="min-height:58px; display:flex; align-items:center; gap:12px; border-bottom:1px solid var(--hairline)"><div style="width:38px; text-align:center"><div class="mono-t" style="color:var(--text); font-weight:700">FRI</div><div class="cap-t">13</div></div><div style="flex:1"><div class="label-t">1h 07m</div><div class="cap-t">The Gray Harvest · Chapter 1</div></div><span class="ms" style="color:var(--accent)">equalizer</span></div>
+              <div style="min-height:58px; display:flex; align-items:center; gap:12px; border-bottom:1px solid var(--hairline)"><div style="width:38px; text-align:center"><div class="mono-t" style="color:var(--muted); font-weight:700">SAT</div><div class="cap-t">14</div></div><div style="flex:1"><div class="label-t" style="color:var(--muted)">No listening</div></div><span class="ms" style="color:var(--faint)">horizontal_rule</span></div>
+              <div style="min-height:58px; display:flex; align-items:center; gap:12px"><div style="width:38px; text-align:center"><div class="mono-t" style="color:var(--muted); font-weight:700">SUN</div><div class="cap-t">15</div></div><div style="flex:1"><div class="label-t" style="color:var(--muted)">No listening</div></div><span class="ms" style="color:var(--faint)">horizontal_rule</span></div>
+            </div>
+            <div style="margin:12px 16px; min-height:48px; border-radius:14px; background:var(--accent-wash); border:1px solid #4a3029; display:flex; align-items:center; justify-content:center; gap:8px; color:var(--accent); font-size:13px; font-weight:700"><span class="ms">calendar_month</span>View the full year as a list</div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div><div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div><div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div><div class="tab on"><span class="pill"><span class="ms fill">insights</span></span><span class="lbl">Stats</span></div><div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+        </div></div>
+        <div class="legend"><div class="li"><span class="no rv">1</span><span class="tx"><b>Seven real rows</b> — every date is a full-width target, supports 200% text scaling, and reads in chronological order without requiring color or chart geometry.</span></div></div>
+      </div>
+    </div>
+
+    <div class="motionspec"><h4>Stats &amp; Clubs — addendum (D-A11Y, D-REACH)</h4><table>
+      <tr><td>heatmap target</td><td>whole week-column tappable (~48px wide); selection = column highlight; per-day detail in a card, not a cell bubble</td></tr>
+      <tr><td>list fallback</td><td>"View as list" renders an accessible date/minutes table; default view respects the last choice</td></tr>
+      <tr><td>rank changes</td><td>leaderboard up/down uses arrow_upward/arrow_downward shapes + color, never color alone</td></tr>
+      <tr><td>jump chips</td><td>collapse into a single "Jump to…" pill on scroll to reclaim vertical space on data-dense screens</td></tr>
+      <tr><td>Reduce Motion</td><td>goal-reached EmberBurst → static; ring fill → instant; pull-to-refresh spinner unaffected</td></tr>
+    </table></div>
+  </div>
+
+  <aside class="v3panel" aria-label="production beta design decision">
+    <div class="v3panel-kicker">V3 · production-beta decision</div>
+    <div class="v3decisions">
+      <div><span class="v3verb keep">Current beta</span><p>Keep goals, highlights, charts, comparison, leaderboard, and the complete club flows.</p></div>
+      <div><span class="v3verb change">V3 delta</span><p>Make the 11x11 visual heatmap selectable by week and expose seven accessible dated rows.</p></div>
+      <div><span class="v3verb keep">Preserve</span><p>Keep the current club information architecture; it needs no v3 redesign.</p></div>
+    </div>
+  </aside>
+
+  <div class="section" id="review">
+    <div class="eyebrow">Production-beta audit</div>
+    <h2>Stats changes; Clubs stay current</h2>
+    <p class="sub">The beta already ships the surrounding Stats suite and a complete club experience. V3 is focused on making listening history operable beyond color.</p>
+    <div class="motionspec"><h4>Code-informed decision</h4><table><tr><td>stats keep</td><td>goals, highlights, charts, comparison, leaderboard, loading/error/empty states</td></tr><tr><td>stats change</td><td>week selection, dated detail rows, screen-reader list path</td></tr><tr><td>clubs</td><td>keep list, room, progress, spoiler-safe notes, members, history, archive, and delete flows</td></tr></table></div>
+  </div>
+
+  <div class="footnav"><a href="04-book-v3.html" class="v3" style="color:var(--review)">← 04 · Book (v3)</a><a href="06-settings-v3.html" class="v3" style="color:var(--review)">06 · Settings (v3) →</a></div>
+</div>
+</body>
+</html>

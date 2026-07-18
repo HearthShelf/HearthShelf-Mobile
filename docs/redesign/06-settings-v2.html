@@ -1,0 +1,980 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HearthShelf Redesign v2 — Settings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Geist+Mono:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<link rel="stylesheet" href="hearth.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div class="wordmark"><span class="lt">Hearth</span><span class="bd">Shelf</span><span class="sub"> · Mobile Redesign — Settings</span><span class="v2tag">In-house v2</span></div>
+    <div class="tagline">Second opinion on <b>06-settings.html</b>. The IA cleanup is the strongest work in the suite —<br>we add the two things a settings surface this large still needs: search, and theme at the top.</div>
+  </div>
+  <div class="pagenav">
+    <a href="index-v2.html" class="v2">v2 Overview</a>
+    <a href="01-home-v2.html" class="v2">Home</a>
+    <a href="02-library-v2.html" class="v2">Library &amp; Search</a>
+    <a href="03-player-v2.html" class="v2">Player</a>
+    <a href="04-book-v2.html" class="v2">Book &amp; Reader</a>
+    <a href="05-stats-clubs-v2.html" class="v2">Stats &amp; Clubs</a>
+    <a href="06-settings-v2.html" class="v2 on">Settings</a>
+    <a href="07-system-v2.html" class="v2">Sign-in &amp; System</a>
+    <a href="06-settings.html" style="margin-left:14px; opacity:.7">↩ consultant v1</a>
+  </div>
+
+  <div class="section" id="review">
+    <div class="eyebrow">Screen 06 · Settings</div>
+    <h2>The in-house teardown</h2>
+    <p class="sub">Credit where due: consolidating the thin/dead settings destinations, merging Appearance + Haptics,
+    making Reading real, and killing the one-toggle Search screen is the best-executed part of the redesign. Two gaps
+    remain — both are conventions users expect from any settings screen with this many rows.</p>
+
+    <div class="prodcheck">
+      <div class="lead"><span class="ms">fact_check</span>Verified against prod source (app/settings/* · src/ui/theme.ts)</div>
+      <p>Re-audited against shipping code after my first pass only read the consultant's mockup:</p>
+      <table>
+        <tr><th>My claim</th><th>Verdict</th><th>Prod evidence</th></tr>
+        <tr><td>No settings search</td><td><span class="vd ok">confirmed</span></td><td class="src">more.tsx renders SectionHeader + account card + static GROUPS only; no search field</td></tr>
+        <tr><td>No "reset to defaults" anywhere</td><td><span class="vd ok">confirmed</span></td><td class="src">no reset affordance in more.tsx or any panel; settings mutate via <span class="mono-t">setSetting</span></td></tr>
+        <tr><td>One-toggle Search settings screen; Reading = 6 disabled placeholders; Haptics standalone</td><td><span class="vd ok">confirmed</span></td><td class="src">search.tsx = 1 toggle; reading.tsx:12-29 six rows wrapped <span class="mono-t">opacity:0.5</span>; haptics.tsx standalone (under Playback)</td></tr>
+        <tr><td>"Theme is BURIED inside Appearance"</td><td><span class="vd over">overstated</span></td><td class="src">Theme is the FIRST row of the FIRST group's panel (appearance.tsx:23-40, Auto/Dark/Light/OLED seg). One tap deep, top-of-panel. Promoting it to the More root is still worth doing, but "buried" oversells it.</td></tr>
+        <tr><td>Theme control "proves D-CONSIST" / light mode is the thing v2 surfaces</td><td><span class="vd inv">invented</span></td><td class="src">Prod ALREADY ships full light + OLED themes (theme.ts:123 <span class="mono-t">LIGHT_BASE</span>, :140-145 <span class="mono-t">BASES</span>), OS-reactive. The theme control is real and working today. My "wires D-CONSIST to a real control" language was wrong.</td></tr>
+      </table>
+      <p><b>Net:</b> settings-search and reset-to-defaults are solid, verified gaps. The theme point survives only as "promote the existing, working theme control to the top" — not "add/prove light mode."</p>
+    </div>
+
+    <div class="ihreview">
+      <div class="lead"><span class="ms">reviews</span>Scored against the consultant's 06-settings.html</div>
+      <p>No regressions here — the IA changes are strictly better. This is an additive review.</p>
+      <div class="ihgrid">
+        <div class="ihcol keep"><h4><span class="ms">check_circle</span>Kept — ship as written</h4><ul>
+          <li><b>Regrouped IA</b> (You / Playback / Reading / Community / Account / Advanced). Clear.</li>
+          <li><b>Merged &amp; deleted thin screens.</b> Right call.</li>
+          <li><b>One control per value</b> + conflict warnings. Yes.</li>
+          <li><b>In-context player-settings sheet.</b> Excellent pattern reuse.</li>
+        </ul></div>
+        <div class="ihcol miss"><h4><span class="ms">construction</span>Still wrong — unaddressed</h4><ul>
+          <li><b>No settings search.</b> Once you have 5–6 groups and ~30 rows, "where's the crossfade toggle?" needs a search field — a platform standard on both iOS and Android settings.</li>
+          <li><b>Theme control could sit at the More root.</b> Verified: it's the top row of the Appearance panel (one tap deep). Not buried, but promoting the most-changed setting up one level is a small win. <span class="mono-t">(corrected from "buried")</span></li>
+          <li><b>No "reset to defaults"</b> anywhere, and no way to see what you've changed.</li>
+        </ul></div>
+        <div class="ihcol regress"><h4><span class="ms">warning</span>Regressed — the redesign made it worse</h4><ul>
+          <li style="color:var(--keep)"><b>Nothing.</b> The settings IA work introduced no regressions — the only page in the suite we can say that about.</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section" id="settings-fix">
+    <div class="eyebrow">Screen 06 · Settings</div>
+    <h2>Search at the top, theme where you look first</h2>
+    <p class="sub">v2 keeps the whole regrouped IA and adds a search field pinned under the title, a Theme selector promoted
+    to the very first row (system/light/dark segmented), and a "Reset section" affordance so changes are reversible.</p>
+
+    <div class="frames">
+      <div class="frameunit">
+        <div class="framecap"><div class="t">More / Settings — top of screen <span class="chip v2fix">v2 fix</span></div>
+          <div class="d">A settings search field (the platform convention this list is now big enough to need) and a Theme segment as the first thing under it. Everything below is the consultant's grouping, untouched.</div></div>
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="body">
+            <div style="padding:12px 18px 0"><div class="hero-t" style="font-size:26px">Settings</div></div>
+            <!-- settings search -->
+            <div style="margin:12px 18px 0; height:44px; border-radius:999px; background:var(--fill); border:1px solid var(--hairline); display:flex; align-items:center; gap:9px; padding:0 16px"><span class="ms" style="font-size:19px; color:var(--faint)">search</span><span class="meta-t">Search settings…</span></div>
+            <!-- THEME promoted to first row -->
+            <div class="setlabel">Appearance</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="ic"><span class="ms">contrast</span></div><div class="tx"><div class="t">Theme</div></div>
+                <div class="seg" style="padding:3px"><span>System</span><span class="on">Dark</span><span>Light</span></div></div>
+              <div class="setrow"><div class="ic"><span class="ms">palette</span></div><div class="tx"><div class="t">Accent color</div><div class="d">Ember</div></div><span class="ms" style="color:var(--faint)">chevron_right</span></div>
+              <div class="setrow"><div class="ic"><span class="ms">vibration</span></div><div class="tx"><div class="t">Haptics</div><div class="d">Merged in from its own screen</div></div><div class="toggle on"><i></i></div></div>
+            </div>
+            <!-- consultant groups kept below -->
+            <div class="setlabel">Playback</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="ic"><span class="ms">play_circle</span></div><div class="tx"><div class="t">Player</div></div><span class="ms" style="color:var(--faint)">chevron_right</span></div>
+              <div class="setrow"><div class="ic"><span class="ms">bedtime</span></div><div class="tx"><div class="t">Sleep timer</div></div><span class="ms" style="color:var(--faint)">chevron_right</span></div>
+              <div class="setrow"><div class="ic"><span class="ms">queue_music</span></div><div class="tx"><div class="t">Queue</div></div><span class="ms" style="color:var(--faint)">chevron_right</span></div>
+              <div class="setrow"><div class="ic"><span class="ms">sd_storage</span></div><div class="tx"><div class="t">Downloads &amp; storage</div></div><span class="ms" style="color:var(--faint)">chevron_right</span></div>
+            </div>
+            <div class="setlabel">Reading</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="ic"><span class="ms">menu_book</span></div><div class="tx"><div class="t">Reading</div><div class="d">Now real — controls the ebook reader</div></div><span class="ms" style="color:var(--faint)">chevron_right</span></div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab on"><span class="pill"><span class="ms fill">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n rv" style="top:110px; left:150px">1</span>
+          <span class="n rv" style="top:200px; right:60px">2</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>Settings search</b> — the redesign consolidated screens (good) but a consolidated tree still needs findability. Both iOS and Android ship settings search as a baseline; a 6-group tree crosses the threshold where it's expected. Typing "sleep" jumps straight to the Sleep timer rows.
+            <span class="rvnote">adds the missing findability convention</span></span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>Theme as row one, segmented</b> — System / Dark / Light right at the top, where the most-changed setting belongs, and it's promoting the app's EXISTING, shipping theme control (prod theme.ts:123 supports Auto/Dark/Light/OLED, OS-reactive) up from the Appearance panel to the More root. Correction after reading prod: the app is NOT dark-only - light mode already works everywhere via useColors(); this is a placement win, not a new capability.
+            <span class="rvnote">promotes the existing, working theme control up one level</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="motionspec"><h4>Settings — addendum (D-A11Y, D-CONSIST)</h4><table>
+      <tr><td>settings search</td><td>fuzzy-matches row titles + synonyms ("crossfade"→Player); results deep-link and briefly highlight the row</td></tr>
+      <tr><td>theme control</td><td>System/Dark/Light segment at top; changing it live-previews under the sheet; drives every surface's reactive theme</td></tr>
+      <tr><td>reset</td><td>each group header carries an overflow "Reset this section to defaults" with an Undo toast</td></tr>
+      <tr><td>a11y</td><td>every row is a labelled button; toggles announce on/off state; segments announce selected option</td></tr>
+    </table></div>
+  </div>
+
+
+  <div class="section" id="parity">
+    <div class="eyebrow">Screen 06 · Settings</div>
+    <h2>1:1 parity — screens carried over unchanged</h2>
+    <p class="sub">These original Settings screens needed no in-house changes; they are reproduced verbatim so every original screen has a v2 counterpart for side-by-side comparison.</p>
+    <div class="frames">
+      <!-- pasted frameunits -->
+      <div class="frameunit">
+        <div class="framecap"><div class="t">More tab <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">The full redrawn map. Account hero and Book Clubs shortcut kept; six labeled districts below; About stays at the foot. More tab lit (D-NAV).</div></div>
+          <div class="nochange-note">Reproduced from 06-settings.html · no in-house adjustment</div>
+        <div class="phone"><div class="screen" style="height:1000px">
+          <div class="statusbar"><span>9:30</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="body" style="overflow:hidden">
+            <div style="padding:8px 18px 2px"><div class="hero-t">More</div></div>
+            <!-- account hero -->
+            <div class="setgroup" style="margin-top:12px">
+              <div class="setrow" style="padding:15px">
+                <div style="width:46px; height:46px; border-radius:50%; background:var(--accent-tile); display:flex; align-items:center; justify-content:center; flex:none"><span style="font-size:19px; font-weight:800; color:var(--accent)">J</span></div>
+                <div class="tx"><div class="t" style="font-size:16px">Jordan Hale</div><div class="d">jordan@hale.dev · Shelfside</div></div>
+                <span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span>
+              </div>
+            </div>
+            <!-- clubs shortcut -->
+            <div class="setgroup">
+              <div class="setrow"><div class="ic" style="background:var(--accent-wash)"><span class="ms" style="color:var(--accent)">diversity_3</span></div><div class="tx"><div class="t">Book Clubs</div><div class="d">2 clubs · 3 new notes</div></div><span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span></div>
+            </div>
+            <div class="setlabel">You</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="ic"><span class="ms">palette</span></div><div class="tx"><div class="t">Appearance &amp; feel</div><div class="d">Theme, accent, covers, haptics</div></div><span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span></div>
+              <div class="setrow"><div class="ic"><span class="ms">notifications</span></div><div class="tx"><div class="t">Notifications</div><div class="d">Release alerts · following 3</div></div><span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span></div>
+            </div>
+            <div class="setlabel">Playback</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="ic"><span class="ms">play_circle</span></div><div class="tx"><div class="t">Player</div><div class="d">Speed, skips, gestures, buttons</div></div><span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span></div>
+              <div class="setrow"><div class="ic"><span class="ms">bedtime</span></div><div class="tx"><div class="t">Sleep timer</div><div class="d">Rewind, fade, beeps, shake, auto</div></div><span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span></div>
+              <div class="setrow"><div class="ic"><span class="ms">queue_music</span></div><div class="tx"><div class="t">Queue</div><div class="d">Auto mode · rules · restore hidden</div></div><span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span></div>
+              <div class="setrow"><div class="ic"><span class="ms">download</span></div><div class="tx"><div class="t">Downloads &amp; storage</div><div class="d">4.2 GB used · auto-download on</div></div><span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span></div>
+            </div>
+            <div class="setlabel">Reading</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="ic"><span class="ms">menu_book</span></div><div class="tx"><div class="t">Reading</div><div class="d">Reader theme, typeface, layout</div></div><span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span></div>
+            </div>
+            <div class="setlabel">Community</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="ic"><span class="ms">groups</span></div><div class="tx"><div class="t">Sharing &amp; clubs</div><div class="d">What others can see</div></div><span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span></div>
+              <div class="setrow"><div class="ic"><span class="ms">extension</span></div><div class="tx"><div class="t">Integrations</div><div class="d">Hardcover connected · Goodreads</div></div><span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span></div>
+            </div>
+            <div class="setlabel">Account</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="ic"><span class="ms">dns</span></div><div class="tx"><div class="t">My servers</div><div class="d">Shelfside (default) + 1 more</div></div><span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span></div>
+              <div class="setrow"><div class="ic"><span class="ms">person</span></div><div class="tx"><div class="t">Account</div><div class="d">Profile, sign out</div></div><span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span></div>
+            </div>
+            <div class="setgroup">
+              <div class="setrow"><div class="ic" style="background:#bd863f1f"><span class="ms" style="color:var(--hearth)">shield_person</span></div><div class="tx"><div class="t">Server admin</div><div class="d">Coming soon — users, libraries, scans</div></div><span class="chip gold" style="padding:4px 9px; font-size:10px">soon</span></div>
+            </div>
+            <div class="setlabel">Advanced</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="ic"><span class="ms">sync</span></div><div class="tx"><div class="t">Sync settings across devices</div><div class="d">Player &amp; app prefs follow your account</div></div><div class="toggle on"><i></i></div></div>
+              <div class="setrow"><div class="ic"><span class="ms">bug_report</span></div><div class="tx"><div class="t">Diagnostics</div><div class="d">Device report for support</div></div><span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span></div>
+            </div>
+            <div style="text-align:center; padding:6px 0 14px"><span class="mono-t" style="font-size:11px">HearthShelf 0.0.2-R2</span></div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab on"><span class="pill"><span class="ms fill">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n" style="top:92px; left:340px">1</span>
+          <span class="n" style="top:168px; left:340px">2</span>
+          <span class="n" style="top:250px; left:340px">3</span>
+          <span class="n" style="top:430px; left:340px">4</span>
+          <span class="n" style="top:560px; left:340px">5</span>
+          <span class="n" style="top:775px; left:340px">6</span>
+          <span class="n" style="top:838px; left:298px">7</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Account hero · tap</b> — into the Account screen (kept). Avatar initial, name, email and server name stay glanceable.
+            <span class="anim">row ripple DUR.fast · pushed route slide DUR.base</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Book Clubs shortcut · tap</b> — kept, conditional on clubsEnabled; subtitle now carries an unread-notes count instead of being blank.</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Appearance &amp; feel · tap</b> — merged screen: Appearance + the two-segment Haptics screen fold into one (D-CONSIST — kills a thin screen, zero features lost).</span></span></div>
+          <div class="li"><span class="no">4</span><span class="tx"><b>Queue row · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px">new</span> — the depth-3 queue editor promoted to a top-level Playback destination: end-of-book mode, Auto rules, and hidden-from-shelves restore in one screen.</span></span></div>
+          <div class="li"><span class="no">5</span><span class="tx"><b>Reading · tap</b> — no longer a placeholder of six disabled rows; opens the real reader preferences that already exist in readerPrefs.</span></span></div>
+          <div class="li"><span class="no">6</span><span class="tx"><b>Sync toggle · tap</b> — the orphaned loose row now lives in a labeled Advanced group with an honest consequence subtitle; flipping it shows a confirm toast.
+            <span class="anim">toggle thumb spring 200ms · success haptic · toast "Settings will sync"</span></span></div>
+          <div class="li"><span class="no">7</span><span class="tx"><b>Server admin row</b> — gate kept for admins only, but the row itself says "Coming soon" so the destination is honest; the pushed screen keeps the tab bar (D-NAV, was hidden today).</span></span></div>
+        </div>
+      </div>
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Appearance &amp; feel <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">Theme segment · accent swatches with name · live cover preview over glow/shape/style · haptics group at the foot.</div></div>
+          <div class="nochange-note">Reproduced from 06-settings.html · no in-house adjustment</div>
+        <div class="phone"><div class="screen" style="height:920px">
+          <div class="statusbar"><span>9:31</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div style="display:flex; align-items:center; gap:12px; padding:6px 16px 8px">
+            <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:20px">arrow_back</span></div>
+            <div style="font-size:19px; font-weight:700; color:var(--text)">Appearance &amp; feel</div>
+          </div>
+          <div class="body" style="overflow:hidden">
+            <div class="setlabel" style="margin-top:6px">Theme</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="tx"><div class="t">App theme</div></div>
+                <div class="seg"><span>Auto</span><span class="on">Dark</span><span>Light</span><span>OLED</span></div></div>
+            </div>
+            <div class="setlabel">Accent</div>
+            <div class="setgroup">
+              <div class="setrow" style="flex-direction:column; align-items:stretch; gap:10px">
+                <div style="display:flex; align-items:center; justify-content:space-between"><div class="t" style="font-size:14.5px; font-weight:600; color:var(--text)">Accent color</div><span class="chip gold" style="padding:4px 10px; font-size:11px">Ember</span></div>
+                <div style="display:flex; gap:9px; flex-wrap:wrap">
+                  <div style="width:30px; height:30px; border-radius:50%; background:#e0654a; box-shadow:0 0 0 3px var(--high), 0 0 0 5px #e0654a"></div>
+                  <div style="width:30px; height:30px; border-radius:50%; background:#bd863f"></div>
+                  <div style="width:30px; height:30px; border-radius:50%; background:#8a6a55"></div>
+                  <div style="width:30px; height:30px; border-radius:50%; background:#d99a3c"></div>
+                  <div style="width:30px; height:30px; border-radius:50%; background:#7fa86b"></div>
+                  <div style="width:30px; height:30px; border-radius:50%; background:#4f9db0"></div>
+                  <div style="width:30px; height:30px; border-radius:50%; background:#6d7fb5"></div>
+                  <div style="width:30px; height:30px; border-radius:50%; background:#9a6ea8"></div>
+                  <div style="width:30px; height:30px; border-radius:50%; background:#c96a8b"></div>
+                  <div style="width:30px; height:30px; border-radius:50%; background:#7d858c"></div>
+                </div>
+              </div>
+            </div>
+            <div class="setlabel">Covers</div>
+            <div class="setgroup">
+              <!-- live preview -->
+              <div class="setrow" style="justify-content:center; padding:18px; background:var(--low)">
+                <div style="position:relative">
+                  <div style="position:absolute; inset:-16px; border-radius:20px; background:radial-gradient(circle, rgba(224,101,74,.35), transparent 70%)"></div>
+                  <div class="cov c1" style="width:96px; aspect-ratio:2/3; position:relative"><span class="init">C</span><span class="ct">The Cinder Crown</span></div>
+                </div>
+              </div>
+              <div class="setrow"><div class="tx"><div class="t">Cover glow</div></div>
+                <div style="width:150px; display:flex; align-items:center; gap:8px"><div class="track" style="flex:1; height:5px"><i style="width:55%"></i></div><span class="mono-t" style="font-size:11px">33</span></div></div>
+              <div class="setrow"><div class="tx"><div class="t">Cover shape</div></div>
+                <div class="seg"><span>Square</span><span class="on">Portrait</span></div></div>
+              <div class="setrow"><div class="tx"><div class="t">Glow style</div></div>
+                <div class="seg"><span class="on">Gradient</span><span>Image</span></div></div>
+            </div>
+            <div class="setlabel">Haptics</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="tx"><div class="t">Feedback</div><div class="d">Vibration on taps and gestures</div></div>
+                <div class="seg"><span>Off</span><span>Minimal</span><span class="on">All</span></div></div>
+              <div class="setrow"><div class="tx"><div class="t">Intensity</div></div>
+                <div class="seg"><span class="on">Light</span><span>Medium</span></div></div>
+            </div>
+          </div>
+          <span class="n" style="top:120px; right:24px">1</span>
+          <span class="n" style="top:212px; left:70px">2</span>
+          <span class="n" style="top:330px; left:250px">3</span>
+          <span class="n" style="top:448px; right:24px">4</span>
+          <span class="n" style="top:628px; right:24px">5</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Theme segment · tap</b> — Auto/Dark/Light/OLED (kept). Switch applies instantly across every surface, including sign-in and toasts (D-CONSIST reactive theme).
+            <span class="anim">segment thumb slide 180ms · whole-app color cross-fade DUR.base</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Accent swatch · tap</b> — 10 named swatches kept (Ember … Slate); selected dot ring-highlights and its name appears in the header chip so the choice is legible, not just visible.
+            <span class="anim">ring scale-in POP_SPRING · accent propagates live to nav pill, toggles, chips</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Live cover preview</b> <span class="chip" style="font-size:9px; padding:2px 7px">new</span> — a sample cover renders the current glow radius, shape and glow style together; the three controls below finally show their combined effect.
+            <span class="anim">glow radius tracks slider drag at 60fps · shape morph DUR.base</span></span></div>
+          <div class="li"><span class="no">4</span><span class="tx"><b>Glow slider · drag</b> — 0–60 kept, value readout beside the track. Shape and glow-style segments unchanged beneath it.</span></span></div>
+          <div class="li"><span class="no">5</span><span class="tx"><b>Haptics group</b> — the entire former Haptics screen, relocated intact. Changing Feedback or Intensity fires a sample haptic at the new setting so you feel what you chose.
+            <span class="anim">sample haptic on select · segment slide 180ms</span></span></div>
+        </div>
+      </div>
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Player settings <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">Single-control skips with tick labels, visible interdependency warning, queue mode with a link out to the full Queue screen.</div></div>
+          <div class="nochange-note">Reproduced from 06-settings.html · no in-house adjustment</div>
+        <div class="phone"><div class="screen" style="height:1000px">
+          <div class="statusbar"><span>9:32</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div style="display:flex; align-items:center; gap:12px; padding:6px 16px 8px">
+            <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:20px">arrow_back</span></div>
+            <div style="font-size:19px; font-weight:700; color:var(--text)">Player</div>
+          </div>
+          <div class="body" style="overflow:hidden">
+            <div class="setlabel" style="margin-top:4px">Speed &amp; skips</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="tx"><div class="t">Default speed</div></div>
+                <div class="seg"><span>.75×</span><span class="on">1×</span><span>1.5×</span><span>2×</span></div></div>
+              <div class="setrow" style="flex-direction:column; align-items:stretch; gap:8px">
+                <div style="display:flex; justify-content:space-between"><div class="t" style="font-size:14.5px; font-weight:600; color:var(--text)">Skip forward</div><span class="mono-t" style="font-size:12px; color:var(--accent)">30s</span></div>
+                <div class="track" style="height:5px"><i style="width:22%"></i></div>
+                <div style="display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:10px; color:var(--faint)"><span>5</span><span style="color:var(--muted)">15</span><span style="color:var(--accent)">30</span><span style="color:var(--muted)">60</span><span>300</span></div>
+              </div>
+              <div class="setrow" style="flex-direction:column; align-items:stretch; gap:8px">
+                <div style="display:flex; justify-content:space-between"><div class="t" style="font-size:14.5px; font-weight:600; color:var(--text)">Skip back</div><span class="mono-t" style="font-size:12px; color:var(--accent)">15s</span></div>
+                <div class="track" style="height:5px"><i style="width:11%"></i></div>
+                <div style="display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:10px; color:var(--faint)"><span>5</span><span style="color:var(--accent)">15</span><span style="color:var(--muted)">30</span><span style="color:var(--muted)">60</span><span>300</span></div>
+              </div>
+            </div>
+            <div class="setlabel">Display</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="tx"><div class="t">Progress bar</div></div>
+                <div class="seg"><span class="on">Chapter</span><span>Book</span></div></div>
+              <div class="setrow"><div class="tx"><div class="t">Player background</div></div>
+                <div class="seg"><span class="on">Blurred</span><span>Glow</span><span>Hearth</span></div></div>
+              <div class="setrow"><div class="tx"><div class="t">Player buttons</div><div class="d">4 of 6 on screen · 2 in tray</div></div><span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span></div>
+            </div>
+            <div class="setlabel">Gestures</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="tx"><div class="t">Tap artwork to play/pause</div></div><div class="toggle"><i></i></div></div>
+              <div class="setrow"><div class="tx"><div class="t">Skip hotspots</div><div class="d">Tap left/right edge of art to skip</div></div><div class="toggle on"><i></i></div></div>
+              <div class="setrow"><div class="tx"><div class="t">Swipe between books</div><div class="d">Horizontal swipe changes book</div></div><div class="toggle on"><i></i></div></div>
+              <div class="setrow" style="background:var(--accent-wash); border-top:1px solid #4a3029">
+                <span class="ms" style="font-size:19px; color:var(--accent)">warning</span>
+                <div class="tx"><div class="d" style="color:var(--text); font-size:12.5px">Swiping between books turns off skip hotspots — the edges become swipe zones.</div></div>
+                <span style="font-size:12px; font-weight:700; color:var(--accent); white-space:nowrap">Keep hotspots</span>
+              </div>
+            </div>
+            <div class="setlabel">Car</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="tx"><div class="t">Car mode</div></div>
+                <div class="seg"><span class="on">Auto</span><span>On</span><span>Off</span></div></div>
+            </div>
+            <div class="setlabel">Queue</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="tx"><div class="t">When a book ends</div><div class="d">Auto — next in series, then new-in-series</div></div>
+                <div class="seg"><span>Off</span><span>Manual</span><span class="on">Auto</span><span>Playlist</span></div></div>
+              <div class="setrow"><div class="ic"><span class="ms">tune</span></div><div class="tx"><div class="t">Queue rules &amp; order</div><div class="d">Opens the Queue screen</div></div><span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span></div>
+            </div>
+          </div>
+          <span class="n" style="top:120px; right:24px">1</span>
+          <span class="n" style="top:196px; left:290px">2</span>
+          <span class="n" style="top:472px; right:24px">3</span>
+          <span class="n" style="top:596px; right:24px">4</span>
+          <span class="n" style="top:660px; left:300px">5</span>
+          <span class="n" style="top:836px; right:120px">6</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Speed segment · tap</b> — .75/1/1.5/2× presets kept; fine control stays in the player's speed sheet.</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Skip slider · drag</b> — ONE control replaces chip-row + slider. Full 5–300s range; tick labels at 15/30/60 act as snap points (magnetic within ±3s). Value readout updates live.
+            <span class="anim">snap = light haptic tick · readout counts during drag · release commits</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Player buttons · tap</b> — pushes the 3-zone drag editor (see Editors section). Subtitle shows the live on-screen/tray split.</span></span></div>
+          <div class="li"><span class="no">4</span><span class="tx"><b>Gesture toggles · tap</b> — tap-artwork, hotspots, carousel — all kept as toggles.</span></span></div>
+          <div class="li"><span class="no">5</span><span class="tx"><b>Conflict warning · appears live</b> <span class="chip" style="font-size:9px; padding:2px 7px">new</span> — the hidden carousel-kills-hotspots rule becomes an inline row the instant both are on. "Keep hotspots" resolves in one tap (turns carousel off).
+            <span class="anim">row expands in DUR.base with warning haptic · resolves with collapse + success tick</span></span></div>
+          <div class="li"><span class="no">6</span><span class="tx"><b>End-of-book segment · tap</b> — Off/Manual/Auto/Playlist kept with its dynamic caption; Playlist selection still reveals the inline picker. Rules and ordering link out to the promoted Queue screen.</span></span></div>
+        </div>
+      </div>
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Player settings as a sheet <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">Gear in the player's overflow opens the same settings as a sheet over the dimmed player — the in-context pattern the button editor already proved.</div></div>
+          <div class="nochange-note">Reproduced from 06-settings.html · no in-house adjustment</div>
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>22:05</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_5_bar</span></span></div>
+          <!-- dimmed player behind -->
+          <div class="body" style="overflow:hidden; background:linear-gradient(180deg, #4a2b20 0%, #241511 70%)">
+            <div style="display:flex; justify-content:center; padding-top:34px">
+              <div class="cov c1" style="width:220px; aspect-ratio:1/1; border-radius:16px"><span class="init" style="font-size:110px">C</span></div>
+            </div>
+            <div style="text-align:center; margin-top:18px">
+              <div style="font-size:20px; font-weight:700; color:#fff">The Cinder Crown</div>
+              <div style="font-size:12.5px; color:rgba(255,255,255,.7); margin-top:3px">Ch 12 — The Long Ferry</div>
+            </div>
+          </div>
+          <div class="scrim"></div>
+          <div class="sheetview">
+            <div class="grabber"></div>
+            <div class="sheethead"><div class="k">Player</div><div class="t">Quick settings</div></div>
+            <div style="padding:0 0 20px">
+              <div class="setgroup" style="margin:0 16px 12px">
+                <div class="setrow"><div class="tx"><div class="t">Speed</div></div>
+                  <div class="seg"><span>.75×</span><span>1×</span><span class="on">1.5×</span><span>2×</span></div></div>
+                <div class="setrow" style="flex-direction:column; align-items:stretch; gap:8px">
+                  <div style="display:flex; justify-content:space-between"><div class="t" style="font-size:14.5px; font-weight:600; color:var(--text)">Skip forward</div><span class="mono-t" style="font-size:12px; color:var(--accent)">30s</span></div>
+                  <div class="track" style="height:5px"><i style="width:22%"></i></div>
+                </div>
+                <div class="setrow"><div class="tx"><div class="t">Progress bar</div></div>
+                  <div class="seg"><span class="on">Chapter</span><span>Book</span></div></div>
+                <div class="setrow"><div class="tx"><div class="t">Skip hotspots</div></div><div class="toggle on"><i></i></div></div>
+              </div>
+              <div class="setgroup" style="margin:0 16px 0">
+                <div class="setrow"><div class="ic"><span class="ms">settings</span></div><div class="tx"><div class="t">All player settings</div></div><span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span></div>
+              </div>
+            </div>
+          </div>
+          <span class="n" style="top:452px; left:178px">1</span>
+          <span class="n" style="top:530px; right:26px">2</span>
+          <span class="n" style="top:756px; left:340px">3</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Sheet · drag or scrim tap to dismiss</b> — opened from the gear in the player's overflow. Playback keeps running behind the scrim; nothing navigates away.
+            <span class="anim">sheet spring slide-up · scrim fade 180ms · dismiss returns to exactly where you were</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Quick controls · tap/drag</b> — the four settings people change mid-listen (speed, skip amount, progress scope, hotspots), bound to the same store as the full screen. Change applies to the running player instantly.
+            <span class="anim">speed change ramps audio rate over 250ms, no pop · transport haptic</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>All player settings · tap</b> — escape hatch to the full screen for the rare deep change; the sheet dismisses, then pushes.</span></span></div>
+        </div>
+      </div>
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Sleep timer settings <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">Five titled families. Warning-beeps children indent under their master; quiet-hours pills open time pickers.</div></div>
+          <div class="nochange-note">Reproduced from 06-settings.html · no in-house adjustment</div>
+        <div class="phone"><div class="screen" style="height:1060px">
+          <div class="statusbar"><span>9:33</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div style="display:flex; align-items:center; gap:12px; padding:6px 16px 8px">
+            <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:20px">arrow_back</span></div>
+            <div style="font-size:19px; font-weight:700; color:var(--text)">Sleep timer</div>
+          </div>
+          <div class="body" style="overflow:hidden">
+            <div class="setlabel" style="margin-top:4px">Rewind on wake</div>
+            <div class="setgroup">
+              <div class="setrow" style="flex-direction:column; align-items:stretch; gap:8px">
+                <div style="display:flex; justify-content:space-between"><div class="t" style="font-size:14.5px; font-weight:600; color:var(--text)">Auto rewind</div><span class="mono-t" style="font-size:12px; color:var(--accent)">30s</span></div>
+                <div class="track" style="height:5px"><i style="width:25%"></i></div>
+              </div>
+              <div class="setrow"><div class="tx"><div class="t">Stay within chapter</div><div class="d">Never rewind past the chapter start</div></div><div class="toggle on"><i></i></div></div>
+            </div>
+            <div class="setlabel">Fade out</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="tx"><div class="t">Fade audio before stopping</div></div><div class="toggle on"><i></i></div></div>
+              <div class="setrow" style="flex-direction:column; align-items:stretch; gap:8px">
+                <div style="display:flex; justify-content:space-between"><div class="t" style="font-size:14.5px; font-weight:600; color:var(--text)">Fade length</div><span class="mono-t" style="font-size:12px; color:var(--accent)">20s</span></div>
+                <div class="track" style="height:5px"><i style="width:33%"></i></div>
+              </div>
+            </div>
+            <div class="setlabel">Warning beeps</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="tx"><div class="t">Beep before the timer ends</div></div><div class="toggle on"><i></i></div></div>
+              <div class="setrow" style="padding-left:28px"><div class="tx"><div class="t" style="font-size:13.5px">Cues</div></div>
+                <div class="chips"><span class="chip on" style="padding:6px 11px; font-size:12px">2 min</span><span class="chip on" style="padding:6px 11px; font-size:12px">1 min</span><span class="chip" style="padding:6px 11px; font-size:12px">End</span></div></div>
+              <div class="setrow" style="padding-left:28px"><div class="tx"><div class="t" style="font-size:13.5px">Sound</div></div>
+                <div style="display:flex; align-items:center; gap:8px"><div class="seg"><span class="on">Chime</span><span>Marimba</span><span>Beep</span><span>Bell</span></div></div></div>
+              <div class="setrow" style="padding-left:28px">
+                <div class="tx" style="flex-direction:row; display:flex; align-items:center; gap:10px">
+                  <span class="chip" style="padding:6px 12px; font-size:12px"><span class="ms" style="font-size:15px">play_arrow</span>Test</span>
+                  <div class="track" style="flex:1; height:5px"><i style="width:70%"></i></div>
+                  <span class="ms" style="font-size:17px; color:var(--muted)">volume_up</span>
+                </div>
+              </div>
+            </div>
+            <div class="setlabel">Shake to extend</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="tx"><div class="t">Shake phone to add time</div></div><div class="toggle on"><i></i></div></div>
+              <div class="setrow" style="padding-left:28px; flex-direction:column; align-items:stretch; gap:8px">
+                <div style="display:flex; justify-content:space-between"><div class="t" style="font-size:13.5px; font-weight:600; color:var(--text)">Per shake</div><span class="mono-t" style="font-size:12px; color:var(--accent)">+10 min</span></div>
+                <div class="track" style="height:5px"><i style="width:30%"></i></div>
+              </div>
+              <div class="setrow" style="padding-left:28px"><div class="tx"><div class="t" style="font-size:13.5px">If shaking keeps happening</div><div class="d">Caps a runaway timer on a bumpy walk</div></div>
+                <div class="seg"><span>Nothing</span><span class="on">Stop adding</span><span>End</span></div></div>
+            </div>
+            <div class="setlabel">Auto timer</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="tx"><div class="t">Start a timer automatically</div><div class="d">Arms when you press play in quiet hours</div></div><div class="toggle on"><i></i></div></div>
+              <div class="setrow" style="padding-left:28px"><div class="tx"><div class="t" style="font-size:13.5px">Quiet hours</div></div>
+                <div style="display:flex; gap:8px">
+                  <span class="chip" style="padding:7px 13px; font-family:var(--font-mono); font-size:12.5px">10:30 PM</span>
+                  <span class="cap-t" style="align-self:center">to</span>
+                  <span class="chip" style="padding:7px 13px; font-family:var(--font-mono); font-size:12.5px">6:00 AM</span>
+                </div></div>
+              <div class="setrow" style="padding-left:28px; flex-direction:column; align-items:stretch; gap:8px">
+                <div style="display:flex; justify-content:space-between"><div class="t" style="font-size:13.5px; font-weight:600; color:var(--text)">Duration</div><span class="mono-t" style="font-size:12px; color:var(--accent)">45 min</span></div>
+                <div class="track" style="height:5px"><i style="width:40%"></i></div>
+                <div style="display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:10px; color:var(--faint)"><span>15</span><span style="color:var(--accent)">45</span><span>90</span><span>180</span></div>
+              </div>
+            </div>
+          </div>
+          <span class="n" style="top:120px; left:60px">1</span>
+          <span class="n" style="top:388px; right:24px">2</span>
+          <span class="n" style="top:452px; left:280px">3</span>
+          <span class="n" style="top:568px; left:90px">4</span>
+          <span class="n" style="top:756px; right:100px">5</span>
+          <span class="n" style="top:898px; right:110px">6</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Group titles</b> <span class="chip" style="font-size:9px; padding:2px 7px">new</span> — Rewind on wake · Fade out · Warning beeps · Shake to extend · Auto timer. The four identical anonymous groups become five named feature families.</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Master toggle · tap</b> — each family's first row gates its children: sub-rows collapse and dim when off.
+            <span class="anim">children collapse DUR.base with opacity fade · toggle spring 200ms</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Cue chips · tap (multi-select)</b> — 2 min / 1 min / End, kept. Indented 28px under the master so hierarchy is visible.</span></span></div>
+          <div class="li"><span class="no">4</span><span class="tx"><b>Test button · tap</b> — plays the selected sound at the set volume through the audio session, ducking any playing book (kept, now grouped with the volume slider it tests).
+            <span class="anim">chip POP_SPRING · sound plays once · book volume ducks 300ms</span></span></div>
+          <div class="li"><span class="no">5</span><span class="tx"><b>Excessive-shake segment · tap</b> — Nothing / Stop adding / End timer (kept — the 67-hour-timer fix); the caption explains why it exists in user language.</span></span></div>
+          <div class="li"><span class="no">6</span><span class="tx"><b>Quiet-hours pills · tap</b> — each opens a native time picker (kept). <b>Duration slider · drag</b> — one slider with preset ticks replaces the ChipRow+slider dual control.
+            <span class="anim">time picker sheet spring · slider snap haptic at ticks</span></span></div>
+        </div>
+      </div>
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Downloads &amp; storage <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">Auto-download group, storage meter with cap, then live rows: one downloading, one failed with retry, downloaded list.</div></div>
+          <div class="nochange-note">Reproduced from 06-settings.html · no in-house adjustment</div>
+        <div class="phone"><div class="screen" style="height:1000px">
+          <div class="statusbar"><span>9:34</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div style="display:flex; align-items:center; gap:12px; padding:6px 16px 8px">
+            <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:20px">arrow_back</span></div>
+            <div style="font-size:19px; font-weight:700; color:var(--text)">Downloads &amp; storage</div>
+          </div>
+          <div class="body" style="overflow:hidden">
+            <div class="setlabel" style="margin-top:4px">Auto-download</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="tx"><div class="t">Download when you start a book</div></div><div class="toggle on"><i></i></div></div>
+              <div class="setrow"><div class="tx"><div class="t">Keep continue-listening downloaded</div></div><div class="toggle on"><i></i></div></div>
+              <div class="setrow"><div class="tx"><div class="t">Next in queue</div><div class="d">Books downloaded ahead</div></div>
+                <div class="chips"><span class="chip" style="padding:6px 12px; font-size:12px">0</span><span class="chip" style="padding:6px 12px; font-size:12px">1</span><span class="chip on" style="padding:6px 12px; font-size:12px">3</span><span class="chip" style="padding:6px 12px; font-size:12px">5</span></div></div>
+              <div class="setrow"><div class="tx"><div class="t">Remove download when finished</div><div class="d">Frees space after you complete a book</div></div><div class="toggle on"><i></i></div></div>
+            </div>
+            <div class="setlabel">Storage</div>
+            <div class="setgroup">
+              <div class="setrow" style="flex-direction:column; align-items:stretch; gap:9px">
+                <div style="display:flex; justify-content:space-between"><div class="t" style="font-size:14.5px; font-weight:600; color:var(--text)">HearthShelf uses 4.2 GB</div><span class="mono-t" style="font-size:12px">38 GB free</span></div>
+                <div style="height:10px; border-radius:999px; overflow:hidden; display:flex; background:var(--fill-strong)">
+                  <div style="width:44%; background:#5e6a70"></div>
+                  <div style="width:12%; background:var(--accent)"></div>
+                </div>
+                <div style="display:flex; gap:14px; font-size:11px; color:var(--muted)">
+                  <span><span style="display:inline-block; width:8px; height:8px; border-radius:2px; background:#5e6a70; margin-right:5px"></span>Other apps</span>
+                  <span><span style="display:inline-block; width:8px; height:8px; border-radius:2px; background:var(--accent); margin-right:5px"></span>HearthShelf</span>
+                  <span><span style="display:inline-block; width:8px; height:8px; border-radius:2px; background:var(--fill-strong); margin-right:5px"></span>Free</span>
+                </div>
+              </div>
+              <div class="setrow" style="flex-direction:column; align-items:stretch; gap:8px">
+                <div style="display:flex; justify-content:space-between"><div class="t" style="font-size:14.5px; font-weight:600; color:var(--text)">Max space for downloads</div><span class="mono-t" style="font-size:12px; color:var(--accent)">16 GB</span></div>
+                <div class="track" style="height:5px"><i style="width:25%"></i></div>
+                <div class="cap-t" style="color:var(--muted)">New downloads pause when the cap is reached.</div>
+              </div>
+            </div>
+            <div class="setlabel">Downloading</div>
+            <div class="setgroup">
+              <div class="setrow">
+                <div class="cov c3" style="width:38px; height:54px; border-radius:7px; padding:4px"></div>
+                <div class="tx"><div class="t">The Gray Harvest</div>
+                  <div class="track" style="margin-top:6px; height:4px"><i style="width:62%"></i></div>
+                  <div class="d" style="margin-top:4px">312 MB of 505 MB</div></div>
+                <div class="iconbtn" style="width:36px; height:36px"><span class="ms" style="font-size:18px">close</span></div>
+              </div>
+              <div class="setrow" style="background:var(--accent-wash)">
+                <div class="cov c6" style="width:38px; height:54px; border-radius:7px; padding:4px"></div>
+                <div class="tx"><div class="t">Hollow Reign</div><div class="d" style="color:var(--accent)">Failed — connection lost at 40%</div></div>
+                <span class="chip" style="padding:7px 14px; font-size:12px; border-color:var(--accent); color:var(--accent)"><span class="ms" style="font-size:15px">refresh</span>Retry</span>
+              </div>
+            </div>
+            <div class="setlabel">Downloaded · 9 books · 3.7 GB</div>
+            <div class="setgroup">
+              <div class="setrow">
+                <div class="cov c4" style="width:38px; height:54px; border-radius:7px; padding:4px"></div>
+                <div class="tx"><div class="t">Veils of Vantar</div><div class="d">498 MB · listened to 87%</div></div>
+                <div class="iconbtn" style="width:36px; height:36px"><span class="ms" style="font-size:18px; color:var(--destructive)">delete</span></div>
+              </div>
+              <div class="setrow">
+                <div class="cov c1" style="width:38px; height:54px; border-radius:7px; padding:4px"></div>
+                <div class="tx"><div class="t">The Cinder Crown</div><div class="d">612 MB · listening now</div></div>
+                <div class="iconbtn" style="width:36px; height:36px"><span class="ms" style="font-size:18px; color:var(--destructive)">delete</span></div>
+              </div>
+            </div>
+            <div class="toast" style="bottom:16px"><span class="ms">delete</span><span class="tx">Removed Veils of Vantar</span><span class="act">Undo</span></div>
+          </div>
+          <span class="n" style="top:236px; left:230px">1</span>
+          <span class="n" style="top:430px; left:300px">2</span>
+          <span class="n" style="top:562px; left:80px">3</span>
+          <span class="n" style="top:648px; right:60px">4</span>
+          <span class="n" style="top:790px; right:24px">5</span>
+          <span class="n" style="top:930px; left:260px">6</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Next-in-queue chips · tap</b> — 0/1/3/5 kept as chips alone; genuinely discrete values, so no slider twin (contrast the skip settings, where the range is continuous).</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Cap slider · drag</b> — 0–64 GB kept; the new caption states the consequence at the cap in plain language.
+            <span class="anim">meter bar's free segment previews the cap position during drag</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Downloading row</b> — live progress + byte counts, X cancels (kept).
+            <span class="anim">progress bar animates continuously · row cross-fades to Downloaded on completion</span></span></div>
+          <div class="li"><span class="no">4</span><span class="tx"><b>Retry button · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px">new</span> — failed rows carry a plain-language reason and an explicit retry that resumes from the failed byte (D-STATES).
+            <span class="anim">row tint fades from accent-wash to normal on retry start</span></span></div>
+          <div class="li"><span class="no">5</span><span class="tx"><b>Delete · tap (or swipe row left)</b> — removes immediately with an Undo toast; the blocking Alert is gone (D-FINISH toast grammar).
+            <span class="anim">row collapses DUR.base · toast slide-up, 4000ms hold with Undo</span></span></div>
+          <div class="li"><span class="no">6</span><span class="tx"><b>Undo toast · tap Undo</b> — restores the file entry (bytes are re-fetched if already purged).</span></span></div>
+        </div>
+      </div>
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Notifications <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">Permission row up top, master + indented children, sliders with day readouts, Following list with unfollow.</div></div>
+          <div class="nochange-note">Reproduced from 06-settings.html · no in-house adjustment</div>
+        <div class="phone"><div class="screen" style="height:940px">
+          <div class="statusbar"><span>9:35</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div style="display:flex; align-items:center; gap:12px; padding:6px 16px 8px">
+            <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:20px">arrow_back</span></div>
+            <div style="font-size:19px; font-weight:700; color:var(--text)">Notifications</div>
+          </div>
+          <div class="body" style="overflow:hidden">
+            <div class="setgroup" style="margin-top:8px">
+              <div class="setrow" style="background:var(--accent-wash)">
+                <span class="ms" style="font-size:20px; color:var(--accent)">notifications_off</span>
+                <div class="tx"><div class="t" style="font-size:13.5px">Notifications are off for HearthShelf</div><div class="d">Release alerts can't be delivered</div></div>
+                <span style="font-size:12.5px; font-weight:700; color:var(--accent); white-space:nowrap">Enable</span>
+              </div>
+            </div>
+            <div class="setlabel">Release alerts</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="tx"><div class="t">Release notifications</div><div class="d">For books and series you follow</div></div><div class="toggle on"><i></i></div></div>
+              <div class="setrow" style="padding-left:28px"><div class="tx"><div class="t" style="font-size:13.5px">When it lands in your library</div></div><div class="toggle on"><i></i></div></div>
+              <div class="setrow" style="padding-left:28px"><div class="tx"><div class="t" style="font-size:13.5px">On release day</div></div><div class="toggle on"><i></i></div></div>
+              <div class="setrow" style="padding-left:28px; flex-direction:column; align-items:stretch; gap:8px">
+                <div style="display:flex; justify-content:space-between"><div class="t" style="font-size:13.5px; font-weight:600; color:var(--text)">Early reminder</div><span class="mono-t" style="font-size:12px; color:var(--accent)">3 days before</span></div>
+                <div class="track" style="height:5px"><i style="width:21%"></i></div>
+              </div>
+              <div class="setrow" style="padding-left:28px; flex-direction:column; align-items:stretch; gap:8px">
+                <div style="display:flex; justify-content:space-between"><div class="t" style="font-size:13.5px; font-weight:600; color:var(--text)">Countdown on Home</div><span class="mono-t" style="font-size:12px; color:var(--accent)">within 14 days</span></div>
+                <div class="track" style="height:5px"><i style="width:47%"></i></div>
+              </div>
+            </div>
+            <div class="setlabel">Following · 3</div>
+            <div class="setgroup">
+              <div class="setrow">
+                <div class="cov c7" style="width:38px; height:54px; border-radius:7px; padding:4px"><span class="init" style="font-size:24px">A</span></div>
+                <div class="tx"><div class="t">Ashes of the Deep</div><div class="d">Releases in 3 days</div></div>
+                <div class="iconbtn" style="width:36px; height:36px"><span class="ms" style="font-size:18px">close</span></div>
+              </div>
+              <div class="setrow">
+                <div class="cov c5" style="width:38px; height:54px; border-radius:7px; padding:4px"><span class="init" style="font-size:24px">E</span></div>
+                <div class="tx"><div class="t">Emberfall (series)</div><div class="d">Book 10 — no date yet</div></div>
+                <div class="iconbtn" style="width:36px; height:36px"><span class="ms" style="font-size:18px">close</span></div>
+              </div>
+              <div class="setrow">
+                <div class="cov c2" style="width:38px; height:54px; border-radius:7px; padding:4px"><span class="init" style="font-size:24px">T</span></div>
+                <div class="tx"><div class="t">The Tidewalker</div><div class="d">Released — in your library</div></div>
+                <div class="iconbtn" style="width:36px; height:36px"><span class="ms" style="font-size:18px">close</span></div>
+              </div>
+            </div>
+            <!-- empty-state variant -->
+            <div class="setlabel">Following — empty state</div>
+            <div class="setgroup">
+              <div class="setrow" style="flex-direction:column; align-items:center; padding:22px; gap:8px">
+                <span class="ms" style="font-size:30px; color:var(--faint)">bookmark_add</span>
+                <div class="t" style="font-size:14px; font-weight:700; color:var(--text)">Nothing followed yet</div>
+                <div class="d" style="font-size:12px; color:var(--muted); text-align:center">Follow an upcoming book or series and<br>we'll tell you the moment it arrives.</div>
+                <span class="chip" style="margin-top:4px; padding:8px 16px; font-size:12.5px; border-color:var(--accent); color:var(--accent)"><span class="ms" style="font-size:16px">search</span>Find upcoming books</span>
+              </div>
+            </div>
+          </div>
+          <span class="n" style="top:118px; right:26px">1</span>
+          <span class="n" style="top:196px; right:24px">2</span>
+          <span class="n" style="top:350px; right:130px">3</span>
+          <span class="n" style="top:494px; right:26px">4</span>
+          <span class="n" style="top:812px; left:230px">5</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Permission row · tap Enable</b> <span class="chip" style="font-size:9px; padding:2px 7px">new</span> — the static push-not-configured warning becomes a row that deep-links to the OS notification settings; disappears once granted.
+            <span class="anim">row collapses DUR.base after permission granted</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Master toggle · tap</b> — governs everything below; children indent 28px and collapse when off (same hierarchy pattern as Sleep).
+            <span class="anim">children collapse DUR.base · toggle spring 200ms</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Early-reminder slider · drag</b> — 0–14 days kept; readout speaks in words ("3 days before") not raw numbers. Countdown-on-Home 1–30d below, same treatment.</span></span></div>
+          <div class="li"><span class="no">4</span><span class="tx"><b>Unfollow X · tap</b> — removes the follow with an Undo toast (kept behavior, toast added). Row status shows date, "no date yet", or arrival.
+            <span class="anim">row collapses DUR.base · undo toast 4000ms</span></span></div>
+          <div class="li"><span class="no">5</span><span class="tx"><b>Empty-state CTA · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px">new</span> — jumps into unified search's "Beyond your library" section, the place follows actually come from (D-SEARCH, D-STATES).</span></span></div>
+        </div>
+      </div>
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Integrations <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">Connected accounts vs links-on-book-pages, finally two labeled districts. Sharing toggles shown in the lower group.</div></div>
+          <div class="nochange-note">Reproduced from 06-settings.html · no in-house adjustment</div>
+        <div class="phone"><div class="screen" style="height:980px">
+          <div class="statusbar"><span>9:36</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div style="display:flex; align-items:center; gap:12px; padding:6px 16px 8px">
+            <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:20px">arrow_back</span></div>
+            <div style="font-size:19px; font-weight:700; color:var(--text)">Integrations</div>
+          </div>
+          <div class="body" style="overflow:hidden">
+            <div class="setlabel" style="margin-top:4px">Connected accounts</div>
+            <div class="setgroup">
+              <div class="setrow" style="flex-direction:column; align-items:stretch; gap:10px; padding:15px">
+                <div style="display:flex; align-items:center; gap:11px">
+                  <div class="ic" style="background:#4f9db01f"><span class="ms" style="color:var(--info)">sync_alt</span></div>
+                  <div style="flex:1"><div class="t" style="font-size:14.5px; font-weight:600; color:var(--text)">Hardcover</div><div class="d" style="font-size:12px; color:var(--muted)">Connected · synced 2 h ago</div></div>
+                  <span class="chip" style="padding:4px 10px; font-size:11px; background:#7fa86b1f; border-color:#3b4a33; color:var(--success)">connected</span>
+                </div>
+                <div style="display:flex; gap:8px">
+                  <span class="chip" style="flex:1; justify-content:center; padding:9px; font-size:12.5px"><span class="ms" style="font-size:16px">sync</span>Sync now</span>
+                  <span class="chip" style="flex:1; justify-content:center; padding:9px; font-size:12.5px; color:var(--destructive); border-color:#5a3029">Disconnect</span>
+                </div>
+              </div>
+              <div class="setrow"><div class="ic"><span class="ms">upload_file</span></div><div class="tx"><div class="t">Import from Goodreads</div><div class="d">Pick CSV → review matches → confirm</div></div><span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span></div>
+              <div class="setrow"><div class="ic"><span class="ms">info</span></div><div class="tx"><div class="d" style="font-size:12px">Server-side integrations are managed by your server admin.</div></div></div>
+            </div>
+            <div class="setlabel">Links on book pages</div>
+            <div class="setgroup">
+              <div class="setrow" style="padding-top:10px; padding-bottom:2px; border-bottom:none"><div class="tx"><div class="d" style="font-size:12px">Choose which "view on…" links show under a book. This doesn't affect connected accounts.</div></div></div>
+              <div class="setrow"><div class="tx"><div class="t">Goodreads</div></div><div class="toggle on"><i></i></div></div>
+              <div class="setrow"><div class="tx"><div class="t">Audible</div></div><div class="toggle on"><i></i></div></div>
+              <div class="setrow"><div class="tx"><div class="t">Hardcover</div></div><div class="toggle"><i></i></div></div>
+            </div>
+            <div class="setlabel">Sharing &amp; clubs</div>
+            <div class="setgroup">
+              <div class="setrow"><div class="tx"><div class="t">Share my reading list</div><div class="d">Club members can see what you're reading</div></div><div class="toggle on"><i></i></div></div>
+              <div class="setrow"><div class="tx"><div class="t">Share "listening now"</div></div><div class="toggle"><i></i></div></div>
+              <div class="setrow"><div class="tx"><div class="t">Book clubs</div><div class="d">Show club features across the app</div></div><div class="toggle on"><i></i></div></div>
+              <div class="setrow"><div class="tx"><div class="t">Club button in player</div></div><div class="toggle on"><i></i></div></div>
+              <div class="setrow"><div class="tx"><div class="t">Note pop-ups while listening</div><div class="d">This device only</div></div><div class="toggle on"><i></i></div></div>
+            </div>
+          </div>
+          <span class="n" style="top:160px; right:30px">1</span>
+          <span class="n" style="top:222px; left:110px">2</span>
+          <span class="n" style="top:282px; left:250px">3</span>
+          <span class="n" style="top:428px; left:80px">4</span>
+          <span class="n" style="top:648px; right:24px">5</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Hardcover card</b> — connected state kept: last-synced, Sync now, Disconnect. Disconnected state shows the token input + Connect (unchanged).
+            <span class="anim">Sync now shows inline spinner → success tick DUR.base</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Sync now / Disconnect · tap</b> — Disconnect confirms with a sheet, not an Alert; sync errors surface as a toast with retry.</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Goodreads import · tap</b> — opens the import sheet; the subtitle now previews the three steps so nobody bails at step two.</span></span></div>
+          <div class="li"><span class="no">4</span><span class="tx"><b>Links subgroup</b> <span class="chip" style="font-size:9px; padding:2px 7px">redesigned</span> — the second Hardcover lives under an explanatory caption that separates "links on book pages" from "connected accounts". Double-Hardcover confusion resolved by labeling, not deletion.</span></span></div>
+          <div class="li"><span class="no">5</span><span class="tx"><b>Sharing toggles · tap</b> — reading list and listening-now were Share/Hide segments; now toggles like every other boolean (D-CONSIST). Clubs, club-player-button and note-pops kept; "this device only" caption kept honest.</span></span></div>
+        </div>
+      </div>
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Goodreads import — match review <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">The strongest existing flow: CSV parsed, matches reviewed row by row, "Use best match" accepts a suggestion, then confirm. Kept nearly verbatim.</div></div>
+          <div class="nochange-note">Reproduced from 06-settings.html · no in-house adjustment</div>
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>9:37</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="body" style="overflow:hidden; opacity:.4">
+            <div style="padding:14px 18px"><div class="hero-t" style="font-size:19px">Integrations</div></div>
+            <div class="setgroup"><div class="setrow"><div class="ic"><span class="ms">upload_file</span></div><div class="tx"><div class="t">Import from Goodreads</div></div></div></div>
+          </div>
+          <div class="scrim"></div>
+          <div class="sheetview" style="max-height:640px">
+            <div class="grabber"></div>
+            <div class="sheethead"><div class="k">Goodreads import · step 2 of 3</div><div class="t">Review matches</div></div>
+            <div style="padding:0 16px 18px">
+              <div class="cap-t" style="color:var(--muted); margin:0 4px 12px">38 of 51 rows matched automatically. Check the rest.</div>
+              <div class="setgroup" style="margin:0 0 10px">
+                <div class="setrow">
+                  <div class="cov c2" style="width:36px; height:52px; border-radius:7px; padding:4px"></div>
+                  <div class="tx"><div class="t" style="font-size:13.5px">Saltwater Prophets</div><div class="d">CSV: "Saltwater Prophets (Tides #1)" · 96% match</div></div>
+                  <span class="ms fill" style="font-size:20px; color:var(--success)">check_circle</span>
+                </div>
+                <div class="setrow" style="background:var(--accent-wash)">
+                  <div class="cov c5" style="width:36px; height:52px; border-radius:7px; padding:4px"></div>
+                  <div class="tx"><div class="t" style="font-size:13.5px">Emberfall: Kindling</div><div class="d">CSV: "Kindling" · 71% — is this it?</div></div>
+                  <span class="chip" style="padding:6px 11px; font-size:11.5px; border-color:var(--accent); color:var(--accent)">Use best match</span>
+                </div>
+                <div class="setrow">
+                  <div style="width:36px; height:52px; border-radius:7px; background:var(--fill); display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:18px; color:var(--faint)">question_mark</span></div>
+                  <div class="tx"><div class="t" style="font-size:13.5px">The Winter Sea</div><div class="d">No match in your library</div></div>
+                  <span class="chip" style="padding:6px 11px; font-size:11.5px">Skip</span>
+                </div>
+              </div>
+              <div class="btn primary" style="width:100%; margin-top:4px"><span class="ms" style="font-size:19px">check</span>Import 39 books</div>
+              <div class="btn ghost" style="width:100%; margin-top:2px; font-size:13px">Cancel</div>
+            </div>
+          </div>
+          <span class="n" style="top:352px; right:32px">1</span>
+          <span class="n" style="top:432px; right:32px">2</span>
+          <span class="n" style="top:510px; right:44px">3</span>
+          <span class="n" style="top:582px; left:190px">4</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Auto-matched row</b> — high-confidence rows show a green check and need nothing from you; header states the auto-match count.</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>"Use best match" · tap</b> — accepts the suggested pairing; the row flips to matched (kept from GoodreadsImportSheet). Tap the row body to pick a different book manually.
+            <span class="anim">row tint fades to normal · check scales in POP_SPRING</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Skip · tap</b> — unmatched rows are excluded; count in the confirm button updates live.</span></span></div>
+          <div class="li"><span class="no">4</span><span class="tx"><b>Confirm · tap</b> — imports progress/ratings for matched rows; a summary toast reports what landed.
+            <span class="anim">button shows progress fill during import · success haptic + toast</span></span></div>
+        </div>
+      </div>
+      <div class="frameunit">
+        <div class="framecap"><div class="t">My servers <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">Two server cards — default starred, second mid-switch with spinner — plus the new Link-a-server row.</div></div>
+          <div class="nochange-note">Reproduced from 06-settings.html · no in-house adjustment</div>
+        <div class="phone"><div class="screen" style="height:640px">
+          <div class="statusbar"><span>9:38</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div style="display:flex; align-items:center; gap:12px; padding:6px 16px 8px">
+            <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:20px">arrow_back</span></div>
+            <div style="font-size:19px; font-weight:700; color:var(--text)">My servers</div>
+          </div>
+          <div class="body" style="overflow:hidden">
+            <div class="setgroup" style="margin-top:8px">
+              <div class="setrow" style="padding:15px">
+                <div class="ic" style="width:40px; height:40px; background:var(--accent-wash)"><span class="ms" style="color:var(--accent)">dns</span></div>
+                <div class="tx"><div class="t" style="font-size:15px">Shelfside</div><div class="d">Connected · 412 books</div></div>
+                <span class="chip" style="padding:4px 10px; font-size:10.5px; background:#7fa86b1f; border-color:#3b4a33; color:var(--success)">active</span>
+                <div class="iconbtn" style="width:38px; height:38px; background:transparent; border:none"><span class="ms fill" style="font-size:22px; color:var(--hearth)">star</span></div>
+              </div>
+              <div class="setrow" style="padding:15px">
+                <div class="ic" style="width:40px; height:40px"><span class="ms">dns</span></div>
+                <div class="tx"><div class="t" style="font-size:15px">Family library</div><div class="d">Switching…</div></div>
+                <span class="ms" style="font-size:20px; color:var(--muted); animation:shimmer 1.6s infinite">progress_activity</span>
+                <div class="iconbtn" style="width:38px; height:38px; background:transparent; border:none"><span class="ms" style="font-size:22px; color:var(--faint)">star</span></div>
+              </div>
+            </div>
+            <div class="setgroup">
+              <div class="setrow"><div class="ic"><span class="ms" style="color:var(--accent)">add_link</span></div><div class="tx"><div class="t" style="color:var(--accent)">Link a server</div><div class="d">Connect another Audiobookshelf server</div></div><span class="ms" style="font-size:20px; color:var(--faint)">chevron_right</span></div>
+            </div>
+            <div class="setlabel">Account</div>
+            <div class="setgroup">
+              <div class="setrow">
+                <div style="width:40px; height:40px; border-radius:50%; background:var(--accent-tile); display:flex; align-items:center; justify-content:center; flex:none"><span style="font-size:16px; font-weight:800; color:var(--accent)">J</span></div>
+                <div class="tx"><div class="t">Profile photo</div><div class="d">Managed by Gravatar</div></div>
+                <div class="toggle on"><i></i></div>
+              </div>
+              <div class="setrow"><div class="tx"><div class="t">Account type</div></div><span class="meta-t">Member</span></div>
+              <div class="setrow"><div class="tx"><div class="t">Member since</div></div><span class="meta-t">March 2026</span></div>
+            </div>
+            <div class="setgroup">
+              <div class="setrow"><div class="ic" style="background:#5a30291f"><span class="ms" style="color:var(--destructive)">logout</span></div><div class="tx"><div class="t" style="color:var(--destructive)">Sign out</div></div></div>
+            </div>
+          </div>
+          <span class="n" style="top:122px; right:20px">1</span>
+          <span class="n" style="top:196px; left:180px">2</span>
+          <span class="n" style="top:268px; left:110px">3</span>
+          <span class="n" style="top:366px; right:24px">4</span>
+          <span class="n" style="top:534px; left:130px">5</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Default star · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px">redesigned</span> — visible 38px button replaces the hidden long-press. Filled gold star = default server (opens on launch); tap another card's star to move it.
+            <span class="anim">star fill POP_SPRING · previous star empties with cross-fade · toast "Default: Shelfside"</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Server card · tap</b> — switches to that server (kept): spinner during handshake, check on success, error row + Retry on failure (D-STATES kept from today).
+            <span class="anim">spinner rotate → check scale-in DUR.base · switch success haptic</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Link a server · tap</b> <span class="chip" style="font-size:9px; padding:2px 7px">new</span> — opens the connect flow (URL/QR) that previously only existed at sign-in. The list can finally grow itself.</span></span></div>
+          <div class="li"><span class="no">4</span><span class="tx"><b>Gravatar toggle · tap</b> — the profile-photo row now tells the truth ("Managed by Gravatar") and pairs the working toggle with it; no more fake tappable info row.</span></span></div>
+          <div class="li"><span class="no">5</span><span class="tx"><b>Sign out · tap</b> — danger-styled, confirm sheet before signing out (kept).
+            <span class="anim">confirm sheet spring · destructive action requires second tap</span></span></div>
+        </div>
+      </div>
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Queue screen <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">Promoted from depth 3. Mode segment, draggable Auto rules, manual items, and the restore list — one surface owns "what plays next".</div></div>
+          <div class="nochange-note">Reproduced from 06-settings.html · no in-house adjustment</div>
+        <div class="phone"><div class="screen" style="height:920px">
+          <div class="statusbar"><span>9:39</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div style="display:flex; align-items:center; gap:12px; padding:6px 16px 8px">
+            <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:20px">arrow_back</span></div>
+            <div style="font-size:19px; font-weight:700; color:var(--text)">Queue</div>
+          </div>
+          <div class="body" style="overflow:hidden">
+            <div class="setgroup" style="margin-top:8px">
+              <div class="setrow"><div class="tx"><div class="t">When a book ends</div><div class="d">Auto — rules below decide what's next</div></div>
+                <div class="seg"><span>Off</span><span>Manual</span><span class="on">Auto</span><span>Playlist</span></div></div>
+            </div>
+            <div class="setlabel">Auto rules · drag to prioritize</div>
+            <div class="setgroup">
+              <div class="setrow">
+                <span class="ms" style="font-size:19px; color:var(--faint)">drag_indicator</span>
+                <div class="ic"><span class="ms">stacks</span></div>
+                <div class="tx"><div class="t">Next in series</div><div class="d">Continue the series you're in</div></div>
+                <div class="toggle on"><i></i></div>
+              </div>
+              <div class="setrow" style="background:var(--highest); box-shadow:0 8px 24px rgba(0,0,0,.45); border-radius:10px; margin:2px 6px; border:1px solid var(--border)">
+                <span class="ms" style="font-size:19px; color:var(--accent)">drag_indicator</span>
+                <div class="ic"><span class="ms">diversity_3</span></div>
+                <div class="tx"><div class="t">Book club pick</div><div class="d">Current club book, when active</div></div>
+                <div class="toggle on"><i></i></div>
+              </div>
+              <div class="setrow">
+                <span class="ms" style="font-size:19px; color:var(--faint)">drag_indicator</span>
+                <div class="ic"><span class="ms">new_releases</span></div>
+                <div class="tx"><div class="t">New in a series you follow</div><div class="d">One book per series</div></div>
+                <div class="toggle"><i></i></div>
+              </div>
+            </div>
+            <div class="setlabel">Added by you</div>
+            <div class="setgroup">
+              <div class="setrow">
+                <span class="ms" style="font-size:19px; color:var(--faint)">drag_indicator</span>
+                <div class="cov c2" style="width:34px; height:48px; border-radius:6px; padding:3px"></div>
+                <div class="tx"><div class="t" style="font-size:13.5px">Saltwater Prophets</div><div class="d">Ilsa Brandt</div></div>
+                <div class="iconbtn" style="width:34px; height:34px"><span class="ms" style="font-size:17px">close</span></div>
+              </div>
+              <div class="setrow">
+                <span class="ms" style="font-size:19px; color:var(--faint)">drag_indicator</span>
+                <div class="cov c7" style="width:34px; height:48px; border-radius:6px; padding:3px"></div>
+                <div class="tx"><div class="t" style="font-size:13.5px">Winter's Ledger</div><div class="d">N. Halloway</div></div>
+                <div class="iconbtn" style="width:34px; height:34px"><span class="ms" style="font-size:17px">close</span></div>
+              </div>
+            </div>
+            <div class="setlabel">Hidden from shelves</div>
+            <div class="setgroup">
+              <div class="setrow">
+                <div class="cov c4" style="width:34px; height:48px; border-radius:6px; padding:3px"></div>
+                <div class="tx"><div class="t" style="font-size:13.5px">Veils of Vantar (series)</div><div class="d">Hidden 3 weeks ago</div></div>
+                <span class="chip" style="padding:6px 12px; font-size:11.5px; border-color:var(--accent); color:var(--accent)">Restore</span>
+              </div>
+              <div class="setrow">
+                <div class="cov c6" style="width:34px; height:48px; border-radius:6px; padding:3px"></div>
+                <div class="tx"><div class="t" style="font-size:13.5px">Hollow Reign</div><div class="d">Hidden yesterday</div></div>
+                <span class="chip" style="padding:6px 12px; font-size:11.5px; border-color:var(--accent); color:var(--accent)">Restore</span>
+              </div>
+            </div>
+          </div>
+          <span class="n" style="top:126px; right:24px">1</span>
+          <span class="n" style="top:270px; left:32px">2</span>
+          <span class="n" style="top:270px; right:24px">3</span>
+          <span class="n" style="top:492px; right:24px">4</span>
+          <span class="n" style="top:648px; right:52px">5</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Mode segment · tap</b> — the same Off/Manual/Auto/Playlist value shown in Player settings; both bind to one store, whichever you touch (D-CONSIST).</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Rule row · long-press handle + drag</b> — reorders Auto rule priority (kept from the buried editor). The middle row is shown mid-lift.
+            <span class="anim">lift: scale 1.02 + shadow bloom DUR.fast · rows part with spring · drop settles with tick haptic</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Rule toggle · tap</b> — enables/disables the rule without losing its position ("New in a series" shown off).</span></span></div>
+          <div class="li"><span class="no">4</span><span class="tx"><b>Hand-added row · drag / X</b> — manual items keep inline reorder and remove (kept). In Manual mode this section is the whole queue.</span></span></div>
+          <div class="li"><span class="no">5</span><span class="tx"><b>Restore · tap</b> — un-hides a dismissed series/book from Auto queue and Continue shelves (kept, now under a labeled section users can actually find).
+            <span class="anim">row collapses DUR.base · toast "Back on your shelves"</span></span></div>
+        </div>
+      </div>
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Player buttons editor <span class="chip nochange">NO CHANGES</span></div>
+          <div class="d">Today's best pattern, preserved: three drag zones with a live cap, quick-hide eye, icon-only toggle. Reachable from Player settings AND the player's More sheet.</div></div>
+          <div class="nochange-note">Reproduced from 06-settings.html · no in-house adjustment</div>
+        <div class="phone"><div class="screen" style="height:840px">
+          <div class="statusbar"><span>9:40</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div style="display:flex; align-items:center; gap:12px; padding:6px 16px 8px">
+            <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:20px">arrow_back</span></div>
+            <div style="font-size:19px; font-weight:700; color:var(--text)">Player buttons</div>
+          </div>
+          <div class="body" style="overflow:hidden">
+            <div class="setgroup" style="margin-top:8px">
+              <div class="setrow"><div class="tx"><div class="t">Icon-only buttons</div><div class="d">Hide labels under player buttons</div></div><div class="toggle"><i></i></div></div>
+            </div>
+            <div class="setlabel">On screen · 4 of 6</div>
+            <div class="setgroup">
+              <div class="setrow"><span class="ms" style="font-size:19px; color:var(--faint)">drag_indicator</span><div class="ic"><span class="ms">speed</span></div><div class="tx"><div class="t" style="font-size:13.5px">Speed</div></div><span class="ms" style="font-size:19px; color:var(--faint)">visibility</span></div>
+              <div class="setrow"><span class="ms" style="font-size:19px; color:var(--faint)">drag_indicator</span><div class="ic"><span class="ms">bedtime</span></div><div class="tx"><div class="t" style="font-size:13.5px">Sleep timer</div></div><span class="ms" style="font-size:19px; color:var(--faint)">visibility</span></div>
+              <div class="setrow"><span class="ms" style="font-size:19px; color:var(--faint)">drag_indicator</span><div class="ic"><span class="ms">list</span></div><div class="tx"><div class="t" style="font-size:13.5px">Chapters</div></div><span class="ms" style="font-size:19px; color:var(--faint)">visibility</span></div>
+              <div class="setrow"><span class="ms" style="font-size:19px; color:var(--faint)">drag_indicator</span><div class="ic"><span class="ms">bookmark</span></div><div class="tx"><div class="t" style="font-size:13.5px">Bookmark</div></div><span class="ms" style="font-size:19px; color:var(--faint)">visibility</span></div>
+            </div>
+            <div class="setlabel">In tray</div>
+            <div class="setgroup">
+              <div class="setrow"><span class="ms" style="font-size:19px; color:var(--faint)">drag_indicator</span><div class="ic"><span class="ms">queue_music</span></div><div class="tx"><div class="t" style="font-size:13.5px">Queue</div></div><span class="ms" style="font-size:19px; color:var(--faint)">visibility</span></div>
+              <div class="setrow"><span class="ms" style="font-size:19px; color:var(--faint)">drag_indicator</span><div class="ic"><span class="ms">diversity_3</span></div><div class="tx"><div class="t" style="font-size:13.5px">Club notes</div></div><span class="ms" style="font-size:19px; color:var(--faint)">visibility</span></div>
+            </div>
+            <div class="setlabel">Hidden</div>
+            <div class="setgroup">
+              <div class="setrow" style="opacity:.6"><span class="ms" style="font-size:19px; color:var(--faint)">drag_indicator</span><div class="ic"><span class="ms">cast</span></div><div class="tx"><div class="t" style="font-size:13.5px">Cast</div></div><span class="ms" style="font-size:19px; color:var(--faint)">visibility_off</span></div>
+            </div>
+          </div>
+          <span class="n" style="top:118px; right:24px">1</span>
+          <span class="n" style="top:172px; left:170px">2</span>
+          <span class="n" style="top:238px; left:32px">3</span>
+          <span class="n" style="top:238px; right:22px">4</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Icon-only toggle · tap</b> — hides labels under the player's buttons (kept).</span></span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Zone headers with live cap</b> — "On screen · 4 of 6" counts as you drag; dragging a 7th into the top zone bumps the last row down to tray (kept behavior, count made explicit).</span></span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Row · drag across zones</b> — move a control between On screen / In tray / Hidden; the player re-renders live behind the sheet when opened in-context from the player's More sheet.
+            <span class="anim">lift scale 1.02 + shadow · cross-zone drop = success haptic · player buttons re-layout with spring</span></span></div>
+          <div class="li"><span class="no">4</span><span class="tx"><b>Quick-hide eye · tap</b> — one-tap send-to-Hidden without dragging (kept).
+            <span class="anim">row FadeOut then FadeIn inside Hidden group DUR.base</span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="footnav"><a href="05-stats-clubs-v2.html" class="v2" style="color:var(--review)">← 05 · Stats &amp; Clubs (v2)</a><a href="07-system-v2.html" class="v2" style="color:var(--review)">07 · Sign-in &amp; System (v2) →</a></div>
+</div>
+</body>
+</html>

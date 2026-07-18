@@ -1,0 +1,1445 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HearthShelf Mobile — Foldable Reimagining</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Geist+Mono:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<style>
+/* ==== hearth.css (inlined) ==== *//* =====================================================================
+   HearthShelf Mobile — Redesign Mockup Suite · shared visual language
+   Mirrors the HearthShelf Design System tokens (colors_and_type.css)
+   and the app's src/ui/theme.ts DARK_BASE palette.
+   Pages are static annotated phone-frame mockups, dark-only.
+   ===================================================================== */
+
+:root {
+  /* --- app palette (theme.ts DARK_BASE + accent layer) --- */
+  --scaffold: #1b1a18;
+  --lowest: #131211;
+  --low: #201e1c;
+  --base: #242220;
+  --high: #2a2825;
+  --highest: #322f2b;
+  --sheet: #222120;
+  --text: #f4f1ea;
+  --muted: #aba498;
+  --faint: #756f64;
+  --border: #383530;
+  --hairline: rgba(255,255,255,.08);
+  --fill: rgba(255,255,255,.06);
+  --fill-strong: rgba(255,255,255,.10);
+
+  --accent: #e0654a;
+  --on-accent: #fffaf6;
+  --accent-wash: rgba(224,101,74,.12);
+  --accent-tile: rgba(224,101,74,.22);
+  --hearth: #bd863f;          /* brand gold */
+  --shelf: #f0e6d6;           /* brand cream */
+  --cream: #ffe6cf;
+  --success: #7fa86b;
+  --destructive: #e0654a;
+  --info: #4f9db0;
+
+  /* --- geometry (theme.ts radius) --- */
+  --r-card: 16px; --r-row: 12px; --r-tile: 10px; --r-sheet: 20px; --r-pill: 999px;
+
+  /* --- type --- */
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, Menlo, Consolas, monospace;
+  --font-brand: "Libre Baskerville", Georgia, serif;
+
+  /* --- mockup page chrome (outside the phones) --- */
+  --page-bg: #0e0d0c;
+  --page-card: #17161477;
+  --page-border: #2b2925;
+  --crit: #d4544a;
+  --good: #7fa86b;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--page-bg); color: var(--text); font-family: var(--font-sans); }
+::-webkit-scrollbar { height: 10px; width: 10px; }
+::-webkit-scrollbar-thumb { background: #2e2c28; border-radius: 8px; }
+
+/* Material Symbols */
+.ms {
+  font-family: 'Material Symbols Rounded';
+  font-weight: normal; font-style: normal; line-height: 1; display: inline-block;
+  font-feature-settings: 'liga'; -webkit-font-smoothing: antialiased;
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+.ms.fill { font-variation-settings: 'FILL' 1, 'wght' 420, 'GRAD' 0, 'opsz' 24; }
+
+/* =====================================================================
+   PAGE SHELL
+   ===================================================================== */
+.wrap { max-width: 1720px; margin: 0 auto; padding: 44px 28px 120px; }
+.masthead { text-align: center; margin-bottom: 8px; }
+.wordmark { font-family: var(--font-brand); font-size: 19px; }
+.wordmark .lt { color: var(--hearth); font-weight: 400; }
+.wordmark .bd { color: var(--shelf); font-weight: 700; }
+.wordmark .sub { color: #8c857a; font-weight: 400; }
+.masthead .tagline { font-family: var(--font-mono); font-size: 12.5px; color: #6f6a62; margin-top: 7px; line-height: 1.6; }
+
+.pagenav { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 22px 0 8px; }
+.pagenav a {
+  font-family: var(--font-mono); font-size: 12px; color: var(--muted); text-decoration: none;
+  padding: 7px 14px; border-radius: 999px; border: 1px solid var(--page-border); background: var(--page-card);
+}
+.pagenav a:hover { color: var(--text); border-color: #4a463f; }
+.pagenav a.on { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
+
+/* section per screen */
+.section { margin-top: 74px; }
+.section > .eyebrow {
+  font-family: var(--font-brand); font-size: 11px; letter-spacing: .32em; text-transform: uppercase;
+  color: var(--hearth); margin-bottom: 10px;
+}
+.section > h2 { font-size: 30px; font-weight: 700; letter-spacing: -.02em; margin: 0 0 6px; color: var(--shelf); }
+.section > .sub { font-size: 14px; color: var(--muted); max-width: 860px; line-height: 1.65; margin: 0 0 26px; }
+
+/* teardown / redesign-moves twin cards */
+.audit { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 0 0 34px; max-width: 1150px; }
+@media (max-width: 900px) { .audit { grid-template-columns: 1fr; } }
+.audit .crit, .audit .moves {
+  border-radius: 16px; padding: 18px 20px; background: var(--page-card); border: 1px solid var(--page-border);
+}
+.audit h3 { margin: 0 0 12px; font-size: 12px; letter-spacing: .18em; text-transform: uppercase; font-weight: 700; }
+.audit .crit h3 { color: var(--crit); }
+.audit .moves h3 { color: var(--good); }
+.audit ul { margin: 0; padding: 0; list-style: none; }
+.audit li { position: relative; padding: 5px 0 5px 26px; font-size: 13.5px; line-height: 1.55; color: #cdc7bc; }
+.audit li::before { position: absolute; left: 0; top: 5px; font-family: var(--font-mono); font-weight: 700; }
+.audit .crit li::before { content: '✗'; color: var(--crit); }
+.audit .moves li::before { content: '✓'; color: var(--good); }
+.audit li b { color: var(--text); font-weight: 600; }
+
+/* frame gallery row */
+.frames { display: flex; flex-wrap: wrap; gap: 40px 34px; align-items: flex-start; }
+.frameunit { width: 400px; }
+.frameunit.wide { width: auto; }
+.framecap { margin: 0 4px 12px; }
+.framecap .t { font-size: 15px; font-weight: 700; color: var(--text); }
+.framecap .t .chip {
+  display: inline-block; font-family: var(--font-mono); font-size: 10px; letter-spacing: .08em; font-weight: 500;
+  color: var(--hearth); border: 1px solid #4a3c25; background: #bd863f14; border-radius: 999px;
+  padding: 3px 9px; margin-left: 8px; vertical-align: 2px; text-transform: uppercase;
+}
+.framecap .d { font-size: 12.5px; color: var(--muted); line-height: 1.55; margin-top: 4px; }
+
+/* =====================================================================
+   PHONE FRAME
+   ===================================================================== */
+.phone {
+  width: 400px; padding: 11px; border-radius: 46px;
+  background: linear-gradient(160deg, #26241f, #0b0a09);
+  box-shadow: 0 42px 90px rgba(0,0,0,.66), inset 0 0 0 1.5px rgba(255,255,255,.05);
+  position: relative;
+}
+.screen {
+  position: relative; width: 378px; height: 838px; border-radius: 36px; overflow: hidden;
+  background: var(--scaffold); display: flex; flex-direction: column;
+}
+.screen.short { height: auto; min-height: 480px; }   /* for sheet-only frames */
+
+/* status bar */
+.statusbar {
+  position: relative; z-index: 8; height: 38px; flex: none;
+  display: flex; align-items: center; justify-content: space-between; padding: 0 24px;
+  font-family: var(--font-mono); font-size: 12.5px; color: var(--text);
+}
+.statusbar .dot { position: absolute; left: 50%; top: 11px; transform: translateX(-50%); width: 9px; height: 9px; border-radius: 50%; background: #000; opacity: .85; }
+.statusbar .right { display: flex; align-items: center; gap: 6px; }
+.statusbar .right .ms { font-size: 16px; }
+
+/* scrollable body */
+.body { position: relative; z-index: 2; flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+/* bottom tab bar */
+.tabbar {
+  flex: none; height: 74px; padding-bottom: 12px; background: #242220f2; border-top: 1px solid var(--hairline);
+  display: flex; align-items: center; position: relative; z-index: 6;
+}
+.tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--faint); }
+.tab .pill { width: 58px; height: 32px; border-radius: 999px; display: flex; align-items: center; justify-content: center; }
+.tab .ms { font-size: 22px; }
+.tab .lbl { font-size: 11px; font-weight: 600; }
+.tab.on { color: var(--text); }
+.tab.on .pill { background: var(--accent-tile); }
+.tab.on .ms { color: var(--accent); }
+
+/* mini player dock */
+.mini {
+  position: absolute; left: 10px; right: 10px; bottom: 80px; z-index: 5;
+  background: #2a2825f5; border: 1px solid var(--border); border-radius: 16px;
+  box-shadow: 0 12px 30px rgba(0,0,0,.5); overflow: hidden;
+}
+.mini .prog { height: 2.5px; background: var(--fill-strong); }
+.mini .prog i { display: block; height: 100%; background: var(--accent); }
+.mini .row { display: flex; align-items: center; gap: 11px; padding: 9px 12px; }
+
+/* =====================================================================
+   IN-SCREEN PRIMITIVES
+   ===================================================================== */
+.cov { position: relative; overflow: hidden; border-radius: var(--r-tile); flex: none;
+  display: flex; flex-direction: column; justify-content: flex-end; padding: 9px;
+  box-shadow: 0 8px 20px rgba(0,0,0,.32); }
+.cov .init { position: absolute; right: -6%; bottom: -12%; font-size: 4.2em; font-weight: 800; line-height: 1; color: rgba(255,255,255,.13); pointer-events: none; }
+.cov .ct { position: relative; font-size: 11px; font-weight: 700; line-height: 1.15; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,.4); }
+.cov .ck { position: relative; font-size: 7px; letter-spacing: .16em; text-transform: uppercase; color: rgba(255,255,255,.62); font-weight: 600; }
+/* duotone hue variants (TypesetCover-style) */
+.c1 { background: linear-gradient(155deg, #7a4536, #2b160f); }   /* ember */
+.c2 { background: linear-gradient(155deg, #3e5d6e, #14222b); }   /* tide */
+.c3 { background: linear-gradient(155deg, #55683f, #1b2413); }   /* sage */
+.c4 { background: linear-gradient(155deg, #6e5a86, #241c31); }   /* plum */
+.c5 { background: linear-gradient(155deg, #8a6a33, #2e2110); }   /* amber */
+.c6 { background: linear-gradient(155deg, #75465d, #29141e); }   /* rose */
+.c7 { background: linear-gradient(155deg, #4a5f8a, #151d2e); }   /* dusk */
+.c8 { background: linear-gradient(155deg, #5e6a70, #1c2124); }   /* slate */
+
+/* download badge / progress under tiles */
+.dl-badge { position: absolute; right: 7px; bottom: 7px; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; border: 2px solid var(--scaffold); }
+.dl-badge .ms { font-size: 12px; color: var(--on-accent); }
+.playchip { position: absolute; right: 7px; bottom: 7px; width: 32px; height: 32px; border-radius: 50%; background: #141312d9; border: 1px solid rgba(255,255,255,.2); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+.playchip .ms { font-size: 18px; color: #fff; }
+.track { height: 4px; border-radius: 999px; background: var(--fill-strong); overflow: hidden; }
+.track i { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+
+/* buttons & chips */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: var(--r-card);
+  font-weight: 700; font-size: 15px; padding: 13px 24px; }
+.btn.primary { background: var(--accent); color: var(--on-accent); box-shadow: 0 8px 22px rgba(224,101,74,.33); }
+.btn.secondary { background: var(--fill); color: var(--text); border: 1px solid var(--border); }
+.btn.ghost { background: transparent; color: var(--muted); }
+.btn.danger { background: transparent; color: var(--destructive); border: 1px solid #5a3029; }
+.chips { display: flex; gap: 8px; flex-wrap: nowrap; overflow: hidden; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 999px;
+  background: var(--fill); border: 1px solid var(--border); color: var(--muted); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.chip.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.chip.gold { background: #bd863f1f; border-color: #4a3c25; color: var(--hearth); }
+.chip .ms { font-size: 16px; }
+
+/* rows, cards, headers inside screens */
+.card { background: var(--high); border: 1px solid var(--hairline); border-radius: var(--r-card); }
+.hero-t { font-size: 22px; font-weight: 700; letter-spacing: -.02em; color: var(--text); line-height: 1.12; }
+.title-t { font-size: 18px; font-weight: 700; color: var(--text); }
+.label-t { font-size: 14px; font-weight: 600; color: var(--text); }
+.body-t { font-size: 15px; font-weight: 500; color: var(--text); line-height: 1.55; }
+.meta-t { font-size: 13px; font-weight: 500; color: var(--muted); }
+.cap-t { font-size: 11px; font-weight: 500; color: var(--faint); }
+.mono-t { font-family: var(--font-mono); font-size: 13px; color: var(--muted); }
+.eyebrow-t { font-family: var(--font-brand); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+.secthead { display: flex; align-items: center; justify-content: space-between; padding: 0 18px; margin: 24px 0 12px; }
+.secthead .l { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; color: var(--text); }
+.secthead .l .ms { font-size: 19px; color: var(--accent); }
+.secthead .see { display: flex; align-items: center; gap: 2px; font-size: 13px; font-weight: 600; color: var(--accent); }
+
+.iconbtn { width: 42px; height: 42px; border-radius: 50%; background: var(--fill); border: 1px solid var(--hairline); display: inline-flex; align-items: center; justify-content: center; color: var(--text); flex: none; }
+.iconbtn .ms { font-size: 21px; }
+
+/* settings rows */
+.setgroup { background: var(--high); border: 1px solid var(--hairline); border-radius: var(--r-card); margin: 0 18px 14px; overflow: hidden; }
+.setrow { display: flex; align-items: center; gap: 12px; padding: 13px 15px; border-bottom: 1px solid var(--hairline); }
+.setrow:last-child { border-bottom: none; }
+.setrow .ic { width: 34px; height: 34px; border-radius: 10px; background: var(--fill); display: flex; align-items: center; justify-content: center; flex: none; }
+.setrow .ic .ms { font-size: 19px; color: var(--muted); }
+.setrow .tx { flex: 1; min-width: 0; }
+.setrow .tx .t { font-size: 14.5px; font-weight: 600; color: var(--text); }
+.setrow .tx .d { font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.45; }
+.setlabel { font-family: var(--font-brand); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin: 18px 22px 8px; }
+.toggle { width: 46px; height: 27px; border-radius: 999px; background: var(--fill-strong); position: relative; flex: none; }
+.toggle i { position: absolute; top: 3px; left: 3px; width: 21px; height: 21px; border-radius: 50%; background: #8a847a; }
+.toggle.on { background: var(--accent); }
+.toggle.on i { left: auto; right: 3px; background: #fff; }
+.seg { display: flex; background: var(--fill); border-radius: 999px; padding: 3px; gap: 2px; }
+.seg span { padding: 7px 13px; border-radius: 999px; font-size: 12.5px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.seg span.on { background: var(--accent); color: var(--on-accent); }
+
+/* bottom sheet (drawn inside a screen or as standalone frame) */
+.sheetview { position: absolute; left: 0; right: 0; bottom: 0; z-index: 9;
+  background: var(--sheet); border-radius: var(--r-sheet) var(--r-sheet) 0 0; border: 1px solid var(--border); border-bottom: none;
+  box-shadow: 0 -20px 60px rgba(0,0,0,.6); }
+.scrim { position: absolute; inset: 0; z-index: 8; background: rgba(0,0,0,.55); }
+.grabber { width: 42px; height: 4.5px; border-radius: 999px; background: var(--fill-strong); margin: 10px auto 4px; }
+.sheethead { padding: 6px 20px 12px; }
+.sheethead .k { font-family: var(--font-brand); font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--hearth); }
+.sheethead .t { font-size: 20px; font-weight: 700; color: var(--text); margin-top: 3px; }
+
+/* toast pill */
+.toast { position: absolute; left: 50%; transform: translateX(-50%); z-index: 20;
+  display: flex; align-items: center; gap: 9px; padding: 11px 16px; border-radius: 999px;
+  background: rgba(20,17,15,.94); border: 1px solid var(--border); box-shadow: 0 10px 30px rgba(0,0,0,.5); white-space: nowrap; }
+.toast .ms { font-size: 17px; color: var(--accent); }
+.toast .tx { font-size: 13px; font-weight: 600; color: var(--text); }
+.toast .act { font-size: 13px; font-weight: 700; color: var(--accent); margin-left: 4px; }
+
+/* skeleton shimmer */
+.skel { background: linear-gradient(100deg, var(--fill) 40%, var(--fill-strong) 50%, var(--fill) 60%); background-size: 200% 100%; animation: shimmer 1.6s infinite linear; border-radius: 8px; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+/* =====================================================================
+   ANNOTATIONS
+   ===================================================================== */
+.n {
+  position: absolute; z-index: 40; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--hearth); color: #1b1207; font-family: var(--font-mono); font-weight: 700; font-size: 11.5px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 0 2.5px #0e0d0c, 0 4px 12px rgba(0,0,0,.5); cursor: default;
+}
+.legend { margin-top: 14px; display: flex; flex-direction: column; gap: 7px; }
+.legend .li { display: flex; gap: 9px; align-items: baseline; font-size: 12.5px; line-height: 1.5; }
+.legend .li .no { flex: none; width: 18px; height: 18px; border-radius: 50%; background: var(--hearth); color: #1b1207;
+  font-family: var(--font-mono); font-weight: 700; font-size: 10px; display: inline-flex; align-items: center; justify-content: center; transform: translateY(3px); }
+.legend .li .tx { color: #cdc7bc; }
+.legend .li .tx b { color: var(--text); font-weight: 650; }
+.legend .li .tx .anim { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--hearth); margin-top: 1px; }
+.legend .li .tx .anim::before { content: '≈ '; opacity: .7; }
+
+/* motion spec block (per section) */
+.motionspec { margin-top: 26px; max-width: 1150px; border-radius: 16px; padding: 16px 20px; background: var(--page-card); border: 1px dashed #3d3a34; }
+.motionspec h4 { margin: 0 0 10px; font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--hearth); }
+.motionspec table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.motionspec td { padding: 5px 14px 5px 0; vertical-align: top; color: #cdc7bc; border-bottom: 1px solid #24221e; }
+.motionspec td:first-child { font-family: var(--font-mono); color: var(--text); white-space: nowrap; }
+.motionspec tr:last-child td { border-bottom: none; }
+
+/* =====================================================================
+   IN-HOUSE REVIEW LAYER (v2 pages only)
+   A distinct second-opinion voice layered over the consultant's suite.
+   Uses an indigo "review" accent so it never reads as brand chrome and is
+   never confused with the gold consultant annotations.
+   ===================================================================== */
+:root {
+  --review: #6f8cff;              /* in-house reviewer accent (indigo) */
+  --review-wash: rgba(111,140,255,.12);
+  --review-border: #34406b;
+  --keep: #7fa86b;                /* consultant got it right */
+  --regress: #d98a3d;             /* consultant introduced a NEW problem */
+}
+
+/* v2 badge in the masthead + pagenav */
+.v2tag {
+  display:inline-block; font-family:var(--font-mono); font-size:11px; font-weight:700;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--review);
+  border:1px solid var(--review-border); background:var(--review-wash);
+  border-radius:999px; padding:3px 10px; vertical-align:3px; margin-left:8px;
+}
+.pagenav a.v2 { color: var(--review); border-color: var(--review-border); }
+.pagenav a.v2.on { color:#0d1020; background:var(--review); border-color:var(--review); }
+
+/* the in-house teardown block — three columns: what the consultant kept,
+   what they still got wrong, and what they actively regressed. */
+.ihreview {
+  border-radius:18px; padding:20px 22px; margin:0 0 34px;
+  background:linear-gradient(180deg, rgba(111,140,255,.07), transparent 70%), var(--page-card);
+  border:1px solid var(--review-border); max-width:1150px;
+}
+.ihreview > .lead {
+  display:flex; align-items:center; gap:10px; margin:0 0 4px;
+  font-family:var(--font-brand); font-size:11px; letter-spacing:.24em; text-transform:uppercase; color:var(--review);
+}
+.ihreview > .lead .ms { font-size:18px; }
+.ihreview > p { font-size:13.5px; line-height:1.65; color:#c3bdb2; margin:0 0 16px; max-width:900px; }
+.ihgrid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; }
+@media (max-width: 1000px) { .ihgrid { grid-template-columns:1fr; } }
+.ihcol { border-radius:14px; padding:15px 16px; background:#12131b66; border:1px solid #26283a; }
+.ihcol h4 { margin:0 0 11px; font-size:11px; letter-spacing:.16em; text-transform:uppercase; font-weight:700; display:flex; align-items:center; gap:7px; }
+.ihcol h4 .ms { font-size:16px; }
+.ihcol.keep h4 { color:var(--keep); }
+.ihcol.miss h4 { color:var(--review); }
+.ihcol.regress h4 { color:var(--regress); }
+.ihcol ul { margin:0; padding:0; list-style:none; }
+.ihcol li { position:relative; padding:5px 0 5px 22px; font-size:12.5px; line-height:1.55; color:#c6c0b5; }
+.ihcol li::before { position:absolute; left:0; top:5px; font-family:var(--font-mono); font-weight:700; font-size:12px; }
+.ihcol.keep li::before { content:'='; color:var(--keep); }
+.ihcol.miss li::before { content:'>'; color:var(--review); }
+.ihcol.regress li::before { content:'!'; color:var(--regress); }
+.ihcol li b { color:var(--text); font-weight:650; }
+
+/* "v2 fix" chip for changed frames */
+.framecap .t .chip.v2fix { color:var(--review); border-color:var(--review-border); background:var(--review-wash); }
+/* review annotation dots use the indigo accent so they stand apart from gold */
+.n.rv { background:var(--review); color:#0d1020; box-shadow:0 0 0 2.5px #0e0d0c, 0 4px 12px rgba(0,0,0,.5); }
+.legend .li .no.rv { background:var(--review); color:#0d1020; }
+.legend .li .tx .rvnote { display:block; font-size:11.5px; color:var(--review); margin-top:2px; font-weight:600; }
+.legend .li .tx .rvnote::before { content:'v2 · '; opacity:.75; font-family:var(--font-mono); }
+
+/* D-REACH one-handed thumb overlay (drawn inside a .screen, absolutely) */
+.reach {
+  position:absolute; inset:0; z-index:30; pointer-events:none;
+  background:radial-gradient(120% 78% at 78% 108%, rgba(111,140,255,.20), rgba(111,140,255,.07) 46%, transparent 62%);
+}
+.reach .arc { position:absolute; right:-40px; bottom:-40px; width:560px; height:560px; border-radius:50%; border:1.5px dashed rgba(111,140,255,.5); }
+.reach .lbl { position:absolute; left:14px; bottom:14px; font-family:var(--font-mono); font-size:10.5px; color:var(--review); background:#0d1020cc; border:1px solid var(--review-border); border-radius:999px; padding:4px 10px; }
+.reach .hard { position:absolute; top:44px; left:0; right:0; height:180px; background:repeating-linear-gradient(45deg, rgba(217,138,61,.05) 0 10px, transparent 10px 20px); border-bottom:1px dashed rgba(217,138,61,.4); }
+.reach .hardlbl { position:absolute; top:150px; right:14px; font-family:var(--font-mono); font-size:10px; color:var(--regress); background:#0d1020cc; border:1px solid #5a4426; border-radius:999px; padding:3px 9px; }
+
+/* "NO CHANGES" tag for v2 frames that faithfully mirror v1 (1:1 compare parity) */
+.framecap .t .chip.nochange { color:var(--keep); border-color:#3a4a30; background:rgba(127,168,107,.10); }
+.nochange-note { font-size:12px; color:var(--keep); font-family:var(--font-mono); margin-top:4px; }
+.nochange-note::before { content:'= '; opacity:.7; }
+
+/* prod-verification block: audits each v2 claim against the shipping source */
+.prodcheck { border-radius:16px; padding:18px 20px; margin:0 0 30px; max-width:1150px;
+  background:linear-gradient(180deg, rgba(127,168,107,.06), transparent 70%), var(--page-card); border:1px solid #3a4a30; }
+.prodcheck > .lead { display:flex; align-items:center; gap:9px; font-family:var(--font-brand); font-size:11px; letter-spacing:.22em; text-transform:uppercase; color:var(--keep); margin-bottom:4px; }
+.prodcheck > .lead .ms { font-size:17px; }
+.prodcheck > p { font-size:13px; line-height:1.6; color:#c3bdb2; margin:0 0 14px; }
+.prodcheck table { width:100%; border-collapse:collapse; font-size:12.5px; }
+.prodcheck th { text-align:left; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); padding:0 12px 8px 0; font-weight:700; }
+.prodcheck td { padding:8px 12px 8px 0; vertical-align:top; color:#cbc5ba; border-top:1px solid #2a2c24; line-height:1.5; }
+.prodcheck td .src { font-family:var(--font-mono); font-size:11px; color:var(--muted); }
+.vd { font-family:var(--font-mono); font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; padding:3px 8px; border-radius:999px; white-space:nowrap; display:inline-block; }
+.vd.ok { color:var(--keep); background:rgba(127,168,107,.12); border:1px solid #3a4a30; }
+.vd.over { color:var(--regress); background:rgba(217,138,61,.12); border:1px solid #5a4426; }
+.vd.inv { color:var(--review); background:var(--review-wash); border:1px solid var(--review-border); }
+
+/* footer nav between pages */
+.footnav { margin-top: 90px; display: flex; justify-content: space-between; gap: 12px; }
+.footnav a { color: var(--muted); text-decoration: none; font-family: var(--font-mono); font-size: 13px; padding: 12px 18px; border: 1px solid var(--page-border); border-radius: 12px; background: var(--page-card); }
+.footnav a:hover { color: var(--text); }
+
+/* ==== fold.css (inlined) ==== */
+/* =====================================================================
+   HearthShelf Mobile — FOLDABLE reimagining · frame + layout language
+   Layers on top of ../hearth.css (same tokens, primitives, annotations).
+   Adds the unfolded near-square device frame, the hinge crease, the
+   left navigation rail (the bottom tab bar re-cast for a big screen),
+   the two-pane content region and the "seam gutter" dead zone.
+   Postures: UNFOLDED (book, two panes) · FOLDED (cover screen, one phone).
+   ===================================================================== */
+
+/* ---------- UNFOLDED device (Galaxy-Z-Fold-class, ~7.6" near-square) ---------- */
+.foldphone {
+  width: 1024px; padding: 13px; border-radius: 30px;
+  background: linear-gradient(150deg, #26241f, #0b0a09);
+  box-shadow: 0 46px 100px rgba(0,0,0,.66), inset 0 0 0 1.5px rgba(255,255,255,.05);
+  position: relative;
+}
+.foldphone .cam { position: absolute; top: 24px; right: 40%; width: 9px; height: 9px; border-radius: 50%; background: #050403; box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); z-index: 30; }
+.foldscreen {
+  position: relative; width: 998px; height: 858px; border-radius: 18px; overflow: hidden;
+  background: var(--scaffold); display: flex; flex-direction: column;
+}
+
+/* full-width status strip (spans the whole panel, crosses the crease) */
+.topstrip {
+  position: relative; z-index: 20; height: 34px; flex: none;
+  display: flex; align-items: center; justify-content: space-between; padding: 0 26px;
+  font-family: var(--font-mono); font-size: 12.5px; color: var(--text);
+  background: linear-gradient(180deg, rgba(0,0,0,.28), transparent);
+}
+.topstrip .dot { position: absolute; left: 50%; top: 11px; transform: translateX(-50%); width: 8px; height: 8px; border-radius: 50%; background: #000; opacity: .8; }
+.topstrip .right { display: flex; align-items: center; gap: 7px; }
+.topstrip .right .ms { font-size: 15px; }
+
+/* content row: nav rail + the two content panes */
+.frow { flex: 1; display: flex; min-height: 0; position: relative; }
+
+/* ---------- left NAVIGATION RAIL (the tab bar, re-cast for the big screen) ---------- */
+.frail {
+  width: 76px; flex: none; z-index: 12;
+  background: #201e1cf2; border-right: 1px solid var(--hairline);
+  display: flex; flex-direction: column; align-items: center; padding: 12px 0 14px;
+}
+.frail .flame {
+  width: 44px; height: 44px; border-radius: 13px; flex: none; margin-bottom: 12px;
+  background: linear-gradient(160deg, #3a2a1a, #1c1410);
+  border: 1px solid #4a3c25; display: flex; align-items: center; justify-content: center;
+}
+.frail .flame .ms { font-size: 24px; color: var(--hearth); }
+.frail .rtab {
+  width: 62px; padding: 8px 0 7px; border-radius: 15px; margin-top: 2px;
+  display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--faint);
+}
+.frail .rtab .ms { font-size: 24px; }
+.frail .rtab .lbl { font-size: 9.5px; font-weight: 700; letter-spacing: .01em; }
+.frail .rtab.on { color: var(--text); }
+.frail .rtab.on .ms { color: var(--accent); }
+.frail .rtab.on { background: var(--accent-tile); }
+.frail .grow { flex: 1; }
+.frail .avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(155deg, #6e5a86, #241c31); display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; font-size: 15px; border: 1px solid var(--border); }
+
+/* ---------- the two content panes ---------- */
+.pane { position: relative; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.pane.l { flex: none; }             /* width set per page inline (default ~ half minus rail) */
+.pane.r { flex: 1; background: linear-gradient(180deg, rgba(0,0,0,.10), transparent 30%); }
+.pane .panebody { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+/* the hinge crease — a real visual valley down the physical center.
+   Interactive targets must clear the SEAM GUTTER that straddles it. */
+.crease {
+  position: absolute; top: 0; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 34px; z-index: 18; pointer-events: none;
+  background: linear-gradient(90deg,
+    transparent, rgba(0,0,0,.10) 24%, rgba(0,0,0,.34) 50%, rgba(0,0,0,.10) 76%, transparent);
+}
+.crease::before { content: ''; position: absolute; left: calc(50% - 1px); top: 0; bottom: 0; width: 1px; background: rgba(0,0,0,.5); }
+.crease::after { content: ''; position: absolute; left: calc(50% + 1px); top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,.05); }
+/* optional labelled seam gutter for the teardown frames */
+.seambox { position: absolute; top: 0; bottom: 0; left: 50%; transform: translateX(-50%); width: 84px; z-index: 17; pointer-events: none;
+  border-left: 1px dashed rgba(224,101,74,.35); border-right: 1px dashed rgba(224,101,74,.35); background: repeating-linear-gradient(45deg, rgba(224,101,74,.05) 0 8px, transparent 8px 16px); }
+.seamlbl { position: absolute; z-index: 19; font-family: var(--font-mono); font-size: 10px; color: var(--accent); background: #140f0dcc; border: 1px solid #5a3b32; border-radius: 999px; padding: 3px 9px; pointer-events: none; }
+
+/* ---------- FOLDED cover-screen frame (a normal, tall phone) ---------- */
+.coverphone {
+  width: 300px; padding: 10px; border-radius: 40px;
+  background: linear-gradient(160deg, #26241f, #0b0a09);
+  box-shadow: 0 40px 84px rgba(0,0,0,.6), inset 0 0 0 1.5px rgba(255,255,255,.05); position: relative;
+}
+.coverscreen {
+  position: relative; width: 280px; height: 720px; border-radius: 31px; overflow: hidden;
+  background: var(--scaffold); display: flex; flex-direction: column;
+}
+
+/* ---------- shared panel chrome inside the right pane ---------- */
+.ptabs { display: flex; gap: 4px; padding: 12px 16px 10px; flex: none; overflow-x: auto; }
+.ptab { display: inline-flex; align-items: center; gap: 6px; padding: 8px 13px; border-radius: 999px; white-space: nowrap;
+  background: var(--fill); border: 1px solid var(--border); color: var(--muted); font-size: 12.5px; font-weight: 600; }
+.ptab .ms { font-size: 16px; }
+.ptab.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.panehead { display: flex; align-items: center; gap: 11px; padding: 6px 18px 14px; flex: none; }
+.panehead .ic { width: 38px; height: 38px; border-radius: 11px; background: var(--fill); display: flex; align-items: center; justify-content: center; flex: none; }
+.panehead .ic .ms { font-size: 20px; color: var(--accent); }
+.panehead .tt { flex: 1; min-width: 0; }
+.panehead .tt .t { font-size: 17px; font-weight: 700; color: var(--text); }
+.panehead .tt .s { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.panescroll { flex: 1; overflow: hidden; padding: 0 16px 18px; }
+
+/* generic list row reused by chapters / queue / recent panels */
+.prow { display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 12px; }
+.prow + .prow { margin-top: 2px; }
+.prow.on { background: var(--accent-wash); }
+.prow:hover { background: var(--fill); }
+.prow .num { font-family: var(--font-mono); font-size: 12px; color: var(--faint); width: 22px; text-align: right; flex: none; }
+.prow .txw { flex: 1; min-width: 0; }
+.prow .txw .t { font-size: 13.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prow .txw .d { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+.prow .dur { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); flex: none; }
+
+/* posture switch pills used on the index / captions */
+.posture { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  padding: 4px 10px; border-radius: 999px; border: 1px solid var(--page-border); background: var(--page-card); color: var(--muted); }
+.posture .ms { font-size: 15px; }
+.posture.on { color: var(--hearth); border-color: #4a3c25; background: #bd863f14; }
+
+/* verdict callout blocks (seam experiment) */
+.verdict { border-radius: 16px; padding: 18px 20px; margin: 22px 0 8px; max-width: 1150px;
+  background: linear-gradient(180deg, rgba(224,101,74,.06), transparent 70%), var(--page-card); border: 1px solid #5a3b32; }
+.verdict.good { background: linear-gradient(180deg, rgba(127,168,107,.07), transparent 70%), var(--page-card); border-color: #3a4a30; }
+.verdict .lead { display: flex; align-items: center; gap: 9px; font-family: var(--font-brand); font-size: 11px; letter-spacing: .22em; text-transform: uppercase; margin-bottom: 8px; color: var(--accent); }
+.verdict.good .lead { color: var(--good); }
+.verdict .lead .ms { font-size: 18px; }
+.verdict p { font-size: 13.5px; line-height: 1.7; color: #cdc7bc; margin: 0 0 9px; max-width: 980px; }
+.verdict p:last-child { margin-bottom: 0; }
+.verdict b { color: var(--text); }
+
+/* frameunit override — fold frames are wide */
+.frameunit.fold { width: auto; max-width: 1050px; }
+
+/* ==== index page styles (inlined) ==== */
+
+  .doctrine { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:14px; margin-top:22px; max-width:1150px; }
+  .doc { border-radius:16px; padding:18px 20px; background:var(--page-card); border:1px solid var(--page-border); }
+  .doc .id { font-family:var(--font-mono); font-size:11px; letter-spacing:.14em; color:var(--hearth); }
+  .doc h4 { margin:6px 0 7px; font-size:15px; color:var(--text); }
+  .doc p { margin:0; font-size:13px; line-height:1.6; color:#b6afa3; }
+  .toc { display:grid; grid-template-columns:repeat(auto-fill,minmax(400px,1fr)); gap:14px; margin-top:22px; max-width:1150px; }
+  .toc a { display:flex; gap:14px; align-items:flex-start; text-decoration:none; border-radius:16px; padding:17px 19px; background:var(--page-card); border:1px solid var(--page-border); transition:border-color .15s; }
+  .toc a:hover { border-color:#55503f; }
+  .toc .num { font-family:var(--font-mono); font-size:22px; font-weight:700; color:var(--hearth); line-height:1; padding-top:2px; }
+  .toc h4 { margin:0 0 5px; font-size:15.5px; color:var(--text); }
+  .toc p { margin:0; font-size:12.5px; line-height:1.55; color:#a49d90; }
+  .lede { max-width:1150px; border-radius:16px; padding:18px 22px; background:var(--page-card); border:1px solid var(--page-border); margin-top:6px; }
+  .lede p { font-size:13.5px; line-height:1.7; color:#cdc7bc; margin:0 0 10px; }
+  .lede p:last-child { margin-bottom:0; }
+  .lede b { color:var(--text); }
+  .postures { display:flex; gap:12px; flex-wrap:wrap; margin:14px 0 4px; }
+
+/* ==== single-file page dividers ==== */
+.pagemark { margin:130px 0 -34px; text-align:center; font-family:var(--font-brand); font-size:12px; letter-spacing:.32em; text-transform:uppercase; color:var(--hearth); }
+.pagemark::before, .pagemark::after { content:''; display:inline-block; width:64px; height:1px; background:var(--page-border); vertical-align:middle; margin:0 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div class="wordmark" style="font-size:26px"><span class="lt">Hearth</span><span class="bd">Shelf</span><span class="sub"> · Foldable Reimagining</span></div>
+    <div class="tagline">A ground-up take for book-posture foldables (Galaxy Z Fold class). Same tokens and design language as the FINAL phone suite,<br>
+    re-thought around two facts a phone never has: <b>a second half of screen</b>, and <b>a hinge running down the middle of it</b>. One self-contained file.</div>
+  </div>
+  <div class="pagenav">
+    <a href="#thesis">Overview</a>
+    <a href="#two-pane">Player</a>
+    <a href="#home">Home</a>
+    <a href="#library">Library &amp; Detail</a>
+    <a href="../index-Final.html" style="color:#6f6a62">· phone FINAL</a>
+    <a href="../03-player-Final.html" style="color:#6f6a62">phone Player</a>
+  </div>
+<div class="section" id="thesis">
+    <div class="eyebrow">Read this first</div>
+    <h2>The whole idea in one line</h2>
+    <div class="lede">
+      <p>On a phone the player is a <b>stack</b> — everything the app wants to say is queued down one narrow column, so
+      chapters, queue, recent and notes all live behind sheets that cover the art. Unfold the device and that constraint
+      evaporates: the player keeps the <b>left half</b> and every one of those sheets becomes a <b>persistent right-half panel</b> that
+      sits open <i>beside</i> the art instead of on top of it. This is exactly the move the web app already makes on a wide screen
+      (<span class="src">PlayerPage.tsx — <code>.player-col</code> + a <code>.p-panel</code> that slides open, shrinking the cover 320→248px</span>);
+      the fold build brings it to the phone.</p>
+      <p>The new problem a foldable introduces is the <b>hinge</b>. There is a real crease down the physical center — a slight optical
+      valley and a spot where touch is least reliable and hardest to reach in a two-handed book grip. So the governing rule here is:
+      <b>the seam is a gutter, never a target.</b> The two panes butt up to a ~52px dead zone that straddles the crease; nothing you
+      must tap lives inside it. That single decision is what answers the "play button on the seam" question below — spoiler: <b>no</b>,
+      and the mock shows why.</p>
+      <p>Everything from the FINAL phone suite is preserved — pure-tab player, one-tap finish, quick-play, the action grammar, the
+      accessibility floor. It is <b>relocated</b>, not redrawn: the bottom tab bar becomes a left <b>navigation rail</b>, sheets become
+      panels, and the folded cover screen simply <i>is</i> the FINAL phone player, unchanged, so the two postures stay one product.</p>
+    </div>
+  </div>
+
+  <!-- ============================== POSTURES ============================== -->
+  <div class="section" id="postures">
+    <div class="eyebrow">The device</div>
+    <h2>Two postures, one app</h2>
+    <p class="sub">A Fold is really two screens. The build detects posture and hands each one the layout it deserves — never a
+    stretched phone UI on the big screen, never a squeezed tablet UI on the cover.</p>
+
+    <div class="postures">
+      <span class="posture on"><span class="ms">tablet</span> Unfolded · book posture · two panes</span>
+      <span class="posture"><span class="ms">smartphone</span> Folded · cover screen · the FINAL phone, as-is</span>
+      <span class="posture"><span class="ms">flex_to_dial</span> Flex / tabletop · art up, controls down</span>
+    </div>
+
+    <div class="frames" style="margin-top:22px">
+      <!-- UNFOLDED reference frame -->
+      <div class="frameunit fold">
+        <div class="framecap">
+          <div class="t">Unfolded — the master frame <span class="chip">reimagined</span></div>
+          <div class="d">Near-square 7.6" canvas. Left navigation rail (was the tab bar) · left content half (the player / a list) ·
+          the crease · right content half (the panel / a detail). The dashed band is the seam gutter — a no-target zone.</div>
+        </div>
+        <div class="foldphone">
+          <div class="cam"></div>
+          <div class="foldscreen">
+            <div class="topstrip"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">groups</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+            <div class="frow">
+              <!-- nav rail -->
+              <div class="frail">
+                <div class="flame"><span class="ms fill">local_fire_department</span></div>
+                <div class="rtab"><span class="ms">home</span><span class="lbl">Home</span></div>
+                <div class="rtab"><span class="ms">auto_stories</span><span class="lbl">Library</span></div>
+                <div class="rtab on"><span class="ms fill">play_circle</span><span class="lbl">Now</span></div>
+                <div class="rtab"><span class="ms">insights</span><span class="lbl">Stats</span></div>
+                <div class="rtab"><span class="ms">menu</span><span class="lbl">More</span></div>
+                <div class="grow"></div>
+                <div class="avatar">M</div>
+              </div>
+              <!-- left content half -->
+              <div class="pane l" style="width:423px">
+                <div class="panebody" style="align-items:center; justify-content:center; padding:24px; padding-right:44px; text-align:center; color:var(--muted)">
+                  <div class="cov c1" style="width:200px; aspect-ratio:1/1; border-radius:14px"><span class="init">E</span><span class="ck">Cinderfall · 3</span><span class="ct" style="font-size:13px">The Ember Gate</span></div>
+                  <div style="margin-top:16px; font-size:13px; font-weight:700; color:var(--text)">LEFT HALF</div>
+                  <div style="font-size:12px; margin-top:3px">The player (or a list). Owns the transport &amp; the thumb-reachable controls.</div>
+                </div>
+              </div>
+              <!-- right content half -->
+              <div class="pane r">
+                <div class="panebody" style="align-items:center; justify-content:center; padding:24px; padding-left:44px; text-align:center; color:var(--muted)">
+                  <span class="ms" style="font-size:40px; color:var(--faint)">view_sidebar</span>
+                  <div style="margin-top:14px; font-size:13px; font-weight:700; color:var(--text)">RIGHT HALF</div>
+                  <div style="font-size:12px; margin-top:3px">The panel that was a sheet on the phone — chapters, up next, recent, notes, details — now persistent, beside the art.</div>
+                </div>
+              </div>
+            </div>
+            <div class="crease"></div>
+            <div class="seambox"></div>
+            <div class="seamlbl" style="top:50%; left:50%; transform:translate(-50%,-50%)">seam gutter · no targets</div>
+            <span class="n" style="top:44px; left:30px">1</span>
+            <span class="n" style="top:430px; left:250px">2</span>
+            <span class="n" style="top:430px; left:520px">3</span>
+          </div>
+        </div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Navigation rail · tap</b> — the five phone tabs (Home · Library · Now · Stats · More) rotated to a vertical rail on the outer spine-away edge, plus the account avatar pinned bottom. Owning tab stays lit on pushed routes (D-NAV survives the posture change).</span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Left half · the player</b> — cover, scrubber, transport and the one action row. Sized like the phone player so muscle memory carries over. All primary controls sit here, reachable by the left thumb.</span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Right half · the panel</b> — whatever the phone would have opened as a sheet is open here instead, persistent and scrollable, without ever hiding the art.</span></div>
+        </div>
+      </div>
+
+      <!-- FOLDED reference frame -->
+      <div class="frameunit">
+        <div class="framecap">
+          <div class="t">Folded — the cover screen <span class="chip">kept</span></div>
+          <div class="d">Tall and narrow: this is just the FINAL phone player, unchanged. Fold the device mid-listen and it
+          continuity-hands to this with no state loss.</div>
+        </div>
+        <div class="coverphone">
+          <div class="coverscreen">
+            <div class="statusbar" style="height:32px"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms" style="font-size:14px">wifi</span><span class="ms" style="font-size:14px">battery_5_bar</span></span></div>
+            <div class="body" style="padding:0 14px; align-items:center">
+              <div style="display:flex; justify-content:center; margin-top:8px">
+                <div class="cov c1" style="width:236px; aspect-ratio:1/1; border-radius:14px; padding:11px"><span class="init">E</span><span class="ck">Cinderfall · 3</span><span class="ct" style="font-size:13px">The Ember Gate</span></div>
+              </div>
+              <div style="text-align:center; margin-top:12px; font-size:14px; font-weight:700; color:var(--text)">The Ember Gate</div>
+              <div style="text-align:center; font-size:12px; color:var(--muted); margin-top:1px">Maren Holloway</div>
+              <div style="width:100%; margin-top:14px; height:26px; border-radius:999px; background:linear-gradient(90deg,#e0654a,#bd863f); position:relative; overflow:hidden">
+                <div style="position:absolute; inset:0 0 0 42%; background:rgba(15,12,10,.55)"></div>
+              </div>
+              <div style="display:flex; align-items:center; justify-content:center; gap:14px; margin-top:16px">
+                <span class="ms" style="font-size:26px; color:var(--muted)">replay_30</span>
+                <div style="width:66px; height:66px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; box-shadow:0 12px 28px rgba(224,101,74,.42)"><span class="ms fill" style="font-size:36px; color:var(--on-accent)">pause</span></div>
+                <span class="ms" style="font-size:26px; color:var(--muted)">forward_30</span>
+              </div>
+              <div style="display:flex; gap:8px; margin-top:18px; width:100%">
+                <div style="flex:1; height:44px; border-radius:12px; background:var(--fill); border:1px solid var(--hairline); display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:20px">list</span></div>
+                <div style="flex:1; height:44px; border-radius:12px; background:var(--fill); border:1px solid var(--hairline); display:flex; align-items:center; justify-content:center; font-family:var(--font-mono); font-size:12px; font-weight:700">1.25×</div>
+                <div style="flex:1; height:44px; border-radius:12px; background:var(--fill); border:1px solid var(--hairline); display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:20px">bedtime</span></div>
+                <div style="flex:1; height:44px; border-radius:12px; background:var(--fill); border:1px solid var(--hairline); display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:20px">more_horiz</span></div>
+              </div>
+            </div>
+            <div class="tabbar" style="height:62px">
+              <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div>
+              <div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div>
+              <div class="tab on"><span class="pill"><span class="ms fill">play_circle</span></span><span class="lbl">Now</span></div>
+              <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+              <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="legend">
+          <div class="li"><span class="no">=</span><span class="tx"><b>No new design</b> — the cover screen reuses the shipping phone player 1:1. The only cross-posture work is <b>continuity</b>: position, queue, sleep timer and sheet/panel state all survive the fold/unfold in place.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== SEAM VERDICT ============================== -->
+  <div class="section" id="seam-intro">
+    <div class="eyebrow">The question you asked</div>
+    <h2>Should the play button live on the seam?</h2>
+    <p class="sub">You floated putting the play button on the hinge and weren't sure how it'd feel. I built it both ways.
+    Here's the honest read — see the <a href="#seam" style="color:var(--accent)">Player page</a> for the full side-by-side.</p>
+
+    <div class="verdict">
+      <div class="lead"><span class="ms">block</span>Verdict — play button ON the seam: no</div>
+      <p>It's <b>visually</b> gorgeous — the crease reads as the spine of a book and a big round button dead-center feels like the
+      obvious anchor. But it loses on the three things that actually matter for a transport control:</p>
+      <p><b>1 · Reach.</b> Hold an unfolded Fold like a book and your thumbs rest at the <i>outer bottom corners</i>, not the middle. The
+      exact center is the single hardest pixel to reach with either thumb — you have to lift a hand off the frame. The most-tapped
+      control should be the <i>easiest</i> reach, which is the opposite corner.</p>
+      <p><b>2 · The crease is a bad touch target.</b> The hinge valley is where the digitizer is least flat and where a fingertip
+      rocks over an edge. Pause-at-a-red-light or grab-a-skip should never depend on the least reliable strip of glass.</p>
+      <p><b>3 · It fights the gutter rule.</b> Every other element respectfully clears the seam; a button planted on it is the one
+      exception, which makes the crease feel like a defect the design ran into rather than one it designed around.</p>
+    </div>
+
+    <div class="verdict good">
+      <div class="lead"><span class="ms">check_circle</span>What ships instead — transport stays in the left palm</div>
+      <p><b>Primary:</b> the play/pause + skips live in the <b>left pane</b>, low and centered <i>within that half</i> — right under the
+      left thumb, exactly where the phone player already trains it. The right pane is glanceable content (chapters / queue), which
+      needs reading, not rapid tapping, so it tolerates the longer reach.</p>
+      <p><b>The seam still earns its keep</b>, just not as a button: a hairline <b>"now-playing" progress thread</b> runs down the crease
+      itself — a purely ambient spine that shows book progress without ever asking for a touch. The metaphor lands; the ergonomics don't suffer.</p>
+      <p><b>Flex / tabletop bonus:</b> when the Fold is half-open on a table, the crease becomes a horizontal fold — art on the top
+      panel, a fat transport bar on the bottom panel, laptop-style. <i>That</i> is the one posture where a centered control makes
+      sense, because the bottom half is now a flat, reachable "keyboard deck." Shown on the Player page.</p>
+    </div>
+  </div>
+
+  <!-- ============================== DOCTRINE ============================== -->
+  <div class="section" id="doctrine">
+    <div class="eyebrow">Fold doctrine</div>
+    <h2>The rules this build adds</h2>
+    <p class="sub">The eight phone doctrines still hold. These five are the fold-only additions — cite them in the page teardowns.</p>
+    <div class="doctrine">
+      <div class="doc"><div class="id">F-SEAM</div><h4>The seam is a gutter, never a target</h4><p>A ~52px dead zone straddles the crease. No interactive element sits under it. The hinge may carry ambient state (a progress thread) but never a control.</p></div>
+      <div class="doc"><div class="id">F-PANE</div><h4>Sheets become panels</h4><p>Anything the phone opens as a bottom sheet (chapters, queue, recent, notes, sync, details) opens as a persistent right-half panel instead — beside the art, not over it. One at a time; the panel tab strip switches them.</p></div>
+      <div class="doc"><div class="id">F-RAIL</div><h4>The tab bar becomes a rail</h4><p>The five bottom tabs rotate to a left navigation rail with the account avatar pinned bottom. Same five destinations, same lit-owning-tab behavior. No bottom bar on the big screen.</p></div>
+      <div class="doc"><div class="id">F-CONT</div><h4>Fold/unfold is lossless</h4><p>Posture change hands off in place: playback, queue, sleep timer, open panel and scroll position all persist. Fold mid-chapter, keep listening on the cover screen; unfold, the panel you had open is still open.</p></div>
+      <div class="doc"><div class="id">F-LEFT</div><h4>Controls left, content right</h4><p>Frequent controls live in the left pane under the thumb (extends D-THUMB to the horizontal axis). The right pane is for reading and glancing, which tolerates the longer reach across the seam.</p></div>
+    </div>
+  </div>
+
+  <!-- ============================== PAGES ============================== -->
+  <div class="section" id="pages">
+    <div class="eyebrow">The suite</div>
+    <h2>Fold pages</h2>
+    <div class="toc">
+      <a href="#two-pane"><span class="num">01</span><span><h4>Player</h4><p>The star. Two-pane player with the panel gallery (chapters · up next · recent · notes · sync · details), the seam experiment side-by-side, the folded cover player, the flex/tabletop posture, and states.</p></span></a>
+      <a href="#home"><span class="num">02</span><span><h4>Home</h4><p>Continue rail + shelves on the left half; tap any book and its quick actions / chapters preview open in the right half instead of pushing a whole new screen.</p></span></a>
+      <a href="#library"><span class="num">03</span><span><h4>Library &amp; Detail</h4><p>The canonical master-detail: the grid keeps the left half, book detail opens in the right half — browse and inspect at once, no back-and-forth.</p></span></a>
+    </div>
+  </div>
+
+  <div class="footnav"><a href="../index-Final.html">← phone FINAL overview</a><a href="#two-pane">01 · Player (Fold) →</a></div>
+
+  <div class="pagemark" id="pm-player">Screen 01 · Player</div>
+<div class="section" id="two-pane">
+    <div class="eyebrow">Screen 01 · Player</div>
+    <h2>The two-pane player</h2>
+    <p class="sub">Cover, scrubber and transport hold the left half exactly as they do on the phone. The right half carries the
+    panel that used to be a sheet — here, <b>Up next</b>. Both are live at once: scrub with your left thumb while reading what's
+    queued on the right, no sheet ever covering the art.</p>
+
+    <div class="audit">
+      <div class="crit"><h3>Teardown — the phone constraint</h3><ul>
+        <li><b>Sheets cover the art.</b> Chapters, queue, recent, notes all slide up over the cover — you lose the thing you're looking at to see the thing you asked for.</li>
+        <li><b>One thing at a time.</b> You can read the queue, or scrub, but not both; every panel is a modal round-trip.</li>
+        <li><b>Wasted width.</b> Unfolded, a phone-shaped player just centers a small column in a sea of black or stretches ugly.</li>
+      </ul></div>
+      <div class="moves"><h3>Redesign moves</h3><ul>
+        <li><b>Panels, not sheets (F-PANE).</b> The sheet content becomes a persistent right pane beside the art. Tap strip switches which panel.</li>
+        <li><b>Transport stays left (F-LEFT).</b> All rapid controls under the left thumb; the right pane is for reading/glancing.</li>
+        <li><b>Seam is a gutter (F-SEAM).</b> Panes butt to a dead zone over the crease; the hinge carries only an ambient progress thread.</li>
+        <li><b>Rail, not tab bar (F-RAIL).</b> Five destinations on the left spine-away edge, Now lit.</li>
+      </ul></div>
+    </div>
+
+    <div class="frames">
+      <div class="frameunit fold">
+        <div class="framecap">
+          <div class="t">Full player, unfolded — Up next open <span class="chip">reimagined</span></div>
+          <div class="d">Default panel is Up next. The ambient progress thread runs down the crease. Everything you tap is in the left half.</div>
+        </div>
+        <div class="foldphone">
+          <div class="cam"></div>
+          <div class="foldscreen">
+            <div style="position:absolute; inset:0; background:radial-gradient(90% 60% at 26% 20%, rgba(122,69,54,.34), transparent 60%), linear-gradient(180deg, rgba(43,22,15,.28), var(--scaffold) 62%)"></div>
+            <div class="topstrip"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">groups</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+            <div class="frow">
+              <!-- RAIL -->
+              <div class="frail">
+                <div class="flame"><span class="ms fill">local_fire_department</span></div>
+                <div class="rtab"><span class="ms">home</span><span class="lbl">Home</span></div>
+                <div class="rtab"><span class="ms">auto_stories</span><span class="lbl">Library</span></div>
+                <div class="rtab on"><span class="ms fill">play_circle</span><span class="lbl">Now</span></div>
+                <div class="rtab"><span class="ms">insights</span><span class="lbl">Stats</span></div>
+                <div class="rtab"><span class="ms">menu</span><span class="lbl">More</span></div>
+                <div class="grow"></div>
+                <div class="avatar">M</div>
+              </div>
+              <!-- LEFT PANE · THE PLAYER -->
+              <div class="pane l" style="width:423px">
+                <div class="panebody" style="padding:14px 46px 14px 20px">
+                  <!-- header: focus + sync (queue status lives in the right pane now) -->
+                  <div style="height:36px; display:flex; align-items:center; justify-content:space-between">
+                    <div class="chip" style="padding:6px 11px; gap:6px; background:var(--fill); border-color:var(--border)">
+                      <span class="ms" style="font-size:15px; color:var(--accent)">groups</span>
+                      <span style="font-size:11.5px; font-weight:600; color:var(--muted)">Club pick</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:2px">
+                      <div class="iconbtn" style="width:38px; height:38px; background:transparent; border:none"><span class="ms" style="font-size:21px; color:var(--muted)">center_focus_strong</span></div>
+                      <div class="iconbtn" style="width:38px; height:38px; background:transparent; border:none"><span class="ms" style="font-size:20px; color:var(--success)">cloud_done</span></div>
+                    </div>
+                  </div>
+                  <!-- whole-book strip -->
+                  <div style="margin:4px 2px 0">
+                    <div class="track" style="height:2.5px"><i style="width:46%"></i></div>
+                    <div style="display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:11px; color:var(--muted); margin-top:6px"><span>6h 02m</span><span style="color:var(--text); font-weight:700">46%</span><span>−7h 04m</span></div>
+                  </div>
+                  <!-- cover -->
+                  <div style="display:flex; justify-content:center; margin-top:12px">
+                    <div class="cov c1" style="width:300px; aspect-ratio:1/1; border-radius:16px; padding:12px; box-shadow:0 24px 56px rgba(122,69,54,.42)">
+                      <span class="init">E</span><span class="ck">Cinderfall Cycle · 3</span><span class="ct" style="font-size:15px">The Ember Gate</span>
+                      <div style="position:absolute; top:9px; right:9px; width:34px; height:34px; border-radius:50%; background:#141312cc; border:1px solid rgba(255,255,255,.18); display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:18px; color:#fff">bookmark_add</span></div>
+                      <div style="position:absolute; bottom:9px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:5px; background:#141312b3; border:1px solid rgba(255,255,255,.14); border-radius:999px; padding:4px 10px"><span class="ms" style="font-size:12px; color:rgba(255,255,255,.82)">zoom_in</span><span style="font-family:var(--font-mono); font-size:9px; color:rgba(255,255,255,.82)">tap to inspect</span></div>
+                    </div>
+                  </div>
+                  <!-- title line -->
+                  <div style="display:flex; justify-content:center; margin-top:10px; white-space:nowrap; overflow:hidden">
+                    <span style="font-size:15px; font-weight:700; color:var(--text)">The Ember Gate</span>
+                    <span class="meta-t" style="font-size:13px; margin-left:8px">Maren Holloway</span>
+                  </div>
+                  <!-- scrubber -->
+                  <div style="margin-top:12px; position:relative">
+                    <div style="position:relative; height:18px">
+                      <div style="position:absolute; left:19%; top:0; width:15px; height:15px; border-radius:50%; background:linear-gradient(155deg,#6e5a86,#241c31); border:1.5px solid var(--cream)"></div>
+                      <div style="position:absolute; left:56%; top:0; width:15px; height:15px; border-radius:50%; background:linear-gradient(155deg,#3e5d6e,#14222b); border:1.5px solid var(--cream)"></div>
+                    </div>
+                    <div style="height:30px; border-radius:999px; position:relative; overflow:hidden; background:linear-gradient(90deg,#e0654a,#bd863f)">
+                      <div style="position:absolute; inset:0 0 0 38%; background:rgba(15,12,10,.55)"></div>
+                      <div style="position:absolute; left:38%; top:-3px; bottom:-3px; width:3px; background:var(--cream); box-shadow:0 0 12px rgba(255,230,207,.9); border-radius:2px"></div>
+                      <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:space-between; padding:0 13px; font-family:var(--font-mono); font-size:11px; color:#fff8f2"><span>12:36</span><span style="opacity:.85">Ch 4 · The Ash Road</span><span>−20:36</span></div>
+                    </div>
+                  </div>
+                  <!-- transport -->
+                  <div style="display:flex; align-items:center; justify-content:center; gap:12px; margin-top:14px">
+                    <div class="iconbtn" style="width:42px; height:42px; background:transparent; border:none"><span class="ms" style="font-size:25px; color:var(--muted)">skip_previous</span></div>
+                    <div class="iconbtn" style="width:54px; height:54px"><span class="ms" style="font-size:29px">replay_30</span></div>
+                    <div style="width:80px; height:80px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; box-shadow:0 16px 36px rgba(224,101,74,.42)"><span class="ms fill" style="font-size:42px; color:var(--on-accent)">pause</span></div>
+                    <div class="iconbtn" style="width:54px; height:54px"><span class="ms" style="font-size:29px">forward_30</span></div>
+                    <div class="iconbtn" style="width:42px; height:42px; background:transparent; border:none"><span class="ms" style="font-size:25px; color:var(--muted)">skip_next</span></div>
+                  </div>
+                  <!-- action row -->
+                  <div style="display:flex; align-items:stretch; gap:8px; margin-top:15px">
+                    <div style="flex:1; height:50px; border-radius:14px; background:var(--fill); border:1px solid var(--hairline); display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:21px; color:var(--text)">list</span></div>
+                    <div style="flex:1; height:50px; border-radius:14px; background:var(--fill); border:1px solid var(--hairline); display:flex; align-items:center; justify-content:center; font-family:var(--font-mono); font-size:13px; font-weight:700">1.25×</div>
+                    <div style="flex:1.2; height:50px; border-radius:14px; background:var(--fill); border:1px solid #5a3b32; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center; gap:5px"><div style="position:absolute; left:0; top:0; bottom:0; width:38%; background:var(--accent-wash)"></div><span class="ms" style="font-size:18px; color:var(--accent); position:relative">bedtime</span><span style="position:relative; font-family:var(--font-mono); font-size:12px; font-weight:700; color:var(--accent)">19:51</span></div>
+                    <div style="flex:1; height:50px; border-radius:14px; background:var(--fill); border:1px solid var(--hairline); display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:21px; color:var(--text)">bookmark</span></div>
+                    <div style="flex:1; height:50px; border-radius:14px; background:var(--fill); border:1px solid var(--hairline); display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:21px; color:var(--text)">more_horiz</span></div>
+                  </div>
+                </div>
+              </div>
+              <!-- RIGHT PANE · THE PANEL -->
+              <div class="pane r">
+                <div class="panebody" style="padding-left:26px">
+                  <div class="ptabs">
+                    <div class="ptab"><span class="ms">list</span>Chapters</div>
+                    <div class="ptab on"><span class="ms">reorder</span>Up next</div>
+                    <div class="ptab"><span class="ms">history</span>Recent</div>
+                    <div class="ptab"><span class="ms">sticky_note_2</span>Notes</div>
+                    <div class="ptab"><span class="ms">info</span>Details</div>
+                  </div>
+                  <div class="panehead">
+                    <div class="ic"><span class="ms">reorder</span></div>
+                    <div class="tt"><div class="t">Up next</div><div class="s">3 in queue · Auto — continue series</div></div>
+                    <div class="iconbtn" style="width:36px; height:36px"><span class="ms" style="font-size:18px">tune</span></div>
+                  </div>
+                  <div class="panescroll">
+                    <div class="seg" style="margin-bottom:12px"><span class="on">Auto</span><span>Manual</span><span>Off</span></div>
+                    <div class="prow on">
+                      <div class="cov c1" style="width:44px; height:44px; border-radius:8px; padding:0"></div>
+                      <div class="txw"><div class="t" style="color:var(--accent)">The Ember Gate</div><div class="d">Now playing · 46%</div></div>
+                      <span class="ms" style="font-size:20px; color:var(--accent)">graphic_eq</span>
+                    </div>
+                    <div style="font-family:var(--font-brand); font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); margin:16px 4px 8px">Queued next</div>
+                    <div class="prow"><div class="num">1</div><div class="cov c4" style="width:40px; height:40px; border-radius:8px; padding:0"></div><div class="txw"><div class="t">A Winter of Salt</div><div class="d">Cinderfall · 4 · new in series</div></div><span class="ms" style="font-size:19px; color:var(--faint)">drag_indicator</span></div>
+                    <div class="prow"><div class="num">2</div><div class="cov c2" style="width:40px; height:40px; border-radius:8px; padding:0"></div><div class="txw"><div class="t">The Cartographer's Oath</div><div class="d">Book club pick · Feb</div></div><span class="ms" style="font-size:19px; color:var(--faint)">drag_indicator</span></div>
+                    <div class="prow"><div class="num">3</div><div class="cov c3" style="width:40px; height:40px; border-radius:8px; padding:0"></div><div class="txw"><div class="t">Nightjar</div><div class="d">From "Want to listen"</div></div><span class="ms" style="font-size:19px; color:var(--faint)">drag_indicator</span></div>
+                    <div style="margin-top:14px; display:flex; align-items:center; gap:8px; padding:11px 12px; border-radius:12px; border:1px dashed var(--border); color:var(--muted); font-size:12.5px; font-weight:600"><span class="ms" style="font-size:18px">add</span>Add a book to the queue</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- crease + ambient progress thread (F-SEAM: no target, just state) -->
+            <div class="crease"><div style="position:absolute; left:calc(50% - 1.5px); top:0; height:46%; width:3px; background:linear-gradient(180deg,#e0654a,#bd863f); box-shadow:0 0 8px rgba(224,101,74,.6); border-radius:2px"></div></div>
+            <!-- annotations -->
+            <span class="n" style="top:44px; left:30px">1</span>
+            <span class="n" style="top:104px; left:340px">2</span>
+            <span class="n" style="top:104px; left:388px">3</span>
+            <span class="n" style="top:250px; left:250px">4</span>
+            <span class="n" style="top:470px; left:250px">5</span>
+            <span class="n" style="top:558px; left:250px">6</span>
+            <span class="n" style="top:472px; left:16px; background:var(--accent); color:#fff">S</span>
+            <span class="n" style="top:70px; left:560px">7</span>
+            <span class="n" style="top:150px; left:560px">8</span>
+            <span class="n" style="top:300px; left:560px">9</span>
+          </div>
+        </div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Navigation rail (Now lit)</b> — the phone tab bar as a vertical rail; the player is still the Now tab (pure-tab model kept). Avatar pinned bottom opens the account switcher.</span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Focus view · tap</b> — the phone's big-artwork mode, here it collapses the right pane and blows the cover across both halves. Not car mode (Android Auto / CarPlay own that natively).</span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Sync status · tap</b> — shape-coded (check-cloud = synced), opens the Sync panel on the right. <span class="anim">pending pulses · offline turns red + haptic warn</span></span></div>
+          <div class="li"><span class="no">4</span><span class="tx"><b>Cover · tap / swipe</b> — 300px art, biggest element in the left half. Tap inspects (opt-in play), horizontal swipe pages the carousel, swipe up enters Focus view.</span></div>
+          <div class="li"><span class="no">5</span><span class="tx"><b>Scrubber · drag</b> — ember pill with in-line elapsed · chapter · remain; note-marker dots above. All the interaction sits comfortably in the left thumb's arc.</span></div>
+          <div class="li"><span class="no">6</span><span class="tx"><b>Transport + action row</b> — identical grammar to the phone (ch-prev · −30 · play · +30 · ch-next, then the configurable action row). Left-half-anchored per <b>F-LEFT</b> — the easiest reach for the most-used controls.</span></div>
+          <div class="li"><span class="no rv">S</span><span class="tx"><b>Ambient progress thread (the seam's job)</b> — a hairline that runs down the crease showing book progress. The hinge carries <b>state, never a target</b> (F-SEAM). This is the "something lives on the seam" answer that survives ergonomics.</span></div>
+          <div class="li"><span class="no">7</span><span class="tx"><b>Panel tab strip · tap</b> — switches the right pane between Chapters · Up next · Recent · Notes · Details. Only one panel open at a time; the choice persists across fold/unfold (F-CONT). These were all separate sheets on the phone.</span></div>
+          <div class="li"><span class="no">8</span><span class="tx"><b>Queue mode segment</b> — Auto / Manual / Off, the same control the phone buries in the queue sheet, now always visible while the panel is open. Auto shows the merged up-next list with its rule tags.</span></div>
+          <div class="li"><span class="no">9</span><span class="tx"><b>Queue rows · drag / tap</b> — reorder by hand (Manual) or read the auto rules (shown). Tapping a row plays it; the drag handle only appears in Manual. Scrolls independently of the left half.</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="motionspec"><h4>Motion &amp; haptics</h4><table>
+      <tr><td>panel switch</td><td>right-pane cross-fade 180ms; tab pill slides accent underline; no layout shift on the left half</td></tr>
+      <tr><td>open panel from left action</td><td>tapping "list" (chapters) in the action row lights the matching right-pane tab and cross-fades the panel — the left half never moves</td></tr>
+      <tr><td>unfold transition</td><td>cover-screen player scales into the left pane over DUR.slow while the right pane fades in from the seam outward</td></tr>
+      <tr><td>seam thread</td><td>progress thread advances continuously; no haptics, no hit target</td></tr>
+    </table></div>
+  </div>
+
+  <!-- ==================================================================== -->
+  <div class="section" id="panels">
+    <div class="eyebrow">Screen 01 · Player</div>
+    <h2>The right-pane panels</h2>
+    <p class="sub">Every phone sheet, re-cast as a right-half panel. Same content, now persistent beside the art. The left pane
+    is drawn muted here so you can read the panels; live, it's the full player from above.</p>
+
+    <div class="frames">
+      <!-- CHAPTERS -->
+      <div class="frameunit fold">
+        <div class="framecap"><div class="t">Chapters panel <span class="chip">reimagined</span></div><div class="d">Was a sheet. Now a scannable list you read while the audio plays; the current chapter is pinned and highlighted.</div></div>
+        <div class="foldphone"><div class="foldscreen">
+          <div class="topstrip"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="frow">
+            <div class="frail"><div class="flame"><span class="ms fill">local_fire_department</span></div><div class="rtab"><span class="ms">home</span><span class="lbl">Home</span></div><div class="rtab"><span class="ms">auto_stories</span><span class="lbl">Library</span></div><div class="rtab on"><span class="ms fill">play_circle</span><span class="lbl">Now</span></div><div class="rtab"><span class="ms">insights</span><span class="lbl">Stats</span></div><div class="rtab"><span class="ms">menu</span><span class="lbl">More</span></div><div class="grow"></div><div class="avatar">M</div></div>
+            <div class="pane l" style="width:423px; opacity:.5">
+              <div class="panebody" style="padding:14px 46px 14px 20px; align-items:center; justify-content:center">
+                <div class="cov c1" style="width:240px; aspect-ratio:1/1; border-radius:16px"><span class="init">E</span><span class="ct" style="font-size:13px">The Ember Gate</span></div>
+                <div style="margin-top:16px; width:100%; height:28px; border-radius:999px; background:linear-gradient(90deg,#e0654a,#bd863f); position:relative; overflow:hidden"><div style="position:absolute; inset:0 0 0 38%; background:rgba(15,12,10,.55)"></div></div>
+                <div style="display:flex; gap:14px; margin-top:16px; align-items:center"><span class="ms" style="font-size:26px; color:var(--muted)">replay_30</span><div style="width:70px; height:70px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center"><span class="ms fill" style="font-size:36px; color:#fff">pause</span></div><span class="ms" style="font-size:26px; color:var(--muted)">forward_30</span></div>
+              </div>
+            </div>
+            <div class="pane r"><div class="panebody" style="padding-left:26px">
+              <div class="ptabs"><div class="ptab on"><span class="ms">list</span>Chapters</div><div class="ptab"><span class="ms">reorder</span>Up next</div><div class="ptab"><span class="ms">history</span>Recent</div><div class="ptab"><span class="ms">sticky_note_2</span>Notes</div><div class="ptab"><span class="ms">info</span>Details</div></div>
+              <div class="panehead"><div class="ic"><span class="ms">list</span></div><div class="tt"><div class="t">Chapters</div><div class="s">14 chapters · 10 left · scope: chapter</div></div></div>
+              <div class="panescroll">
+                <div class="prow"><div class="num">2</div><div class="txw"><div class="t">Under the Cinder Bell</div></div><span class="dur">28:14</span></div>
+                <div class="prow"><div class="num">3</div><div class="txw"><div class="t">The Ferryman's Price</div></div><span class="dur">31:02</span></div>
+                <div class="prow on"><div class="num" style="color:var(--accent)">4</div><div class="txw"><div class="t" style="color:var(--accent)">The Ash Road</div><div class="d">12:36 / 33:12 · playing</div></div><span class="ms" style="font-size:19px; color:var(--accent)">graphic_eq</span></div>
+                <div class="prow"><div class="num">5</div><div class="txw"><div class="t">Emberlight</div></div><span class="dur">26:47</span></div>
+                <div class="prow"><div class="num">6</div><div class="txw"><div class="t">The Sistren of the Kiln</div></div><span class="dur">40:19</span></div>
+                <div class="prow"><div class="num">7</div><div class="txw"><div class="t">What the River Kept</div></div><span class="dur">22:58</span></div>
+                <div class="prow"><div class="num">8</div><div class="txw"><div class="t">A Debt of Cinders</div></div><span class="dur">35:41</span></div>
+              </div>
+            </div></div>
+          </div>
+          <div class="crease"><div style="position:absolute; left:calc(50% - 1.5px); top:0; height:46%; width:3px; background:linear-gradient(180deg,#e0654a,#bd863f); border-radius:2px"></div></div>
+        </div></div>
+      </div>
+
+      <!-- RECENT -->
+      <div class="frameunit fold">
+        <div class="framecap"><div class="t">Recent listens panel <span class="chip">reimagined</span></div><div class="d">The listen history that was a modal. Each entry jumps the audio back to that position; grouped by day.</div></div>
+        <div class="foldphone"><div class="foldscreen">
+          <div class="topstrip"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="frow">
+            <div class="frail"><div class="flame"><span class="ms fill">local_fire_department</span></div><div class="rtab"><span class="ms">home</span><span class="lbl">Home</span></div><div class="rtab"><span class="ms">auto_stories</span><span class="lbl">Library</span></div><div class="rtab on"><span class="ms fill">play_circle</span><span class="lbl">Now</span></div><div class="rtab"><span class="ms">insights</span><span class="lbl">Stats</span></div><div class="rtab"><span class="ms">menu</span><span class="lbl">More</span></div><div class="grow"></div><div class="avatar">M</div></div>
+            <div class="pane l" style="width:423px; opacity:.5">
+              <div class="panebody" style="padding:14px 46px 14px 20px; align-items:center; justify-content:center">
+                <div class="cov c1" style="width:240px; aspect-ratio:1/1; border-radius:16px"><span class="init">E</span><span class="ct" style="font-size:13px">The Ember Gate</span></div>
+                <div style="margin-top:16px; width:100%; height:28px; border-radius:999px; background:linear-gradient(90deg,#e0654a,#bd863f); position:relative; overflow:hidden"><div style="position:absolute; inset:0 0 0 38%; background:rgba(15,12,10,.55)"></div></div>
+                <div style="display:flex; gap:14px; margin-top:16px; align-items:center"><span class="ms" style="font-size:26px; color:var(--muted)">replay_30</span><div style="width:70px; height:70px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center"><span class="ms fill" style="font-size:36px; color:#fff">pause</span></div><span class="ms" style="font-size:26px; color:var(--muted)">forward_30</span></div>
+              </div>
+            </div>
+            <div class="pane r"><div class="panebody" style="padding-left:26px">
+              <div class="ptabs"><div class="ptab"><span class="ms">list</span>Chapters</div><div class="ptab"><span class="ms">reorder</span>Up next</div><div class="ptab on"><span class="ms">history</span>Recent</div><div class="ptab"><span class="ms">sticky_note_2</span>Notes</div><div class="ptab"><span class="ms">info</span>Details</div></div>
+              <div class="panehead"><div class="ic"><span class="ms">history</span></div><div class="tt"><div class="t">Recent listens</div><div class="s">Tap a spot to jump the audio there</div></div></div>
+              <div class="panescroll">
+                <div style="font-family:var(--font-brand); font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); margin:2px 4px 8px">Yesterday</div>
+                <div class="prow"><span class="ms" style="font-size:20px; color:var(--accent)">play_circle</span><div class="txw"><div class="t">Ch 4 · The Ash Road — 11:20</div><div class="d">10:12 PM · listened 34 min</div></div></div>
+                <div class="prow"><span class="ms" style="font-size:20px; color:var(--faint)">play_circle</span><div class="txw"><div class="t">Ch 3 · The Ferryman's Price — 02:41</div><div class="d">3:20 PM · listened 22 min</div></div></div>
+                <div style="font-family:var(--font-brand); font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); margin:16px 4px 8px">Monday</div>
+                <div class="prow"><span class="ms" style="font-size:20px; color:var(--faint)">play_circle</span><div class="txw"><div class="t">Ch 2 · Under the Cinder Bell — 00:00</div><div class="d">7:44 AM · listened 28 min</div></div></div>
+                <div class="prow"><span class="ms" style="font-size:20px; color:var(--faint)">play_circle</span><div class="txw"><div class="t">Ch 1 · A Spark in Cold Ash — 05:12</div><div class="d">7:02 AM · started the book</div></div></div>
+              </div>
+            </div></div>
+          </div>
+          <div class="crease"><div style="position:absolute; left:calc(50% - 1.5px); top:0; height:46%; width:3px; background:linear-gradient(180deg,#e0654a,#bd863f); border-radius:2px"></div></div>
+        </div></div>
+      </div>
+
+      <!-- NOTES + SYNC compact pair -->
+      <div class="frameunit fold">
+        <div class="framecap"><div class="t">Notes &amp; Sync panels <span class="chip">reimagined</span></div><div class="d">Two more former sheets. Notes threads to the timeline markers; Sync is a status readout with a manual push.</div></div>
+        <div class="foldphone"><div class="foldscreen">
+          <div class="topstrip"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="frow">
+            <div class="frail"><div class="flame"><span class="ms fill">local_fire_department</span></div><div class="rtab"><span class="ms">home</span><span class="lbl">Home</span></div><div class="rtab"><span class="ms">auto_stories</span><span class="lbl">Library</span></div><div class="rtab on"><span class="ms fill">play_circle</span><span class="lbl">Now</span></div><div class="rtab"><span class="ms">insights</span><span class="lbl">Stats</span></div><div class="rtab"><span class="ms">menu</span><span class="lbl">More</span></div><div class="grow"></div><div class="avatar">M</div></div>
+            <!-- LEFT: notes panel content this time (shows a panel can also host the left when Focus'd? no—keep left player muted) -->
+            <div class="pane l" style="width:423px"><div class="panebody" style="padding-left:20px; padding-right:46px">
+              <div class="ptabs" style="padding-top:16px"><div class="ptab"><span class="ms">list</span>Chapters</div><div class="ptab"><span class="ms">reorder</span>Up next</div><div class="ptab"><span class="ms">history</span>Recent</div><div class="ptab on"><span class="ms">sticky_note_2</span>Notes</div></div>
+              <div class="panehead"><div class="ic"><span class="ms">sticky_note_2</span></div><div class="tt"><div class="t">Notes</div><div class="s">Club thread · 2 at your position</div></div></div>
+              <div class="panescroll">
+                <div style="background:var(--high); border:1px solid var(--hairline); border-radius:12px; padding:12px 13px; margin-bottom:10px">
+                  <div style="display:flex; align-items:center; gap:8px"><div style="width:24px; height:24px; border-radius:50%; background:linear-gradient(155deg,#3e5d6e,#14222b)"></div><span style="font-size:12.5px; font-weight:700; color:var(--text)">Priya</span><span class="dur" style="margin-left:auto">12:31</span></div>
+                  <div style="font-size:12.5px; color:#cdc7bc; margin-top:7px; line-height:1.5">That reveal about the ferryman — did anyone else clock the callback to book 1?</div>
+                </div>
+                <div style="background:var(--high); border:1px solid var(--hairline); border-radius:12px; padding:12px 13px">
+                  <div style="display:flex; align-items:center; gap:8px"><div style="width:24px; height:24px; border-radius:50%; background:linear-gradient(155deg,#55683f,#1b2413)"></div><span style="font-size:12.5px; font-weight:700; color:var(--text)">You</span><span class="dur" style="margin-left:auto">12:36</span></div>
+                  <div style="font-size:12.5px; color:#cdc7bc; margin-top:7px; line-height:1.5">Yes! The bell motif too. Adding a bookmark here.</div>
+                </div>
+              </div>
+            </div></div>
+            <div class="pane r"><div class="panebody" style="padding-left:26px">
+              <div class="ptabs"><div class="ptab"><span class="ms">cloud_done</span>Sync</div><div class="ptab"><span class="ms">info</span>Details</div></div>
+              <div class="panehead"><div class="ic"><span class="ms" style="color:var(--success)">cloud_done</span></div><div class="tt"><div class="t">Sync status</div><div class="s">All positions saved to server</div></div></div>
+              <div class="panescroll">
+                <div class="setgroup" style="margin:0 0 12px"><div class="setrow"><div class="ic"><span class="ms">cloud_done</span></div><div class="tx"><div class="t">Last saved to server</div><div class="d">Just now · 12:36</div></div></div><div class="setrow"><div class="ic"><span class="ms">devices</span></div><div class="tx"><div class="t">This device's position</div><div class="d">In sync · Ch 4 · 12:36</div></div></div><div class="setrow"><div class="ic"><span class="ms">cloud_off</span></div><div class="tx"><div class="t">Queued offline sessions</div><div class="d">None</div></div></div></div>
+                <div class="btn secondary" style="width:100%; height:46px"><span class="ms" style="font-size:19px">sync</span>Push now</div>
+              </div>
+            </div></div>
+          </div>
+          <div class="crease"></div>
+          <span class="n" style="top:150px; left:250px">A</span>
+          <span class="n" style="top:150px; left:560px">B</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">A</span><span class="tx"><b>Any panel can take either half</b> — panels aren't locked to the right. In this frame the user pinned Notes to the left (to keep an eye on the club thread) and Sync to the right. Long-press a panel tab to choose its side; default is right.</span></div>
+          <div class="li"><span class="no">B</span><span class="tx"><b>Sync panel</b> — the shape-coded status readout plus a manual "Push now". Same content as the phone's Sync sheet.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================================================================== -->
+  <div class="section" id="seam">
+    <div class="eyebrow">Screen 01 · Player</div>
+    <h2>The seam experiment — play button on the hinge</h2>
+    <p class="sub">You asked how the play button would feel on the seam. Both builds, side by side, so you can judge. Short version:
+    it looks like the spine of a book and feels like reaching into a crack.</p>
+
+    <div class="frames">
+      <!-- REJECTED: play on seam -->
+      <div class="frameunit fold">
+        <div class="framecap"><div class="t">A · Play button ON the seam <span class="chip" style="color:var(--destructive); border-color:#5a3029; background:#e0654a1a">rejected</span></div><div class="d">Symmetric, spine-of-the-book beautiful. But the center is the hardest reach and the least reliable glass.</div></div>
+        <div class="foldphone"><div class="foldscreen">
+          <div class="topstrip"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="frow">
+            <div class="frail"><div class="flame"><span class="ms fill">local_fire_department</span></div><div class="rtab"><span class="ms">home</span><span class="lbl">Home</span></div><div class="rtab"><span class="ms">auto_stories</span><span class="lbl">Library</span></div><div class="rtab on"><span class="ms fill">play_circle</span><span class="lbl">Now</span></div><div class="rtab"><span class="ms">insights</span><span class="lbl">Stats</span></div><div class="rtab"><span class="ms">menu</span><span class="lbl">More</span></div><div class="grow"></div><div class="avatar">M</div></div>
+            <div class="pane l" style="width:423px"><div class="panebody" style="padding:20px 60px 20px 20px; align-items:center; justify-content:center"><div class="cov c1" style="width:250px; aspect-ratio:1/1; border-radius:16px"><span class="init">E</span><span class="ct" style="font-size:13px">The Ember Gate</span></div><div style="margin-top:16px; width:100%; height:28px; border-radius:999px; background:linear-gradient(90deg,#e0654a,#bd863f); position:relative; overflow:hidden"><div style="position:absolute; inset:0 0 0 38%; background:rgba(15,12,10,.55)"></div></div></div></div>
+            <div class="pane r"><div class="panebody" style="padding:20px 20px 20px 60px; align-items:center; justify-content:center"><div style="text-align:center; color:var(--muted)"><div style="font-size:13px; font-weight:700; color:var(--text)">Up next</div><div class="prow" style="margin-top:10px; width:220px"><div class="cov c4" style="width:38px; height:38px; border-radius:8px"></div><div class="txw"><div class="t">A Winter of Salt</div></div></div><div class="prow" style="width:220px"><div class="cov c2" style="width:38px; height:38px; border-radius:8px"></div><div class="txw"><div class="t">The Cartographer's Oath</div></div></div></div></div></div>
+          </div>
+          <div class="seambox"></div>
+          <!-- big play button sitting dead center on the crease -->
+          <div style="position:absolute; left:50%; top:52%; transform:translate(-50%,-50%); width:96px; height:96px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; box-shadow:0 18px 40px rgba(224,101,74,.5), 0 0 0 6px var(--scaffold); z-index:22"><span class="ms fill" style="font-size:52px; color:#fff">pause</span></div>
+          <div class="crease"></div>
+          <div class="seamlbl" style="top:24%; left:50%; transform:translateX(-50%)">on the crease</div>
+          <span class="n rv" style="top:52%; left:50%; transform:translate(-50%,-50%); margin-top:-70px">1</span>
+          <span class="n rv" style="top:52%; left:50%; transform:translate(-50%,-50%); margin-top:70px">2</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>The center is the worst reach.</b> Two-handed book grip parks your thumbs at the outer bottom corners. To hit dead-center you lift a hand off the frame — for the single most-tapped control in the app.</span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>The crease is the worst glass.</b> The hinge valley isn't flat; a fingertip rocks over the edge and the digitizer is least reliable there. Pause-at-a-red-light shouldn't depend on it. <b>Verdict: no.</b></span></div>
+        </div>
+      </div>
+
+      <!-- SHIPPED: left palm transport + seam thread -->
+      <div class="frameunit fold">
+        <div class="framecap"><div class="t">B · Transport in the left palm + ambient seam thread <span class="chip" style="color:var(--success); border-color:#3a4a30; background:#7fa86b1a">ships</span></div><div class="d">Controls under the thumb where the phone already trains them; the seam still glows, just as state not a button.</div></div>
+        <div class="foldphone"><div class="foldscreen">
+          <div class="topstrip"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="frow">
+            <div class="frail"><div class="flame"><span class="ms fill">local_fire_department</span></div><div class="rtab"><span class="ms">home</span><span class="lbl">Home</span></div><div class="rtab"><span class="ms">auto_stories</span><span class="lbl">Library</span></div><div class="rtab on"><span class="ms fill">play_circle</span><span class="lbl">Now</span></div><div class="rtab"><span class="ms">insights</span><span class="lbl">Stats</span></div><div class="rtab"><span class="ms">menu</span><span class="lbl">More</span></div><div class="grow"></div><div class="avatar">M</div></div>
+            <div class="pane l" style="width:423px"><div class="panebody" style="padding:20px 46px 20px 20px; align-items:center; justify-content:center">
+              <div class="cov c1" style="width:230px; aspect-ratio:1/1; border-radius:16px"><span class="init">E</span><span class="ct" style="font-size:13px">The Ember Gate</span></div>
+              <div style="margin-top:14px; width:100%; height:28px; border-radius:999px; background:linear-gradient(90deg,#e0654a,#bd863f); position:relative; overflow:hidden"><div style="position:absolute; inset:0 0 0 38%; background:rgba(15,12,10,.55)"></div></div>
+              <div style="display:flex; align-items:center; justify-content:center; gap:12px; margin-top:16px"><span class="ms" style="font-size:26px; color:var(--muted)">replay_30</span><div style="width:78px; height:78px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; box-shadow:0 14px 32px rgba(224,101,74,.42)"><span class="ms fill" style="font-size:40px; color:#fff">pause</span></div><span class="ms" style="font-size:26px; color:var(--muted)">forward_30</span></div>
+            </div></div>
+            <div class="pane r"><div class="panebody" style="padding:20px 20px 20px 46px; align-items:center; justify-content:center"><div style="text-align:center; color:var(--muted)"><div style="font-size:13px; font-weight:700; color:var(--text)">Up next</div><div class="prow" style="margin-top:10px; width:230px"><div class="cov c4" style="width:38px; height:38px; border-radius:8px"></div><div class="txw"><div class="t">A Winter of Salt</div></div></div><div class="prow" style="width:230px"><div class="cov c2" style="width:38px; height:38px; border-radius:8px"></div><div class="txw"><div class="t">The Cartographer's Oath</div></div></div></div></div></div>
+          </div>
+          <div class="crease"><div style="position:absolute; left:calc(50% - 2px); top:0; height:46%; width:4px; background:linear-gradient(180deg,#e0654a,#bd863f); box-shadow:0 0 10px rgba(224,101,74,.7); border-radius:2px"></div></div>
+          <span class="n" style="top:52%; left:210px; transform:translateY(-50%)">1</span>
+          <span class="n rv" style="top:200px; left:487px">2</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Play/pause lives in the left pane's lower center</b> — the natural resting arc of the holding thumb, and the exact spot the folded phone player already puts it, so nothing to relearn. Skips flank it.</span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>The seam earns its keep as ambient state</b> — a glowing progress thread down the crease shows book progress at a glance. It's the "put something on the seam" instinct, satisfied without asking the crease to be a target (<b>F-SEAM</b>).</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="verdict good" style="margin-top:8px">
+      <div class="lead"><span class="ms">lightbulb</span>...but there's one posture where a center control is right</div>
+      <p>Held flat like a book, center = bad. Propped <b>half-open on a table (flex / tabletop)</b>, the crease becomes horizontal and
+      the bottom panel becomes a flat "deck" you tap straight down onto — like a laptop keyboard. <i>There</i>, a big centered transport
+      is the obvious move. So the rule isn't "never center the play button," it's "center it only when the seam is horizontal and the
+      bottom half is a deck." Shown next.</p>
+    </div>
+  </div>
+
+  <!-- ==================================================================== -->
+  <div class="section" id="flex">
+    <div class="eyebrow">Screen 01 · Player</div>
+    <h2>Flex / tabletop posture</h2>
+    <p class="sub">Half-open on a desk or nightstand, hands-free. The hinge is now horizontal, so the layout stacks: art on the top
+    panel, a fat glanceable transport deck on the bottom. This is the one place the centered play button belongs.</p>
+
+    <div class="frames">
+      <div class="frameunit fold">
+        <div class="framecap"><div class="t">Tabletop player <span class="chip">new posture</span></div><div class="d">Top half is a bedside "album" display; bottom half is a big-target deck you tap looking down. The crease runs left-to-right through the seam gutter between them.</div></div>
+        <div class="foldphone"><div class="foldscreen">
+          <div class="topstrip"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">bedtime</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <!-- top panel: cover + now playing -->
+          <div style="height:380px; display:flex; align-items:center; justify-content:center; gap:26px; padding:0 40px; position:relative; background:radial-gradient(80% 90% at 50% 40%, rgba(122,69,54,.30), transparent 65%)">
+            <div class="cov c1" style="width:240px; aspect-ratio:1/1; border-radius:16px; padding:12px"><span class="init">E</span><span class="ck">Cinderfall · 3</span><span class="ct" style="font-size:15px">The Ember Gate</span></div>
+            <div style="max-width:240px">
+              <div style="font-size:22px; font-weight:700; color:var(--text); line-height:1.15">The Ember Gate</div>
+              <div class="meta-t" style="margin-top:4px">Maren Holloway</div>
+              <div style="margin-top:14px; font-family:var(--font-mono); font-size:12px; color:var(--muted)">Ch 4 · The Ash Road</div>
+              <div style="margin-top:8px; display:flex; align-items:center; gap:8px; font-family:var(--font-mono); font-size:12px; color:var(--muted)"><span>12:36</span><div class="track" style="flex:1"><i style="width:38%"></i></div><span>−20:36</span></div>
+              <div style="margin-top:14px; display:inline-flex; align-items:center; gap:7px; padding:6px 12px; border-radius:999px; background:var(--fill); border:1px solid var(--border)"><span class="ms" style="font-size:15px; color:var(--accent)">bedtime</span><span style="font-family:var(--font-mono); font-size:12px; font-weight:700; color:var(--accent)">Sleep 19:51</span></div>
+            </div>
+          </div>
+          <!-- horizontal crease gutter -->
+          <div style="height:44px; flex:none; position:relative; background:linear-gradient(180deg, transparent, rgba(0,0,0,.34) 50%, transparent)"><div style="position:absolute; left:0; right:0; top:50%; height:1px; background:rgba(0,0,0,.5)"></div><div class="seamlbl" style="left:50%; top:50%; transform:translate(-50%,-50%)">horizontal seam · deck below</div></div>
+          <!-- bottom panel: the deck -->
+          <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0 40px; gap:22px">
+            <div style="display:flex; align-items:center; justify-content:center; gap:30px">
+              <div class="iconbtn" style="width:72px; height:72px"><span class="ms" style="font-size:38px; color:var(--muted)">replay_30</span></div>
+              <div style="width:112px; height:112px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; box-shadow:0 18px 44px rgba(224,101,74,.5)"><span class="ms fill" style="font-size:60px; color:#fff">pause</span></div>
+              <div class="iconbtn" style="width:72px; height:72px"><span class="ms" style="font-size:38px; color:var(--muted)">forward_30</span></div>
+            </div>
+            <div style="display:flex; gap:12px">
+              <div class="chip" style="padding:11px 18px"><span class="ms">list</span>Chapters</div>
+              <div class="chip" style="padding:11px 18px; font-family:var(--font-mono); font-weight:700">1.25×</div>
+              <div class="chip" style="padding:11px 18px"><span class="ms">reorder</span>Up next</div>
+            </div>
+          </div>
+          <span class="n" style="top:150px; left:250px">1</span>
+          <span class="n" style="top:600px; left:487px">2</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Top panel = a bedside display</b> — glanceable album art + progress + sleep chip, readable across a room. Auto-dims with the sleep timer.</span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Bottom panel = the deck</b> — oversized 112px play with 72px skips, tapped looking straight down. <b>Here the centered button is correct</b> because the seam is horizontal and the deck is a flat reachable surface, not a crack between two vertical planes.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================================================================== -->
+  <div class="section" id="cover">
+    <div class="eyebrow">Screen 01 · Player</div>
+    <h2>Folded — the cover screen &amp; continuity</h2>
+    <p class="sub">Fold the device mid-listen and playback hands to the cover screen with zero loss. The cover player <b>is</b> the FINAL
+    phone player (drawn in full on the <a href="../03-player-Final.html" style="color:var(--accent)">phone Player page</a>) — one product, two postures.</p>
+
+    <div class="frames">
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Cover-screen player <span class="chip">kept</span></div><div class="d">Unchanged phone layout. The open panel from the big screen collapses into the phone's sheet model on the way down.</div></div>
+        <div class="coverphone"><div class="coverscreen">
+          <div class="statusbar" style="height:32px"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms" style="font-size:14px">wifi</span><span class="ms" style="font-size:14px">battery_5_bar</span></span></div>
+          <div class="body" style="padding:0 14px; align-items:center">
+            <div style="width:100%; margin:6px 0 0"><div class="track" style="height:2.5px"><i style="width:46%"></i></div></div>
+            <div style="display:flex; justify-content:center; margin-top:10px"><div class="cov c1" style="width:232px; aspect-ratio:1/1; border-radius:14px; padding:11px"><span class="init">E</span><span class="ck">Cinderfall · 3</span><span class="ct" style="font-size:13px">The Ember Gate</span></div></div>
+            <div style="text-align:center; margin-top:12px; font-size:14px; font-weight:700; color:var(--text)">The Ember Gate</div>
+            <div style="text-align:center; font-size:12px; color:var(--muted)">Maren Holloway</div>
+            <div style="width:100%; margin-top:14px; height:26px; border-radius:999px; background:linear-gradient(90deg,#e0654a,#bd863f); position:relative; overflow:hidden"><div style="position:absolute; inset:0 0 0 42%; background:rgba(15,12,10,.55)"></div><div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:space-between; padding:0 12px; font-family:var(--font-mono); font-size:10px; color:#fff8f2"><span>12:36</span><span>−20:36</span></div></div>
+            <div style="display:flex; align-items:center; justify-content:center; gap:14px; margin-top:16px"><span class="ms" style="font-size:26px; color:var(--muted)">replay_30</span><div style="width:66px; height:66px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center"><span class="ms fill" style="font-size:36px; color:#fff">pause</span></div><span class="ms" style="font-size:26px; color:var(--muted)">forward_30</span></div>
+            <div style="display:flex; gap:8px; margin-top:18px; width:100%"><div style="flex:1; height:44px; border-radius:12px; background:var(--fill); border:1px solid var(--hairline); display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:20px">list</span></div><div style="flex:1; height:44px; border-radius:12px; background:var(--fill); border:1px solid var(--hairline); display:flex; align-items:center; justify-content:center; font-family:var(--font-mono); font-size:12px; font-weight:700">1.25×</div><div style="flex:1; height:44px; border-radius:12px; background:var(--fill); border:1px solid var(--hairline); display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:20px">bedtime</span></div><div style="flex:1; height:44px; border-radius:12px; background:var(--fill); border:1px solid var(--hairline); display:flex; align-items:center; justify-content:center"><span class="ms" style="font-size:20px">more_horiz</span></div></div>
+          </div>
+          <div class="tabbar" style="height:60px"><div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div><div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div><div class="tab on"><span class="pill"><span class="ms fill">play_circle</span></span><span class="lbl">Now</span></div><div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div><div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div></div>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">=</span><span class="tx"><b>Continuity (F-CONT)</b> — position, queue, sleep timer, speed and the open-panel choice all persist through the fold. Rail collapses back to the bottom tab bar; the right panel becomes a phone sheet you can re-open with one tap.</span></div>
+        </div>
+      </div>
+
+      <!-- unfold transition note as a small board -->
+      <div class="frameunit" style="width:400px">
+        <div class="framecap"><div class="t">Offline &amp; states <span class="chip">states</span></div><div class="d">Panels inherit the phone's state coverage (D-STATES): loading skeletons, empty CTA, offline chip + Retry.</div></div>
+        <div class="coverphone"><div class="coverscreen">
+          <div class="statusbar" style="height:32px"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms" style="font-size:14px; color:var(--destructive)">cloud_off</span><span class="ms" style="font-size:14px">battery_5_bar</span></span></div>
+          <div class="body" style="padding:16px 14px; align-items:center; justify-content:center">
+            <div class="skel" style="width:220px; height:220px; border-radius:14px"></div>
+            <div class="skel" style="width:160px; height:14px; margin-top:16px"></div>
+            <div class="skel" style="width:110px; height:11px; margin-top:9px"></div>
+            <div style="margin-top:22px; display:inline-flex; align-items:center; gap:7px; padding:8px 14px; border-radius:999px; background:#e0654a1a; border:1px solid #5a3029; color:var(--destructive); font-size:12px; font-weight:700"><span class="ms" style="font-size:16px">cloud_off</span>Offline · playing downloaded</div>
+            <div class="btn secondary" style="margin-top:14px; height:42px"><span class="ms" style="font-size:18px">refresh</span>Retry sync</div>
+          </div>
+          <div class="tabbar" style="height:60px"><div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div><div class="tab"><span class="pill"><span class="ms">auto_stories</span></span><span class="lbl">Library</span></div><div class="tab on"><span class="pill"><span class="ms fill">play_circle</span></span><span class="lbl">Now</span></div><div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div><div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div></div>
+        </div></div>
+        <div class="legend"><div class="li"><span class="no">=</span><span class="tx"><b>Nothing lost offline</b> — cached position + downloaded audio keep playing; the sync chip goes red (shape + color, never color alone) and the panel offers Retry.</span></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footnav"><a href="#thesis">← Fold overview</a><a href="#home">02 · Home (Fold) →</a></div>
+
+  <div class="pagemark" id="pm-home">Screen 02 · Home</div>
+<div class="section" id="home">
+    <div class="eyebrow">Screen 02 · Home</div>
+    <h2>Two-pane home</h2>
+    <p class="sub">The phone home is a tall scroll of rails you dive out of into detail screens. Unfolded, the rails keep the left half
+    and a <b>quick-look</b> opens in the right — same book-actions grammar (D-ACTIONS), no navigation round-trip. Nothing is lost; a tap
+    that used to push <code>/book/:id</code> now just fills the right pane.</p>
+
+    <div class="audit">
+      <div class="crit"><h3>Teardown — phone home</h3><ul>
+        <li><b>Every inspect is a trip.</b> Tap a cover → full-screen book page → back. You lose your place on the shelf.</li>
+        <li><b>Quick-play is hidden</b> behind long-press or the pushed page.</li>
+        <li><b>Massive unused width</b> when unfolded if you just center the phone column.</li>
+      </ul></div>
+      <div class="moves"><h3>Redesign moves</h3><ul>
+        <li><b>Quick-look pane (F-PANE).</b> Tap a cover → right pane fills with cover, blurb, progress, chapters peek and the full action set. Shelf stays put.</li>
+        <li><b>Rails widen, not multiply.</b> Bigger tiles, same rails (Continue · Recent · Up next · Shelves), scannable two-up.</li>
+        <li><b>Quick-play on every tile.</b> The play chip is right there (D-PLAY).</li>
+      </ul></div>
+    </div>
+
+    <div class="frames">
+      <div class="frameunit fold">
+        <div class="framecap"><div class="t">Home, unfolded — quick-look open <span class="chip">reimagined</span></div><div class="d">Left: the Continue rail + shelves. Right: the tapped book's quick-look with actions. The crease separates browse from inspect.</div></div>
+        <div class="foldphone"><div class="cam"></div><div class="foldscreen">
+          <div class="topstrip"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="frow">
+            <div class="frail"><div class="flame"><span class="ms fill">local_fire_department</span></div><div class="rtab on"><span class="ms fill">home</span><span class="lbl">Home</span></div><div class="rtab"><span class="ms">auto_stories</span><span class="lbl">Library</span></div><div class="rtab"><span class="ms">play_circle</span><span class="lbl">Now</span></div><div class="rtab"><span class="ms">insights</span><span class="lbl">Stats</span></div><div class="rtab"><span class="ms">menu</span><span class="lbl">More</span></div><div class="grow"></div><div class="avatar">M</div></div>
+            <!-- LEFT: shelves -->
+            <div class="pane l" style="width:423px"><div class="panebody" style="padding:14px 46px 0 20px; overflow:hidden">
+              <div style="display:flex; align-items:center; justify-content:space-between">
+                <div><div class="eyebrow-t">Good evening</div><div class="hero-t" style="font-size:20px">Maren</div></div>
+                <div class="chip" style="padding:7px 12px"><span class="ms" style="font-size:16px">dns</span>Ember Library</div>
+              </div>
+              <!-- Continue hero -->
+              <div class="card" style="margin-top:14px; padding:12px; display:flex; gap:12px; align-items:center">
+                <div class="cov c1" style="width:64px; height:64px; border-radius:10px; padding:0"></div>
+                <div style="flex:1; min-width:0"><div class="label-t" style="font-size:14px">The Ember Gate</div><div class="meta-t" style="font-size:12px">Ch 4 · 20:36 left</div><div class="track" style="margin-top:7px"><i style="width:46%"></i></div></div>
+                <div style="width:44px; height:44px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; flex:none"><span class="ms fill" style="font-size:24px; color:#fff">play_arrow</span></div>
+              </div>
+              <!-- shelf: Up next -->
+              <div class="secthead" style="padding:0; margin:18px 0 10px"><div class="l"><span class="ms">reorder</span>Up next</div><div class="see">All<span class="ms" style="font-size:16px">chevron_right</span></div></div>
+              <div style="display:flex; gap:12px">
+                <div style="width:104px"><div class="cov c4 on" style="width:104px; aspect-ratio:2/3; border-radius:10px; box-shadow:0 0 0 2px var(--accent)"><span class="init">W</span><span class="ct">A Winter of Salt</span><div class="playchip"><span class="ms">play_arrow</span></div></div></div>
+                <div style="width:104px"><div class="cov c2" style="width:104px; aspect-ratio:2/3; border-radius:10px"><span class="init">C</span><span class="ct">The Cartographer's Oath</span><div class="playchip"><span class="ms">play_arrow</span></div></div></div>
+                <div style="width:104px"><div class="cov c3" style="width:104px; aspect-ratio:2/3; border-radius:10px"><span class="init">N</span><span class="ct">Nightjar</span><div class="playchip"><span class="ms">play_arrow</span></div></div></div>
+              </div>
+              <!-- shelf: Recent -->
+              <div class="secthead" style="padding:0; margin:18px 0 10px"><div class="l"><span class="ms">history</span>Recently played</div><div class="see">All<span class="ms" style="font-size:16px">chevron_right</span></div></div>
+              <div style="display:flex; gap:12px">
+                <div style="width:104px"><div class="cov c5" style="width:104px; aspect-ratio:2/3; border-radius:10px"><span class="init">S</span><span class="ct">Saltbound</span><div class="dl-badge"><span class="ms">check</span></div></div></div>
+                <div style="width:104px"><div class="cov c6" style="width:104px; aspect-ratio:2/3; border-radius:10px"><span class="init">K</span><span class="ct">The Kiln</span></div></div>
+                <div style="width:104px"><div class="cov c7" style="width:104px; aspect-ratio:2/3; border-radius:10px"><span class="init">D</span><span class="ct">Dusklands</span></div></div>
+              </div>
+            </div></div>
+            <!-- RIGHT: quick-look -->
+            <div class="pane r"><div class="panebody" style="padding-left:26px">
+              <div class="panehead" style="padding-top:16px"><div class="tt"><div class="eyebrow-t">Quick look</div><div class="t" style="font-size:19px">A Winter of Salt</div></div><div class="iconbtn" style="width:36px; height:36px"><span class="ms" style="font-size:18px">close</span></div></div>
+              <div class="panescroll">
+                <div style="display:flex; gap:16px">
+                  <div class="cov c4" style="width:120px; aspect-ratio:2/3; border-radius:12px; flex:none"><span class="init">W</span></div>
+                  <div style="min-width:0">
+                    <div class="by meta-t">Cinderfall Cycle · Book 4</div>
+                    <div class="title-t" style="margin-top:4px">Maren Holloway</div>
+                    <div class="meta-t" style="font-size:12.5px; margin-top:6px">Read by Aoife Doyle</div>
+                    <div style="display:flex; gap:7px; flex-wrap:wrap; margin-top:10px"><span class="chip" style="padding:6px 11px"><span class="ms" style="font-size:15px">schedule</span>11h 20m</span><span class="chip" style="padding:6px 11px"><span class="ms" style="font-size:15px">list</span>18 ch</span></div>
+                  </div>
+                </div>
+                <div style="display:flex; gap:9px; margin-top:16px">
+                  <div class="btn primary" style="flex:1; height:50px"><span class="ms fill" style="font-size:22px">play_arrow</span>Play</div>
+                  <div class="iconbtn" style="width:50px; height:50px; border-radius:14px"><span class="ms">playlist_add</span></div>
+                  <div class="iconbtn" style="width:50px; height:50px; border-radius:14px"><span class="ms">download</span></div>
+                  <div class="iconbtn" style="width:50px; height:50px; border-radius:14px"><span class="ms">more_horiz</span></div>
+                </div>
+                <p class="meta-t" style="font-size:13px; line-height:1.6; margin:16px 0 0">When the salt roads freeze over, the Ferryman calls in every debt owed to the Cinderfall. Maren must cross a sea that remembers her name to buy back a single winter...</p>
+                <div class="secthead" style="padding:0; margin:18px 0 10px"><div class="l" style="font-size:14px"><span class="ms" style="font-size:17px">list</span>Chapters</div><div class="see">Open<span class="ms" style="font-size:15px">chevron_right</span></div></div>
+                <div class="prow"><div class="num">1</div><div class="txw"><div class="t">The Freezing Road</div></div><span class="dur">24:10</span></div>
+                <div class="prow"><div class="num">2</div><div class="txw"><div class="t">Salt &amp; Cinder</div></div><span class="dur">31:44</span></div>
+                <div class="prow"><div class="num">3</div><div class="txw"><div class="t">The Debt Collector</div></div><span class="dur">28:02</span></div>
+              </div>
+            </div></div>
+          </div>
+          <div class="crease"></div>
+          <span class="n" style="top:44px; left:30px">1</span>
+          <span class="n" style="top:300px; left:120px">2</span>
+          <span class="n" style="top:70px; left:520px">3</span>
+          <span class="n" style="top:250px; left:540px">4</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Rail</b> — Home lit. Same five destinations as the phone tab bar.</span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Cover · tap</b> — fills the right pane with the quick-look (the selected tile gets an accent ring). <b>Long-press</b> still opens the full BookActionsSheet; <b>the play chip</b> plays instantly (D-PLAY). The shelf position is preserved.</span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Quick-look header · close</b> — dismiss returns the right pane to its resting content (a "Continue + on this day" digest). No back-stack; you never left Home.</span></div>
+          <div class="li"><span class="no">4</span><span class="tx"><b>Full action set inline</b> — Play, add-to-list, download, overflow — the same grammar the phone puts on the pushed detail page, here without the push. "Open" on chapters swaps to the full book page in the right pane.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footnav"><a href="#two-pane">← Player (Fold)</a><a href="#library">03 · Library (Fold) →</a></div>
+
+  <div class="pagemark" id="pm-library">Screen 03 · Library</div>
+<div class="section" id="library">
+    <div class="eyebrow">Screen 03 · Library &amp; Detail</div>
+    <h2>Master-detail library</h2>
+    <p class="sub">On the phone, Library and Book are two separate screens joined by a push/pop. Unfolded they collapse into one:
+    the grid on the left, the selected book's full detail on the right. This is the single biggest reason to reach for the big
+    screen — and it merges what were two of the FINAL suite's pages (02 Library + 04 Book) into one surface without dropping anything.</p>
+
+    <div class="audit">
+      <div class="crit"><h3>Teardown — phone flow</h3><ul>
+        <li><b>Pick, push, pop, repeat.</b> Comparing three books means three full navigations and three memory resets.</li>
+        <li><b>Scroll position is fragile</b> — deep in an A-Z grid, one detail visit and you're hunting for your spot again.</li>
+        <li><b>Filters hide the grid.</b> The filter sheet covers the very results you're filtering.</li>
+      </ul></div>
+      <div class="moves"><h3>Redesign moves</h3><ul>
+        <li><b>Detail is a pane (F-PANE), not a page.</b> Selecting a cover fills the right half; the grid never moves.</li>
+        <li><b>Filters are a left-pane header</b>, always visible above the results they act on.</li>
+        <li><b>A-Z rail returns in list view only</b> (FINAL note), riding the left pane's inner edge — clear of the seam.</li>
+        <li><b>Everything from the Book page survives</b> — series strip, chapters, reader entry, finish, actions — inside the detail pane.</li>
+      </ul></div>
+    </div>
+
+    <div class="frames">
+      <div class="frameunit fold">
+        <div class="framecap"><div class="t">Library grid + book detail <span class="chip">reimagined</span></div><div class="d">Left: filterable grid, selected tile ringed. Right: the full book detail that used to be its own screen. Scroll them independently.</div></div>
+        <div class="foldphone"><div class="cam"></div><div class="foldscreen">
+          <div class="topstrip"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="frow">
+            <div class="frail"><div class="flame"><span class="ms fill">local_fire_department</span></div><div class="rtab"><span class="ms">home</span><span class="lbl">Home</span></div><div class="rtab on"><span class="ms fill">auto_stories</span><span class="lbl">Library</span></div><div class="rtab"><span class="ms">play_circle</span><span class="lbl">Now</span></div><div class="rtab"><span class="ms">insights</span><span class="lbl">Stats</span></div><div class="rtab"><span class="ms">menu</span><span class="lbl">More</span></div><div class="grow"></div><div class="avatar">M</div></div>
+            <!-- LEFT: grid + filter header -->
+            <div class="pane l" style="width:423px"><div class="panebody" style="padding:14px 46px 0 20px">
+              <!-- search + filter header (always visible) -->
+              <div style="display:flex; gap:9px; align-items:center">
+                <div style="flex:1; height:42px; border-radius:12px; background:var(--fill); border:1px solid var(--border); display:flex; align-items:center; gap:9px; padding:0 13px; color:var(--muted)"><span class="ms" style="font-size:19px">search</span><span style="font-size:13px">Search library</span></div>
+                <div class="iconbtn" style="width:42px; height:42px; border-radius:12px"><span class="ms">tune</span></div>
+              </div>
+              <div class="chips" style="margin-top:11px; overflow:visible; flex-wrap:wrap; gap:7px">
+                <span class="chip on" style="padding:6px 12px">All</span>
+                <span class="chip" style="padding:6px 12px">In progress</span>
+                <span class="chip" style="padding:6px 12px">Not started</span>
+                <span class="chip gold" style="padding:6px 12px"><span class="ms" style="font-size:14px">sort</span>Recent</span>
+              </div>
+              <!-- grid 3-up -->
+              <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px 12px; margin-top:14px">
+                <div class="cov c4 on" style="aspect-ratio:2/3; border-radius:10px; box-shadow:0 0 0 2px var(--accent)"><span class="init">W</span><span class="ct">A Winter of Salt</span><div class="playchip"><span class="ms">play_arrow</span></div></div>
+                <div class="cov c2" style="aspect-ratio:2/3; border-radius:10px"><span class="init">C</span><span class="ct">The Cartographer's Oath</span></div>
+                <div class="cov c3" style="aspect-ratio:2/3; border-radius:10px"><span class="init">N</span><span class="ct">Nightjar</span><div class="track" style="position:absolute; left:7px; right:7px; bottom:7px"><i style="width:30%"></i></div></div>
+                <div class="cov c1" style="aspect-ratio:2/3; border-radius:10px"><span class="init">E</span><span class="ct">The Ember Gate</span><div class="track" style="position:absolute; left:7px; right:7px; bottom:7px"><i style="width:46%"></i></div></div>
+                <div class="cov c5" style="aspect-ratio:2/3; border-radius:10px"><span class="init">S</span><span class="ct">Saltbound</span><div class="dl-badge"><span class="ms">check</span></div></div>
+                <div class="cov c6" style="aspect-ratio:2/3; border-radius:10px"><span class="init">K</span><span class="ct">The Kiln</span></div>
+                <div class="cov c7" style="aspect-ratio:2/3; border-radius:10px"><span class="init">D</span><span class="ct">Dusklands</span></div>
+                <div class="cov c8" style="aspect-ratio:2/3; border-radius:10px"><span class="init">A</span><span class="ct">Ashfall</span></div>
+                <div class="cov c3" style="aspect-ratio:2/3; border-radius:10px"><span class="init">R</span><span class="ct">The River Kept</span></div>
+              </div>
+            </div></div>
+            <!-- RIGHT: full book detail -->
+            <div class="pane r"><div class="panebody" style="padding-left:26px">
+              <div class="panescroll" style="padding-top:16px; padding-right:16px">
+                <div style="display:flex; gap:18px">
+                  <div class="cov c4" style="width:132px; aspect-ratio:2/3; border-radius:12px; flex:none; box-shadow:0 14px 34px rgba(0,0,0,.4)"><span class="init">W</span></div>
+                  <div style="min-width:0; flex:1">
+                    <div class="hero-t" style="font-size:22px">A Winter of Salt</div>
+                    <div class="title-t" style="font-size:15px; color:var(--muted); margin-top:4px; font-weight:600">Maren Holloway</div>
+                    <div class="meta-t" style="font-size:12.5px; margin-top:6px">Read by Aoife Doyle · 11h 20m · 18 chapters</div>
+                    <div style="display:flex; gap:6px; margin-top:10px"><span style="font-family:var(--font-mono)" class="cap-t">★★★★☆ 4.2</span></div>
+                    <!-- series strip -->
+                    <div class="card" style="margin-top:12px; padding:10px 12px; display:flex; align-items:center; gap:10px"><span class="ms" style="font-size:19px; color:var(--accent)">auto_stories</span><div style="flex:1; min-width:0"><div class="label-t" style="font-size:13px">Cinderfall Cycle</div><div class="meta-t" style="font-size:11.5px">Book 4 of 6</div></div><span class="ms" style="font-size:18px; color:var(--muted)">chevron_right</span></div>
+                  </div>
+                </div>
+                <!-- primary actions -->
+                <div style="display:flex; gap:9px; margin-top:16px">
+                  <div class="btn primary" style="flex:1.4; height:52px"><span class="ms fill" style="font-size:22px">play_arrow</span>Play</div>
+                  <div class="btn secondary" style="flex:1; height:52px"><span class="ms" style="font-size:20px">check_circle</span>Finish</div>
+                  <div class="iconbtn" style="width:52px; height:52px; border-radius:14px"><span class="ms">download</span></div>
+                  <div class="iconbtn" style="width:52px; height:52px; border-radius:14px"><span class="ms">more_horiz</span></div>
+                </div>
+                <p class="meta-t" style="font-size:13px; line-height:1.65; margin:16px 0 0">When the salt roads freeze over, the Ferryman calls in every debt owed to the Cinderfall. Maren must cross a sea that remembers her name to buy back a single winter — and the price is climbing with the tide.</p>
+                <!-- reader entry + chapters -->
+                <div style="display:flex; gap:9px; margin-top:16px"><div class="btn secondary" style="flex:1; height:46px"><span class="ms" style="font-size:19px">menu_book</span>Read along</div><div class="btn secondary" style="flex:1; height:46px"><span class="ms" style="font-size:19px">bookmark</span>Bookmarks</div></div>
+                <div class="secthead" style="padding:0; margin:18px 0 8px"><div class="l" style="font-size:15px"><span class="ms" style="font-size:18px">list</span>Chapters</div><div class="meta-t" style="font-size:12px">18 chapters</div></div>
+                <div class="prow"><div class="num">1</div><div class="txw"><div class="t">The Freezing Road</div></div><span class="dur">24:10</span></div>
+                <div class="prow"><div class="num">2</div><div class="txw"><div class="t">Salt &amp; Cinder</div></div><span class="dur">31:44</span></div>
+                <div class="prow"><div class="num">3</div><div class="txw"><div class="t">The Debt Collector</div></div><span class="dur">28:02</span></div>
+                <div class="prow"><div class="num">4</div><div class="txw"><div class="t">A Sea That Remembers</div></div><span class="dur">26:33</span></div>
+              </div>
+            </div></div>
+          </div>
+          <div class="crease"></div>
+          <span class="n" style="top:78px; left:250px">1</span>
+          <span class="n" style="top:210px; left:120px">2</span>
+          <span class="n" style="top:100px; left:560px">3</span>
+          <span class="n" style="top:300px; left:520px">4</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no">1</span><span class="tx"><b>Filter header · always visible</b> — search + scope chips + sort live above the grid in the left pane. The phone's filter sheet is gone; you see results change as you filter (F-PANE applied to filters).</span></div>
+          <div class="li"><span class="no">2</span><span class="tx"><b>Grid tile · tap</b> — selects (accent ring) and loads the detail on the right; the grid keeps its scroll. Quick-play chip and long-press BookActionsSheet both survive. Compare three books = three taps, zero navigations.</span></div>
+          <div class="li"><span class="no">3</span><span class="tx"><b>Detail pane = the whole Book page</b> — cover, author/narrator, rating, series strip, blurb, all actions. Merges FINAL page 04 into this surface with nothing dropped.</span></div>
+          <div class="li"><span class="no">4</span><span class="tx"><b>Finish / Read along / Chapters</b> — one-tap visible Finish with the Undo toast (kept from FINAL), reader entry, and the full chapter list, all without leaving the library.</span></div>
+        </div>
+
+        <div class="motionspec"><h4>Motion &amp; haptics</h4><table>
+          <tr><td>select tile</td><td>tile ring springs in; detail pane cross-fades content 180ms (pane frame stays); haptic select</td></tr>
+          <tr><td>A-Z jump (list view)</td><td>left grid scrolls to letter; rail bubble follows the drag; right detail untouched</td></tr>
+          <tr><td>fold to phone</td><td>detail pane becomes the pushed Book screen on the back-stack so Back returns to the grid; scroll position preserved</td></tr>
+        </table></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footnav"><a href="#home">← Home (Fold)</a><a href="#thesis">Fold overview →</a></div>
+</div>
+</body>
+</html>

@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HearthShelf Redesign v3 — Library &amp; Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Geist+Mono:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<link rel="stylesheet" href="hearth.css">
+<link rel="stylesheet" href="hearth-v3.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div class="wordmark"><span class="lt">Hearth</span><span class="bd">Shelf</span><span class="sub"> · Mobile Redesign — Library &amp; Search</span><span class="v3tag">V3 proposal</span></div>
+    <div class="tagline">V3 proposal against <b>02-library.html</b>. Unifying search and surfacing the controls is right —<br>we fix the crowded control bar, the rail/chip collision, and add the empty-scope state.</div>
+  </div>
+  <div class="pagenav">
+    <a href="index-v3.html" class="v3">v3 Overview</a>
+    <a href="01-home-v3.html" class="v3">Home</a>
+    <a href="02-library-v3.html" class="v3 on">Library &amp; Search</a>
+    <a href="03-player-v3.html" class="v3">Player</a>
+    <a href="04-book-v3.html" class="v3">Book &amp; Reader</a>
+    <a href="05-stats-clubs-v3.html" class="v3">Stats &amp; Clubs</a>
+    <a href="06-settings-v3.html" class="v3">Settings</a>
+    <a href="07-system-v3.html" class="v3">Sign-in &amp; System</a>
+    <a href="02-library.html" style="margin-left:14px; opacity:.7">↩ v1</a>
+  </div>
+
+
+  <div class="beta-audit">
+    <div class="beta-kicker">Production-beta code audit · 2026-07-14</div>
+    <h3><span class="beta-status">REVISE BETA</span> Two small deltas on a mature screen</h3>
+    <p>Verified against <code>app/(tabs)/library.tsx</code>, <code>app/search.tsx</code>, and <code>src/ui/AzRail.tsx</code>. <a href="PRODUCTION-BETA-AUDIT.md" style="color:var(--accent)">Read the code audit →</a></p>
+  </div>
+
+  <div class="section" id="library-fix">
+    <div class="eyebrow">Screen 02 · Library</div>
+    <h2>Persistent controls, a grid without a rail</h2>
+    <p class="sub">v3 pins the control bar so it survives scroll, gives the cover grid its full width, reserves the A–Z rail
+    for alphabetical list view, and bumps every remove/close target to 44pt. Plus the search empty-scope state the
+    suite skipped.</p>
+
+    <div class="frames">
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Library — Books grid, no A–Z rail <span class="chip v3fix">v3 revision</span></div>
+          <div class="d">Sticky control bar (stays on scroll, shown in its condensed pinned form), an uncluttered three-column grid, and 44pt filter-remove targets. Applied sort/filter echoed in a one-line results summary.</div></div>
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div class="body">
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 18px 0">
+              <div class="hero-t" style="font-size:24px">Library</div>
+              <div class="chip" style="padding:7px 12px"><span class="ms" style="font-size:15px; color:var(--hearth)">auto_stories</span>Audiobooks · 412<span class="ms" style="font-size:15px">unfold_more</span></div>
+            </div>
+            <!-- sticky pinned control bar: search + sort + filter + layout in one persistent row -->
+            <div style="position:sticky; top:0; z-index:5; margin:12px 0 0; padding:8px 18px 10px; background:linear-gradient(180deg, var(--scaffold) 70%, transparent); ">
+              <div style="display:flex; align-items:center; gap:8px">
+                <div style="flex:1; height:40px; border-radius:999px; background:var(--fill); border:1px solid var(--hairline); display:flex; align-items:center; gap:8px; padding:0 14px"><span class="ms" style="font-size:18px; color:var(--faint)">search</span><span class="meta-t" style="font-size:13px">Search library &amp; beyond…</span></div>
+                <span class="iconbtn" style="width:40px; height:40px"><span class="ms" style="font-size:19px">swap_vert</span></span>
+                <span class="iconbtn" style="width:40px; height:40px; position:relative"><span class="ms" style="font-size:19px">filter_list</span><span style="position:absolute; top:-3px; right:-3px; width:16px; height:16px; border-radius:50%; background:var(--accent); color:var(--on-accent); font-size:9px; font-weight:700; display:flex; align-items:center; justify-content:center; border:1.5px solid var(--scaffold)">2</span></span>
+                <span class="iconbtn" style="width:40px; height:40px"><span class="ms" style="font-size:19px">grid_view</span></span>
+              </div>
+              <!-- browse chips + applied summary -->
+              <div style="display:flex; align-items:center; gap:7px; margin-top:9px; overflow:hidden">
+                <span class="chip on" style="padding:6px 12px; font-size:12px">Books</span><span class="chip" style="padding:6px 12px; font-size:12px">Series</span><span class="chip" style="padding:6px 12px; font-size:12px">Narrators</span><span class="chip" style="padding:6px 12px; font-size:12px">Authors</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px; margin-top:9px">
+                <span class="mono-t" style="font-size:11.5px; color:var(--muted)">Title ↑ · In progress · Fantasy</span>
+                <span style="flex:1"></span>
+                <!-- 44pt clear target -->
+                <span style="display:inline-flex; align-items:center; gap:5px; height:30px; padding:0 12px; border-radius:999px; background:var(--accent-wash); border:1px solid #4a3029; color:var(--accent); font-size:12px; font-weight:700">Clear 2<span class="ms" style="font-size:15px">close</span></span>
+                <span class="cap-t">128 of 412</span>
+              </div>
+            </div>
+            <!-- Full-width grid. The A–Z rail appears only in alphabetical list view. -->
+            <div style="display:flex; flex-wrap:wrap; gap:12px 10px; padding:12px 18px 0; position:relative">
+              <div style="width:100px"><div class="cov c1" style="width:100px; aspect-ratio:2/3"><span class="init">C</span><span class="ck">M. Vale</span><span class="ct">The Cinder Crown</span><div class="playchip"><span class="ms fill">play_arrow</span></div></div><div class="track" style="margin-top:6px"><i style="width:62%"></i></div></div>
+              <div style="width:100px"><div class="cov c2" style="width:100px; aspect-ratio:2/3"><span class="init">S</span><span class="ck">I. Kane</span><span class="ct">Saltwater Prophets</span><div class="dl-badge" style="background:var(--success)"><span class="ms">check</span></div></div><div style="height:4px; margin-top:6px"></div></div>
+              <div style="width:100px"><div class="cov c3" style="width:100px; aspect-ratio:2/3"><span class="init">H</span><span class="ck">T. Rooke</span><span class="ct">The Hollow Vane</span><div class="playchip"><span class="ms fill">play_arrow</span></div></div><div class="track" style="margin-top:6px"><i style="width:33%"></i></div></div>
+              <div style="width:100px"><div class="cov c5" style="width:100px; aspect-ratio:2/3"><span class="init">E</span><span class="ck">M. Voss</span><span class="ct">Emberfall</span></div><div style="height:4px; margin-top:6px"></div></div>
+              <div style="width:100px"><div class="cov c6" style="width:100px; aspect-ratio:2/3"><span class="init">B</span><span class="ck">C. Mirelles</span><span class="ct">Bone Orchard</span><div class="playchip"><span class="ms fill">play_arrow</span></div></div><div class="track" style="margin-top:6px"><i style="width:8%"></i></div></div>
+              <div style="width:100px"><div class="cov c7" style="width:100px; aspect-ratio:2/3"><span class="init">W</span><span class="ck">N. Halloway</span><span class="ct">Winter's Ledger</span></div><div style="height:4px; margin-top:6px"></div></div>
+              <!-- v3: the A–Z rail is intentionally list-view only -->
+              <div class="v3-removed" style="position:absolute; right:12px; top:12px; bottom:0; width:22px; display:flex; flex-direction:column; align-items:center; gap:1px; font-family:var(--font-mono); font-size:10px; color:var(--faint); font-weight:700">
+                <span style="color:var(--accent)">A</span><span>B</span><span>C</span><span>E</span><span>H</span><span style="opacity:.3">M</span><span>S</span><span>W</span>
+              </div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab on"><span class="pill"><span class="ms fill">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n rv" style="top:120px; left:300px">1</span>
+          <span class="n rv" style="top:236px; left:230px">2</span>
+          <span class="n rv" style="top:300px; right:18px">3</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>Sticky control bar</b> — pinned to the top of the scroll region with a gradient fade, so sort/filter/layout are reachable at any scroll depth. The v1 put them in the body where they scroll away — "persistent" in name only.
+            <span class="rvnote">makes the control bar actually persistent</span></span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>Applied-state summary + 44pt Clear</b> — "Title ↑ · In progress · Fantasy" always visible; the Clear control is a full 30px pill with a real hit area, not a 13px inline X. Removing filters is now a confident tap.
+            <span class="rvnote">fixes the sub-floor close targets + amnesia</span></span></div>
+          <div class="li"><span class="no rv">3</span><span class="tx"><b>No rail in grid view</b> — covers use the full content width and retain comfortable gutters. The A–Z rail returns only in alphabetical list view, where letters map to a readable sequence.
+            <span class="rvnote">removes the collision instead of reserving dead space</span></span></div>
+        </div>
+      </div>
+
+      <!-- ============ FRAME 2 — search empty scope ============ -->
+      <div class="frameunit">
+        <div class="framecap"><div class="t">Search — empty scope result <span class="chip v3fix">D-STATES</span></div>
+          <div class="d">The v1 designed typing/no-results/error/offline for search generally, but not the specific "your query matched nothing in THIS scope, but did elsewhere" case — the most common real dead-end. v3 offers the cross-scope escape hatch.</div></div>
+        <div class="phone"><div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dot"></span><span class="right"><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span><span class="ms">battery_full</span></span></div>
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 16px">
+            <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:20px">arrow_back</span></div>
+            <div style="flex:1; height:42px; border-radius:999px; background:var(--fill); border:1px solid var(--hairline); display:flex; align-items:center; gap:8px; padding:0 14px"><span class="ms" style="font-size:18px; color:var(--faint)">search</span><span style="flex:1; color:var(--text); font-size:14px">holloway</span><span class="ms" style="font-size:18px; color:var(--muted)">close</span></div>
+            <div class="iconbtn" style="width:38px; height:38px"><span class="ms" style="font-size:19px">tune</span></div>
+          </div>
+          <div class="chips" style="margin:8px 16px 0"><span class="chip" style="padding:6px 12px; font-size:12px">Everything</span><span class="chip on" style="padding:6px 12px; font-size:12px">Books</span><span class="chip" style="padding:6px 12px; font-size:12px">Series</span><span class="chip" style="padding:6px 12px; font-size:12px">Authors</span><span class="chip" style="padding:6px 12px; font-size:12px">Narrators</span></div>
+          <div class="body" style="padding:0 16px">
+            <div style="text-align:center; padding:38px 24px 0">
+              <div style="width:60px; height:60px; border-radius:18px; background:var(--fill); display:flex; align-items:center; justify-content:center; margin:0 auto"><span class="ms" style="font-size:30px; color:var(--muted)">search_off</span></div>
+              <div class="title-t" style="margin-top:14px; font-size:16px">No books match "holloway"</div>
+              <div class="meta-t" style="margin-top:6px; font-size:12.5px; line-height:1.55">But we found matches in other places.</div>
+            </div>
+            <!-- cross-scope escape hatch -->
+            <div style="margin-top:18px">
+              <div style="display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:14px; background:var(--fill); border:1px solid var(--hairline); margin-bottom:8px">
+                <span class="ms" style="font-size:22px; color:var(--accent)">person</span><div style="flex:1"><div class="label-t" style="font-size:14px">Maren Holloway</div><div class="cap-t" style="color:var(--muted)">Author · 6 books</div></div><span class="chip gold" style="padding:4px 10px; font-size:10px">in Authors</span></div>
+              <div style="display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:14px; background:var(--fill); border:1px solid var(--hairline); margin-bottom:8px">
+                <span class="ms" style="font-size:22px; color:var(--accent)">record_voice_over</span><div style="flex:1"><div class="label-t" style="font-size:14px">June Ashford (Holloway)</div><div class="cap-t" style="color:var(--muted)">Narrator · 3 books</div></div><span class="chip gold" style="padding:4px 10px; font-size:10px">in Narrators</span></div>
+              <div style="display:flex; align-items:center; gap:10px; padding:13px 14px; border-radius:14px; background:var(--accent-wash); border:1px solid #4a3029; margin-top:12px">
+                <span class="ms" style="font-size:20px; color:var(--accent)">travel_explore</span><div style="flex:1; font-size:13px; font-weight:600; color:var(--text)">Search beyond your library</div><span class="ms" style="color:var(--accent)">chevron_right</span></div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><span class="pill"><span class="ms">home</span></span><span class="lbl">Home</span></div>
+            <div class="tab on"><span class="pill"><span class="ms fill">auto_stories</span></span><span class="lbl">Library</span></div>
+            <div class="tab"><span class="pill"><span class="ms">play_circle</span></span><span class="lbl">Now</span></div>
+            <div class="tab"><span class="pill"><span class="ms">insights</span></span><span class="lbl">Stats</span></div>
+            <div class="tab"><span class="pill"><span class="ms">menu</span></span><span class="lbl">More</span></div>
+          </div>
+          <span class="n rv" style="top:250px; left:150px">1</span>
+          <span class="n rv" style="top:360px; right:20px">2</span>
+        </div></div>
+        <div class="legend">
+          <div class="li"><span class="no rv">1</span><span class="tx"><b>Scope-aware empty state</b> — instead of a blank "Books" grid, it names the miss AND redirects to where the query DID match (Authors, Narrators). This is the single most common real search dead-end and the suite didn't draw it.
+            <span class="rvnote">completes D-STATES for search</span></span></div>
+          <div class="li"><span class="no rv">2</span><span class="tx"><b>"Search beyond your library" escape</b> — surfaced right in the empty state, not just behind the gear, so a genuine no-match has a forward path (buy/request).
+            <span class="rvnote">turns a dead-end into a next step</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="motionspec"><h4>Library &amp; Search — addendum (D-STATES, D-A11Y)</h4><table>
+      <tr><td>sticky bar</td><td>condenses to a 40px single row on scroll; browse chips collapse into the sort sheet's header when pinned</td></tr>
+      <tr><td>A–Z rail</td><td>shown only in alphabetical list view; hidden in grid and for non-alphabetical sorts</td></tr>
+      <tr><td>filter remove</td><td>all close/clear targets ≥44pt hit; "Clear N" pill announces "Clear N filters" to VoiceOver</td></tr>
+      <tr><td>scope empty</td><td>names the missed scope, lists cross-scope hits, offers beyond-library; Reduce Motion → no stagger</td></tr>
+      <tr><td>pinch-resize</td><td>kept, but cover size ALSO in the sort sheet (gesture is an accelerator, never the only way) — a11y parity</td></tr>
+    </table></div>
+  </div>
+
+  <aside class="v3panel" aria-label="production beta design decision">
+    <div class="v3panel-kicker">V3 · production-beta decision</div>
+    <div class="v3decisions">
+      <div><span class="v3verb keep">Current beta</span><p>Keep local search, view modes, sort/filter/display sheets, selection, offline fallback, and adaptive columns.</p></div>
+      <div><span class="v3verb change">V3 delta</span><p>Reserve the A-Z rail for alphabetical list view and pass empty local queries into global Search.</p></div>
+      <div><span class="v3verb keep">Preserve</span><p>Keep the existing library/search architecture and current responsive behavior.</p></div>
+    </div>
+  </aside>
+
+  <div class="section" id="review">
+    <div class="eyebrow">Production-beta audit</div>
+    <h2>The beta already implements most of the library redesign</h2>
+    <p class="sub">V3 is now a surgical correction to two implemented behaviors rather than a replacement screen.</p>
+    <div class="motionspec"><h4>Code-informed decision</h4><table><tr><td>keep</td><td>local library search, global search, selection, sort/filter/display, offline fallback, responsive grid</td></tr><tr><td>change</td><td>remove the A-Z rail from title-sorted grid view; retain it for alphabetical lists</td></tr><tr><td>empty search</td><td>offer Search everywhere with the current query preserved</td></tr></table></div>
+  </div>
+
+  <div class="footnav"><a href="01-home-v3.html" class="v3" style="color:var(--review)">← 01 · Home (v3)</a><a href="03-player-v3.html" class="v3" style="color:var(--review)">03 · Player (v3) →</a></div>
+</div>
+</body>
+</html>
