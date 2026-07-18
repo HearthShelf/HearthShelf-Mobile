@@ -3,7 +3,7 @@ import { useSSO } from '@clerk/expo'
 // The classic create()/setActive() useSignIn shape (the new signal-based
 // useSignIn in @clerk/expo's root would require a flow rewrite; the email path
 // here is a secondary fallback to the primary Google flow).
-import { useSignIn } from '@clerk/expo/legacy'
+import { useSignIn, useSignUp } from '@clerk/expo/legacy'
 import { useSignInWithGoogle } from '@clerk/expo/google'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useEffect, useState } from 'react'
@@ -128,6 +128,7 @@ function DiscordLogo() {
  */
 export default function SignInScreen() {
   const { signIn, setActive, isLoaded } = useSignIn()
+  const { signUp, setActive: setActiveSignUp, isLoaded: signUpLoaded } = useSignUp()
   const { startSSOFlow } = useSSO()
   const { startGoogleAuthenticationFlow } = useSignInWithGoogle()
   const router = useRouter()
@@ -136,6 +137,12 @@ export default function SignInScreen() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [emailMode, setEmailMode] = useState(false)
+  // Within emailMode, whether we're registering a new account rather than
+  // signing in to an existing one.
+  const [signUpMode, setSignUpMode] = useState(false)
+  // A created-but-unverified sign-up: Clerk has emailed a 6-digit code and we
+  // collect it here before the account (and session) exist.
+  const [verifyingSignUp, setVerifyingSignUp] = useState(false)
   const [busy, setBusy] = useState(false)
   // A pending second-factor challenge: after signIn.create returns
   // needs_second_factor, we collect the code here and attempt it.
@@ -243,6 +250,78 @@ export default function SignInScreen() {
       }
     } catch (e) {
       setError(clerkMessage(e, 'Sign-in failed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onSignUp() {
+    if (!signUpLoaded || busy) return
+    const user = username.trim()
+    if (!email.trim() || !password || !user) {
+      setError('Enter an email, password, and username to create your account.')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      const attempt = await signUp.create({
+        emailAddress: email.trim(),
+        password,
+        username: user,
+      })
+      // A new account is never complete on create - Clerk requires the emailed
+      // code first. Send it and move to the code step.
+      if (attempt.status === 'complete' && attempt.createdSessionId) {
+        await setActiveSignUp({ session: attempt.createdSessionId })
+        router.replace('/(tabs)')
+        return
+      }
+      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' })
+      setVerifyingSignUp(true)
+      setCode('')
+    } catch (e) {
+      setError(clerkMessage(e, 'Could not create your account'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onVerifySignUp() {
+    if (!signUpLoaded || busy) return
+    const value = code.trim()
+    if (!value) {
+      setError('Enter the code we emailed you.')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      const attempt = await signUp.attemptEmailAddressVerification({ code: value })
+      if (attempt.status === 'complete' && attempt.createdSessionId) {
+        await setActiveSignUp({ session: attempt.createdSessionId })
+        router.replace('/(tabs)')
+      } else if (attempt.missingFields.length) {
+        setError(`Your account still needs: ${attempt.missingFields.join(', ')}`)
+      } else {
+        setError('That code was not accepted. Try again.')
+      }
+    } catch (e) {
+      setError(clerkMessage(e, 'That code was not accepted.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onResendSignUpCode() {
+    if (!signUpLoaded || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' })
+      setError('We sent a new code to your email.')
+    } catch (e) {
+      setError(clerkMessage(e, 'Could not resend the code'))
     } finally {
       setBusy(false)
     }
@@ -380,6 +459,46 @@ export default function SignInScreen() {
                   )}
                 </TouchableOpacity>
               </View>
+            ) : verifyingSignUp ? (
+              <View style={styles.formCard}>
+                <Text style={styles.stepTitle}>Check your email</Text>
+                <Text style={styles.stepHint}>
+                  We sent a 6-digit code to {email.trim() || 'your email'}. Enter it below to
+                  finish creating your account.
+                </Text>
+                <TextInput
+                  style={[styles.input, styles.codeInput]}
+                  placeholder="123456"
+                  placeholderTextColor={INK.faint}
+                  keyboardType="number-pad"
+                  autoFocus
+                  value={code}
+                  onChangeText={setCode}
+                  maxLength={8}
+                />
+                {errorBanner}
+                <TouchableOpacity style={styles.primaryButton} onPress={onVerifySignUp} disabled={busy}>
+                  {busy ? (
+                    <ActivityIndicator color={INK.onAccent} />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Create account</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => void onResendSignUpCode()} style={styles.forgot} disabled={busy}>
+                  <Text style={styles.forgotText}>Resend code</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.backLink}
+                  onPress={() => {
+                    setVerifyingSignUp(false)
+                    setCode('')
+                    setError(null)
+                  }}
+                  disabled={busy}
+                >
+                  <Text style={styles.backLinkText}>Back</Text>
+                </TouchableOpacity>
+              </View>
             ) : twoFactor ? (
               <View style={styles.formCard}>
                 <Text style={styles.stepTitle}>Enter your code</Text>
@@ -418,6 +537,12 @@ export default function SignInScreen() {
               </View>
             ) : emailMode ? (
               <View style={styles.formCard}>
+                {signUpMode ? (
+                  <>
+                    <Text style={styles.stepTitle}>Create your account</Text>
+                    <Text style={styles.stepHint}>We'll email you a code to confirm it's you.</Text>
+                  </>
+                ) : null}
                 <TextInput
                   style={styles.input}
                   placeholder="Email"
@@ -427,6 +552,17 @@ export default function SignInScreen() {
                   value={email}
                   onChangeText={setEmail}
                 />
+                {signUpMode ? (
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Username"
+                    placeholderTextColor={INK.faint}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    value={username}
+                    onChangeText={setUsername}
+                  />
+                ) : null}
                 <View style={styles.passwordRow}>
                   <TextInput
                     style={[styles.input, { flex: 1 }]}
@@ -449,24 +585,49 @@ export default function SignInScreen() {
                   </Pressable>
                 </View>
 
-                <TouchableOpacity onPress={() => void onForgotPassword()} style={styles.forgot}>
-                  <Text style={styles.forgotText}>Forgot password?</Text>
-                </TouchableOpacity>
+                {signUpMode ? null : (
+                  <TouchableOpacity onPress={() => void onForgotPassword()} style={styles.forgot}>
+                    <Text style={styles.forgotText}>Forgot password?</Text>
+                  </TouchableOpacity>
+                )}
 
                 {errorBanner}
 
-                <TouchableOpacity style={styles.primaryButton} onPress={onSignIn} disabled={busy}>
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={signUpMode ? onSignUp : onSignIn}
+                  disabled={busy}
+                >
                   {busy ? (
                     <ActivityIndicator color={INK.onAccent} />
                   ) : (
-                    <Text style={styles.primaryButtonText}>Sign in</Text>
+                    <Text style={styles.primaryButtonText}>
+                      {signUpMode ? 'Continue' : 'Sign in'}
+                    </Text>
                   )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.switchLink}
+                  onPress={() => {
+                    setSignUpMode((v) => !v)
+                    setError(null)
+                  }}
+                  disabled={busy}
+                >
+                  <Text style={styles.switchLinkText}>
+                    {signUpMode ? 'Already have an account? ' : "Don't have an account? "}
+                    <Text style={styles.switchLinkStrong}>
+                      {signUpMode ? 'Sign in' : 'Sign up'}
+                    </Text>
+                  </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.backLink}
                   onPress={() => {
                     setEmailMode(false)
+                    setSignUpMode(false)
                     setError(null)
                   }}
                   disabled={busy}
@@ -516,7 +677,7 @@ export default function SignInScreen() {
                   onPress={() => setEmailMode(true)}
                   disabled={busy}
                 >
-                  <Text style={styles.emailButtonText}>Sign in with email</Text>
+                  <Text style={styles.emailButtonText}>Continue with email</Text>
                 </TouchableOpacity>
 
                 {errorBanner}
@@ -658,6 +819,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   backLinkText: { color: INK.muted, fontSize: 13.5, fontWeight: '600' },
+  switchLink: { alignItems: 'center', paddingVertical: 6 },
+  switchLinkText: { color: INK.muted, fontSize: 13.5 },
+  switchLinkStrong: { color: INK.hearth, fontWeight: '700' },
 
   errorBanner: {
     flexDirection: 'row',
