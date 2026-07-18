@@ -12,7 +12,15 @@
  * path, so startup never depends on JS-thread timers or fire motion alone.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { AppState, Pressable, StyleSheet, Text, View } from 'react-native'
+import {
+  ActivityIndicator,
+  AppState,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native'
 import { getSplashDebug, subscribeSplashDebug, dismissForcedSplash } from '@/lib/splashDebug'
 import * as Device from 'expo-device'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -146,6 +154,9 @@ export interface SplashActions {
   onManageServers?: () => void
   onLogout?: () => void
   onSelectServer?: (server: SplashServer) => void
+  /** Redeem a typed invite code. Resolves to an error message, or null on success
+   *  (on success the connect flow takes over and this screen goes away). */
+  onSubmitInviteCode?: (code: string) => Promise<string | null>
 }
 
 export function SplashScreen({
@@ -347,13 +358,11 @@ export function SplashScreen({
 
           {phase.kind === 'no-servers' ? (
             <>
-              <Text style={styles.errorText}>
-                No AudiobookShelf server is linked to your account yet.
-              </Text>
+              <Text style={styles.errorText}>Enter your invite code</Text>
               <Text style={styles.helpText}>
-                Ask a server owner for an invite link, then open it on this phone to link up. You
-                can also link one from Settings → My servers.
+                Whoever shared their library with you can give you a code.
               </Text>
+              <InviteCodeEntry onSubmit={actions?.onSubmitInviteCode} />
             </>
           ) : null}
 
@@ -391,7 +400,7 @@ export function SplashScreen({
             </View>
           ) : null}
 
-          {isError ? (
+          {phase.kind === 'error' ? (
             <View style={styles.actions}>
               {actions?.onRetry ? (
                 <Pressable style={[styles.btn, styles.btnPrimary]} onPress={actions.onRetry}>
@@ -400,7 +409,7 @@ export function SplashScreen({
               ) : null}
               {actions?.onManageServers ? (
                 <Pressable style={[styles.btn, styles.btnGhost]} onPress={actions.onManageServers}>
-                  <Text style={styles.btnGhostText}>Manage servers</Text>
+                  <Text style={styles.btnGhostText}>My libraries</Text>
                 </Pressable>
               ) : null}
               {actions?.onLogout ? (
@@ -408,6 +417,16 @@ export function SplashScreen({
                   <Text style={styles.logoutText}>Log out</Text>
                 </Pressable>
               ) : null}
+            </View>
+          ) : null}
+
+          {/* no-servers has no Retry: retrying finds the same nothing. The code
+              entry above IS the action, so the only escape offered is Log out. */}
+          {phase.kind === 'no-servers' && actions?.onLogout ? (
+            <View style={styles.actions}>
+              <Pressable style={styles.logoutRow} onPress={actions.onLogout}>
+                <Text style={styles.logoutText}>Log out</Text>
+              </Pressable>
             </View>
           ) : null}
         </View>
@@ -433,6 +452,79 @@ export function ForcedSplashHost() {
     >
       <SplashScreen phase={{ kind: 'connecting', label: 'Boot splash preview - tap to dismiss' }} />
     </Pressable>
+  )
+}
+
+/**
+ * Invite-code entry for the "you have no library yet" screen.
+ *
+ * Formats as the user types (XXXX-XXXX) so the field always looks like the code
+ * printed in the email, and normalizes on submit so a pasted lowercase or
+ * space-separated code still works. Auto-submits on the 8th character - the code
+ * has a fixed length, so making someone hunt for a button after they've clearly
+ * finished is pure friction.
+ */
+function InviteCodeEntry({ onSubmit }: { onSubmit?: (code: string) => Promise<string | null> }) {
+  const [value, setValue] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const bare = value.replace(/[^A-Za-z0-9]/g, '')
+  const complete = bare.length === 8
+
+  async function submit(code: string) {
+    if (!onSubmit || busy) return
+    setBusy(true)
+    setError(null)
+    const message = await onSubmit(code)
+    setBusy(false)
+    // On success this screen unmounts; only a failure needs handling here.
+    if (message) {
+      setError(message)
+      setValue('')
+    }
+  }
+
+  function onChange(next: string) {
+    const cleaned = next
+      .replace(/[^A-Za-z0-9]/g, '')
+      .toUpperCase()
+      .slice(0, 8)
+    setValue(cleaned.length > 4 ? `${cleaned.slice(0, 4)}-${cleaned.slice(4)}` : cleaned)
+    if (error) setError(null)
+    if (cleaned.length === 8) void submit(cleaned)
+  }
+
+  return (
+    <View style={styles.codeWrap}>
+      <TextInput
+        value={value}
+        onChangeText={onChange}
+        onSubmitEditing={() => complete && void submit(bare)}
+        editable={!busy}
+        placeholder="ABCD-1234"
+        placeholderTextColor={colors.textFaint}
+        autoCapitalize="characters"
+        autoCorrect={false}
+        autoComplete="off"
+        returnKeyType="go"
+        maxLength={9}
+        accessibilityLabel="Invite code"
+        style={styles.codeInput}
+      />
+      {busy ? (
+        <ActivityIndicator color={colors.accent} style={styles.codeBusy} />
+      ) : (
+        <Pressable
+          style={[styles.btn, styles.btnPrimary, !complete && styles.btnDisabled]}
+          disabled={!complete}
+          onPress={() => void submit(bare)}
+        >
+          <Text style={styles.btnPrimaryText}>Join library</Text>
+        </Pressable>
+      )}
+      {error ? <Text style={styles.codeError}>{error}</Text> : null}
+    </View>
   )
 }
 
@@ -561,6 +653,40 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     fontSize: 15,
     fontWeight: '600',
+  },
+  btnDisabled: {
+    opacity: 0.4,
+  },
+  codeWrap: {
+    marginTop: spacing.lg,
+    alignItems: 'center',
+    gap: spacing.md,
+    width: '100%',
+  },
+  codeInput: {
+    minWidth: 220,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    backgroundColor: colors.fill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    color: colors.text,
+    fontFamily: fonts.mono,
+    fontSize: 22,
+    letterSpacing: 4,
+    textAlign: 'center',
+  },
+  codeBusy: {
+    height: 48,
+  },
+  codeError: {
+    color: colors.text,
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    maxWidth: 300,
   },
   logoutRow: {
     marginTop: spacing.xs,

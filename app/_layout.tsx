@@ -183,7 +183,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
  * routing (settings, sign-in) keeps working behind the overlay.
  */
 function ConnectionGate({ children }: { children: React.ReactNode }) {
-  const { status, retry, connectTo } = useConnection()
+  const { status, retry, connectTo, redeemInvite } = useConnection()
   const { signOut } = useAuth()
   const router = useRouter()
   // Lets the user step out to the servers screen while still not connected.
@@ -254,6 +254,7 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
               },
               onLogout: handleLogout,
               onSelectServer: (s) => connectTo(s),
+              onSubmitInviteCode: redeemInvite,
             }}
           />
         </View>

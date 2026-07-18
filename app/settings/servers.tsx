@@ -3,8 +3,8 @@
  * ABS token -> session, via the connection provider so all sync state updates
  * together). A visible star per card sets the default server (the one a fresh
  * device auto-connects to, stored per account in the control plane so it follows
- * you to new devices). A "Link a server" row accepts an invite link/code to add
- * another library. Header comes from settings/_layout.
+ * you to new devices). An "Add a library" row accepts an invite code (or a
+ * pasted invite link) to join another library. Header comes from settings/_layout.
  */
 import { useAuth } from '@clerk/expo'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -15,6 +15,7 @@ import {
   setDefaultServer,
   clearDefaultServer,
   acceptInvite,
+  ApiError,
   type LinkedServer,
 } from '@/api/controlPlane'
 import { useConnection } from '@/api/ConnectionProvider'
@@ -27,8 +28,9 @@ import { spacing, radius, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { SettingsPanel } from '@/ui/settingsControls'
 
-/** Pull the invite token out of a pasted app.hearthshelf.com/invite?token=...
- *  link, or accept a bare token if the user pasted just that. */
+/** Pull the invite code out of a pasted app.hearthshelf.com/invite?token=...
+ *  link, or accept a bare code (ABCD-1234) typed straight in. Casing and
+ *  separators don't matter - the control plane normalizes before lookup. */
 function inviteTokenFrom(raw: string): string | null {
   const s = raw.trim()
   if (!s) return null
@@ -123,7 +125,7 @@ export default function ServersScreen() {
   async function linkServer() {
     const token = inviteTokenFrom(linkInput)
     if (!token) {
-      showToast('Paste an invite link or code')
+      showToast('Enter your invite code')
       return
     }
     setLinkBusy(true)
@@ -132,10 +134,18 @@ export default function ServersScreen() {
       haptics.success()
       setLinkInput('')
       setLinking(false)
-      showToast('Server linked')
+      showToast('Library added')
       await load({ silent: true })
-    } catch {
-      showToast("That invite didn't work. Ask for a fresh link.")
+    } catch (err) {
+      // An expired code, a used code, and a typo need different fixes - one
+      // generic message for all three leaves the user with nothing to act on.
+      if (err instanceof ApiError && err.status === 429) {
+        showToast('Too many tries. Wait a bit and try again.')
+      } else if (err instanceof ApiError && err.status === 404) {
+        showToast("That code didn't work. Check it, or ask for a new one.")
+      } else {
+        showToast('Something went wrong. Check your connection and try again.')
+      }
     } finally {
       setLinkBusy(false)
     }
@@ -160,8 +170,12 @@ export default function ServersScreen() {
         </Centered>
       ) : (
         <>
-          <AppText variant="caption" color={colors.textMuted} style={{ paddingHorizontal: spacing.xs }}>
-            Tap a server to switch. Tap the star to set which one new devices open to.
+          <AppText
+            variant="caption"
+            color={colors.textMuted}
+            style={{ paddingHorizontal: spacing.xs }}
+          >
+            Tap a library to switch to it. Tap the star to pick the one new devices open first.
           </AppText>
           {servers.map((server) => {
             const active = server.name === activeName
@@ -180,8 +194,19 @@ export default function ServersScreen() {
                   <AppText variant="label" numberOfLines={1}>
                     {server.name}
                   </AppText>
-                  <AppText variant="caption" color={colors.textMuted} numberOfLines={1} style={{ marginTop: 2 }}>
-                    {active ? 'Currently browsing' : server.isDefault ? 'Your default library' : server.role === 'admin' ? 'Admin' : 'Member'}
+                  <AppText
+                    variant="caption"
+                    color={colors.textMuted}
+                    numberOfLines={1}
+                    style={{ marginTop: 2 }}
+                  >
+                    {active
+                      ? 'Currently browsing'
+                      : server.isDefault
+                        ? 'Your default library'
+                        : server.role === 'admin'
+                          ? 'Admin'
+                          : 'Member'}
                   </AppText>
                 </View>
                 {busy ? (
@@ -210,17 +235,17 @@ export default function ServersScreen() {
           {/* Link a server from an invite link/code. */}
           {linking ? (
             <View style={styles.linkCard}>
-              <AppText variant="label">Link a server</AppText>
+              <AppText variant="label">Add a library</AppText>
               <AppText variant="caption" color={colors.textMuted}>
-                Paste the invite link (or code) a server owner shared with you.
+                Enter the invite code someone shared with you.
               </AppText>
               <TextInput
                 value={linkInput}
                 onChangeText={setLinkInput}
-                placeholder="https://app.hearthshelf.com/invite?token=…"
+                placeholder="ABCD-1234"
                 placeholderTextColor={colors.textFaint}
                 style={styles.linkInput}
-                autoCapitalize="none"
+                autoCapitalize="characters"
                 autoCorrect={false}
               />
               <View style={styles.linkActions}>
@@ -253,9 +278,9 @@ export default function ServersScreen() {
                 <Icon name="add" size={24} color={colors.accent} />
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <AppText variant="label">Link a server</AppText>
+                <AppText variant="label">Add a library</AppText>
                 <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
-                  Add another library from an invite link.
+                  Join another library with an invite code.
                 </AppText>
               </View>
               <Icon name="chevron-right" size={22} color={colors.textMuted} />

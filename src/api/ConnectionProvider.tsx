@@ -14,7 +14,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { AppState } from 'react-native'
 import { useAuth } from '@clerk/expo'
-import { fetchLinkedServers, acceptInvite, type LinkedServer } from './controlPlane'
+import { fetchLinkedServers, acceptInvite, ApiError, type LinkedServer } from './controlPlane'
 import { connectServer } from './connect'
 import { setSession, setLastServerId, getLastServerId, takePendingInviteToken } from './session'
 import { CLERK_JWT_TEMPLATE } from '@/lib/config'
@@ -91,6 +91,9 @@ interface ConnectionValue {
   retry: () => void
   /** Connect to a specific linked server (from the picker). */
   connectTo: (server: SplashServer) => void
+  /** Redeem a typed invite code, then connect. Resolves to a user-facing error
+   *  message, or null on success (the connect flow takes over from there). */
+  redeemInvite: (code: string) => Promise<string | null>
 }
 
 const Ctx = createContext<ConnectionValue | null>(null)
@@ -465,9 +468,41 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
 
   const serverName = status.phase === 'ready' ? status.serverName : null
 
+  /**
+   * Redeem a code the user typed on the no-servers screen. Unlike the deep-link
+   * path in runConnect (which swallows failures and falls through), this is a
+   * deliberate user action, so every failure needs its own plain-language
+   * message - "expired", "already used", and "typo" are different problems with
+   * different fixes, and one generic toast for all three leaves them stuck.
+   */
+  const redeemInvite = useCallback(
+    async (code: string): Promise<string | null> => {
+      try {
+        await acceptInvite(tokenFn, code)
+      } catch (err) {
+        if (err instanceof ApiError) {
+          if (err.status === 404) return "That code didn't work. Check it and try again."
+          if (err.status === 429) return 'Too many tries. Wait a bit and try again.'
+          if (err.status === 401) return 'Please sign in again to use this code.'
+        }
+        return 'Something went wrong. Check your connection and try again.'
+      }
+      void connect()
+      return null
+    },
+    [connect, tokenFn],
+  )
+
   return (
     <Ctx.Provider
-      value={{ status, serverName, activeRole, retry: () => void connect(), connectTo }}
+      value={{
+        status,
+        serverName,
+        activeRole,
+        retry: () => void connect(),
+        connectTo,
+        redeemInvite,
+      }}
     >
       {children}
     </Ctx.Provider>

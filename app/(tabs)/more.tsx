@@ -127,10 +127,12 @@ const GROUPS: { label: string; items: MenuItemEx[] }[] = [
     items: [
       {
         icon: 'dns',
-        title: 'My servers',
-        desc: 'Switch and manage linked servers.',
+        title: 'My libraries',
+        desc: 'Switch between libraries, or join a new one.',
         href: '/settings/servers',
-        keywords: ['server', 'default', 'link', 'connect'],
+        // 'server' stays searchable: it's still the word an admin (or anyone
+        // who read the docs) would type, even though the UI says library now.
+        keywords: ['server', 'library', 'default', 'link', 'connect', 'invite'],
       },
     ],
   },
