@@ -194,7 +194,9 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
           },
         }
         const isFinished = getProgressState().byId.get(page.itemId)?.isFinished === true
-        bookActionsRef.current?.present(item, isFinished, 'browse')
+        // 'listening' source so a finished book offers Reset progress (and the
+        // "Not right now" hide), same as the Continue Listening shelf.
+        bookActionsRef.current?.present(item, isFinished, 'listening')
       } catch {
         // Offline or the item isn't reachable - silently skip (the cover still
         // works for tap-to-play).
