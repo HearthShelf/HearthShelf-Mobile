@@ -464,7 +464,7 @@ while IFS= read -r subject; do
   ITEMS="$(jq -c \
     --arg section "$section" --arg text "$text" --argjson tags "$tags_json" \
     '. += [{section:$section, text:$text, tags:$tags}]' <<<"$ITEMS")"
-done < <(git log "$RANGE" --no-merges --pretty=format:'%s')
+done < <(git log "$RANGE" --no-merges --pretty='%s')
 
 jq -n \
   --arg product "$PRODUCT" \
@@ -477,7 +477,9 @@ jq -n \
     items:$items}'
 ```
 
-Two load-bearing details: `git log "$RANGE"` with a bare `$THIS_REF` (no `..`) walks *all reachable commits* which is exactly the correct first-tag fallback; and `--pretty=format:'%s'` feeds subjects one-per-line into the `while read` via process substitution so array state survives (a pipe would run the loop in a subshell and lose `$ITEMS`).
+Three load-bearing details: `git log "$RANGE"` with a bare `$THIS_REF` (no `..`) walks *all reachable commits* which is exactly the correct first-tag fallback; process substitution (not a pipe) keeps the loop in the current shell so `$ITEMS` survives; and the pretty format is **`--pretty='%s'`, never `--pretty=format:'%s'`**.
+
+That last one shipped as `format:` originally and was a real bug. `format:` omits the trailing newline after the last line, and `read` returns non-zero on an unterminated final line — so bash silently dropped the *oldest* commit of every range. It went unnoticed for two releases (0.0.3 published 134 of 135 items) until a single-commit release produced zero items and the API rejected the payload outright: `Missing required fields: product, version, released_at, items[]`. The loop also carries `|| [ -n "$subject" ]` so a regression here can't re-introduce the silent drop.
 
 ### 2b. `upload-changelog.sh` — POST the JSON
 

@@ -83,7 +83,9 @@ extract_tags() {
 
 # --- build the items JSON array -----------------------------------------------
 ITEMS='[]'
-while IFS= read -r subject; do
+# `|| [ -n "$subject" ]` keeps the final line even if it arrives unterminated,
+# so a future change back to a `format:`-style pretty can't silently re-drop it.
+while IFS= read -r subject || [ -n "$subject" ]; do
   [ -z "$subject" ] && continue
   section="$(categorize "$subject")"
   # Only commits that match a known prefix/verb get a changelog entry. Anything
@@ -96,7 +98,14 @@ while IFS= read -r subject; do
   ITEMS="$(jq -c \
     --arg section "$section" --arg text "$text" --argjson tags "$tags_json" \
     '. += [{section:$section, text:$text, tags:$tags}]' <<<"$ITEMS")"
-done < <(git log "$RANGE" --no-merges --pretty=format:'%s')
+# NOTE: --pretty='%s', NOT --pretty=format:'%s'. The `format:` variant omits the
+# trailing newline on the last line, and `read` returns non-zero on an
+# unterminated final line - so bash silently drops the OLDEST commit of every
+# range. With a single-commit release that means zero items, which the API
+# rejects ("Missing required fields: ... items[]"); with more it just quietly
+# lost one entry per release. `tformat:` (the --pretty= default) terminates
+# every line.
+done < <(git log "$RANGE" --no-merges --pretty='%s')
 
 jq -n \
   --arg product "$PRODUCT" \
