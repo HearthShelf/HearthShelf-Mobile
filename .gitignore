@@ -57,3 +57,7 @@ ios/build/
 
 # local-only agent notes
 CLAUDE.local.md
+
+# per-machine agent config: local MCP settings, a dev-server launch config, and a
+# PID lockfile. Machine state, not project state.
+.claude/
