@@ -15,6 +15,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import {
   ActivityIndicator,
   AppState,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -59,6 +60,12 @@ const LOW_MEM = (() => {
 // 1 creates a busy shower; it does not change the flame body itself.
 const SPLASH_SPARK_INTENSITY = 0.9
 
+// The hearth's layout box, and how far it shrinks when the keyboard is up. 0.44
+// lands the art at the logo's own 132px, which is small enough to clear the
+// keyboard on a short screen while still reading as the flame.
+const HEARTH_BOX = 300
+const HEARTH_COMPACT_SCALE = 0.44
+
 // --- Anti-banding base ramp -------------------------------------------------
 // Three anchor colors (deep coal -> warm charcoal -> ember-warm), expanded into
 // many finely-spaced stops. A gradient with just the three anchors shows visible
@@ -102,7 +109,7 @@ const BASE_LOCATIONS = _ramp.locations as [number, number, ...number[]]
 // The bloom behind the flame: two soft radial-gradient halos (amber outer, coral
 // inner) that fade smoothly to transparent - a real color bloom, not a filled
 // disc. They pulse out of phase off the shared clock to read as heat shimmer.
-const GLOW_BOX = 300 // svg canvas side; the outer bloom fills it
+const GLOW_BOX = HEARTH_BOX // svg canvas side; the outer bloom fills the hearth box
 
 function HearthGlow({ pulse }: { pulse: SharedValue<number> }) {
   const outer = useAnimatedProps(() => ({
@@ -260,6 +267,37 @@ export function SplashScreen({
     transform: [{ translateY: interpolate(ignite.value, [0, 1], [8, 0]) }],
   }))
 
+  // Keyboard up (invite entry) shrinks the hearth instead of scrolling it away:
+  // the flame is the thing that makes this screen feel like ours, so it stays on
+  // screen while the field is focused. 0 = full size, 1 = compact.
+  const compact = useSharedValue(0)
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () => {
+      compact.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.quad) })
+    })
+    const hide = Keyboard.addListener('keyboardDidHide', () => {
+      compact.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.quad) })
+    })
+    return () => {
+      show.remove()
+      hide.remove()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Scale rather than re-layout: the glow SVG and logo are fixed-size children,
+  // so scaling the box keeps them in proportion and stays on the UI thread.
+  // Height collapses alongside it so the freed space actually reaches the form
+  // (a bare scale would shrink the art but leave its 300px footprint behind).
+  //
+  // Keep these two in step: HEARTH_BOX * HEARTH_COMPACT_SCALE == the compact
+  // height, so the scaled art exactly fills its footprint. Change one without
+  // the other and the flame drifts off-center inside its own box.
+  const hearthStyle = useAnimatedStyle(() => ({
+    height: interpolate(compact.value, [0, 1], [HEARTH_BOX, HEARTH_BOX * HEARTH_COMPACT_SCALE]),
+    transform: [{ scale: interpolate(compact.value, [0, 1], [1, HEARTH_COMPACT_SCALE]) }],
+  }))
+
   const isError = phase.kind === 'error' || phase.kind === 'no-servers'
   const readyFired = useRef(false)
   const [showDetails, setShowDetails] = useState(false)
@@ -326,9 +364,12 @@ export function SplashScreen({
       {/* The foreground scrolls inside a keyboard-avoiding frame so the invite
           field stays visible once the keyboard is up. The gradients and fire
           are absolute-fill siblings, so they're untouched by this. */}
+      {/* No behavior on Android: the activity is windowSoftInputMode=adjustResize,
+          so the window is already resized for us - adding 'height' on top of that
+          compensates twice and over-shrinks the frame. */}
       <KeyboardAvoidingView
         style={styles.keyboardFrame}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={0}
       >
         <ScrollView
@@ -338,7 +379,7 @@ export function SplashScreen({
           bounces={false}
         >
           <View style={styles.center}>
-            <View style={styles.hearth}>
+            <Animated.View style={[styles.hearth, hearthStyle]}>
               {/* Radial-gradient bloom, breathing behind the flame. Ignites in with
               the embers so the handoff frame is just the logo. */}
               <Animated.View
@@ -350,7 +391,7 @@ export function SplashScreen({
               <Animated.View style={logoStyle}>
                 <FlameLogo size={132} />
               </Animated.View>
-            </View>
+            </Animated.View>
 
             <Animated.Text style={[styles.wordmark, wordmarkStyle]}>HearthShelf</Animated.Text>
 
@@ -585,8 +626,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
   },
   hearth: {
-    width: 300,
-    height: 300,
+    width: HEARTH_BOX,
+    height: HEARTH_BOX,
     alignItems: 'center',
     justifyContent: 'center',
   },
