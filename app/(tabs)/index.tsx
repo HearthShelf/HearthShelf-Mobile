@@ -420,7 +420,15 @@ export default function HomeScreen() {
     // switching servers from the splash's "Manage servers").
     if (connected) {
       loadHomeSafe()
-    } else if (status.phase === 'offline') {
+    } else if (status.phase !== 'connecting') {
+      // Any settled non-ready phase (offline, error, no-servers, select-server)
+      // must resolve the screen off the local catalog instead of leaving the
+      // skeleton spinning forever. `loading` starts true and only these two
+      // loaders clear it, so a phase that ran neither used to hang Home
+      // indefinitely (the exact "infinite empty loader" a dead-Wi-Fi launch
+      // dropped into). `connecting` still shows the skeleton - it's genuinely
+      // still working. Downloaded books stay usable regardless of why the
+      // server is unreachable.
       loadHomeOffline()
     }
   }, [connected, status.phase, loadHomeSafe, loadHomeOffline])
@@ -721,10 +729,7 @@ function HomeHeader({
   const context = [serverName, libraryName].filter(Boolean).join(' · ')
   return (
     <View style={styles.header}>
-      <Touchable
-        onPress={() => router.push('/settings/servers')}
-        style={{ flex: 1, minWidth: 0 }}
-      >
+      <Touchable onPress={() => router.push('/settings/servers')} style={{ flex: 1, minWidth: 0 }}>
         <AppText variant="label" numberOfLines={1}>
           {hello}
         </AppText>
@@ -735,17 +740,11 @@ function HomeHeader({
         ) : null}
       </Touchable>
       <View style={styles.headerBtns}>
-        <Touchable
-          onPress={() => router.push('/settings/storage')}
-          style={styles.headerBtn}
-        >
+        <Touchable onPress={() => router.push('/settings/storage')} style={styles.headerBtn}>
           <Icon name={icons.download} size={19} color={colors.text} />
           {downloading ? <View style={styles.headerDot} /> : null}
         </Touchable>
-        <Touchable
-          onPress={() => router.push('/search?from=home')}
-          style={styles.headerBtn}
-        >
+        <Touchable onPress={() => router.push('/search?from=home')} style={styles.headerBtn}>
           <Icon name={icons.search} size={19} color={colors.text} />
         </Touchable>
       </View>
@@ -1008,7 +1007,10 @@ function DashboardRow({
             : `Nothing queued · ${modeLabel}`}
         </AppText>
       </Touchable>
-      <Touchable onPress={() => router.push('/(tabs)/stats')} style={[styles.dashCard, { flex: 1 }]}>
+      <Touchable
+        onPress={() => router.push('/(tabs)/stats')}
+        style={[styles.dashCard, { flex: 1 }]}
+      >
         <View style={styles.dashStat}>
           <Icon name={icons.flame} size={18} color={colors.brandHearth} />
           <AppText variant="mono" style={styles.dashBig}>
@@ -1137,7 +1139,6 @@ function Shelf({
           )
         }}
       />
-
     </View>
   )
 }

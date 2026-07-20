@@ -38,10 +38,11 @@ import { getItemDetail, getLibrarySeries } from './abs'
 import {
   startConnectivityWatch,
   stopConnectivityWatch,
-  isCurrentlyReachable,
+  probeReachable,
   pokeConnectivity,
 } from '@/player/connectivity'
 import { hydratePendingProgress, flushPendingProgress } from '@/player/pendingProgress'
+import { hydrateProgress } from '@/store/progress'
 import type { SplashServer } from '@/ui/SplashScreen'
 
 export type ConnectionStatus =
@@ -278,9 +279,13 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         setActiveRole('role' in server && server.role === 'admin' ? 'admin' : 'user')
         setStatus({ phase: 'ready', serverName: server.name })
       } catch (e) {
-        // A quiet (offline-origin) retry that fails should drop back to offline,
-        // not to a full-screen error that would cover the downloaded books.
-        if (opts?.quiet && hasOfflineContent()) setStatus({ phase: 'offline' })
+        // A failed connect to a specific server drops to offline mode whenever
+        // there's downloaded content - whether it was a quiet (offline-origin)
+        // retry or the user picking a server that turns out unreachable (e.g.
+        // their home server is down but the phone is still on Wi-Fi). A dead-end
+        // error screen would needlessly hide the downloaded books they can still
+        // play. Only with nothing downloaded is a hard error the right outcome.
+        if (hasOfflineContent()) setStatus({ phase: 'offline' })
         else setStatus({ phase: 'error', message: (e as Error).message })
       }
     },
@@ -379,11 +384,14 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
             setStatus({ phase: 'no-servers' })
             return
           }
-          // If the network is up, this was slowness, not offline - retry (up to
-          // the cap) before giving up. isCurrentlyReachable is conservative
-          // (assumes online on any error), so we never loop forever on a NetInfo
-          // hiccup: the retry cap still bounds it.
-          const reachable = await isCurrentlyReachable()
+          // If the internet is actually reachable, this was slowness, not
+          // offline - retry (up to the cap) before giving up. probeReachable
+          // hits the control plane with a short timeout, so a phone on a Wi-Fi
+          // router with a dead WAN (looks "connected" to NetInfo) fails the
+          // probe and drops to offline immediately instead of grinding through
+          // the full retry window. It's conservative on a server-side hiccup
+          // (still counts as reachable), and the retry cap bounds any looping.
+          const reachable = await probeReachable()
           if (reachable && attempt < CONNECT_RETRIES) {
             if (!quiet) setStatus({ phase: 'connecting' })
             continue
@@ -407,6 +415,10 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     void hydrateDownloads()
     void hydratePendingProgress()
     void hydrateCatalog()
+    // Load last-known media progress from disk so downloaded books show their
+    // real position/finished state on an offline cold start (the server refresh
+    // that used to be the only source can't run with no network).
+    void hydrateProgress()
   }, [])
 
   // The provider is mounted for the whole app lifetime, signed in or not (screens

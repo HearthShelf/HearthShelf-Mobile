@@ -11,6 +11,7 @@
  * Plain subscribe/snapshot store (same pattern as settings.ts) so it works
  * with useSyncExternalStore and from non-React code.
  */
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { ABSMediaProgress, ABSMeResponse } from '@hearthshelf/core'
 import { getMe, setItemFinished, resetItemProgress as resetItemProgressApi } from '@/api/abs'
 import { getSettingsState } from '@/store/settings'
@@ -21,6 +22,14 @@ export interface ProgressState {
   byId: ReadonlyMap<string, ABSMediaProgress>
 }
 
+// Persisted so a book's finished/in-progress state survives a cold start with no
+// network. The store used to be in-memory only, populated solely by
+// refreshProgress() -> getMe() (a server call); launched offline it stayed empty,
+// so every downloaded book showed 0 progress and no finished marks. Now the last
+// known progress is written to disk on every change and hydrated at mount, like
+// the downloads / pending-session / catalog stores.
+const STORE_KEY = 'hs.progress.v1'
+
 let state: ProgressState = { byId: new Map() }
 const listeners = new Set<() => void>()
 
@@ -29,9 +38,59 @@ const listeners = new Set<() => void>()
 const overrides = new Map<string, { isFinished: boolean; atMs: number }>()
 const OVERRIDE_TTL_MS = 20_000
 
+function persist(): void {
+  const items = [...state.byId.values()]
+  void AsyncStorage.setItem(STORE_KEY, JSON.stringify({ items })).catch(() => {})
+}
+
 function emit(next: Map<string, ABSMediaProgress>): void {
   state = { byId: next }
   listeners.forEach((l) => l())
+  persist()
+}
+
+/**
+ * Load persisted progress on app start, before any server contact. Offline this
+ * is the ONLY source of finished/in-progress state, so downloaded books show
+ * their real progress with no network. Online, refreshProgress() overwrites it
+ * from the server shortly after. MERGE-hydrates (like the other stores) so it
+ * never clobbers a write that landed between mount and this resolving.
+ */
+export async function hydrateProgress(): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(STORE_KEY)
+    if (!raw) return
+    const parsed = JSON.parse(raw) as { items?: ABSMediaProgress[] }
+    const merged = new Map(state.byId)
+    for (const p of parsed.items ?? []) {
+      if (p && typeof p.libraryItemId === 'string' && !merged.has(p.libraryItemId)) {
+        merged.set(p.libraryItemId, p)
+      }
+    }
+    emit(merged)
+  } catch {
+    // start empty on a bad payload
+  }
+}
+
+/**
+ * Write a single item's live position into the store (and to disk) without a
+ * server round-trip. Used by offline playback so a downloaded book's progress
+ * bar advances and persists across a cold start while there's no network.
+ */
+export function recordLocalProgress(itemId: string, currentTime: number, duration: number): void {
+  if (!itemId) return
+  const prev = state.byId.get(itemId)
+  if (prev?.isFinished) return
+  const next = new Map(state.byId)
+  next.set(itemId, {
+    libraryItemId: itemId,
+    duration: duration || prev?.duration || 0,
+    currentTime,
+    progress: duration > 0 ? Math.min(currentTime / duration, 1) : (prev?.progress ?? 0),
+    isFinished: false,
+  })
+  emit(next)
 }
 
 export function getProgressState(): ProgressState {

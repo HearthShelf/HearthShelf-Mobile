@@ -20,6 +20,7 @@
 import NetInfo, { type NetInfoState } from '@react-native-community/netinfo'
 import * as BackgroundTask from 'expo-background-task'
 import * as TaskManager from 'expo-task-manager'
+import { CONTROL_PLANE_URL } from '@/lib/config'
 import { flushPendingProgress, BACKGROUND_FLUSH_TASK } from './pendingProgress'
 
 let unsub: (() => void) | null = null
@@ -43,6 +44,57 @@ export async function isCurrentlyReachable(): Promise<boolean> {
     return isOnline(await NetInfo.fetch())
   } catch {
     return true
+  }
+}
+
+/** How long to wait for the reachability probe before calling the internet down.
+ *  Short: this only decides slow-retry vs. offline on a connect stall, and the
+ *  user is already staring at the splash. */
+const PROBE_TIMEOUT_MS = 3500
+
+/**
+ * Actively confirm the internet is reachable, not just that a network interface
+ * is up. `isCurrentlyReachable` (NetInfo) returns true whenever Wi-Fi is
+ * connected - so a phone on a Wi-Fi router whose WAN is down looks "online" and
+ * a connect stall gets treated as mere slowness, burning the full retry window
+ * before falling to offline mode. This hits the control plane with a hard
+ * timeout: if the network is genuinely dead, it fails fast and we can drop to
+ * offline immediately.
+ *
+ * Reaches the control plane (a host separate from the user's own server), so it
+ * answers "is the internet up?" not "is my home server up?" - either being down
+ * with downloads present is a valid reason to enter offline mode, and the
+ * caller already handles the server-specific failure.
+ *
+ * Conservative on ambiguity: a NetInfo "definitely offline" reading short-
+ * circuits to false, but a probe error other than a clean fetch-failure (e.g.
+ * the endpoint 500s) still counts as reachable, so we never strand a connected
+ * user offline over a server-side hiccup.
+ */
+export async function probeReachable(): Promise<boolean> {
+  // Fast path: NetInfo is certain we're offline.
+  try {
+    const s = await NetInfo.fetch()
+    if (!s.isConnected || s.isInternetReachable === false) return false
+  } catch {
+    // fall through to the active probe
+  }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS)
+  try {
+    // A HEAD to the control-plane origin; any HTTP response (even 404/405) proves
+    // the internet is reachable. `no-store` so a cached 200 can't mask a dead WAN.
+    await fetch(`${CONTROL_PLANE_URL}/`, {
+      method: 'HEAD',
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+    return true
+  } catch {
+    // An abort (timeout) or a network failure both mean unreachable.
+    return false
+  } finally {
+    clearTimeout(timer)
   }
 }
 

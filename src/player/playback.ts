@@ -11,9 +11,16 @@
  * is unreachable do we fall back to a local-only session that's replayed to ABS
  * (via /api/session/local) once we reconnect.
  */
-import { startPlay, mediaUrl, coverUrl, closeSession, syncSession, ABSRequestError } from '@/api/abs'
+import {
+  startPlay,
+  mediaUrl,
+  coverUrl,
+  closeSession,
+  syncSession,
+  ABSRequestError,
+} from '@/api/abs'
 import { getSession } from '@/api/session'
-import { progressFor } from '@/store/progress'
+import { progressFor, recordLocalProgress } from '@/store/progress'
 import { loadTrack, getState, type NowPlaying, type ChapterMark } from './store'
 import { localSourceFor, applyAutoDownloads } from './downloads'
 import { recordLocalSession } from './pendingProgress'
@@ -280,6 +287,10 @@ export async function syncProgress(currentTime: number, force = false): Promise<
     offline.currentTime = currentTime
     offline.timeListening += listened
     recordLocalSession(offlineSnapshot(offline, currentTime))
+    // Advance the shared (persisted) progress store too, so the book's position
+    // and progress bar are correct across a cold offline start - the local
+    // session alone doesn't feed the progress store the screens read.
+    recordLocalProgress(offline.itemId, currentTime, offline.duration)
     syncStateTick(currentTime, offline.timeListening)
     return
   }
