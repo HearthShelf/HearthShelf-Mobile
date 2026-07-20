@@ -278,16 +278,26 @@ export const BookActionsSheet = forwardRef<
       : dl?.status === 'downloading' || dl?.status === 'queued'
         ? icons.close
         : icons.download
+  // Tiles are verbs, not status badges - every other tile in the grid names the
+  // action it performs, so this one does too. The tri-state still reads from the
+  // icon + accent wash; the confirm dialog is the guard on the destructive case.
   const dlLabel =
     dl?.status === 'done'
-      ? 'Downloaded'
+      ? 'Remove'
       : dl?.status === 'downloading' || dl?.status === 'queued'
         ? `${Math.round((dl.progress ?? 0) * 100)}%`
         : 'Download'
 
   return (
     <>
-      <Sheet ref={sheetRef} stackBehavior="push">
+      <Sheet
+        ref={sheetRef}
+        stackBehavior="push"
+        // Drop the target on close. One instance serves every tile, so a
+        // retained target means the next open paints the PREVIOUS book's cover
+        // and title for a frame before the new one commits.
+        onDismiss={() => setTarget(null)}
+      >
         {item ? (
           <Touchable
             style={styles.header}
@@ -320,22 +330,26 @@ export const BookActionsSheet = forwardRef<
 
         {/* 3-across launch grid: the peer one-tap actions, Play accent-filled. */}
         <View style={styles.grid}>
-          <GridTile icon={icons.play} label="Play" accent onPress={() => void play()} />
-          <GridTile icon={icons.skipNext} label="Play next" onPress={playNext} />
-          <GridTile icon={icons.queue} label="Add to queue" onPress={queueLast} />
-          <GridTile icon={icons.addList} label="Add to list" onPress={addToList} />
-          <GridTile
-            icon={dlIcon}
-            label={dlLabel}
-            active={dl?.status === 'done'}
-            onPress={() => void download()}
-          />
-          <GridTile
-            icon={finished ? icons.removeDone : icons.taskAlt}
-            label={finished ? 'Unfinish' : 'Finish'}
-            active={finished}
-            onPress={() => void markFinished()}
-          />
+          <View style={styles.gridRow}>
+            <GridTile icon={icons.play} label="Play" accent onPress={() => void play()} />
+            <GridTile icon={icons.skipNext} label="Play next" onPress={playNext} />
+            <GridTile icon={icons.queue} label="Add to queue" onPress={queueLast} />
+          </View>
+          <View style={styles.gridRow}>
+            <GridTile icon={icons.addList} label="Add to list" onPress={addToList} />
+            <GridTile
+              icon={dlIcon}
+              label={dlLabel}
+              active={dl?.status === 'done'}
+              onPress={() => void download()}
+            />
+            <GridTile
+              icon={finished ? icons.removeDone : icons.taskAlt}
+              label={finished ? 'Unfinish' : 'Finish'}
+              active={finished}
+              onPress={() => void markFinished()}
+            />
+          </View>
         </View>
 
         {/* Pinned rows: stateful / destructive / drill-in - deliberately below
@@ -402,7 +416,8 @@ function GridTile({
       <Icon name={icon} size={24} color={iconColor} />
       <AppText
         variant="caption"
-        numberOfLines={1}
+        numberOfLines={2}
+        style={styles.tileLabel}
         color={accent ? colors.onAccent : active ? colors.accent : colors.textMuted}
       >
         {label}
@@ -451,23 +466,32 @@ const makeStyles = (colors: Palette) =>
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.hairline,
     },
-    grid: {
+    gridRow: {
       flexDirection: 'row',
-      flexWrap: 'wrap',
+      gap: spacing.sm,
+    },
+    grid: {
       gap: spacing.sm,
     },
     tile: {
-      // Three per row: (100% - 2 gaps) / 3.
-      width: '31.5%',
-      aspectRatio: 1,
+      // Flex-thirds rather than a % width: a percentage + aspectRatio can't
+      // resolve during the bottom sheet's dynamic-sizing measure pass, which
+      // made the sheet reserve a chunk of dead space below the grid. A fixed
+      // height measures on the first pass and keeps all six tiles identical.
+      flexGrow: 1,
+      flexBasis: 0,
+      minWidth: 0,
+      height: 78,
       alignItems: 'center',
       justifyContent: 'center',
       gap: spacing.xs,
+      paddingHorizontal: spacing.xs,
       borderRadius: radius.card,
       backgroundColor: colors.fill,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
     },
+    tileLabel: { textAlign: 'center' },
     tileAccent: { backgroundColor: colors.accent, borderColor: colors.accent },
     tileActive: { backgroundColor: colors.accentWash, borderColor: colors.accent },
     divider: {

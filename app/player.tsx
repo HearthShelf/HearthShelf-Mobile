@@ -178,11 +178,23 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         const duration = page.isLive
           ? (nowPlaying?.duration ?? 0)
           : (chapters.length ? chapters[chapters.length - 1].end : 0)
+        // The detail metadata carries authors[]/narrators[] but NOT the
+        // flattened authorName the list shape (and itemAuthor()) reads, so it
+        // has to be derived here or the sheet header shows "Unknown author".
+        const metadata = {
+          ...detail.media.metadata,
+          authorName:
+            detail.media.metadata.authorName ||
+            (detail.media.metadata.authors ?? []).map((a) => a.name).join(', '),
+          narratorName:
+            detail.media.metadata.narratorName ||
+            (detail.media.metadata.narrators ?? []).join(', '),
+        }
         const item: ABSLibraryItem = {
           ...detail,
           media: {
             id: detail.media.id,
-            metadata: detail.media.metadata,
+            metadata,
             coverPath: detail.media.coverPath,
             tags: detail.media.tags,
             numTracks: detail.media.numTracks,
