@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/react-native'
 import { ClerkProvider, useAuth } from '@clerk/expo'
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
@@ -8,7 +9,7 @@ import { BottomSheetModalProvider } from '@gorhom/bottom-sheet'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import * as SplashScreen from 'expo-splash-screen'
 import { tokenCache, hasCachedClerkSession, clerkResourceCache } from '@/lib/tokenCache'
-import { CLERK_PUBLISHABLE_KEY, CLERK_JWT_TEMPLATE } from '@/lib/config'
+import { CLERK_PUBLISHABLE_KEY, CLERK_JWT_TEMPLATE, SENTRY_DSN, FULL_VERSION } from '@/lib/config'
 import { PlayerHost } from '@/player/PlayerHost'
 import { MiniPlayerDock } from '@/player/MiniPlayerDock'
 import { PopToast } from '@/social/PopToast'
@@ -35,6 +36,41 @@ import { ThemeProvider, useColors, useTheme } from '@/ui/ThemeProvider'
 import { useReducedMotion } from '@/ui/motion'
 import { AppBlurTargetProvider } from '@/ui/BlurTarget'
 import { flushPriorCrash, mountCrashLifecycle } from '@/lib/crashReporter'
+import { beginStartupTrace, startPhase, finishStartupTrace } from '@/lib/startupTrace'
+
+// Sentry. Runs first among the module-load side effects below so anything that
+// throws during startup is already covered.
+//
+// This does NOT replace the on-disk crash reporter (lib/crashReporter.ts +
+// crashLog.ts) - the two run together on purpose. Sentry gives symbolicated
+// stacks and aggregation; the disk logger catches unclean exits (a native kill
+// or an OOM that never reaches a JS handler) and carries our own breadcrumb
+// trail. They chain rather than fight: crashLog's global handler saves the
+// previous handler and calls through to it, so both see every fatal.
+//
+// Empty DSN (env override set to '') disables Sentry and leaves the disk
+// reporter untouched.
+if (SENTRY_DSN) {
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    // Tie events to the release tag that keys OTA compatibility, so a crash
+    // report names the exact build. Constants.expoConfig.version can't be used
+    // here: on iOS it returns the pre-release-stripped marketing string.
+    release: FULL_VERSION || undefined,
+    // Session replay and profiling stay off - this is an audiobook player that
+    // runs for hours in the background, and both are meaningful battery/bandwidth
+    // costs. Turn on deliberately if a bug needs them.
+    //
+    // Tracing sample rate. 0.1 = ~1 in 10 launches sends a performance trace
+    // (startup phase spans, see lib/startupTrace.ts). Enough to surface the
+    // intermittent startup hang across the beta cohort without a full-volume
+    // cost. Raise toward 1.0 for a focused debugging window, or 0 to disable.
+    tracesSampleRate: 0.1,
+  })
+  // Open the startup transaction + arm the hang watchdog immediately after init,
+  // so the whole launch (Clerk load, cached-session check, connect) is spanned.
+  beginStartupTrace()
+}
 
 // Hold the OS splash until the hearth splash has painted (see hideOsSplash).
 void SplashScreen.preventAutoHideAsync()
@@ -94,8 +130,23 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const [hasCachedSession, setHasCachedSession] = useState<boolean | null>(null)
 
   useEffect(() => {
-    void hasCachedClerkSession().then(setHasCachedSession)
+    const phase = startPhase('cached-session-check')
+    void hasCachedClerkSession()
+      .then(setHasCachedSession)
+      .finally(() => phase.end())
   }, [])
+
+  // Span the wait for Clerk to load. This is the prime suspect for the hang: if
+  // isLoaded never resolves AND there's no cached JWT, `ready` stays false with
+  // no timeout, and this span never ends - which the trace + watchdog surface.
+  const clerkPhase = useRef<ReturnType<typeof startPhase> | null>(null)
+  if (!isLoaded && !clerkPhase.current) clerkPhase.current = startPhase('clerk-load')
+  useEffect(() => {
+    if (isLoaded && clerkPhase.current) {
+      clerkPhase.current.end()
+      clerkPhase.current = null
+    }
+  }, [isLoaded])
 
   useEffect(() => {
     if (isLoaded) return
@@ -150,7 +201,12 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     //
     // hasCachedSession === null means the check hasn't resolved yet - hold the
     // redirect until it does rather than risk a wrong bounce.
-    if (!wasSignedIn.current && hasCachedSession === false) router.replace('/sign-in')
+    if (!wasSignedIn.current && hasCachedSession === false) {
+      // Terminal launch outcome: genuinely signed out. The loader gives way to
+      // the sign-in screen - a completed launch, not a hang.
+      finishStartupTrace('signed-out')
+      router.replace('/sign-in')
+    }
   }, [ready, effectiveSignedIn, segments, router, hasCachedSession])
 
   // Upload a prior crash once genuinely signed in (need a real token; the
@@ -222,6 +278,13 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
   // Offline mode lets the user in (downloaded books only), so the splash lifts
   // just like `ready`; a persistent banner marks the degraded state instead.
   const covered = status.phase !== 'ready' && status.phase !== 'offline' && !peekingServers
+
+  // Finish the startup trace the moment the loader stops covering the screen -
+  // the true "launch done" signal for a signed-in user (connected, or dropped to
+  // offline mode). Idempotent, so a later reconnect flip won't reopen it.
+  useEffect(() => {
+    if (!covered) finishStartupTrace(status.phase === 'offline' ? 'offline' : 'ready')
+  }, [covered, status.phase])
 
   const phase: SplashPhase =
     status.phase === 'connecting'
@@ -297,7 +360,7 @@ function ThemedStatusBar() {
   return <StatusBar style={name === 'light' ? 'dark' : 'light'} />
 }
 
-export default function RootLayout() {
+export default Sentry.wrap(function RootLayout() {
   // Handle a warm tap / reply on a club-note notification while the app is
   // foreground (the cold-start + background paths are wired in index.js).
   useEffect(() => mountNoteForegroundHandler(), [])
@@ -356,7 +419,7 @@ export default function RootLayout() {
       </GestureHandlerRootView>
     </ClerkProvider>
   )
-}
+})
 
 const styles = StyleSheet.create({
   gateRoot: { flex: 1 },

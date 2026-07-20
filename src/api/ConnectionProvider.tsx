@@ -19,6 +19,7 @@ import { connectServer } from './connect'
 import { setSession, setLastServerId, getLastServerId, takePendingInviteToken } from './session'
 import { CLERK_JWT_TEMPLATE } from '@/lib/config'
 import { hasCachedClerkSession } from '@/lib/tokenCache'
+import { tracePhase } from '@/lib/startupTrace'
 import {
   clearAutoSession,
   setAutoSession,
@@ -243,12 +244,14 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
       // of their downloaded books and back to a loading screen.
       if (!opts?.quiet) setStatus({ phase: 'connecting' })
       try {
-        const { serverUrl, token } = await connectServer(tokenFn, server.id, server.url)
-        await setSession({ serverUrl, token })
+        const { serverUrl, token } = await tracePhase('connect:server-exchange', () =>
+          connectServer(tokenFn, server.id, server.url),
+        )
+        await tracePhase('connect:set-session', () => setSession({ serverUrl, token }))
         await setLastServerId(server.id)
         // Ensure the per-install deviceId is loaded before sync starts, so
         // device-scoped settings round-trip on the first pull.
-        await ensureDeviceId()
+        await tracePhase('connect:ensure-device-id', () => ensureDeviceId())
         pushAutoSession(serverUrl, token)
         ensureCarModeMirror()
         // Push skip-second settings to native (phone notification honors these),
@@ -290,7 +293,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
       // right after network returns while Clerk is still re-hydrating, getToken
       // yields null. Calling /servers with no token 401s -> session-expired ->
       // sign-out. Bail here so the retry loop waits for Clerk instead.
-      if (!(await tokenFn())) throw new NoTokenError()
+      if (!(await tracePhase('connect:token-mint', () => tokenFn()))) throw new NoTokenError()
 
       // Redeem a pending invite (from an /invite?token= universal link that
       // arrived while signed out) before listing, so the newly linked server is
@@ -307,7 +310,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         }
       }
 
-      const servers = await fetchLinkedServers(tokenFn)
+      const servers = await tracePhase('connect:fetch-servers', () => fetchLinkedServers(tokenFn))
       if (servers.length === 0) throw new NoLinkedServersError()
 
       // An accepted invite wins precedence: connect straight to that server.

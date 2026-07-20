@@ -6,6 +6,13 @@ import 'expo-router/entry'
 // capture as early as possible so a crash during startup is still recorded. The
 // prior-run report (if the last run died) is read + flushed from app/_layout.tsx,
 // where a Clerk token is available to authenticate the upload.
+//
+// ORDER MATTERS - do not hoist this above the 'expo-router/entry' import. That
+// import pulls in app/_layout.tsx, which calls Sentry.init() and installs
+// Sentry's global error handler. Running installCrashHandler() after it means
+// ours wraps Sentry's and chains through via prev(), so BOTH report every
+// fatal. Install ours first and Sentry's wrapper would sit outermost with no
+// chain back to ours, silently dropping our breadcrumb capture.
 import { initCrashLog, installCrashHandler } from '@/lib/crashLog'
 void initCrashLog()
 installCrashHandler()

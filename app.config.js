@@ -25,8 +25,7 @@ const EAS_PROJECT_ID =
 // dashboard. An env var still overrides each one (e.g. to point a dev build at a
 // different Clerk instance). Without these baked in, NATIVE_GOOGLE_ENABLED was
 // false in every shipped build, so all users fell back to browser-tab Google.
-const CONTROL_PLANE_URL =
-  process.env.EXPO_PUBLIC_CONTROL_PLANE_URL || 'https://api.hearthshelf.com'
+const CONTROL_PLANE_URL = process.env.EXPO_PUBLIC_CONTROL_PLANE_URL || 'https://api.hearthshelf.com'
 const CLERK_PUBLISHABLE_KEY =
   process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || 'pk_live_Y2xlcmsuaGVhcnRoc2hlbGYuY29tJA'
 const GOOGLE_WEB_CLIENT_ID =
@@ -41,6 +40,16 @@ const GOOGLE_IOS_CLIENT_ID =
 const GOOGLE_IOS_URL_SCHEME =
   process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME ||
   'com.googleusercontent.apps.177026646968-rprkhf1i7dbdcfqgf717dgp0d7g06f4l'
+
+// Sentry DSN. PUBLIC by design (it only permits writing events, and ships in
+// every client bundle) - so it's a committed default like the keys above, NOT an
+// .env value. A DSN that reaches only local builds is the same trap the Google
+// client IDs fell into: CI has no .env, so every shipped build would silently
+// report nothing. The auth token used to UPLOAD source maps is the real secret
+// and stays out of the repo (.env.local locally, CI secret in Actions + EAS).
+const SENTRY_DSN =
+  process.env.EXPO_PUBLIC_SENTRY_DSN ||
+  'https://e44ed90551d4e3c3379246a5efce27c7@o4511760230907904.ingest.us.sentry.io/4511760235888640'
 
 const extra = {
   EXPO_PUBLIC_CONTROL_PLANE_URL: CONTROL_PLANE_URL,
@@ -57,6 +66,7 @@ const extra = {
   // docs/PUSH_SETUP.md); without them push just stays off and the in-app
   // countdown still works.
   EXPO_PUBLIC_EAS_PROJECT_ID: EAS_PROJECT_ID,
+  EXPO_PUBLIC_SENTRY_DSN: SENTRY_DSN,
   eas: { projectId: EAS_PROJECT_ID },
 }
 
@@ -248,7 +258,11 @@ module.exports = {
               fontDefinitions: [
                 { path: './assets/fonts/LibreBaskerville-Regular.ttf', weight: 400 },
                 { path: './assets/fonts/LibreBaskerville-Bold.ttf', weight: 700 },
-                { path: './assets/fonts/LibreBaskerville-Italic.ttf', weight: 400, style: 'italic' },
+                {
+                  path: './assets/fonts/LibreBaskerville-Italic.ttf',
+                  weight: 400,
+                  style: 'italic',
+                },
               ],
             },
           ],
@@ -320,6 +334,18 @@ module.exports = {
             '-dontwarn kotlin.MustUseReturnValues',
           ].join('\n'),
         },
+      },
+    ],
+    [
+      // Uploads JS source maps and native debug symbols at build time, so a
+      // crash arrives with readable frames instead of minified bundle offsets.
+      // Needs SENTRY_AUTH_TOKEN in the build env: .env.local locally, and a
+      // repo/EAS secret in CI. Without the token the upload step fails and
+      // reports stay minified - the app itself still runs and still reports.
+      '@sentry/react-native/expo',
+      {
+        organization: 'hearthshelf',
+        project: 'hs-mobileapp',
       },
     ],
     './plugins/hearthshelf-auto/index.js',

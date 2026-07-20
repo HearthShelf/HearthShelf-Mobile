@@ -43,6 +43,21 @@ export const CLERK_JWT_TEMPLATE = 'hearthshelf'
 // countdown banner) work. A real token also needs FCM credentials on the build.
 export const EAS_PROJECT_ID = cfg('EXPO_PUBLIC_EAS_PROJECT_ID', '')
 
+// The full release-tag version (e.g. '0.0.2-R2'), baked into `extra` by
+// app.config.js. It CANNOT be recovered from Constants.expoConfig.version at
+// runtime: on iOS that returns CFBundleShortVersionString, which Apple requires
+// to be a plain dotted number, so any pre-release tail is gone. Empty off-tag.
+export const FULL_VERSION = (extra.fullVersion as string | undefined) ?? ''
+
+// Sentry DSN (public by design - it only permits writing events). Baked as a
+// committed default in app.config.js so CI builds report too. Empty disables
+// Sentry entirely; the on-disk crash reporter (lib/crashReporter.ts) is
+// independent and keeps working either way.
+export const SENTRY_DSN = cfg(
+  'EXPO_PUBLIC_SENTRY_DSN',
+  'https://e44ed90551d4e3c3379246a5efce27c7@o4511760230907904.ingest.us.sentry.io/4511760235888640',
+)
+
 /**
  * Whether to offer the native Google account-picker (vs the browser-tab OAuth
  * fallback). The Google OAuth client IDs are public and baked into every build

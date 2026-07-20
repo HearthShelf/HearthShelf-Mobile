@@ -1,15 +1,10 @@
-// Metro config: resolve the `@hearthshelf/core` alias to the git-submodule
-// TypeScript source at packages/core/src. tsconfig paths handle typecheck/IDE
-// only - Metro does not read them, so the bundler alias lives here. Matches the
-// dual-consume model documented in packages/core/src/index.ts (bundlers compile
-// the .ts source directly; the self-hosted server imports the compiled dist).
-const { getDefaultConfig } = require('expo/metro-config')
 const path = require('path')
+const { getSentryExpoConfig } = require('@sentry/react-native/metro')
 
 const projectRoot = __dirname
 const coreRoot = path.resolve(projectRoot, 'packages/core')
 
-const config = getDefaultConfig(projectRoot)
+const config = getSentryExpoConfig(projectRoot)
 
 // Keep Metro out of the native build output. android/app/build alone is >1 GB of
 // Gradle intermediates and .cxx artifacts; crawling and hashing it on every
@@ -42,9 +37,7 @@ config.resolver.extraNodeModules = {
 
 // core's relative specifiers carry an explicit .ts extension; make sure Metro
 // treats .ts/.tsx as resolvable source (default for Expo, set defensively).
-config.resolver.sourceExts = Array.from(
-  new Set([...config.resolver.sourceExts, 'ts', 'tsx'])
-)
+config.resolver.sourceExts = Array.from(new Set([...config.resolver.sourceExts, 'ts', 'tsx']))
 
 // Redirect react-native's deprecated core `PushNotificationIOS` to an inert shim.
 // Its real module constructs a NativeEventEmitter with an unlinked native module
