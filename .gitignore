@@ -65,3 +65,7 @@ CLAUDE.local.md
 .env.local
 
 .env.local
+
+.mcp.json
+
+.vscode/mcp.json
