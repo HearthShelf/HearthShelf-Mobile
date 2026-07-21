@@ -45,9 +45,13 @@ export const EAS_PROJECT_ID = cfg('EXPO_PUBLIC_EAS_PROJECT_ID', '')
 
 // The full release-tag version (e.g. '0.0.2-R2'), baked into `extra` by
 // app.config.js. It CANNOT be recovered from Constants.expoConfig.version at
-// runtime: on iOS that returns CFBundleShortVersionString, which Apple requires
-// to be a plain dotted number, so any pre-release tail is gone. Empty off-tag.
-export const FULL_VERSION = (extra.fullVersion as string | undefined) ?? ''
+// runtime on iOS alone: that returns CFBundleShortVersionString, which Apple
+// requires to be a plain dotted number, so any pre-release tail is gone. Prefer
+// the baked value, then fall back to the plain version rather than '' - an empty
+// release means Sentry records the event with NO release at all, which is
+// unattributable to any build.
+export const FULL_VERSION =
+  (extra.fullVersion as string | undefined) || Constants.expoConfig?.version || ''
 
 // Sentry DSN (public by design - it only permits writing events). Baked as a
 // committed default in app.config.js so CI builds report too. Empty disables

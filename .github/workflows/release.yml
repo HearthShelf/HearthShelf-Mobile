@@ -152,12 +152,20 @@ jobs:
           # :app:minifyReleaseWithR8 now that minification is on. GRADLE_OPTS
           # overrides it without depending on that file surviving prebuild.
           GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
+          # REQUIRED here, not just on prebuild: gradle runs the Metro bundle,
+          # which re-evaluates app.config.js. Without this the config falls through
+          # to its hardcoded `|| '0.0.2'` fallback and bakes extra.fullVersion=0.0.2
+          # into the shipped bundle - so Sentry tagged every release's events as
+          # "0.0.2" regardless of the real tag. (The assert step above passes
+          # regardless: it re-runs `expo config` with this var set in its own env,
+          # so it validates a value the actual bundle never saw.)
+          EXPO_PUBLIC_APP_VERSION: ${{ env.APP_VERSION }}
           # Source-map + debug-symbol upload to Sentry, run by the Sentry gradle
-          # plugin during the release build. The release entity is created here
-          # (named by the baked EXPO_PUBLIC_APP_VERSION, which is what
-          # Sentry.init's `release` reports at runtime - so events and artifacts
-          # land on the same release). Without the token the build still succeeds
-          # and the app still reports crashes, they just arrive minified.
+          # plugin during the release build. The release entity is created here,
+          # named by the baked EXPO_PUBLIC_APP_VERSION above - the same string
+          # Sentry.init reports as `release` at runtime, so events and artifacts
+          # land on one release. Without the token the build still succeeds and the
+          # app still reports crashes, they just arrive minified.
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         # --stacktrace surfaces the real exception (packageRelease wraps the cause
         # in IncrementalSplitterRunnable and hides it otherwise).
@@ -250,10 +258,19 @@ jobs:
           IOS_DIST_P12_PASSWORD: ${{ secrets.IOS_DIST_P12_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ github.run_id }}
           PROVISIONING_PROFILE_NAME: HearthShelf App Store
+          # REQUIRED here, not just on prebuild: the Xcode "Bundle React Native
+          # code and images" phase re-evaluates app.config.js. Without this the
+          # config falls through to its hardcoded `|| '0.0.2'` fallback and bakes
+          # extra.fullVersion=0.0.2 into the shipped bundle, so Sentry tagged every
+          # release's events "0.0.2" regardless of the real tag.
+          EXPO_PUBLIC_APP_VERSION: ${{ env.APP_VERSION }}
+          EXPO_IOS_BUILD_NUMBER: ${{ github.run_number }}
           # Source-map + dSYM upload, run by the Sentry Xcode build phase. Same
           # release name as Android (both bake EXPO_PUBLIC_APP_VERSION), so the
-          # two platforms' artifacts land on one release entity. Missing token
-          # degrades to minified stacks; it does not fail the build.
+          # two platforms' artifacts land on one release entity. NOTE: unlike the
+          # Android gradle plugin, this phase HARD-FAILS the build if the token is
+          # missing (it exits nonzero) - see the ios-launch-check workflow, which
+          # sets SENTRY_DISABLE_AUTO_UPLOAD=true because it has no token.
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: bundle exec fastlane ios release
 
