@@ -346,6 +346,19 @@ module.exports = {
       {
         organization: 'hearthshelf',
         project: 'hs-mobileapp',
+        // Applies the Sentry Android Gradle plugin, which uploads the R8/ProGuard
+        // MAPPING FILE for release builds. Without this block the plugin is never
+        // applied at all (withSentry.js gates it on
+        // `experimental_android.enableAndroidGradlePlugin`), so native Android
+        // crashes and ANRs arrive with obfuscated frames like
+        // `HearthShelfAutoService.onCreate(r8-map-id-<hash>:31)` - where the line
+        // number is from the minified map, not the source, making them
+        // unactionable. JS source maps were already uploading; this is the native
+        // half. Uploads are gated on SENTRY_AUTH_TOKEN, so a token-less build
+        // still succeeds (Android tolerates a missing token; iOS does not).
+        experimental_android: {
+          enableAndroidGradlePlugin: true,
+        },
       },
     ],
     './plugins/hearthshelf-auto/index.js',
