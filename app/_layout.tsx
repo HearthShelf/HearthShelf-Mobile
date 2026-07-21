@@ -167,7 +167,16 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   // A returning user whose session is still re-hydrating: cached JWT present but
   // Clerk hasn't confirmed signed-in yet this run. Treated as "signed in" for
   // gating so their screen and connection stay mounted while Clerk settles.
-  const rehydrating = hasCachedSession === true && !wasSignedIn.current
+  //
+  // `!isLoaded` is REQUIRED: rehydration is by definition the window BEFORE Clerk
+  // has answered. Once isLoaded is true and isSignedIn is false, Clerk HAS
+  // answered - the user is signed out and the cached JWT is merely stale. Without
+  // this clause a stale JWT made `rehydrating` permanently true, which gated a
+  // signed-out user into ConnectionGate (splash, forever) while simultaneously
+  // suppressing the redirect to /sign-in below. Repro: sign-in -> "continue with
+  // email" -> hardware back popped /sign-in, landing on (tabs) signed-out, and
+  // the app stuck on "Warming up the hearth" with no way out.
+  const rehydrating = !isLoaded && hasCachedSession === true && !wasSignedIn.current
   // Sticky: once signed in this run, stay "signed in" for gating even if Clerk
   // momentarily flaps to false on a suspend/resume. Keeps ConnectionGate mounted
   // (no connect-splash flash) and, with the redirect guard below, keeps a
@@ -201,13 +210,24 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     //
     // hasCachedSession === null means the check hasn't resolved yet - hold the
     // redirect until it does rather than risk a wrong bounce.
-    if (!wasSignedIn.current && hasCachedSession === false) {
+    //
+    // A cached JWT alone is NOT a reason to hold once Clerk has actually loaded
+    // and reported signed-out: `isLoaded && !isSignedIn && !wasSignedIn` is a
+    // definitive answer, and the cached token is simply stale (e.g. it was left
+    // behind by an abandoned sign-in). Holding on that combination stranded a
+    // signed-out user on a non-auth route with no redirect AND (via the old
+    // `rehydrating`) the ConnectionGate splash over it - the "back out of email
+    // sign-in sticks you on Warming up the hearth forever" bug. The flap cases
+    // this guard exists for all have isLoaded false or wasSignedIn true, so they
+    // are still protected.
+    const definitelySignedOut = isLoaded && !isSignedIn && !wasSignedIn.current
+    if (!wasSignedIn.current && (hasCachedSession === false || definitelySignedOut)) {
       // Terminal launch outcome: genuinely signed out. The loader gives way to
       // the sign-in screen - a completed launch, not a hang.
       finishStartupTrace('signed-out')
       router.replace('/sign-in')
     }
-  }, [ready, effectiveSignedIn, segments, router, hasCachedSession])
+  }, [ready, effectiveSignedIn, segments, router, hasCachedSession, isLoaded, isSignedIn])
 
   // Upload a prior crash once genuinely signed in (need a real token; the
   // offline-fallback path can't authenticate an upload, so gate on isSignedIn).

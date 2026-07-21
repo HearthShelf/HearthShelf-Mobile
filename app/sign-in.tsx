@@ -6,15 +6,17 @@ import { useSSO } from '@clerk/expo'
 import { useSignIn, useSignUp } from '@clerk/expo/legacy'
 import { useSignInWithGoogle } from '@clerk/expo/google'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { useEffect, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import * as WebBrowser from 'expo-web-browser'
 import { LinearGradient } from 'expo-linear-gradient'
 import Svg, { Path } from 'react-native-svg'
 import { APPLE_ENABLED, CLERK_PUBLISHABLE_KEY, NATIVE_GOOGLE_ENABLED } from '@/lib/config'
 import { fonts } from '@/ui/theme'
+import { useBackHandler } from '@/ui/useBackHandler'
 import { MaterialIcons } from '@expo/vector-icons'
 import {
   ActivityIndicator,
+  BackHandler,
   Image,
   KeyboardAvoidingView,
   Pressable,
@@ -156,12 +158,61 @@ export default function SignInScreen() {
     reason === 'expired' ? 'Your session expired. Please sign in again.' : null,
   )
 
-  useEffect(() => {
-    void WebBrowser.warmUpAsync()
-    return () => {
-      void WebBrowser.coolDownAsync()
-    }
-  }, [])
+  // Double-press-to-exit state for the provider list (see the handler below).
+  const exitArmedRef = useRef(false)
+  const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Hardware back unwinds the sign-in sub-steps instead of popping the route.
+  // /sign-in is always entered with router.replace, so a pop lands on whatever
+  // sits beneath it - (tabs) - while still signed out, leaving the user on a
+  // screen they can't use (and, before the AuthGate fix, stuck under the
+  // "Warming up the hearth" splash with no redirect back). Each press retreats
+  // one step; at the provider list - the root auth screen, with nowhere valid to
+  // go back TO - a second press exits the app instead of popping.
+  useBackHandler(
+    useCallback(() => {
+      if (pendingSignUp) {
+        // Abandon the half-finished OAuth sign-up (no session was activated).
+        setPendingSignUp(null)
+        setPendingSetActive(null)
+        setUsername('')
+        setError(null)
+        return true
+      }
+      if (verifyingSignUp) {
+        setVerifyingSignUp(false)
+        setCode('')
+        setError(null)
+        return true
+      }
+      if (twoFactor) {
+        setTwoFactor(false)
+        setCode('')
+        setError(null)
+        return true
+      }
+      if (emailMode) {
+        setEmailMode(false)
+        setSignUpMode(false)
+        setError(null)
+        return true
+      }
+      // At the provider list: this is a root screen (a pop would land on (tabs)
+      // while signed out), so exit the app on a confirmed second press rather
+      // than either popping or trapping the user. Same grammar as Home.
+      if (exitArmedRef.current) {
+        if (exitTimerRef.current) clearTimeout(exitTimerRef.current)
+        BackHandler.exitApp()
+        return true
+      }
+      exitArmedRef.current = true
+      setError('Press back again to exit')
+      exitTimerRef.current = setTimeout(() => {
+        exitArmedRef.current = false
+      }, 2000)
+      return true
+    }, [pendingSignUp, verifyingSignUp, twoFactor, emailMode]),
+  )
 
   async function completeFlow(
     label: string,
