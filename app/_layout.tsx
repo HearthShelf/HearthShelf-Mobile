@@ -279,12 +279,25 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
   // just like `ready`; a persistent banner marks the degraded state instead.
   const covered = status.phase !== 'ready' && status.phase !== 'offline' && !peekingServers
 
-  // Finish the startup trace the moment the loader stops covering the screen -
-  // the true "launch done" signal for a signed-in user (connected, or dropped to
-  // offline mode). Idempotent, so a later reconnect flip won't reopen it.
+  // Finish the startup trace the moment the launch reaches a terminal state.
+  //
+  // That's NOT only "the loader stopped covering the screen": `no-servers` and
+  // `error` keep the splash up on purpose, but they are finished launches that
+  // are now WAITING ON THE USER (type an invite code, tap Retry / Log out). They
+  // used to leave the watchdog armed, so a user with no server invite - sitting
+  // on the "Enter your invite code" screen exactly as intended - got reported as
+  // a 45s "startup stall". That's a false alarm that buries real hangs.
+  //
+  // Idempotent, so a later reconnect flip won't reopen it.
+  // Terminal phases: either the app is usable (ready / offline, splash lifted) or
+  // the launch has stopped and is waiting on the user. Only `connecting` is a
+  // launch still in progress.
+  const settled = !covered || status.phase !== 'connecting'
   useEffect(() => {
-    if (!covered) finishStartupTrace(status.phase === 'offline' ? 'offline' : 'ready')
-  }, [covered, status.phase])
+    // The outcome IS the phase - `ready` and `offline` both lift the splash, the
+    // rest are user-actionable stops.
+    if (settled) finishStartupTrace(status.phase)
+  }, [settled, status.phase])
 
   const phase: SplashPhase =
     status.phase === 'connecting'
