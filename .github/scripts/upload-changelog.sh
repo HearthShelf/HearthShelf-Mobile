@@ -29,26 +29,8 @@ COUNT="$(jq '.items | length' <<<"$PAYLOAD")"
 VERSION="$(jq -r '.version' <<<"$PAYLOAD")"
 echo "Uploading $COUNT items for version $VERSION" >&2
 
-# Render CHANGELOG.md from the same structured items (same section order as the
-# website). Tags are shown in parentheses after each line.
-{
-  echo "# HearthShelf Mobile $VERSION"
-  echo
-  for section in breaking feature fix change docs; do
-    label="$(jq -r --arg s "$section" '
-      {breaking:"### Breaking Changes",feature:"### Features",fix:"### Fixes",
-       change:"### Changes",docs:"### Documentation"}[$s]' <<<'{}')"
-    rows="$(jq -r --arg s "$section" '.items[]|select(.section==$s)|
-      "- " + .text + (if (.tags|length)>0 then " (" + (.tags|join(", ")) + ")" else "" end)' \
-      <<<"$PAYLOAD")"
-    [ -n "$rows" ] && {
-      echo "$label"
-      echo
-      echo "$rows"
-      echo
-    }
-  done
-} >CHANGELOG.md
+# Render CHANGELOG.md from the same structured items.
+"$SCRIPT_DIR/render-changelog.sh" CHANGELOG.md <<<"$PAYLOAD" >/dev/null
 
 HTTP_CODE="$(curl -sS -o /tmp/cl-resp.json -w '%{http_code}' \
   --connect-timeout 10 --max-time 30 -X POST "$API_URL" \

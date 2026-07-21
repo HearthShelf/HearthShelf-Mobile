@@ -205,6 +205,49 @@ jobs:
         run: |
           if [ -f CHANGELOG.md ]; then cat CHANGELOG.md >> "$GITHUB_STEP_SUMMARY"; fi
 
+  # Publish a GitHub Release for the tag, using the same structured changelog
+  # that goes to hearthshelf.com as the release body. Runs after android so the
+  # .aab artifact exists to attach; iOS ships via TestFlight and has no artifact
+  # to attach here, so this does not wait on it.
+  github_release:
+    needs: [version, android]
+    # Only tag pushes get a Release - a dispatch has no tag to attach one to.
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # required to create the release
+    env:
+      APP_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # changelog needs full history + tags for the diff range
+
+      - name: Download .aab artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: app-release-aab-${{ github.run_number }}
+          path: release-assets
+
+      - name: Render changelog
+        env:
+          PRODUCT: HearthShelf-Mobile
+          RELEASE_VERSION: ${{ env.APP_VERSION }}
+          DOWNLOAD_URL: https://play.google.com/store/apps/details?id=com.hearthshelf.mobile
+        run: |
+          chmod +x .github/scripts/changelog-items.sh .github/scripts/render-changelog.sh
+          .github/scripts/render-changelog.sh CHANGELOG.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: HearthShelf Mobile ${{ env.APP_VERSION }}
+          body_path: CHANGELOG.md
+          files: release-assets/app-release.aab
+          # A normalized pre-release label (Beta/Alpha/RC) marks the GitHub
+          # Release as a pre-release too, matching the website's channel.
+          prerelease: ${{ contains(env.APP_VERSION, '-') }}
+
   ios:
     needs: version
     # Skip when a dispatch picked android-only. Tag pushes always build both.
