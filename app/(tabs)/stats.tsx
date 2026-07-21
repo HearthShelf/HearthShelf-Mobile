@@ -172,6 +172,9 @@ export default function StatsTab() {
   const [status, setStatus] = useState<Status>({ phase: 'loading' })
   const [dowMode, setDowMode] = useState<DowMode>('last7')
   const [refreshing, setRefreshing] = useState(false)
+  // Bumped on pull-to-refresh so the self-fetching sections (compare roster,
+  // compare card, leaderboard) re-fetch too, not just the core stats.
+  const [refreshKey, setRefreshKey] = useState(0)
   // Measured y-offset of each jump target, so the chip row can scroll to it.
   const sectionY = useRef<Record<string, number>>({})
   const contentInset = useContentInset()
@@ -232,6 +235,9 @@ export default function StatsTab() {
 
   const refresh = useCallback(async () => {
     setRefreshing(true)
+    // Kick the self-fetching sections first so their requests run in parallel
+    // with the core stats fetch below.
+    setRefreshKey((k) => k + 1)
     try {
       const [statsRes, hist] = await Promise.all([getHSStats(), fetchHistory()])
       setStatus({
@@ -396,13 +402,13 @@ export default function StatsTab() {
             )}
 
             <View onLayout={registerSection('compare')}>
-              <CompareCard styles={styles} colors={colors} />
+              <CompareCard refreshKey={refreshKey} styles={styles} colors={colors} />
             </View>
           </>
         )}
 
         <View onLayout={registerSection('leaderboard')}>
-          <Leaderboard styles={styles} colors={colors} />
+          <Leaderboard refreshKey={refreshKey} styles={styles} colors={colors} />
         </View>
       </Animated.ScrollView>
     </Screen>
@@ -1588,14 +1594,22 @@ function MonthCard({
 type CompareStatus =
   { phase: 'loading' } | { phase: 'hidden' } | { phase: 'ready'; compare: HSCompareResponse }
 
-function CompareCard({ styles, colors }: { styles: Styles; colors: Palette }) {
+function CompareCard({
+  refreshKey,
+  styles,
+  colors,
+}: {
+  refreshKey: number
+  styles: Styles
+  colors: Palette
+}) {
   const [userId, setUserId] = useState<string>('')
   const [roster, setRoster] = useState<HSLeaderboardEntry[]>([])
   const [status, setStatus] = useState<CompareStatus>({ phase: 'loading' })
   const pickerRef = useRef<SheetRef>(null)
 
   // Roster for the user picker: draw from the leaderboard (already privacy-
-  // filtered server-side), fetched once.
+  // filtered server-side). Re-fetched on pull-to-refresh via refreshKey.
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -1605,7 +1619,7 @@ function CompareCard({ styles, colors }: { styles: Styles; colors: Palette }) {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [refreshKey])
 
   useEffect(() => {
     let cancelled = false
@@ -1617,7 +1631,7 @@ function CompareCard({ styles, colors }: { styles: Styles; colors: Palette }) {
     return () => {
       cancelled = true
     }
-  }, [userId])
+  }, [userId, refreshKey])
 
   if (status.phase === 'hidden') return null
   if (status.phase === 'loading') return null
@@ -1867,12 +1881,22 @@ type LeaderboardStatus =
   | { phase: 'hidden' }
   | { phase: 'ready'; entries: HSLeaderboardEntry[]; windowsAvailable: boolean }
 
-function Leaderboard({ styles, colors }: { styles: Styles; colors: Palette }) {
+function Leaderboard({
+  refreshKey,
+  styles,
+  colors,
+}: {
+  refreshKey: number
+  styles: Styles
+  colors: Palette
+}) {
   const [window, setWindow] = useState<LeaderboardWindow>('month')
   const [status, setStatus] = useState<LeaderboardStatus>({ phase: 'loading' })
 
   useEffect(() => {
     let cancelled = false
+    // Keep showing the current list while re-fetching (window switch or
+    // pull-to-refresh); only show the spinner when there's nothing yet.
     setStatus((prev) => (prev.phase === 'ready' ? prev : { phase: 'loading' }))
     void (async () => {
       try {
@@ -1888,13 +1912,15 @@ function Leaderboard({ styles, colors }: { styles: Styles; colors: Palette }) {
           windowsAvailable: res.windowsAvailable ?? false,
         })
       } catch {
-        if (!cancelled) setStatus({ phase: 'error' })
+        // Keep the current list on a failed re-fetch; only a fetch with no
+        // prior data hides the section.
+        if (!cancelled) setStatus((prev) => (prev.phase === 'ready' ? prev : { phase: 'error' }))
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [window])
+  }, [window, refreshKey])
 
   if (status.phase === 'hidden' || status.phase === 'error') return null
 
