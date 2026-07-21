@@ -69,6 +69,15 @@ jobs:
         run: npx expo prebuild --platform ios
 
       - name: Build Release simulator app
+        env:
+          # This is a throwaway simulator build that only verifies the app boots
+          # (see header). The Sentry Xcode bundle phase auto-uploads source maps
+          # and HARD-FAILS the build without SENTRY_AUTH_TOKEN (unlike the Android
+          # gradle plugin, which only warns). This workflow has no token, nor
+          # should it - a launch-check build's maps are worthless and would just
+          # litter the Sentry release list. Disable the upload here; the real
+          # release workflow uploads with the token.
+          SENTRY_DISABLE_AUTO_UPLOAD: 'true'
         run: |
           set -o pipefail
           xcodebuild \
