@@ -180,15 +180,25 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   // Sticky: once signed in this run, stay "signed in" for gating even if Clerk
   // momentarily flaps to false on a suspend/resume. Keeps ConnectionGate mounted
   // (no connect-splash flash) and, with the redirect guard below, keeps a
-  // listening user on their screen. Genuine sign-out navigates away explicitly.
-  const gatedSignedIn = effectiveSignedIn || wasSignedIn.current || rehydrating
+  // listening user on their screen.
+  //
+  // ...but NEVER on an auth route. `wasSignedIn` is sticky and never resets, so
+  // after a real sign-out it stayed true and the gate rendered its "Warming up
+  // the hearth" splash OVER the /sign-in screen the sign-out had just navigated
+  // to - the user saw the fire instead of the login form, with no way forward.
+  // The gate's own contract (below) is that it only wraps the signed-in state;
+  // keying it on the route enforces that for every path into /sign-in, rather
+  // than trusting each caller to also unwind the auth state.
+  const onAuthRoute = segments[0] === 'sign-in' || segments[0] === 'sso-callback'
+  const gatedSignedIn =
+    !onAuthRoute && (effectiveSignedIn || wasSignedIn.current || rehydrating)
 
   useEffect(() => {
     if (!ready) return
-    // sso-callback catches the OAuth redirect mid-flow (see app/sso-callback.tsx);
-    // it routes itself once Clerk settles, so don't yank it to /sign-in while the
-    // session is still being established.
-    const onAuthRoute = segments[0] === 'sign-in' || segments[0] === 'sso-callback'
+    // `onAuthRoute` (declared above, and shared with the gate) also covers
+    // sso-callback, which catches the OAuth redirect mid-flow (see
+    // app/sso-callback.tsx) and routes itself once Clerk settles - so don't yank
+    // it to /sign-in while the session is still being established.
     if (effectiveSignedIn && segments[0] === 'sign-in') {
       router.replace('/(tabs)')
       return
