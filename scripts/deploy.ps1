@@ -169,6 +169,25 @@ if (-not (Test-Path $JdkPath)) {
   throw "JDK 21 not found at '$JdkPath'. Update `$JdkPath in this script or install Temurin JDK 21 (see TESTING.md)."
 }
 $env:JAVA_HOME = $JdkPath
+
+# Gradle's Sentry plugin shells out to sentry-cli, which reads SENTRY_AUTH_TOKEN from the
+# environment. Expo CLI loads .env.local for its own tasks but Gradle never sees it.
+if (-not $env:SENTRY_AUTH_TOKEN) {
+  foreach ($envFile in @('.env.local', '.env')) {
+    $envPath = Join-Path $RepoRoot $envFile
+    if (-not (Test-Path $envPath)) { continue }
+    $match = Select-String -Path $envPath -Pattern '^\s*SENTRY_AUTH_TOKEN\s*=\s*(.+?)\s*$' | Select-Object -First 1
+    if ($match) {
+      $env:SENTRY_AUTH_TOKEN = $match.Matches[0].Groups[1].Value.Trim("'", '"')
+      Write-Host "Loaded SENTRY_AUTH_TOKEN from $envFile" -ForegroundColor DarkGray
+      break
+    }
+  }
+}
+if (-not $env:SENTRY_AUTH_TOKEN) {
+  Write-Host "SENTRY_AUTH_TOKEN not set - Sentry symbol upload will fail. Add it to .env.local." -ForegroundColor Yellow
+}
+
 if (-not $env:NODE_ENV) {
   $env:NODE_ENV = if ($Release) { 'production' } else { 'development' }
 }
@@ -260,17 +279,55 @@ if (-not $Release -and -not $StandaloneDebug) {
 
 # --- 1. prebuild (native changes only, or always for StandaloneDebug) ---
 if ($Prebuild) {
+  # Stop Gradle/Kotlin daemons BEFORE prebuild wipes android/.
+  #
+  # prebuild deletes the whole android/ tree, and the Kotlin compiler daemon from
+  # the previous build keeps a handle on android/sentry.properties (the file the
+  # Sentry gradle plugin writes). The delete then fails with
+  # "EBUSY: resource busy or locked ... sentry.properties" AFTER prebuild has
+  # already removed most of the tree - leaving a husk with no gradlew.bat, so the
+  # next step died with a baffling "'.\gradlew.bat' is not recognized".
+  #
+  # Verified by killing PIDs one at a time: the GRADLE daemon was not the holder,
+  # the KOTLIN compiler daemon was. `--stop` only stops Gradle daemons, so kill
+  # the Kotlin ones directly. Daemons are disposable - the next build spawns new
+  # ones (at the cost of a slower first compile).
+  Write-Step 'Stopping Gradle/Kotlin daemons (they lock android/sentry.properties)'
+  Get-CimInstance Win32_Process -Filter "Name='java.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -match 'GradleDaemon|kotlin-compiler-embeddable|KotlinCompileDaemon' } |
+    ForEach-Object {
+      try {
+        Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop
+        Write-Host "  stopped java PID $($_.ProcessId)" -ForegroundColor DarkGray
+      } catch {
+        Write-Warning "  could not stop java PID $($_.ProcessId): $($_.Exception.Message)"
+      }
+    }
+
   Write-Step 'expo prebuild --platform android'
   Push-Location $RepoRoot
   try {
     if ($StandaloneDebug) {
       $env:HEARTHSHELF_STANDALONE_DEBUG = '1'
       npx expo prebuild --platform android
+      $prebuildExit = $LASTEXITCODE
       Remove-Item Env:\HEARTHSHELF_STANDALONE_DEBUG
     } else {
       npx expo prebuild --platform android
+      $prebuildExit = $LASTEXITCODE
     }
   } finally { Pop-Location }
+
+  # Fail loudly HERE if prebuild didn't finish. It exits non-zero on the EBUSY
+  # above but the script used to carry on into the build, where the only symptom
+  # was a missing gradlew.bat - which reads like a broken install rather than a
+  # failed prebuild. Check the wrapper too, since that's what step 4 needs.
+  if ($prebuildExit -ne 0) {
+    throw "expo prebuild failed (exit $prebuildExit). android/ is now incomplete - re-run this script; the daemon-stop above usually clears the file lock that causes this."
+  }
+  if (-not (Test-Path (Join-Path $RepoRoot 'android\gradlew.bat'))) {
+    throw 'expo prebuild finished but android/gradlew.bat is missing - the native tree is incomplete. Delete android/ and re-run.'
+  }
 
   # prebuild can wipe the JDK pin in android/gradle.properties - re-assert it.
   $gp = Join-Path $RepoRoot 'android\gradle.properties'
