@@ -29,6 +29,7 @@ import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.MoreExecutors
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -56,7 +57,14 @@ class HearthShelfAutoService : MediaLibraryService() {
   // clipped window per chapter, so position/duration are already chapter-relative;
   // command handlers convert to/from absolute book time via absolutePositionMs.
   private var rawPlayer: ExoPlayer? = null
-  private val io = Executors.newSingleThreadExecutor()
+  // Wrapped in a listening decorator so submit() hands back a ListenableFuture we
+  // can return straight to media3. The browse callbacks run on the MAIN thread;
+  // blocking them on network I/O (future.get()) froze the UI thread for as long as
+  // the request took - up to ~16s per call (8s connect + 8s read), serialized
+  // behind every other task on this single-thread executor. On a dead network
+  // that reliably tripped an ANR in the Auto service. Returning the future lets
+  // media3 await it off the main thread instead.
+  private val io = MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor())
 
   private val TAG = "HSAuto"
 
@@ -566,7 +574,9 @@ class HearthShelfAutoService : MediaLibraryService() {
       pageSize: Int,
       params: LibraryParams?
     ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-      val future = io.submit<LibraryResult<ImmutableList<MediaItem>>> {
+      // Return the future itself - never .get() here. This callback runs on the
+      // main thread and childrenOf() is network-backed.
+      return io.submit<LibraryResult<ImmutableList<MediaItem>>> {
         try {
           val kids = childrenOf(parentId)
           Log.i(TAG, "onGetChildren parent=$parentId -> ${kids.size} items")
@@ -576,7 +586,6 @@ class HearthShelfAutoService : MediaLibraryService() {
           LibraryResult.ofItemList(ImmutableList.of(), params)
         }
       }
-      return Futures.immediateFuture(future.get())
     }
 
     override fun onGetItem(
@@ -598,7 +607,9 @@ class HearthShelfAutoService : MediaLibraryService() {
       controller: MediaSession.ControllerInfo,
       mediaItems: MutableList<MediaItem>
     ): ListenableFuture<MutableList<MediaItem>> {
-      val resolved = io.submit<MutableList<MediaItem>> {
+      // Returned directly (no .get()): resolveChapterWindows opens an ABS play
+      // session, and blocking the main thread on it is an ANR on a slow network.
+      return io.submit<MutableList<MediaItem>> {
         // Resolve the FIRST selected book into its chapter windows (one MediaItem
         // per chapter, all sharing the stream URL, clipped to the chapter's span).
         // That makes the car's Queue the chapter list, matching ABS/Audible, and
@@ -612,7 +623,6 @@ class HearthShelfAutoService : MediaLibraryService() {
         }
         mediaItems.toMutableList()
       }
-      return Futures.immediateFuture(resolved.get())
     }
 
     /**
@@ -626,7 +636,8 @@ class HearthShelfAutoService : MediaLibraryService() {
       query: String,
       params: LibraryParams?
     ): ListenableFuture<LibraryResult<Void>> {
-      val future = io.submit<LibraryResult<Void>> {
+      // Returned directly (no .get()): searchAll fans out across libraries.
+      return io.submit<LibraryResult<Void>> {
         try {
           val books = searchAll(query)
           lastSearchQuery = query
@@ -642,7 +653,6 @@ class HearthShelfAutoService : MediaLibraryService() {
           LibraryResult.ofVoid(params)
         }
       }
-      return Futures.immediateFuture(future.get())
     }
 
     /** Serve a page of the results that onSearch cached for this query. */
@@ -654,7 +664,8 @@ class HearthShelfAutoService : MediaLibraryService() {
       pageSize: Int,
       params: LibraryParams?
     ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-      val future = io.submit<LibraryResult<ImmutableList<MediaItem>>> {
+      // Returned directly (no .get()): a cache miss re-runs the network search.
+      return io.submit<LibraryResult<ImmutableList<MediaItem>>> {
         try {
           val base = serverUrl
           val tok = token
@@ -676,7 +687,6 @@ class HearthShelfAutoService : MediaLibraryService() {
           LibraryResult.ofItemList(ImmutableList.of(), params)
         }
       }
-      return Futures.immediateFuture(future.get())
     }
   }
 
