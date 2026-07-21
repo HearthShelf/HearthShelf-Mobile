@@ -36,6 +36,7 @@ import { ThemeProvider, useColors, useTheme } from '@/ui/ThemeProvider'
 import { useReducedMotion } from '@/ui/motion'
 import { AppBlurTargetProvider } from '@/ui/BlurTarget'
 import { flushPriorCrash, mountCrashLifecycle } from '@/lib/crashReporter'
+import { mountUpdateCheck } from '@/lib/updateCheck'
 import { beginStartupTrace, startPhase, finishStartupTrace } from '@/lib/startupTrace'
 
 // Sentry. Runs first among the module-load side effects below so anything that
@@ -190,8 +191,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   // keying it on the route enforces that for every path into /sign-in, rather
   // than trusting each caller to also unwind the auth state.
   const onAuthRoute = segments[0] === 'sign-in' || segments[0] === 'sso-callback'
-  const gatedSignedIn =
-    !onAuthRoute && (effectiveSignedIn || wasSignedIn.current || rehydrating)
+  const gatedSignedIn = !onAuthRoute && (effectiveSignedIn || wasSignedIn.current || rehydrating)
 
   useEffect(() => {
     if (!ready) return
@@ -415,6 +415,11 @@ export default Sentry.wrap(function RootLayout() {
   // Drive the crash-log clean-shutdown sentinel off app foreground/background.
   // Auth-independent, so it lives here rather than in the Clerk-scoped AuthGate.
   useEffect(() => mountCrashLifecycle(), [])
+
+  // Update prompts: Play's native in-app update sheet on Android, a control-
+  // plane version check (toast / forced alert) on iOS. Checks at launch and on
+  // each return to foreground; no-ops in dev builds.
+  useEffect(() => mountUpdateCheck(), [])
 
   // Fonts are embedded natively at build time via the expo-font config plugin
   // (see app.config.js), so they are available synchronously at launch - no
