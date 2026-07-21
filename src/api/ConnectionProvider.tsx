@@ -66,6 +66,15 @@ const CONNECT_TIMEOUT_MS = 20000
  *  before giving up. */
 const CONNECT_RETRIES = 1
 
+/** Hard ceiling on how long the covered "connecting" splash may stay up before
+ *  we force a resolution (offline mode, or an actionable error screen).
+ *
+ *  Sized to sit ABOVE a legitimate worst-case connect - CONNECT_TIMEOUT_MS (20s)
+ *  x (1 + CONNECT_RETRIES) = ~40s, plus handshake overhead - so it never cuts a
+ *  connect that was still genuinely progressing. It is a deadlock breaker, not a
+ *  connect timeout. */
+const CONNECTING_FLOOR_MS = 44000
+
 class ConnectTimeoutError extends Error {
   constructor() {
     super('connect_timeout')
@@ -212,15 +221,30 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   const { getToken, isLoaded, isSignedIn } = useAuth()
   const [status, setStatus] = useState<ConnectionStatus>({ phase: 'connecting' })
   const [activeRole, setActiveRole] = useState<'admin' | 'user'>('user')
-  // Offline, Clerk never loads (isSignedIn stays undefined). If a session is
-  // cached, treat the user as signed in so the connect flow runs and falls back
-  // to the offline phase via its own timeout - otherwise we'd park on the splash.
+  // Does this device have a cached Clerk session (was signed in on a prior run)?
+  //
+  // Checked UNCONDITIONALLY - not only while `!isLoaded`. The old version bailed
+  // out when Clerk had already loaded, which deadlocked the launch: Clerk can
+  // report isLoaded=true with isSignedIn=false for a moment while a returning
+  // user's session re-hydrates. In that window `effectiveSignedIn` was false, so
+  // this provider held at `connecting` and NEVER ran connect - while AuthGate's
+  // own `rehydrating` path (which does check the cache) still rendered the gate,
+  // so the splash stayed up forever. Every recovery route was also disabled: the
+  // isLoaded&&isSignedIn retry never fired, and the NetInfo watcher + foreground
+  // probe are gated on effectiveSignedIn so they were never even armed. Only a
+  // force-close escaped. Observed on an ONLINE Pixel 7 (Sentry HS-MOBILEAPP-3,
+  // trace 8dd3e166: clerk-load 856ms and cached-session-check 42ms both COMPLETED,
+  // and no connect:* span ever started).
   const [cachedSession, setCachedSession] = useState(false)
   useEffect(() => {
-    if (isLoaded) return
     void hasCachedClerkSession().then(setCachedSession)
-  }, [isLoaded])
-  const effectiveSignedIn = isSignedIn || (!isLoaded && cachedSession)
+  }, [])
+  // A returning user mid-rehydration: Clerk hasn't confirmed the session yet, but
+  // a cached JWT proves there is one. Mirrors AuthGate's `rehydrating` so the two
+  // gates agree - when AuthGate decides to render the ConnectionGate, this
+  // provider must be willing to actually connect behind it.
+  const rehydrating = !isSignedIn && cachedSession
+  const effectiveSignedIn = isSignedIn || rehydrating
 
   // getToken identity changes across renders; keep a stable wrapper.
   const getTokenRef = useRef(getToken)
@@ -384,6 +408,15 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
             setStatus({ phase: 'no-servers' })
             return
           }
+          // Clerk can't mint a token yet (still re-hydrating a returning user's
+          // session). This is NOT a network problem, so don't burn a retry or
+          // fall through to offline/error - just hold at `connecting`. The
+          // isLoaded&&isSignedIn effect re-runs connect the moment Clerk settles,
+          // and the foreground probe covers the case where it never does.
+          if (e instanceof NoTokenError) {
+            if (!quiet) setStatus({ phase: 'connecting' })
+            return
+          }
           // If the internet is actually reachable, this was slowness, not
           // offline - retry (up to the cap) before giving up. probeReachable
           // hits the control plane with a short timeout, so a phone on a Wi-Fi
@@ -459,6 +492,33 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     if (isLoaded && isSignedIn) reconnectIfNeeded()
   }, [isLoaded, isSignedIn, reconnectIfNeeded])
+
+  // Backstop: `connecting` must never be terminal. If we're still on the covered
+  // splash after this long, stop waiting and resolve to SOMETHING the user can
+  // act on - offline mode when downloads exist, otherwise an error screen with
+  // Retry / Manage servers / Log out.
+  //
+  // This exists because the launch could previously deadlock with no timer at
+  // all: a returning user whose Clerk session was mid-rehydration left the
+  // provider parked at `connecting` with every retry path disarmed, so the
+  // splash stayed up until a force-close (Sentry HS-MOBILEAPP-3). The specific
+  // deadlock is fixed above, but a hung launch is bad enough - and the failure
+  // modes varied enough - to deserve an unconditional floor rather than trusting
+  // that no future path can ever stall.
+  useEffect(() => {
+    if (status.phase !== 'connecting') return
+    const t = setTimeout(() => {
+      // Re-read through the setter so we never clobber a phase that landed while
+      // the timer was pending.
+      setStatus((cur) => {
+        if (cur.phase !== 'connecting') return cur
+        return hasOfflineContent()
+          ? { phase: 'offline' }
+          : { phase: 'error', message: 'connect_stalled' }
+      })
+    }, CONNECTING_FLOOR_MS)
+    return () => clearTimeout(t)
+  }, [status.phase])
 
   // Watch connectivity for the whole signed-in lifetime: when the network
   // returns (incl. a Wi-Fi<->cellular handoff) while we're not `ready`, retry the

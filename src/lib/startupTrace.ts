@@ -30,9 +30,15 @@ type SpanHandle = { end: () => void }
 
 let startupSpan: ReturnType<typeof Sentry.startInactiveSpan> | undefined
 let watchdogTimer: ReturnType<typeof setTimeout> | undefined
-/** The phase currently in flight, attached to the watchdog report so a hang
- *  names its stuck step even without the trace. */
-let currentPhase = 'init'
+/** Phases started but not yet ended, attached to the watchdog report so a hang
+ *  names the step(s) actually stuck. A SET (not a single value) because phases
+ *  overlap - clerk-load and cached-session-check run concurrently - and because
+ *  a phase that ENDED must stop being blamed. */
+const inFlight = new Set<string>()
+/** Phases that started at all this launch, in order. A stall is often best
+ *  explained by what NEVER started (e.g. no connect:* phase = the connect was
+ *  never attempted), which the in-flight set alone can't show. */
+const started: string[] = []
 let finished = false
 
 /** Begin the startup transaction and arm the hang watchdog. Call once, as early
@@ -52,9 +58,24 @@ export function beginStartupTrace(): void {
     // Still up after WATCHDOG_MS: the loader hung. Report it with the phase that
     // was in flight so the event is actionable on its own.
     try {
-      Sentry.captureMessage(`startup stalled in phase: ${currentPhase}`, {
+      // Report BOTH what is still running and the full ordered list of phases
+      // reached. "stuck: (none)" is itself the finding - it means nothing was
+      // in flight and the launch was wedged between phases (e.g. waiting on a
+      // gate that never fired), which is exactly the failure a single
+      // last-phase-started tag hid.
+      const stuck = [...inFlight]
+      const stuckLabel = stuck.length ? stuck.join(',') : '(none)'
+      Sentry.captureMessage(`startup stalled; in-flight: ${stuckLabel}`, {
         level: 'error',
-        tags: { startup_phase: currentPhase, startup_stalled: 'true' },
+        tags: {
+          startup_stalled: 'true',
+          startup_stuck_phases: stuckLabel,
+          startup_last_started: started[started.length - 1] ?? '(none)',
+        },
+        extra: {
+          inFlight: stuck,
+          phasesStarted: started,
+        },
       })
     } catch {
       // never let the watchdog itself throw during startup
@@ -70,15 +91,26 @@ export function beginStartupTrace(): void {
  */
 export function startPhase(name: string): SpanHandle {
   if (finished) return { end: () => {} }
-  currentPhase = name
+  // Track in-flight phases as a SET, not a single global. `currentPhase` used to
+  // be overwritten by every startPhase() and never restored on end(), so the
+  // watchdog reported the last phase STARTED rather than one still running. That
+  // actively misled a real investigation: a stalled launch was reported as
+  // `cached-session-check` (a 42ms SecureStore read that had already completed),
+  // when the truth was that no connect phase had started at all.
+  inFlight.add(name)
+  started.push(name)
   let span: ReturnType<typeof Sentry.startInactiveSpan> | undefined
   try {
     span = Sentry.startInactiveSpan({ name, op: 'startup.phase' })
   } catch {
-    // tracing off - phase still tracked for the watchdog via currentPhase
+    // tracing off - phase still tracked for the watchdog via inFlight
   }
+  let ended = false
   return {
     end: () => {
+      if (ended) return
+      ended = true
+      inFlight.delete(name)
       try {
         span?.end()
       } catch {
@@ -105,7 +137,7 @@ export async function tracePhase<T>(name: string, fn: () => Promise<T>): Promise
 export function finishStartupTrace(outcome: string): void {
   if (finished) return
   finished = true
-  currentPhase = outcome
+  inFlight.clear()
   if (watchdogTimer) {
     clearTimeout(watchdogTimer)
     watchdogTimer = undefined
