@@ -17,7 +17,6 @@ import {
   AppState,
   Keyboard,
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -364,12 +363,13 @@ export function SplashScreen({
       {/* The foreground scrolls inside a keyboard-avoiding frame so the invite
           field stays visible once the keyboard is up. The gradients and fire
           are absolute-fill siblings, so they're untouched by this. */}
-      {/* No behavior on Android: the activity is windowSoftInputMode=adjustResize,
-          so the window is already resized for us - adding 'height' on top of that
-          compensates twice and over-shrinks the frame. */}
+      {/* 'padding' on BOTH platforms: SDK 57 forces edge-to-edge on Android,
+          where the system ignores adjustResize and never resizes the window,
+          so the JS side must pad for the keyboard itself. Padding is computed
+          from actual overlap, so it can't double-compensate. */}
       <KeyboardAvoidingView
         style={styles.keyboardFrame}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         keyboardVerticalOffset={0}
       >
         <ScrollView

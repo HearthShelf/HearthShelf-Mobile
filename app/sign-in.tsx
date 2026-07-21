@@ -17,7 +17,6 @@ import {
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -425,12 +424,13 @@ export default function SignInScreen() {
         </Text>
       </View>
 
-      {/* No behavior on Android: MainActivity is windowSoftInputMode=adjustResize,
-          so the window is already resized for us - adding 'height' on top of that
-          compensates twice and over-shrinks the frame. */}
+      {/* 'padding' on BOTH platforms: SDK 57 forces edge-to-edge on Android,
+          where the system ignores adjustResize and never resizes the window,
+          so the JS side must pad for the keyboard itself. Padding is computed
+          from actual overlap, so it can't double-compensate. */}
       <KeyboardAvoidingView
         style={styles.content}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         keyboardVerticalOffset={0}
       >
         <ScrollView
