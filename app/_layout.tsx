@@ -36,6 +36,7 @@ import { ThemeProvider, useColors, useTheme } from '@/ui/ThemeProvider'
 import { useReducedMotion } from '@/ui/motion'
 import { AppBlurTargetProvider } from '@/ui/BlurTarget'
 import { flushPriorCrash, mountCrashLifecycle } from '@/lib/crashReporter'
+import { mountHeartbeat } from '@/lib/heartbeat'
 import { mountUpdateCheck } from '@/lib/updateCheck'
 import { beginStartupTrace, startPhase, finishStartupTrace } from '@/lib/startupTrace'
 
@@ -420,6 +421,11 @@ export default Sentry.wrap(function RootLayout() {
   // Drive the crash-log clean-shutdown sentinel off app foreground/background.
   // Auth-independent, so it lives here rather than in the Clerk-scoped AuthGate.
   useEffect(() => mountCrashLifecycle(), [])
+
+  // Anonymous install heartbeat to the public community stats. Auth-independent
+  // and self-throttled (weekly); no-ops when the user has opted out. See
+  // lib/heartbeat.ts.
+  useEffect(() => mountHeartbeat(), [])
 
   // Update prompts: Play's native in-app update sheet on Android, a control-
   // plane version check (toast / forced alert) on iOS. Checks at launch and on

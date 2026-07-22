@@ -9,6 +9,7 @@
  */
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { getSettingsState, subscribeSettings, setSetting } from '@/store/settings'
+import { sendHeartbeat } from '@/lib/heartbeat'
 import { getCommunityConfig } from '@/api/social'
 import { setCarNotePopsEnabled } from '@/social/carNotePrefs'
 import {
@@ -132,6 +133,26 @@ export default function CommunityPanel() {
             />
           </>
         ) : null}
+      </SettingsGroup>
+
+      <SettingsLabel>Anonymous stats</SettingsLabel>
+      <SettingsGroup>
+        <SettingsRow
+          title="Share install stats"
+          desc="Help us see which app versions and devices are in use by sharing your app version, device model, and OS. No account, name, or listening data is ever sent. Counts toward the public community stats at hearthshelf.com/stats. This device only."
+          control={
+            <SettingsToggle
+              on={s.shareInstallStats}
+              onChange={(v) => {
+                setSetting('shareInstallStats', v)
+                // Re-enabling reports right away so the dashboard reflects this
+                // device without waiting for the next weekly heartbeat.
+                if (v) void sendHeartbeat(true)
+              }}
+            />
+          }
+          last
+        />
       </SettingsGroup>
     </SettingsPanel>
   )

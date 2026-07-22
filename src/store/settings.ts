@@ -205,6 +205,12 @@ export interface SettingsState {
   // Device-scoped: when false, this device ignores account settings pulled from
   // the server and runs on its local values only (see queueSync.ts).
   useSharedSettings: boolean
+
+  // Device-scoped: share anonymous install stats (app version, device model/type,
+  // OS) with the public HearthShelf community dashboard. On by default; no account,
+  // user, or listening data is ever sent - only this install's coarse facts, keyed
+  // by the random per-install deviceId. See lib/heartbeat.ts.
+  shareInstallStats: boolean
 }
 
 let state: SettingsState = {
@@ -278,6 +284,7 @@ let state: SettingsState = {
   noteDefaultVisibility: 'public',
 
   useSharedSettings: true,
+  shareInstallStats: true,
 }
 
 // Per-key updatedAt (ms) for sync conflict resolution. Not user settings; parallel
@@ -440,7 +447,11 @@ export function storedSettings(): Record<string, { value: SettingValue; updatedA
 const DEVICE_SETTINGS_KEY = 'hs.deviceSettings'
 
 function patchTouchesDeviceKeys(patch: Partial<SettingsState>): boolean {
-  return 'floatingNav' in patch || 'floatingNavOrientation' in patch
+  return (
+    'floatingNav' in patch ||
+    'floatingNavOrientation' in patch ||
+    'shareInstallStats' in patch
+  )
 }
 
 /** Persist the current device-scoped slice. Best-effort, fire-and-forget. */
@@ -448,6 +459,7 @@ function persistDeviceSettings(): void {
   const slice = {
     floatingNav: state.floatingNav,
     floatingNavOrientation: state.floatingNavOrientation,
+    shareInstallStats: state.shareInstallStats,
   }
   void AsyncStorage.setItem(DEVICE_SETTINGS_KEY, JSON.stringify(slice)).catch(() => {})
 }
@@ -470,6 +482,9 @@ export function hydrateDeviceSettings(): Promise<void> {
           saved.floatingNavOrientation === 'vertical'
         ) {
           patch.floatingNavOrientation = saved.floatingNavOrientation
+        }
+        if (typeof saved.shareInstallStats === 'boolean') {
+          patch.shareInstallStats = saved.shareInstallStats
         }
         // Adopt without stamping sync meta (these keys aren't catalogued anyway)
         // and without re-persisting (we just read them).
