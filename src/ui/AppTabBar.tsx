@@ -5,7 +5,7 @@
  * decides what "active" is and what a tap does.
  *
  * Two treatments, chosen by the device-scoped `floatingNav` setting (Appearance):
- *  - Classic: the full-width bar with all five tabs (default).
+ *  - Classic: the full-width bar with every tab (default).
  *  - Floating pill: a glass icon pill (Home / Now / Library / More) - an
  *    icon-focused A/B test. Stats loses its pinned spot and lives under More.
  * Classic reserves a layout footprint; floating modes overlay the scene. Screens
@@ -75,6 +75,9 @@ export const TABS: TabDef[] = [
   { name: 'library', label: 'Library', icon: 'library' },
   { name: 'now', label: 'Now Playing', icon: 'nowPlaying' },
   { name: 'stats', label: 'Stats', icon: 'stats' },
+  // Beta-only pinned slot. Moves under More once the beta settles (the screen
+  // itself says so at the top).
+  { name: 'feedback', label: 'Feedback', icon: 'feedback' },
   { name: 'more', label: 'More', icon: 'more' },
 ]
 

@@ -124,6 +124,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="library" />
       <Tabs.Screen name="now" />
       <Tabs.Screen name="stats" />
+      <Tabs.Screen name="feedback" />
       <Tabs.Screen name="more" />
     </Tabs>
   )

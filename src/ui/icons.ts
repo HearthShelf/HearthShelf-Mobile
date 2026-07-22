@@ -93,6 +93,7 @@ export const icons = {
   downloadDone: 'download-done',
   notes: 'sticky-note-2',
   send: 'send',
+  feedback: 'feedback',
   club: 'groups',
   people: 'group',
   chat: 'forum',

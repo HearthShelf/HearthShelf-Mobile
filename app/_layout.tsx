@@ -9,7 +9,7 @@ import { BottomSheetModalProvider } from '@gorhom/bottom-sheet'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import * as SplashScreen from 'expo-splash-screen'
 import { tokenCache, hasCachedClerkSession, clerkResourceCache } from '@/lib/tokenCache'
-import { CLERK_PUBLISHABLE_KEY, CLERK_JWT_TEMPLATE, SENTRY_DSN, FULL_VERSION } from '@/lib/config'
+import { CLERK_PUBLISHABLE_KEY, CLERK_JWT_TEMPLATE, SENTRY_DSN, FULL_VERSION, BUILD_NUMBER } from '@/lib/config'
 import { PlayerHost } from '@/player/PlayerHost'
 import { MiniPlayerDock } from '@/player/MiniPlayerDock'
 import { PopToast } from '@/social/PopToast'
@@ -58,6 +58,11 @@ if (SENTRY_DSN) {
     // report names the exact build. Constants.expoConfig.version can't be used
     // here: on iOS it returns the pre-release-stripped marketing string.
     release: FULL_VERSION || undefined,
+    // Native build number, pairing with `release` to identify the exact binary.
+    // Sentry keys release health and artifact lookup on (release, dist); without
+    // it two builds of the same version tag, or an Android vs iOS build, collapse
+    // into one bucket. See BUILD_NUMBER in lib/config.
+    dist: BUILD_NUMBER,
     // Session replay and profiling stay off - this is an audiobook player that
     // runs for hours in the background, and both are meaningful battery/bandwidth
     // costs. Turn on deliberately if a bug needs them.

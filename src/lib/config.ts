@@ -53,6 +53,14 @@ export const EAS_PROJECT_ID = cfg('EXPO_PUBLIC_EAS_PROJECT_ID', '')
 export const FULL_VERSION =
   (extra.fullVersion as string | undefined) || Constants.expoConfig?.version || ''
 
+// The native build number, used as Sentry's `dist` to pair with `release`.
+// nativeBuildVersion reads from the actual built binary (versionCode on Android,
+// CFBundleVersion on iOS) - the same value the Sentry gradle/Xcode plugins name
+// their uploaded source maps/symbols under, so events and artifacts land on the
+// same (release, dist) pair. Undefined in Expo Go / bare JS-only runs, where it
+// is simply omitted rather than sent as a wrong value.
+export const BUILD_NUMBER = Constants.nativeBuildVersion || undefined
+
 // Sentry DSN (public by design - it only permits writing events). Baked as a
 // committed default in app.config.js so CI builds report too. Empty disables
 // Sentry entirely; the on-disk crash reporter (lib/crashReporter.ts) is
