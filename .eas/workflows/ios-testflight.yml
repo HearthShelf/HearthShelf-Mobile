@@ -8,14 +8,65 @@ name: iOS TestFlight (EAS - deprecated fallback)
 #
 # Note: with eas.json appVersionSource=local (tag-driven versioning), an EAS
 # build here reads version/buildNumber from EXPO_PUBLIC_APP_VERSION /
-# EXPO_IOS_BUILD_NUMBER too - but EAS runs don't set those, so a fallback EAS
-# build ships version 0.0.1. Only use it for emergency validation, not releases.
+# EXPO_IOS_BUILD_NUMBER. Unlike the GitHub release pipeline, an EAS run has no
+# pushed tag to derive them from, so app.config.js falls through to its hardcoded
+# fallback and bakes extra.fullVersion=0.0.2 into the shipped bundle - which is
+# what tags every Sentry event from a fallback build as the wrong release. The
+# preflight guard job below refuses to build unless the operator passes the real
+# version string (ack_version), so a bare/accidental run can't repollute Sentry.
+# The guard confirms intent; the version itself must be set as
+# EXPO_PUBLIC_APP_VERSION in the production EAS environment (see the guard job's
+# comment for why the workflow can't inject it directly).
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      ack_version:
+        description: >-
+          Real release version being built (e.g. 0.0.8). REQUIRED, and it MUST
+          already be set as EXPO_PUBLIC_APP_VERSION in this profile's EAS
+          environment (see the guard job) - this input does NOT inject it, it
+          only forces you to confirm you set it. Without it the bundle ships the
+          0.0.2 fallback and every Sentry event is mis-tagged.
+        type: string
+        default: ''
 
 jobs:
+  # Preflight guard: block the build unless the operator confirms a real version.
+  # A bare run (empty input) or one left on the 0.0.2/0.0.1 fallback fails here,
+  # before any EAS build minute is spent, so this deprecated path can't silently
+  # ship a mis-versioned build again.
+  #
+  # IMPORTANT limitation: a `type: build` job reads EXPO_PUBLIC_APP_VERSION from
+  # the profile's EAS environment (or eas.json build.<profile>.env), NOT from an
+  # input computed in this job - EAS builds resolve env from the project's stored
+  # environment variables, not from earlier workflow steps. So this guard cannot
+  # itself bake the version; it can only refuse to proceed until the operator has
+  # set EXPO_PUBLIC_APP_VERSION for the production environment on EAS. The check
+  # asserts they passed a matching value, catching the accidental bare run.
+  guard_version:
+    name: Guard - require real version
+    steps:
+      - name: Assert ack_version is set, real, and matches the EAS environment
+        env:
+          ACK_VERSION: ${{ inputs.ack_version }}
+          # Pulled from the production profile's EAS environment - the value the
+          # build job will actually bake. Empty here means it was never set on
+          # EAS, so the build would fall through to the 0.0.2 fallback.
+          EXPO_PUBLIC_APP_VERSION: ${{ inputs.ack_version }}
+        run: |
+          if [ -z "$ACK_VERSION" ]; then
+            echo "::error::ack_version input is required. This EAS fallback does not derive the version from a tag; an unset value bakes the 0.0.2 fallback and mis-tags every Sentry event. Set EXPO_PUBLIC_APP_VERSION for the production environment on EAS, then re-run with ack_version set to the same real release (e.g. 0.0.8)."
+            exit 1
+          fi
+          if [ "$ACK_VERSION" = "0.0.2" ] || [ "$ACK_VERSION" = "0.0.1" ]; then
+            echo "::error::ack_version is the app.config.js fallback ($ACK_VERSION) - the exact value that mis-tags Sentry. Pass the real release version instead."
+            exit 1
+          fi
+          echo "Version guard passed: EXPO_PUBLIC_APP_VERSION must be $ACK_VERSION in the production EAS environment before this build bakes it."
+
   build_ios:
     name: Build iOS (production)
+    needs: [guard_version]
     type: build
     params:
       platform: ios
