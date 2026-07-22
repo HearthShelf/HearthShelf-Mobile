@@ -91,6 +91,7 @@ export default function PlaybackPanel() {
             'skipBackCustom',
             'scrubber',
             'playerBg',
+            'carouselPlayer',
             'tapArtworkTogglesPlay',
             'skipHotspots',
             'hideMiniPlayer',
@@ -168,6 +169,16 @@ export default function PlaybackPanel() {
           />
         </SettingsRow>
         <SettingsRow
+          title="Swipe between books"
+          desc="Swipe the player artwork to peek at what's up next. Off shows just the book you're listening to."
+          control={
+            <SettingsToggle
+              on={s.carouselPlayer}
+              onChange={(v) => setSetting('carouselPlayer', v)}
+            />
+          }
+        />
+        <SettingsRow
           title="Tap artwork to play"
           desc="Tap the cover on the full-screen player to play or pause."
           control={
@@ -184,7 +195,7 @@ export default function PlaybackPanel() {
             <SettingsToggle on={s.skipHotspots} onChange={(v) => setSetting('skipHotspots', v)} />
           }
         />
-        {s.skipHotspots ? (
+        {s.skipHotspots && s.carouselPlayer ? (
           <View style={styles.conflict}>
             <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
               Heads up: the player also swipes sideways to change books, so a stray

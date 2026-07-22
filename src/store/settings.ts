@@ -136,6 +136,9 @@ export interface SettingsState {
   playerBg: PlayerBg
   tapArtworkTogglesPlay: boolean
   skipHotspots: boolean
+  // Full-player cover is a swipeable deck of the live book + the up-next queue.
+  // Off = the classic single cover.
+  carouselPlayer: boolean
   // Hide the docked mini player app-wide. The full player stays reachable from
   // the Now Playing tab and a book's Play button. Off (default) keeps the bar.
   hideMiniPlayer: boolean
@@ -233,6 +236,7 @@ let state: SettingsState = {
   playerBg: 'blurred',
   tapArtworkTogglesPlay: false,
   skipHotspots: true,
+  carouselPlayer: true,
   hideMiniPlayer: false,
   removeDownloadOnFinish: true,
   haptics: 'minimal',

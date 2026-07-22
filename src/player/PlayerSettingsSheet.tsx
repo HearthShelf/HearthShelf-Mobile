@@ -72,6 +72,7 @@ export const PlayerSettingsSheet = forwardRef<SheetHandle>(function PlayerSettin
               'skipBackCustom',
               'scrubber',
               'playerBg',
+              'carouselPlayer',
               'tapArtworkTogglesPlay',
               'skipHotspots',
             ])
@@ -146,6 +147,16 @@ export const PlayerSettingsSheet = forwardRef<SheetHandle>(function PlayerSettin
               ]}
             />
           </SettingsRow>
+          <SettingsRow
+            title="Swipe between books"
+            desc="Swipe the artwork to peek at what's up next."
+            control={
+              <SettingsToggle
+                on={s.carouselPlayer}
+                onChange={(v) => setSetting('carouselPlayer', v)}
+              />
+            }
+          />
           <SettingsRow
             title="Tap artwork to play"
             desc="Tap the cover to play or pause."

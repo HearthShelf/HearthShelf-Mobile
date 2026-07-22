@@ -682,7 +682,14 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // Browsing an up-next book (off the live page): the transport swaps to the
   // deck set (that book's read-only progress + a big Play that switches to it);
   // the mini player keeps the playing book controllable.
-  const browsing = !immersive && deck.index > 0 && deck.active != null && !deck.active.isLive
+  // Guard on carouselPlayer too: unmounting the deck leaves this state on its
+  // last page, which would otherwise strand the deck transport with no deck.
+  const browsing =
+    !immersive &&
+    settings.carouselPlayer &&
+    deck.index > 0 &&
+    deck.active != null &&
+    !deck.active.isLive
   const browsedItemId = browsing ? (deck.active?.itemId ?? null) : null
   const browsedRec = browsedItemId ? progressById.get(browsedItemId) : undefined
   const browsedProgress = browsedRec?.progress ?? 0
@@ -913,7 +920,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
 
           {/* Carousel deck-position dots, above the cover per the layout. In normal
           flow here so they can't be clipped by the cover area's overflow. */}
-          {!immersive && deck.count > 1 && (
+          {!immersive && settings.carouselPlayer && deck.count > 1 && (
             <DeckDots
               count={deck.count}
               index={deck.index}
@@ -966,7 +973,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                 )}
               </>
             )
-            const carouselOn = !immersive
+            const carouselOn = !immersive && settings.carouselPlayer
             return (
               <GestureDetector gesture={swipe}>
                 <View
