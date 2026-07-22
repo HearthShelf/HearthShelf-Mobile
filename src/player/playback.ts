@@ -395,6 +395,25 @@ export async function forceSyncNow(): Promise<boolean> {
   return pushListened(active, getState().position)
 }
 
+/**
+ * Hand the book off to the car's own ABS session. The car opens a fresh play
+ * session and resumes from whatever `currentTime` the SERVER holds, so the phone
+ * must land its true position before it stands down - otherwise the car starts
+ * from the last 15s-threshold sync and replays what you already heard.
+ *
+ * Closing (not just syncing) matters just as much: `carActive` gates off both
+ * phone sync paths, so a session left open here is orphaned. A later close would
+ * POST its stale `currentTime` on top of the car's newer position, throwing the
+ * listener back to where they were when the car last connected.
+ *
+ * Offline sessions bank locally on their own, so only the live session needs
+ * this. No-op when nothing is playing.
+ */
+export async function handOffToCar(): Promise<void> {
+  if (offline || !active) return
+  await safeClose()
+}
+
 async function safeClose(): Promise<void> {
   if (!active) return
   const { sessionId, duration, pendingListened } = active

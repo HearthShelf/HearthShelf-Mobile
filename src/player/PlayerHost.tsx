@@ -29,7 +29,7 @@ import {
   currentChapter,
 } from './store'
 import { coverUrl, createBookmark } from '@/api/abs'
-import { playItemById, syncProgress } from './playback'
+import { handOffToCar, playItemById, syncProgress } from './playback'
 import { advanceQueueOnEnd } from './advance'
 import { useShakeToExtend } from './shakeToExtend'
 import { useSleepBeep } from './sleepBeep'
@@ -146,7 +146,23 @@ export function PlayerHost() {
       // player stands down and transport routes to the car (native side); the
       // store still mirrors car position/state so the phone UI stays in sync.
       emitter.addListener('onCarActive', (e: { active: boolean }) => {
+        // The car resumes from the server's currentTime, so on takeover the
+        // phone's un-synced position (up to the 15s sync threshold) has to land,
+        // and its session has to close so it can't later overwrite the car's
+        // newer position.
+        //
+        // Order matters: set the flag FIRST. handOffToCar() awaits a network
+        // close, and leaving carActive false across that await would let a
+        // progress tick re-open a session on top of the one being closed. The
+        // position it writes comes from the store, which the now-gated ticks
+        // no longer move - and the car hasn't loaded a book yet at connect time,
+        // so nothing has mirrored over it either.
+        //
+        // Android only: iOS CarPlay shares one player and routes car taps back
+        // through playItemById, so the live session there is the one still
+        // playing - closing it would stop the audio.
         setCarActive(e.active)
+        if (e.active && Platform.OS === 'android') void handOffToCar().catch(() => {})
       }),
       // The car loaded a book: mirror it into the store so the phone UI shows the
       // same cover/title/chapters and its scrubber tracks the car.
