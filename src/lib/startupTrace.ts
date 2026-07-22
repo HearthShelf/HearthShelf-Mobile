@@ -22,9 +22,20 @@
 import * as Sentry from '@sentry/react-native'
 
 /** How long the loader may stay up before we treat the launch as stalled and
- *  report it. Longer than the connect timeout (20s) + its one retry so a merely
- *  slow-but-recovering connect doesn't trip it - only a genuine hang does. */
-const WATCHDOG_MS = 45000
+ *  report it.
+ *
+ *  Must sit COMFORTABLY ABOVE the provider's CONNECTING_FLOOR_MS (44s), which is
+ *  an unconditional backstop that resolves a stuck `connecting` to offline/error
+ *  and, via the settled effect in app/_layout.tsx, calls finishStartupTrace() to
+ *  disarm this watchdog. At 45s the margin was one second - and closing that gap
+ *  needs a React re-render plus an effect flush, on a JS thread that is by
+ *  definition busy during a slow launch. The floor and the watchdog therefore
+ *  RACED, and the watchdog often won: Sentry HS-MOBILEAPP-8 reported a "startup
+ *  stall" for a launch the floor had already resolved a second earlier.
+ *
+ *  60s leaves a 16s margin, so anything this now reports is a launch that
+ *  genuinely blew past the backstop - a real hang, not a lost race. */
+const WATCHDOG_MS = 60000
 
 type SpanHandle = { end: () => void }
 

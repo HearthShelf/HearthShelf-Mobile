@@ -66,13 +66,29 @@ const CONNECT_TIMEOUT_MS = 20000
  *  before giving up. */
 const CONNECT_RETRIES = 1
 
+/** How long a single Clerk getToken() may take before we give up on it and treat
+ *  the mint as "no token yet".
+ *
+ *  Clerk's getToken has no internal timeout and can hang (not reject) when its
+ *  client sync is wedged on an unresolvable host. Sized to match
+ *  DEFAULT_FETCH_TIMEOUT_MS (10s) - the same budget every other single hop in
+ *  the handshake gets - so it stays well inside the 20s connect race and leaves
+ *  room for the retry. */
+const TOKEN_MINT_TIMEOUT_MS = 10000
+
 /** Hard ceiling on how long the covered "connecting" splash may stay up before
  *  we force a resolution (offline mode, or an actionable error screen).
  *
  *  Sized to sit ABOVE a legitimate worst-case connect - CONNECT_TIMEOUT_MS (20s)
  *  x (1 + CONNECT_RETRIES) = ~40s, plus handshake overhead - so it never cuts a
  *  connect that was still genuinely progressing. It is a deadlock breaker, not a
- *  connect timeout. */
+ *  connect timeout.
+ *
+ *  Must stay comfortably BELOW WATCHDOG_MS in lib/startupTrace.ts (60s): this
+ *  floor is what disarms that watchdog (it resolves `connecting`, which settles
+ *  the trace). When the two were 44s/45s apart they raced, and the watchdog
+ *  reported stalls this floor had already fixed. Raising this above ~55s
+ *  reintroduces that false-alarm class. */
 const CONNECTING_FLOOR_MS = 44000
 
 class ConnectTimeoutError extends Error {
@@ -250,15 +266,33 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   const getTokenRef = useRef(getToken)
   getTokenRef.current = getToken
   const tokenFn = useCallback(async (opts?: { forceRefresh?: boolean }) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
     try {
       // skipCache forces Clerk to mint a fresh JWT - used to retry a 401 that was
       // really just a stale cached token handed out during a warm resume.
-      return await getTokenRef.current({
-        template: CLERK_JWT_TEMPLATE,
-        skipCache: opts?.forceRefresh,
-      })
+      //
+      // Bounded, because getToken() can HANG rather than reject: Clerk's client
+      // sync has no timeout of its own, so a dead DNS lookup (backgrounded on a
+      // dead network, resumed before the network returned - Sentry
+      // HS-MOBILEAPP-8) leaves the promise pending indefinitely. Unbounded, that
+      // burns the entire 20s connect race on a token mint that was never going
+      // to resolve, so the retry never gets to run and the launch resolves to
+      // offline via the 44s floor instead of reconnecting. Timing out to null
+      // yields NoTokenError, which holds at `connecting` for the re-arm paths
+      // (isSignedIn effect / NetInfo edge / foreground probe) to pick up.
+      return await Promise.race([
+        getTokenRef.current({
+          template: CLERK_JWT_TEMPLATE,
+          skipCache: opts?.forceRefresh,
+        }),
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), TOKEN_MINT_TIMEOUT_MS)
+        }),
+      ])
     } catch {
       return null
+    } finally {
+      if (timer) clearTimeout(timer)
     }
   }, [])
 
