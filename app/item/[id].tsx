@@ -89,6 +89,7 @@ import { haptics } from '@/ui/haptics'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useMiniPlayerInset } from '@/ui/useContentInset'
 import { useColors } from '@/ui/ThemeProvider'
+import { posthog } from '@/lib/posthog'
 
 const CHAPTER_PREVIEW_COUNT = 4
 const DESCRIPTION_CLAMP_LINES = 6
@@ -290,6 +291,10 @@ export default function ItemDetailScreen() {
     // playItemById resolves the resume position itself (play session, else the
     // saved media-progress spot), so no manual seek here.
     await playItemById(detail.id)
+    posthog.capture('book_played', {
+      source: 'item_detail',
+      how: isFinished ? 'listen_again' : isInProgress ? 'resume' : 'start',
+    })
     router.push('/player')
   }
 
@@ -323,6 +328,7 @@ export default function ItemDetailScreen() {
       // date is editable afterward from the toast, not a blocking prompt.
       await markItemsFinished([{ id: detail.id, duration }], next)
       if (next) {
+        posthog.capture('book_marked_finished')
         haptics.success()
         setFinishBurst((b) => b + 1)
         showToast('Finished', {
@@ -332,6 +338,7 @@ export default function ItemDetailScreen() {
           ],
         })
       } else {
+        posthog.capture('book_marked_unfinished')
         showToast('Back in progress', {
           action: {
             label: 'Undo',
@@ -356,6 +363,7 @@ export default function ItemDetailScreen() {
     if (!ok) return
     try {
       await resetItemProgress(detail.id)
+      posthog.capture('book_progress_reset')
       show('Progress reset')
     } catch {
       show('Could not reset progress')
@@ -373,6 +381,7 @@ export default function ItemDetailScreen() {
     const label = useSeries ? seriesRef!.name : title
     try {
       await dismissEntity(kind, entityId, label)
+      posthog.capture('book_hidden', { kind })
       showToast(`Hid "${label}"`, {
         action: {
           label: 'Undo',
@@ -406,12 +415,14 @@ export default function ItemDetailScreen() {
   const downloadBook = () => {
     if (download?.status === 'done') {
       void deleteDownload(detail.id)
+      posthog.capture('book_download_removed')
       show('Download removed')
     } else if (download?.status === 'downloading' || download?.status === 'queued') {
       void cancelDownload(detail.id)
       show('Download cancelled')
     } else {
       void downloadItem(detail.id, title, authorName)
+      posthog.capture('book_downloaded')
       show('Downloading for offline')
     }
   }

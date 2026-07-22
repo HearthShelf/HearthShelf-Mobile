@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/react-native'
-import { ClerkProvider, useAuth } from '@clerk/expo'
+import { PostHogProvider } from 'posthog-react-native'
+import { ClerkProvider, useAuth, useUser } from '@clerk/expo'
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -10,6 +11,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context'
 import * as SplashScreen from 'expo-splash-screen'
 import { tokenCache, hasCachedClerkSession, clerkResourceCache } from '@/lib/tokenCache'
 import { CLERK_PUBLISHABLE_KEY, CLERK_JWT_TEMPLATE, SENTRY_DSN, FULL_VERSION } from '@/lib/config'
+import { posthog } from '@/lib/posthog'
 import { PlayerHost } from '@/player/PlayerHost'
 import { MiniPlayerDock } from '@/player/MiniPlayerDock'
 import { PopToast } from '@/social/PopToast'
@@ -271,6 +273,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 function ConnectionGate({ children }: { children: React.ReactNode }) {
   const { status, retry, connectTo, redeemInvite } = useConnection()
   const { signOut } = useAuth()
+  const { user } = useUser()
   const router = useRouter()
   // Lets the user step out to the servers screen while still not connected.
   const [peekingServers, setPeekingServers] = useState(false)
@@ -291,6 +294,18 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
     }
   }, [status.phase])
 
+  // Identify the user with PostHog once the server connection is ready.
+  // Clerk's user.id is the stable distinct id — never reset between sessions.
+  useEffect(() => {
+    if (status.phase === 'ready' && user?.id) {
+      const setProps: Record<string, string> = {}
+      if (user.primaryEmailAddress?.emailAddress)
+        setProps.email = user.primaryEmailAddress.emailAddress
+      if (user.fullName) setProps.name = user.fullName
+      posthog.identify(user.id, { $set: setProps })
+    }
+  }, [status.phase, user?.id])
+
   const handleLogout = useCallback(async () => {
     clearTrack()
     clearAutoSession()
@@ -301,6 +316,7 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
     void unregisterBackgroundFlush()
     clearMeId()
     await clearSession()
+    posthog.reset()
     await signOut()
     router.replace('/sign-in')
   }, [signOut, router])
@@ -435,32 +451,41 @@ export default Sentry.wrap(function RootLayout() {
         <SafeAreaProvider>
           <ThemeProvider>
             <BottomSheetModalProvider>
-              <ThemedStatusBar />
-              <AuthGate>
-                <AppBlurTargetProvider>
-                  <ThemedStack />
-                  {/* Keep the floating mini player outside each screen's native
+              <PostHogProvider
+                client={posthog}
+                autocapture={{
+                  captureScreens: false,
+                  captureTouches: true,
+                  propsToCapture: ['testID'],
+                }}
+              >
+                <ThemedStatusBar />
+                <AuthGate>
+                  <AppBlurTargetProvider>
+                    <ThemedStack />
+                    {/* Keep the floating mini player outside each screen's native
                       blur target, while sharing that target through this provider. */}
-                  <MiniPlayerDock />
-                </AppBlurTargetProvider>
-                {/* Note-pop toasts fired by the club watcher (notePops.ts). */}
-                <PopToast />
-                {/* Single app-wide confirmation toast, positioned in the
+                    <MiniPlayerDock />
+                  </AppBlurTargetProvider>
+                  {/* Note-pop toasts fired by the club watcher (notePops.ts). */}
+                  <PopToast />
+                  {/* Single app-wide confirmation toast, positioned in the
                     mini-player band above all screens. */}
-                <ToastHost />
-                {/* Full-screen reading-goal celebration, fired on the first app
+                  <ToastHost />
+                  {/* Full-screen reading-goal celebration, fired on the first app
                     open after the yearly goal is reached. */}
-                <GoalCelebrationHost />
-              </AuthGate>
-              {/* Persistent audio engine - mounted once, never unmounted. */}
-              <PlayerHost />
-              {/* "When did you finish this?" prompt raised by mark-finished
+                  <GoalCelebrationHost />
+                </AuthGate>
+                {/* Persistent audio engine - mounted once, never unmounted. */}
+                <PlayerHost />
+                {/* "When did you finish this?" prompt raised by mark-finished
                   actions app-wide, so backdated completions land in the right
                   stats bucket. */}
-              <FinishDateHost />
-              {/* Debug: force-show the boot splash (from Diagnostics), tap to
+                <FinishDateHost />
+                {/* Debug: force-show the boot splash (from Diagnostics), tap to
                   dismiss. Renders nothing unless forced. */}
-              <ForcedSplashHost />
+                <ForcedSplashHost />
+              </PostHogProvider>
             </BottomSheetModalProvider>
           </ThemeProvider>
         </SafeAreaProvider>

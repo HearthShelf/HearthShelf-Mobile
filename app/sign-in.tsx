@@ -11,6 +11,7 @@ import * as WebBrowser from 'expo-web-browser'
 import { LinearGradient } from 'expo-linear-gradient'
 import Svg, { Path } from 'react-native-svg'
 import { APPLE_ENABLED, CLERK_PUBLISHABLE_KEY, NATIVE_GOOGLE_ENABLED } from '@/lib/config'
+import { posthog } from '@/lib/posthog'
 import { fonts } from '@/ui/theme'
 import { useBackHandler } from '@/ui/useBackHandler'
 import { MaterialIcons } from '@expo/vector-icons'
@@ -69,7 +70,7 @@ function decodeBase64(input: string): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
   let str = input.replace(/=+$/, '')
   let output = ''
-  for (let bc = 0, bs = 0, buffer, i = 0; (buffer = str.charAt(i++)); ) {
+  for (let bc = 0, bs = 0, buffer, i = 0; (buffer = str.charAt(i++));) {
     buffer = chars.indexOf(buffer)
     if (buffer === -1) continue
     bs = bc % 4 ? bs * 64 + buffer : buffer
@@ -234,6 +235,7 @@ export default function SignInScreen() {
         res.createdSessionId || res.signUp?.createdSessionId || res.signIn?.createdSessionId
       if (sessionId && flowSetActive) {
         await flowSetActive({ session: sessionId })
+        posthog.capture('sign_in_completed', { provider: label.toLowerCase() })
         router.replace('/(tabs)')
         return
       }
@@ -247,7 +249,9 @@ export default function SignInScreen() {
       if (su && usernameOutstanding && flowSetActive) {
         setPendingSignUp(su)
         setPendingSetActive(() => flowSetActive)
-        setUsername(su.emailAddress ? su.emailAddress.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '') : '')
+        setUsername(
+          su.emailAddress ? su.emailAddress.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '') : '',
+        )
         return
       }
 
@@ -285,6 +289,7 @@ export default function SignInScreen() {
       const attempt = await signIn.create({ identifier: email, password })
       if (attempt.status === 'complete') {
         await setActive({ session: attempt.createdSessionId })
+        posthog.capture('sign_in_completed', { provider: 'email' })
         router.replace('/(tabs)')
       } else if (attempt.status === 'needs_second_factor') {
         // Account has 2FA. Prepare a code challenge (phone code where set up;
@@ -350,6 +355,7 @@ export default function SignInScreen() {
       const attempt = await signUp.attemptEmailAddressVerification({ code: value })
       if (attempt.status === 'complete' && attempt.createdSessionId) {
         await setActiveSignUp({ session: attempt.createdSessionId })
+        posthog.capture('sign_up_completed', { provider: 'email' })
         router.replace('/(tabs)')
       } else if (attempt.missingFields.length) {
         setError(`Your account still needs: ${attempt.missingFields.join(', ')}`)
@@ -396,6 +402,7 @@ export default function SignInScreen() {
       }
       if (attempt.status === 'complete') {
         await setActive({ session: attempt.createdSessionId })
+        posthog.capture('sign_in_completed', { provider: 'email' })
         router.replace('/(tabs)')
       } else {
         setError('That code was not accepted. Try again.')
@@ -434,6 +441,7 @@ export default function SignInScreen() {
         await pendingSetActive({ session: updated.createdSessionId })
         setPendingSignUp(null)
         setPendingSetActive(null)
+        posthog.capture('sign_up_completed', { provider: 'oauth' })
         router.replace('/(tabs)')
       } else {
         setError(`Sign-up still needs: ${updated.missingFields.join(', ') || updated.status}`)
@@ -479,11 +487,7 @@ export default function SignInScreen() {
           where the system ignores adjustResize and never resizes the window,
           so the JS side must pad for the keyboard itself. Padding is computed
           from actual overlap, so it can't double-compensate. */}
-      <KeyboardAvoidingView
-        style={styles.content}
-        behavior="padding"
-        keyboardVerticalOffset={0}
-      >
+      <KeyboardAvoidingView style={styles.content} behavior="padding" keyboardVerticalOffset={0}>
         <ScrollView
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
@@ -505,7 +509,11 @@ export default function SignInScreen() {
                   onChangeText={setUsername}
                 />
                 {errorBanner}
-                <TouchableOpacity style={styles.primaryButton} onPress={onSubmitUsername} disabled={busy}>
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={onSubmitUsername}
+                  disabled={busy}
+                >
                   {busy ? (
                     <ActivityIndicator color={INK.onAccent} />
                   ) : (
@@ -517,8 +525,8 @@ export default function SignInScreen() {
               <View style={styles.formCard}>
                 <Text style={styles.stepTitle}>Check your email</Text>
                 <Text style={styles.stepHint}>
-                  We sent a 6-digit code to {email.trim() || 'your email'}. Enter it below to
-                  finish creating your account.
+                  We sent a 6-digit code to {email.trim() || 'your email'}. Enter it below to finish
+                  creating your account.
                 </Text>
                 <TextInput
                   style={[styles.input, styles.codeInput]}
@@ -531,14 +539,22 @@ export default function SignInScreen() {
                   maxLength={8}
                 />
                 {errorBanner}
-                <TouchableOpacity style={styles.primaryButton} onPress={onVerifySignUp} disabled={busy}>
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={onVerifySignUp}
+                  disabled={busy}
+                >
                   {busy ? (
                     <ActivityIndicator color={INK.onAccent} />
                   ) : (
                     <Text style={styles.primaryButtonText}>Create account</Text>
                   )}
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => void onResendSignUpCode()} style={styles.forgot} disabled={busy}>
+                <TouchableOpacity
+                  onPress={() => void onResendSignUpCode()}
+                  style={styles.forgot}
+                  disabled={busy}
+                >
                   <Text style={styles.forgotText}>Resend code</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -570,7 +586,11 @@ export default function SignInScreen() {
                   maxLength={8}
                 />
                 {errorBanner}
-                <TouchableOpacity style={styles.primaryButton} onPress={onSubmitCode} disabled={busy}>
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={onSubmitCode}
+                  disabled={busy}
+                >
                   {busy ? (
                     <ActivityIndicator color={INK.onAccent} />
                   ) : (
@@ -765,13 +785,22 @@ export default function SignInScreen() {
 /** Clerk's short `message` is often "is invalid"; `longMessage` names the
  *  offending parameter, which actually tells you what's wrong. */
 function clerkMessage(e: unknown, fallback: string): string {
-  const clerkErr = (e as { errors?: Array<{ message?: string; longMessage?: string }> })?.errors?.[0]
+  const clerkErr = (e as { errors?: Array<{ message?: string; longMessage?: string }> })
+    ?.errors?.[0]
   return clerkErr?.longMessage || clerkErr?.message || (e as Error)?.message || fallback
 }
 
 const styles = StyleSheet.create({
   bg: { flex: 1, backgroundColor: INK.bg },
-  bgImage: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, width: '100%', height: '100%' },
+  bgImage: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    width: '100%',
+    height: '100%',
+  },
   scrim: { position: 'absolute', left: 0, right: 0, bottom: 0, top: 0 },
   heroTop: {
     position: 'absolute',
@@ -831,7 +860,13 @@ const styles = StyleSheet.create({
 
   formCard: { gap: 12 },
   stepTitle: { color: INK.text, fontSize: 20, fontWeight: '700', textAlign: 'center' },
-  stepHint: { color: INK.muted, fontSize: 13.5, textAlign: 'center', marginBottom: 4, lineHeight: 19 },
+  stepHint: {
+    color: INK.muted,
+    fontSize: 13.5,
+    textAlign: 'center',
+    marginBottom: 4,
+    lineHeight: 19,
+  },
   input: {
     backgroundColor: INK.field,
     color: INK.text,

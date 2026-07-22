@@ -62,6 +62,14 @@ export const SENTRY_DSN = cfg(
   'https://e44ed90551d4e3c3379246a5efce27c7@o4511760230907904.ingest.us.sentry.io/4511760235888640',
 )
 
+// PostHog analytics. Token is PUBLIC (phc_ keys only permit writing events).
+// Committed default in app.config.js; env var overrides for a different project.
+export const POSTHOG_PROJECT_TOKEN = cfg(
+  'EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN',
+  'phc_tvaXnSRS5CYf6fFcEDjeExjr3SZUnqYBphj36wFiDXDE',
+)
+export const POSTHOG_HOST = cfg('EXPO_PUBLIC_POSTHOG_HOST', 'https://us.i.posthog.com')
+
 /**
  * Whether to offer the native Google account-picker (vs the browser-tab OAuth
  * fallback). The Google OAuth client IDs are public and baked into every build

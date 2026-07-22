@@ -13,11 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { BottomSheetModal } from '@gorhom/bottom-sheet'
 import Animated, { FadeIn } from 'react-native-reanimated'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import type {
-  ABSLibraryItem,
-  ABSSearchResponse,
-  HSAudibleSearchResult,
-} from '@hearthshelf/core'
+import type { ABSLibraryItem, ABSSearchResponse, HSAudibleSearchResult } from '@hearthshelf/core'
 import { coverHue } from '@hearthshelf/core'
 import { getLibraries, searchLibraryAll, itemAuthor, itemTitle, coverUrl } from '@/api/abs'
 import { searchAudible } from '@/api/absAudible'
@@ -41,10 +37,7 @@ import {
 } from '@/ui/primitives'
 import { EmptyState, ErrorState, Skeleton, SkeletonRow } from '@/ui/states'
 import { SettingsToggle } from '@/ui/settingsControls'
-import {
-  BookActionsSheet,
-  type BookActionsHandle,
-} from '@/ui/BookActionsSheet'
+import { BookActionsSheet, type BookActionsHandle } from '@/ui/BookActionsSheet'
 import { NotOwnedSheet } from '@/ui/NotOwnedSheet'
 import { useSheetBackHandler } from '@/ui/useBackHandler'
 import { AppTabBar, tabFromParam } from '@/ui/AppTabBar'
@@ -55,6 +48,7 @@ import { showToast } from '@/ui/Toast'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useContentInset } from '@/ui/useContentInset'
 import { useColors } from '@/ui/ThemeProvider'
+import { posthog } from '@/lib/posthog'
 
 type Scope = 'everything' | 'books' | 'series' | 'authors' | 'narrators'
 
@@ -132,19 +126,16 @@ export default function SearchScreen() {
     setRecents(next)
     void AsyncStorage.setItem(RECENTS_KEY, JSON.stringify(next))
   }, [])
-  const rememberQuery = useCallback(
-    (q: string) => {
-      const trimmed = q.trim()
-      if (!trimmed) return
-      setRecents((cur) => {
-        const next = [trimmed, ...cur.filter((r) => r.toLowerCase() !== trimmed.toLowerCase())]
-        const capped = next.slice(0, RECENTS_MAX)
-        void AsyncStorage.setItem(RECENTS_KEY, JSON.stringify(capped))
-        return capped
-      })
-    },
-    [],
-  )
+  const rememberQuery = useCallback((q: string) => {
+    const trimmed = q.trim()
+    if (!trimmed) return
+    setRecents((cur) => {
+      const next = [trimmed, ...cur.filter((r) => r.toLowerCase() !== trimmed.toLowerCase())]
+      const capped = next.slice(0, RECENTS_MAX)
+      void AsyncStorage.setItem(RECENTS_KEY, JSON.stringify(capped))
+      return capped
+    })
+  }, [])
 
   // ---- library resolution ----
   const libraryIdRef = useRef<string | null>(null)
@@ -183,7 +174,12 @@ export default function SearchScreen() {
             itemTitle(it).toLowerCase().includes(needle) ||
             itemAuthor(it).toLowerCase().includes(needle),
         )
-        setResults({ book: matches.map((libraryItem) => ({ libraryItem })), series: [], authors: [], narrators: [] })
+        setResults({
+          book: matches.map((libraryItem) => ({ libraryItem })),
+          series: [],
+          authors: [],
+          narrators: [],
+        })
         setExternal([])
         setSearched(true)
         setLoading(false)
@@ -202,6 +198,12 @@ export default function SearchScreen() {
         setResults(data)
         setSearched(true)
         rememberQuery(trimmed)
+        const result_count =
+          (data.book?.length ?? 0) +
+          (data.series?.length ?? 0) +
+          (data.authors?.length ?? 0) +
+          (data.narrators?.length ?? 0)
+        posthog.capture('search_performed', { scope, result_count, has_results: result_count > 0 })
       } catch {
         setResults(null)
         setSearchError(true)
@@ -507,7 +509,10 @@ export default function SearchScreen() {
                 >
                   <View style={styles.seriesCovers}>
                     {s.books.slice(0, 2).map((b, i) => (
-                      <View key={b.id} style={[styles.seriesCover, i > 0 && styles.seriesCoverBack]}>
+                      <View
+                        key={b.id}
+                        style={[styles.seriesCover, i > 0 && styles.seriesCoverBack]}
+                      >
                         <Cover
                           uri={coverUrl(b.id)}
                           itemId={b.id}
@@ -612,8 +617,7 @@ export default function SearchScreen() {
           <View style={{ flex: 1, minWidth: 0 }}>
             <AppText variant="label">Search beyond your library</AppText>
             <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
-              Show Audible matches under your own results, with a request or buy
-              link.
+              Show Audible matches under your own results, with a request or buy link.
             </AppText>
           </View>
           <SettingsToggle
@@ -630,7 +634,6 @@ export default function SearchScreen() {
         onDismiss={() => setSelected(null)}
       />
       <BookActionsSheet ref={actionsRef} />
-
     </Screen>
   )
 }
@@ -702,7 +705,12 @@ function BookRow({
         <AppText variant="label" numberOfLines={1}>
           {itemTitle(item)}
         </AppText>
-        <AppText variant="caption" color={colors.textMuted} numberOfLines={1} style={{ marginTop: 2 }}>
+        <AppText
+          variant="caption"
+          color={colors.textMuted}
+          numberOfLines={1}
+          style={{ marginTop: 2 }}
+        >
           {sub}
         </AppText>
         {inProgress ? (

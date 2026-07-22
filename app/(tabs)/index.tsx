@@ -24,6 +24,7 @@ import {
 } from '@hearthshelf/core'
 import { setSessionExpiredHandler } from '@/api/controlPlane'
 import { clearSession } from '@/api/session'
+import { posthog } from '@/lib/posthog'
 import { clearAudibleCache } from '@/api/absAudible'
 import { clearSubscriptions } from '@/player/subscriptions'
 import { resetPushRegistration } from '@/player/pushRegister'
@@ -214,6 +215,7 @@ export default function HomeScreen() {
       clearSubscriptions()
       resetPushRegistration()
       await clearSession()
+      posthog.reset()
       await signOut()
       router.replace(reason ? `/sign-in?reason=${reason}` : '/sign-in')
     },
@@ -611,6 +613,7 @@ export default function HomeScreen() {
                 // playItemById resolves the resume position itself (play session,
                 // else the saved media-progress spot), so no manual seek here.
                 await playItemById(hero.id)
+                posthog.capture('book_played', { source: 'home_hero' })
                 router.push('/player')
               } catch {
                 router.push(`/item/${hero.id}?from=home`)
@@ -1111,6 +1114,7 @@ function Shelf({
             haptics.transport()
             try {
               await playItemById(item.id)
+              posthog.capture('book_played', { source: 'home_shelf', shelf_id: shelf.id })
               router.push('/player')
             } catch {
               router.push(`/item/${item.id}?from=home`)

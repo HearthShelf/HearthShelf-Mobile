@@ -6,6 +6,7 @@
  */
 import { useMemo } from 'react'
 import { useAuth, useUser } from '@clerk/expo'
+import { posthog } from '@/lib/posthog'
 import { useRouter } from 'expo-router'
 import { StyleSheet, View } from 'react-native'
 import { clearSession } from '@/api/session'
@@ -59,6 +60,7 @@ export default function AccountScreen() {
     clearSubscriptions()
     resetPushRegistration()
     await clearSession()
+    posthog.reset()
     await signOut()
     router.replace('/sign-in')
   }

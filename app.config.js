@@ -51,6 +51,14 @@ const SENTRY_DSN =
   process.env.EXPO_PUBLIC_SENTRY_DSN ||
   'https://e44ed90551d4e3c3379246a5efce27c7@o4511760230907904.ingest.us.sentry.io/4511760235888640'
 
+// PostHog project token. PUBLIC by design (phc_ tokens only permit writing
+// events, same as a Sentry DSN) - committed default so every build path bakes it
+// in. An env var overrides it for a different PostHog project.
+const POSTHOG_PROJECT_TOKEN =
+  process.env.EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN ||
+  'phc_tvaXnSRS5CYf6fFcEDjeExjr3SZUnqYBphj36wFiDXDE'
+const POSTHOG_HOST = process.env.EXPO_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com'
+
 const extra = {
   EXPO_PUBLIC_CONTROL_PLANE_URL: CONTROL_PLANE_URL,
   EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: CLERK_PUBLISHABLE_KEY,
@@ -67,6 +75,8 @@ const extra = {
   // countdown still works.
   EXPO_PUBLIC_EAS_PROJECT_ID: EAS_PROJECT_ID,
   EXPO_PUBLIC_SENTRY_DSN: SENTRY_DSN,
+  EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN: POSTHOG_PROJECT_TOKEN,
+  EXPO_PUBLIC_POSTHOG_HOST: POSTHOG_HOST,
   eas: { projectId: EAS_PROJECT_ID },
 }
 

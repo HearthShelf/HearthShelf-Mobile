@@ -94,6 +94,7 @@ import { ScrollTopButton } from '@/ui/ScrollTopButton'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { adaptiveGridColumns, adaptiveGridTileWidth, adaptiveLibraryColumns } from '@/ui/responsive'
+import { posthog } from '@/lib/posthog'
 
 const GUTTER = spacing.lg
 // Reveal the scroll-to-top button once the list is roughly 1.5 screens deep.
@@ -323,7 +324,11 @@ function LibrarySwitcher({
                   color={isActive ? colors.accent : colors.textMuted}
                 />
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <AppText variant="body" color={isActive ? colors.accent : colors.text} numberOfLines={1}>
+                  <AppText
+                    variant="body"
+                    color={isActive ? colors.accent : colors.text}
+                    numberOfLines={1}
+                  >
                     {lib.name}
                   </AppText>
                   {counts[lib.id] !== undefined ? (
@@ -664,10 +669,15 @@ function BooksView({
 
   // Tapping the active sort flips direction; a new sort adopts its natural default.
   const chooseSort = (s: LibrarySort) => {
-    if (s === sort) setDesc((d) => !d)
-    else {
+    if (s === sort) {
+      const next = !desc
+      setDesc(next)
+      posthog.capture('library_sorted', { sort: s, desc: next })
+    } else {
+      const nextDesc = DESC_BY_DEFAULT.has(s)
       setSort(s)
-      setDesc(DESC_BY_DEFAULT.has(s))
+      setDesc(nextDesc)
+      posthog.capture('library_sorted', { sort: s, desc: nextDesc })
     }
   }
 
