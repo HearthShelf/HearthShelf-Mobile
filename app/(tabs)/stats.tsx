@@ -131,6 +131,7 @@ function bookCountLabel(n: number): string {
 interface StatsVM {
   totalTimeSec: number
   todaySec: number
+  weekSec: number
   activeDays: number
   byDay: Record<string, number>
   byDayOfWeek: Record<string, number>
@@ -147,6 +148,7 @@ function vmFromHs(s: HSListeningStats): StatsVM {
   return {
     totalTimeSec: s.totalTimeSec,
     todaySec: s.todaySec,
+    weekSec: s.weekSec,
     activeDays: s.activeDays,
     byDay: s.byDay,
     byDayOfWeek: s.byDayOfWeek,
@@ -509,14 +511,71 @@ const rowGap8 = { flexDirection: 'row' as const, alignItems: 'center' as const, 
 
 // --- 1. Hero ---------------------------------------------------------------
 
+type ListeningPeriod = 'total' | 'year' | 'month' | 'week' | 'day'
+
+const LISTENING_PERIODS: { key: ListeningPeriod; label: string }[] = [
+  { key: 'total', label: 'Total listening time' },
+  { key: 'year', label: "This year's listening time" },
+  { key: 'month', label: "This month's listening time" },
+  { key: 'week', label: 'Last 7 days' },
+  { key: 'day', label: "Today's listening time" },
+]
+
+function listeningSecondsForPeriod(stats: StatsVM, period: ListeningPeriod, now: Date): number {
+  if (period === 'total') return stats.totalTimeSec
+  if (period === 'week') return stats.weekSec
+  if (period === 'day') return stats.todaySec
+
+  const todayKey = dayKey(now)
+  const prefix = period === 'year' ? todayKey.slice(0, 4) : todayKey.slice(0, 7)
+  return Object.entries(stats.byDay).reduce(
+    (total, [date, seconds]) => (date.startsWith(prefix) ? total + seconds : total),
+    0,
+  )
+}
+
+function listeningPeriodDetail(stats: StatsVM, period: ListeningPeriod, now: Date): string {
+  if (period === 'total') return `across ${bookCountLabel(stats.bookCount)}`
+  if (period === 'year') return String(now.getFullYear())
+  if (period === 'month')
+    return now.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+  if (period === 'week') return 'Today and the previous 6 days'
+  return now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+}
+
 function HeroTotal({ stats, styles, colors }: { stats: StatsVM; styles: Styles; colors: Palette }) {
-  const h = Math.floor(stats.totalTimeSec / 3600)
-  const m = Math.floor((stats.totalTimeSec % 3600) / 60)
+  const [period, setPeriod] = useState<ListeningPeriod>('total')
+  const periodIndex = LISTENING_PERIODS.findIndex((option) => option.key === period)
+  const current = LISTENING_PERIODS[periodIndex]
+  const next = LISTENING_PERIODS[(periodIndex + 1) % LISTENING_PERIODS.length]
+  const now = new Date()
+  const seconds = listeningSecondsForPeriod(stats, period, now)
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const detail = listeningPeriodDetail(stats, period, now)
+
+  const cyclePeriod = () => {
+    haptics.select()
+    setPeriod(next.key)
+  }
+
   return (
-    <View style={[styles.card, styles.hero]}>
-      <AppText variant="caption" color={colors.textMuted}>
-        Total listening time
-      </AppText>
+    <Touchable
+      style={[styles.card, styles.hero]}
+      onPress={cyclePeriod}
+      accessibilityRole="button"
+      accessibilityLabel={current.label}
+      accessibilityValue={{ text: `${h} hours ${m} minutes. ${detail}` }}
+      accessibilityHint={`Shows ${next.label.toLowerCase()}`}
+    >
+      <View style={styles.heroHead}>
+        <AppText variant="caption" color={colors.textMuted}>
+          {current.label}
+        </AppText>
+        <AppText variant="meta" color={colors.textMuted}>
+          Tap to cycle
+        </AppText>
+      </View>
       <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
         <AppText style={styles.heroNum}>{h}</AppText>
         <AppText style={styles.heroUnit}>h </AppText>
@@ -524,9 +583,9 @@ function HeroTotal({ stats, styles, colors }: { stats: StatsVM; styles: Styles; 
         <AppText style={styles.heroUnit}>m</AppText>
       </View>
       <AppText variant="meta" color={colors.textMuted}>
-        across {bookCountLabel(stats.bookCount)}
+        {detail}
       </AppText>
-    </View>
+    </Touchable>
   )
 }
 
@@ -2007,6 +2066,13 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
       ...shadow.card,
     },
     hero: { alignItems: 'flex-start', gap: 2 },
+    heroHead: {
+      width: '100%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.sm,
+    },
     heroNum: { fontFamily: fonts.mono, fontSize: 40, fontWeight: '700', color: colors.text },
     heroUnit: { fontFamily: fonts.sans, fontSize: 20, fontWeight: '600', color: colors.textMuted },
 

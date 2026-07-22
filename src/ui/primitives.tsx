@@ -13,6 +13,7 @@ import {
   View,
   type ImageStyle,
   type LayoutChangeEvent,
+  type PressableProps,
   type StyleProp,
   type TextStyle,
   type ViewStyle,
@@ -164,6 +165,10 @@ export function Touchable({
   style,
   hitSlop,
   rippleColor,
+  accessibilityHint,
+  accessibilityLabel,
+  accessibilityRole,
+  accessibilityValue,
 }: {
   children: React.ReactNode
   onPress?: () => void
@@ -172,6 +177,10 @@ export function Touchable({
   style?: StyleProp<ViewStyle>
   hitSlop?: number
   rippleColor?: string
+  accessibilityHint?: PressableProps['accessibilityHint']
+  accessibilityLabel?: PressableProps['accessibilityLabel']
+  accessibilityRole?: PressableProps['accessibilityRole']
+  accessibilityValue?: PressableProps['accessibilityValue']
 }) {
   const colors = useColors()
   const styles = useStyles()
@@ -182,6 +191,10 @@ export function Touchable({
       onLongPress={onLongPress}
       disabled={disabled}
       hitSlop={hitSlop}
+      accessibilityHint={accessibilityHint}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole={accessibilityRole}
+      accessibilityValue={accessibilityValue}
       android_ripple={{ color: ripple }}
       style={({ pressed }) => [
         style,
