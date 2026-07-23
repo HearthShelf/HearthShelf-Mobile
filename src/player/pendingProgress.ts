@@ -18,6 +18,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { syncLocalSessions, type LocalSession } from '@/api/abs'
 import { getSession } from '@/api/session'
+import { notifyServerReached } from './syncState'
 
 export interface PendingSessionState {
   byId: ReadonlyMap<string, LocalSession>
@@ -107,6 +108,9 @@ export async function flushPendingProgress(): Promise<boolean> {
     // Leave everything pending; the next reconnect/background pass retries.
     return false
   }
+  // Reaching ABS is proof the server is up: let a stale offline connection phase
+  // recover even when there's no live session driving syncStateSynced.
+  notifyServerReached()
 
   // All ingested in one call - clear the ids we just sent (guarding against any
   // that were re-recorded meanwhile, though offline playback can't run once a

@@ -46,6 +46,30 @@ export interface SyncState {
 let state: SyncState = { status: 'idle', lastSyncedAt: null, live: null }
 const listeners = new Set<() => void>()
 
+// Notified whenever a sync actually reaches the server. A successful sync is
+// proof the server is reachable, which the connection layer can't always learn
+// on its own: its recovery paths are edge-triggered (a NetInfo network edge, an
+// AppState foreground, a Clerk sign-in flip), and a merely SLOW connection never
+// produces an edge. So a connect that lost the startup race could sit at
+// phase:'offline' indefinitely while playback synced fine - showing a red icon
+// on a working connection. ConnectionProvider subscribes to this to re-attempt
+// the connect the moment we have evidence the server is up.
+const reachedListeners = new Set<() => void>()
+
+/** Subscribe to "a sync just reached the server". Returns an unsubscribe fn. */
+export function subscribeServerReached(fn: () => void): () => void {
+  reachedListeners.add(fn)
+  return () => {
+    reachedListeners.delete(fn)
+  }
+}
+
+/** Announce that a request reached the server. Fired by syncStateSynced and by a
+ *  successful pending-session flush (which has no live session to mark synced). */
+export function notifyServerReached(): void {
+  reachedListeners.forEach((l) => l())
+}
+
 function set(patch: Partial<SyncState>): void {
   state = { ...state, ...patch }
   listeners.forEach((l) => l())
@@ -78,9 +102,11 @@ export function syncStateTick(currentTime: number, timeListening: number): void 
   set({ live: { ...state.live, currentTime, timeListening } })
 }
 
-/** Everything accrued so far is now on the server. Green. */
+/** Everything accrued so far is now on the server. Green. Also announces that the
+ *  server is reachable, so a stale offline connection phase can recover. */
 export function syncStateSynced(atMs: number): void {
   set({ status: 'synced', lastSyncedAt: atMs })
+  notifyServerReached()
 }
 
 /** We have listening/position not yet on the server, but the server is reachable.

@@ -40,10 +40,21 @@ function resolve(
   conn: ConnectionStatus,
   colors: Palette,
 ): { look: Look; kind: 'synced' | 'pending' | 'offline' } {
-  const offline = conn.phase === 'offline' || sync.status === 'failed'
-  if (offline) return { look: { name: icons.cloudOff, color: colors.destructive }, kind: 'offline' }
+  // The player's own sync result is the stronger signal and WINS over the
+  // connection phase. A sync that landed is direct proof the server is reachable,
+  // whereas conn.phase can be a stale 'offline' - it's set by an edge-triggered
+  // connect whose recovery paths don't fire on a merely slow connection. Reading
+  // the phase first made a working, actively-syncing player show a red icon, and
+  // left it red for seconds after a manual sync reported success.
+  if (sync.status === 'failed')
+    return { look: { name: icons.cloudOff, color: colors.destructive }, kind: 'offline' }
+  if (sync.status === 'synced')
+    return { look: { name: icons.cloudDone, color: colors.success }, kind: 'synced' }
   if (sync.status === 'pending')
     return { look: { name: icons.cloudQueue, color: colors.accent }, kind: 'pending' }
+  // Only with no sync verdict of our own (idle) does the connection phase decide.
+  if (conn.phase === 'offline')
+    return { look: { name: icons.cloudOff, color: colors.destructive }, kind: 'offline' }
   return { look: { name: icons.cloudDone, color: colors.success }, kind: 'synced' }
 }
 

@@ -42,6 +42,7 @@ import {
   pokeConnectivity,
 } from '@/player/connectivity'
 import { hydratePendingProgress, flushPendingProgress } from '@/player/pendingProgress'
+import { subscribeServerReached } from '@/player/syncState'
 import { hydrateProgress } from '@/store/progress'
 import type { SplashServer } from '@/ui/SplashScreen'
 
@@ -561,6 +562,17 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     if (!effectiveSignedIn) return
     startConnectivityWatch(reconnectIfNeeded)
     return () => stopConnectivityWatch()
+  }, [reconnectIfNeeded, effectiveSignedIn])
+
+  // A sync that reached the server is direct proof the server is up, so recover
+  // from a stale offline/error phase immediately. The other recovery paths are all
+  // edge-triggered (network edge, foreground, Clerk flip) and a merely SLOW
+  // connection produces no edge: a connect that lost the startup race to
+  // CONNECTING_FLOOR_MS would otherwise leave the app showing a red sync icon and
+  // an offline banner while playback was syncing to that same server just fine.
+  useEffect(() => {
+    if (!effectiveSignedIn) return
+    return subscribeServerReached(reconnectIfNeeded)
   }, [reconnectIfNeeded, effectiveSignedIn])
 
   // Also re-probe on foreground: NetInfo can miss a network change that happened
