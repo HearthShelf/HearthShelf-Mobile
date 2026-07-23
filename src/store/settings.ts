@@ -262,7 +262,7 @@ let state: SettingsState = {
   sleepBeepFinal: false,
   sleepBeepSound: 'chime',
   sleepBeepVolume: 60,
-  autoSleep: false,
+  autoSleep: true,
   autoSleepStart: '22:00',
   autoSleepEnd: '06:00',
   autoSleepDur: 30,
