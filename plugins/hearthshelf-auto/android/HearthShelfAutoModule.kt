@@ -244,6 +244,17 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     if (car != null) car.stop() else HearthShelfPlayerService.instance?.stopPlayer()
   }
 
+  /**
+   * Load the book the phone was playing into the car player, at the phone's live
+   * position. Called by JS on the car-takeover edge: the car connects with an
+   * empty player, and without this Android Auto auto-plays the browse tree's
+   * first item (the up-next queue head) instead of resuming the current book.
+   * No-op when the car isn't the active player (nothing to take over).
+   */
+  @ReactMethod fun loadCarBook(itemId: String, positionSec: Double) {
+    carPlayer?.loadBook(itemId, positionSec)
+  }
+
   // RN NativeEventEmitter requires these no-op stubs on the module.
   @ReactMethod fun addListener(eventName: String) {}
   @ReactMethod fun removeListeners(count: Int) {}
@@ -256,6 +267,9 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     fun seekTo(sec: Double)
     fun setRate(rate: Double)
     fun stop()
+    /** Load a book into the car player at the given absolute position, so the car
+     *  resumes what the phone was playing instead of the browse tree's first item. */
+    fun loadBook(itemId: String, positionSec: Double)
   }
 
   companion object {

@@ -31,6 +31,7 @@ interface HearthShelfAutoNative {
     volume: number,
     remainingSec: number,
   ): void
+  loadCarBook(itemId: string, positionSec: number): void
   clearSession(): void
 }
 
@@ -124,6 +125,17 @@ export function setAutoSleepBeep(
   if (Platform.OS === 'android') {
     native?.setSleepBeep(enabled, at2min, at1min, atFinal, sound, volume, remainingSec)
   }
+}
+
+/**
+ * Load the book the phone is playing into the car player at the given position,
+ * on the car-takeover edge. Without this the car connects with an empty player
+ * and Android Auto auto-plays the browse tree's first item (the up-next queue
+ * head) instead of resuming the current book. Android only: iOS CarPlay shares
+ * one player, so there's nothing to hand over.
+ */
+export function loadAutoCarBook(itemId: string, positionSec: number): void {
+  if (Platform.OS === 'android') native?.loadCarBook(itemId, positionSec)
 }
 
 export function clearAutoSession(): void {

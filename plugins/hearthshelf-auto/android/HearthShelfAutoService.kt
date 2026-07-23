@@ -96,6 +96,37 @@ class HearthShelfAutoService : MediaLibraryService() {
       session?.setMediaButtonPreferences(customLayout())
     }
     override fun stop() = runOnMain { rawPlayer?.pause() }
+    override fun loadBook(itemId: String, positionSec: Double) = loadBookIntoCar(itemId, positionSec)
+  }
+
+  /**
+   * Load a book into the car player at the phone's live position, so a mid-listen
+   * car connect resumes the current book instead of Android Auto auto-playing the
+   * browse tree's first item (the up-next queue head).
+   *
+   * resolveChapterWindows opens an ABS play session (network) and must run off the
+   * main thread; setting the items + preparing the player must run ON it. The
+   * JS-supplied position overrides the session's currentTime - it's the phone's
+   * exact live spot, not the last value that reached the server.
+   */
+  private fun loadBookIntoCar(itemId: String, positionSec: Double) {
+    io.execute {
+      val windows = resolveChapterWindows(itemId)
+      if (windows.isEmpty()) { Log.e(TAG, "loadBookIntoCar: no windows for $itemId"); return@execute }
+      // Point the pending seek at the JS position (resolveChapterWindows set it
+      // from the session's currentTime; the phone's live spot is more current).
+      val idx = chapters.indexOfFirst { positionSec >= it.start && positionSec < it.end }
+        .let { if (it >= 0) it else 0 }
+      pendingSeekWindow = idx
+      pendingSeekMs = ((positionSec - chapters[idx].start) * 1000).toLong().coerceAtLeast(0)
+      lastSyncedSec = positionSec
+      runOnMain {
+        val player = rawPlayer ?: return@runOnMain
+        player.setMediaItems(windows)
+        player.prepare()
+        player.playWhenReady = true
+      }
+    }
   }
 
   private val prefs by lazy {
