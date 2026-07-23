@@ -66,6 +66,14 @@ jobs:
       - run: npm ci
 
       - name: Prebuild iOS project
+        env:
+          # This throwaway simulator build boots on a cold CI simulator and its
+          # slow first launch trips Sentry's AppHang watchdog. With no symbol
+          # upload (SENTRY_DISABLE_AUTO_UPLOAD below) those events land in
+          # production Sentry as unsymbolicated, mislabeled noise. Bake an empty
+          # DSN so the launch-check app never reports at all. app.config.js reads
+          # this at prebuild time to fill `extra`, so it must be set HERE.
+          HEARTHSHELF_DISABLE_SENTRY: 'true'
         run: npx expo prebuild --platform ios
 
       - name: Build Release simulator app

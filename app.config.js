@@ -47,9 +47,18 @@ const GOOGLE_IOS_URL_SCHEME =
 // client IDs fell into: CI has no .env, so every shipped build would silently
 // report nothing. The auth token used to UPLOAD source maps is the real secret
 // and stays out of the repo (.env.local locally, CI secret in Actions + EAS).
-const SENTRY_DSN =
-  process.env.EXPO_PUBLIC_SENTRY_DSN ||
-  'https://e44ed90551d4e3c3379246a5efce27c7@o4511760230907904.ingest.us.sentry.io/4511760235888640'
+//
+// HEARTHSHELF_DISABLE_SENTRY bakes an EMPTY DSN, which turns Sentry off entirely
+// in the built app (see src/lib/config.ts). It exists for the iOS Launch Check
+// workflow: that throwaway RELEASE simulator build boots on a cold CI simulator,
+// self-reports its slow cold start as an "App Hang", and - because its symbols
+// are never uploaded (SENTRY_DISABLE_AUTO_UPLOAD) - lands in production Sentry as
+// an unsymbolicated, mislabeled noise event. Setting an empty EXPO_PUBLIC_SENTRY_DSN
+// can't do this alone: the `||` below would fall back to the baked default.
+const SENTRY_DSN = process.env.HEARTHSHELF_DISABLE_SENTRY
+  ? ''
+  : process.env.EXPO_PUBLIC_SENTRY_DSN ||
+    'https://e44ed90551d4e3c3379246a5efce27c7@o4511760230907904.ingest.us.sentry.io/4511760235888640'
 
 const extra = {
   EXPO_PUBLIC_CONTROL_PLANE_URL: CONTROL_PLANE_URL,
