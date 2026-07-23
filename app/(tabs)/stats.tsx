@@ -40,9 +40,10 @@ import {
   type HSLeaderboardEntry,
   type LeaderboardWindow,
 } from '@hearthshelf/core'
-import { useRouter } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
 import { getHSStats, getStatsHistory, avatarUrl, coverUrl } from '@/api/abs'
 import { getLeaderboard, getCompare } from '@/api/social'
+import { getState as getPlayerState, subscribe as subscribePlayer } from '@/player/store'
 import { getSettingsState, setSetting, subscribeSettings } from '@/store/settings'
 import { useSyncExternalStore } from 'react'
 import {
@@ -172,6 +173,10 @@ export default function StatsTab() {
   const { colors, shadow } = useTheme()
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   const [status, setStatus] = useState<Status>({ phase: 'loading' })
+  // Mirrors status.phase for the focus effect, which is memoized on silentReload
+  // only and would otherwise read a stale phase.
+  const statusPhaseRef = useRef(status.phase)
+  statusPhaseRef.current = status.phase
   const [dowMode, setDowMode] = useState<DowMode>('last7')
   const [refreshing, setRefreshing] = useState(false)
   // Bumped on pull-to-refresh so the self-fetching sections (compare roster,
@@ -185,6 +190,13 @@ export default function StatsTab() {
 
   const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
   const yearlyBookGoal = settings.yearlyBookGoal
+
+  // Playback state drives the silent re-poll below, so the stats keep advancing
+  // while a book plays instead of freezing at first draw.
+  const { nowPlaying, isPlaying } = useSyncExternalStore(subscribePlayer, getPlayerState)
+  const lastPlaybackItemRef = useRef<string | null>(null)
+  const lastPlaybackPlayingRef = useRef<boolean>(false)
+  const playbackRepollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const scrollRef = useRef<ScrollView>(null)
   // Re-tapping the Stats tab while already on it scrolls back to the top.
@@ -255,6 +267,69 @@ export default function StatsTab() {
       setRefreshing(false)
     }
   }, [fetchHistory])
+
+  // Silently re-pull the core stats without a loading skeleton or the pull-to-
+  // refresh spinner. Used on tab focus and after playback changes so the numbers
+  // keep pace with the Home tab (which re-polls the same getHSStats on playback),
+  // instead of freezing at whatever they were when the tab first drew.
+  const silentReload = useCallback(async () => {
+    try {
+      const statsRes = await getHSStats()
+      setStatus((s) =>
+        s.phase === 'ready' ? { ...s, stats: vmFromHs(statsRes) } : s,
+      )
+    } catch {
+      // Leave the current numbers on screen; a background poll never surfaces an
+      // error or clears good data.
+    }
+  }, [])
+
+  // Coming back to this tab (e.g. from Home mid-listen) silently re-pulls, so the
+  // first thing you see is the current number, not a stale snapshot. The initial
+  // mount already loads via the effect above, so skip the focus pull until we
+  // have data on screen.
+  useFocusEffect(
+    useCallback(() => {
+      if (statusPhaseRef.current === 'ready') void silentReload()
+    }, [silentReload]),
+  )
+
+  // While a book plays, re-poll on the same triggers Home uses (item change or
+  // pause) so the two tabs never disagree. A short debounce lets the server
+  // record the just-played time before we read it back.
+  useEffect(() => {
+    if (!nowPlaying) {
+      lastPlaybackItemRef.current = null
+      lastPlaybackPlayingRef.current = isPlaying
+      return
+    }
+
+    const lastItem = lastPlaybackItemRef.current
+    const lastPlaying = lastPlaybackPlayingRef.current
+    const itemChanged = lastItem !== nowPlaying.itemId
+    const paused = lastPlaying === true && !isPlaying
+
+    lastPlaybackItemRef.current = nowPlaying.itemId
+    lastPlaybackPlayingRef.current = isPlaying
+
+    if (!itemChanged && !paused) return
+
+    if (playbackRepollRef.current) clearTimeout(playbackRepollRef.current)
+    playbackRepollRef.current = setTimeout(
+      () => {
+        playbackRepollRef.current = null
+        void silentReload()
+      },
+      paused ? 900 : 500,
+    )
+  }, [nowPlaying, isPlaying, silentReload])
+
+  useEffect(
+    () => () => {
+      if (playbackRepollRef.current) clearTimeout(playbackRepollRef.current)
+    },
+    [],
+  )
 
   // Retry only the history half, keeping the core stats on screen.
   const retryHistory = useCallback(async () => {
