@@ -209,6 +209,14 @@ async function playFromDownloadOffline(itemId: string, autoPlay = true): Promise
   if (active) await safeClose()
   lastTickTime = null
 
+  // Resume from the persisted media-progress spot. Offline there's no ABS session
+  // to carry currentTime, so the disk-hydrated progress store (hs.progress.v1) is
+  // the only source of "where was I". Without this a downloaded book started
+  // offline always began at 0 - and worse, the first progress tick synced that 0
+  // back over the real saved position through recordLocalProgress, wiping it.
+  const saved = progressFor(itemId)
+  const startAt = saved && !saved.isFinished && saved.currentTime > 0 ? saved.currentTime : 0
+
   const np: NowPlaying = {
     itemId,
     sessionId: '',
@@ -217,7 +225,7 @@ async function playFromDownloadOffline(itemId: string, autoPlay = true): Promise
     artworkUrl: local.coverUri ?? coverUrl(itemId),
     url: first.uri,
     duration: local.duration,
-    startPosition: 0,
+    startPosition: startAt,
     chapters: sanitizeChapters(local.chapters),
   }
   loadTrack(np, autoPlay)
@@ -228,11 +236,11 @@ async function playFromDownloadOffline(itemId: string, autoPlay = true): Promise
     itemId,
     title: local.title,
     duration: local.duration,
-    currentTime: 0,
+    currentTime: startAt,
     timeListening: 0,
     startedAt,
   }
-  syncStateStartSession(itemId, startedAt, 0)
+  syncStateStartSession(itemId, startedAt, startAt)
   // Offline downloaded book: it's banked locally, not on the server yet.
   syncStateFailed()
 }
