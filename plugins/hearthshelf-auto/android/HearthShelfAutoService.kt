@@ -15,6 +15,7 @@ import androidx.core.app.Person
 import androidx.core.app.RemoteInput
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -30,6 +31,7 @@ import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import io.sentry.Sentry
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -68,11 +70,13 @@ class HearthShelfAutoService : MediaLibraryService() {
 
   private val TAG = "HSAuto"
 
-  // Resume target for the item currently being loaded; applied once the player is
-  // ready so the car resumes where you left off instead of at 0. With per-chapter
-  // windows the target is a (window index, offset-into-window) pair.
-  @Volatile private var pendingSeekWindow: Int = -1
-  @Volatile private var pendingSeekMs: Long = 0L
+
+  // Resume target (absolute book ms) for the item currently being loaded; applied
+  // once the player is ready so the car resumes where you left off instead of at 0.
+  // The book is ONE continuous media item (not per-chapter clipped windows), so
+  // this is a plain absolute position - a single ExoPlayer seek, which is what
+  // makes resume fast. -1 means "no pending resume".
+  @Volatile private var pendingSeekMs: Long = -1L
   // ABS play-session id for the loaded book, so we can sync progress back.
   @Volatile private var absSessionId: String? = null
   @Volatile private var absDurationSec: Double = 0.0
@@ -82,6 +86,14 @@ class HearthShelfAutoService : MediaLibraryService() {
   // names. While non-empty the car owns playback: we register carPlayer so JS
   // transport routes here and tell JS the phone player should stand down.
   private val carControllers = HashSet<String>()
+
+  // Guard against loading the same book twice on one takeover. Sentry
+  // (HS-MOBILEAPP-D/E/G) showed onConnect firing for TWO controllers, so
+  // emitCarActive -> JS -> loadCarBook ran twice and resolveBookItem POSTed
+  // /play TWICE, 166ms apart - two ABS sessions, the second stomping the first
+  // mid-prepare. That double round-trip is what made the car slow to start.
+  // Holds the item id currently being loaded (or loaded); cleared on disconnect.
+  @Volatile private var loadingItemId: String? = null
 
   // The JS-transport -> car-player bridge, registered on the module while a car
   // controller is connected. ExoPlayer is main-thread-only, so hop first.
@@ -104,25 +116,39 @@ class HearthShelfAutoService : MediaLibraryService() {
    * car connect resumes the current book instead of Android Auto auto-playing the
    * browse tree's first item (the up-next queue head).
    *
-   * resolveChapterWindows opens an ABS play session (network) and must run off the
-   * main thread; setting the items + preparing the player must run ON it. The
-   * JS-supplied position overrides the session's currentTime - it's the phone's
-   * exact live spot, not the last value that reached the server.
+   * resolveBookItem opens an ABS play session (network) and must run off the main
+   * thread; setting the item + preparing the player must run ON it. The JS-supplied
+   * position overrides the session's currentTime - it's the phone's exact live
+   * spot, not the last value that reached the server.
    */
   private fun loadBookIntoCar(itemId: String, positionSec: Double) {
+    // De-dupe: two controllers connect per takeover, so JS pushes the same book
+    // twice within ~200ms. Without this each push opens its own ABS play session
+    // and reloads the player, doubling the time before audio starts.
+    synchronized(carControllers) {
+      if (loadingItemId == itemId) return
+      loadingItemId = itemId
+    }
     io.execute {
-      val windows = resolveChapterWindows(itemId)
-      if (windows.isEmpty()) { Log.e(TAG, "loadBookIntoCar: no windows for $itemId"); return@execute }
-      // Point the pending seek at the JS position (resolveChapterWindows set it
-      // from the session's currentTime; the phone's live spot is more current).
-      val idx = chapters.indexOfFirst { positionSec >= it.start && positionSec < it.end }
-        .let { if (it >= 0) it else 0 }
-      pendingSeekWindow = idx
-      pendingSeekMs = ((positionSec - chapters[idx].start) * 1000).toLong().coerceAtLeast(0)
+      val item = resolveBookItem(itemId)
+      if (item == null) {
+        Log.e(TAG, "loadBookIntoCar: resolve failed for $itemId")
+        // Release the guard so a retry (or a different book) can still load.
+        synchronized(carControllers) { if (loadingItemId == itemId) loadingItemId = null }
+        return@execute
+      }
+      // The start position rides setMediaItem below, so clear the READY-seek
+      // fallback - otherwise it would fire a second, redundant seek.
+      pendingSeekMs = -1
       lastSyncedSec = positionSec
+      val startMs = (positionSec * 1000).toLong().coerceAtLeast(0)
       runOnMain {
         val player = rawPlayer ?: return@runOnMain
-        player.setMediaItems(windows)
+        // Hand the start position to setMediaItem so preparation BEGINS at the
+        // resume offset (what the phone player does). Preparing at 0 and seeking
+        // on STATE_READY makes ExoPlayer buffer from the file start first - that
+        // is the slow path, and it also let the player reach STATE_ENDED.
+        player.setMediaItem(item, startMs)
         player.prepare()
         player.playWhenReady = true
       }
@@ -163,6 +189,15 @@ class HearthShelfAutoService : MediaLibraryService() {
   // by the chapter-skip buttons, bookmark, and chapter-relative progress.
   @Volatile private var chapters: List<Chapter> = emptyList()
   @Volatile private var currentItemId: String? = null
+
+  // Book metadata for the single continuous media item. With per-chapter clipping
+  // gone, the now-playing subtitle no longer changes on its own as playback
+  // crosses chapters - refreshChapterMeta rewrites it (same URI, no reload).
+  @Volatile private var bookTitle: String = ""
+  @Volatile private var bookAuthor: String = ""
+  @Volatile private var artUri: String = ""
+  // Chapter index currently shown in the now-playing metadata; -1 until first set.
+  @Volatile private var shownChapterIdx: Int = -1
 
   // ---- Club note-pops (Phase 7: in-car note notifications) ----
   // When the loaded book is the current book of a club the user is in, we watch
@@ -328,18 +363,34 @@ class HearthShelfAutoService : MediaLibraryService() {
     // uses the ABSOLUTE book position derived from the current chapter window.
     player.addListener(object : Player.Listener {
       override fun onPlaybackStateChanged(state: Int) {
-        if (state == Player.STATE_READY && pendingSeekWindow >= 0) {
-          val win = pendingSeekWindow
+        if (state == Player.STATE_READY && pendingSeekMs >= 0) {
           val off = pendingSeekMs
-          pendingSeekWindow = -1
-          pendingSeekMs = 0
-          player.seekTo(win, off)
+          pendingSeekMs = -1
+          // One continuous window: a single absolute seek (fast), not a
+          // seek-into-window-N over a freshly-prepared clip (the slow path).
+          player.seekTo(off)
         }
         if (state == Player.STATE_ENDED) {
-          syncProgress(absolutePositionMs(player), force = true)
-          // Book finished: let JS advance the shared up-next queue (server owns
-          // it). The store change flows back to load the next book.
-          HearthShelfAutoModule.emitEnded()
+          // Guard the queue-advance: a spurious ENDED (e.g. reached before the
+          // resume position was applied) would tell JS the book finished and
+          // swap the phone to the next queue item. Only advance when playback
+          // actually reached the end of the book.
+          val posMs = absolutePositionMs(player)
+          val durMs = (absDurationSec * 1000).toLong()
+          // An EMPTY player prepares straight to ENDED (duration C.TIME_UNSET,
+          // no loaded item) - that is not a finished book. Sentry HS-MOBILEAPP-F
+          // caught exactly this: ENDED fired from inside prepare() with
+          // durMs=Long.MIN_VALUE and item=null, and an earlier `durMs <= 0`
+          // guard would have treated it as "finished" and swapped the phone to
+          // the next queue item. Require a real loaded book AND a real duration.
+          val hasBook = currentItemId != null && player.currentMediaItem != null
+          val nearEnd = hasBook && durMs > 0 && posMs >= durMs - 5000
+          if (hasBook) syncProgress(posMs, force = true)
+          if (nearEnd) {
+            // Book finished: let JS advance the shared up-next queue (server owns
+            // it). The store change flows back to load the next book.
+            HearthShelfAutoModule.emitEnded()
+          }
         }
       }
       override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -348,16 +399,33 @@ class HearthShelfAutoService : MediaLibraryService() {
         HearthShelfAutoModule.emitProgress(absolutePositionMs(player) / 1000.0)
         if (!isPlaying) syncProgress(absolutePositionMs(player), force = true)
       }
+      override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+        // The car player had NO error handler: a failed stream or prepare (expired
+        // token, dead network, unplayable media) died silently, leaving the head
+        // unit stuck with no signal anywhere. Report it so it is diagnosable.
+        Log.e(TAG, "car playerError ${error.errorCodeName} item=$currentItemId", error)
+        try {
+          Sentry.captureException(error)
+        } catch (e: Throwable) {
+          // reporting must never break playback
+        }
+      }
     })
 
-    // Each chapter is its own clipped window (chapter-relative position/duration).
-    // Chapter nav happens through OUR custom prev/next-chapter buttons, not the
-    // standard transport (onConnect withholds the seek-to-previous/next commands
-    // so the car frees those slots for the custom row). A distinct session id is
-    // required; the phone service also runs one.
+    // The book loads as ONE continuous media item (whole-file stream), so resume
+    // is a single absolute seek instead of preparing a deep-offset clip - that
+    // clipped-window design cost ~a minute of buffering on a mid-book car resume.
+    // Chapters are tracked logically (the `chapters` list drives the skip buttons,
+    // bookmark, and absolute<->chapter math). Chapter nav happens through OUR
+    // custom prev/next-chapter buttons, not the standard transport (onConnect
+    // withholds seek-to-previous/next so the car frees those slots for the custom
+    // row). A distinct session id is required; the phone service also runs one.
     // Media-button-preferences (not setCustomLayout) is what media3 1.10 converts
     // into the LEGACY MediaSessionCompat custom actions Android Auto renders.
-    session = MediaLibrarySession.Builder(this, player, LibraryCallback())
+    // The SESSION gets the chapter-scoped wrapper (so the car scrubber tracks the
+    // current chapter); rawPlayer stays the real ExoPlayer, which all our internal
+    // math (absolutePositionMs, seeks, sync) drives in absolute book time.
+    session = MediaLibrarySession.Builder(this, ChapterForwardingPlayer(player), LibraryCallback())
       .setId("hearthshelf_auto")
       .setMediaButtonPreferences(customLayout())
       .build()
@@ -375,6 +443,9 @@ class HearthShelfAutoService : MediaLibraryService() {
           // so the phone UI's scrubber advances in step with the car.
           HearthShelfAutoModule.emitProgress(absolutePositionMs(it) / 1000.0)
           syncProgress(absolutePositionMs(it), force = false)
+          // One continuous item, so the now-playing chapter subtitle no longer
+          // changes on its own - refresh it when playback crosses a boundary.
+          refreshChapterMeta(it)
           checkNotes(it)
         }
       }
@@ -390,10 +461,25 @@ class HearthShelfAutoService : MediaLibraryService() {
   }
 
   /** Previous-chapter: restart the current chapter if we're >3s into it (matching
-   *  the in-app player), otherwise step to the previous window. */
+   *  the in-app player), otherwise jump to the previous chapter's start. One
+   *  continuous window, so both are absolute seeks. */
   private fun prevChapter(player: Player) {
-    if (player.currentPosition > 3000 || !player.hasPreviousMediaItem()) player.seekTo(0)
-    else player.seekToPreviousMediaItem()
+    val sec = absolutePositionMs(player) / 1000.0
+    val idx = chapters.indexOfFirst { sec >= it.start && sec < it.end }
+    val intoChapterMs = if (idx >= 0) ((sec - chapters[idx].start) * 1000).toLong() else Long.MAX_VALUE
+    if (intoChapterMs > 3000 || idx <= 0) {
+      // Restart the current chapter (or the book start if we're in the first).
+      seekToAbsolute(player, if (idx > 0) (chapters[idx].start * 1000).toLong() else 0L)
+    } else {
+      seekToAbsolute(player, (chapters[idx - 1].start * 1000).toLong())
+    }
+  }
+
+  /** Next-chapter: jump to the next chapter's start. No-op past the last. */
+  private fun nextChapter(player: Player) {
+    val sec = absolutePositionMs(player) / 1000.0
+    val idx = chapters.indexOfFirst { sec >= it.start && sec < it.end }
+    if (idx in 0 until chapters.size - 1) seekToAbsolute(player, (chapters[idx + 1].start * 1000).toLong())
   }
 
   /** POST a bookmark at the given position (labelled with the chapter title). */
@@ -518,10 +604,16 @@ class HearthShelfAutoService : MediaLibraryService() {
         .remove(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
         .build()
       if (isCarController(controller)) {
-        carControllers.add(controller.packageName)
+        // Announce the takeover exactly ONCE. Sentry showed `car took over`
+        // firing twice (two controllers connecting), which drove JS to push the
+        // book twice - two ABS sessions and a doubled load. The set add and the
+        // size check must be atomic, or both controllers can see size == 1.
+        val isFirst = synchronized(carControllers) {
+          carControllers.add(controller.packageName) && carControllers.size == 1
+        }
         // First car controller: the car now owns playback. Route JS transport
         // here and tell the phone to stand down.
-        if (carControllers.size == 1) {
+        if (isFirst) {
           HearthShelfAutoModule.carPlayer = carPlayerImpl
           HearthShelfAutoModule.emitCarActive(true)
         }
@@ -537,7 +629,12 @@ class HearthShelfAutoService : MediaLibraryService() {
       session: MediaSession,
       controller: MediaSession.ControllerInfo
     ) {
-      if (carControllers.remove(controller.packageName) && carControllers.isEmpty()) {
+      val wasLast = synchronized(carControllers) {
+        val removed = carControllers.remove(controller.packageName)
+        // Release the load guard so the NEXT takeover can load again.
+        if (removed && carControllers.isEmpty()) { loadingItemId = null; true } else false
+      }
+      if (wasLast) {
         // Last car controller left (unplugged / Auto closed): hand playback back
         // to the phone player and let the phone UI resume driving it.
         if (HearthShelfAutoModule.carPlayer === carPlayerImpl) {
@@ -564,7 +661,12 @@ class HearthShelfAutoService : MediaLibraryService() {
       customCommand: SessionCommand,
       args: Bundle
     ): ListenableFuture<SessionResult> {
-      val player = rawPlayer ?: session.player
+      // MUST be rawPlayer: session.player is the ChapterForwardingPlayer, whose
+      // position/seek are chapter-relative. Our commands work in absolute book
+      // time, so feeding them the wrapper would double-translate every seek.
+      val player = rawPlayer ?: return Futures.immediateFuture(
+        SessionResult(SessionResult.RESULT_ERROR_INVALID_STATE)
+      )
       when (customCommand.customAction) {
         // Skip in ABSOLUTE book time so 15s/30s cross chapter boundaries instead
         // of clamping at the current window's clip edges.
@@ -575,7 +677,7 @@ class HearthShelfAutoService : MediaLibraryService() {
           seekToAbsolute(player, if (totalMs > 0) target.coerceAtMost(totalMs) else target)
         }
         CMD_PREV_CH -> prevChapter(player)
-        CMD_NEXT_CH -> if (player.hasNextMediaItem()) player.seekToNextMediaItem()
+        CMD_NEXT_CH -> nextChapter(player)
         CMD_SPEED -> {
           val next = SPEED_PRESETS.firstOrNull { it > player.playbackParameters.speed + 0.001f }
             ?: SPEED_PRESETS.first()
@@ -630,29 +732,41 @@ class HearthShelfAutoService : MediaLibraryService() {
     /**
      * The car selected a playable book. Its MediaItem carries only the item id
      * (browse items have no real stream URL). Resolve it now by creating an ABS
-     * play session and swapping in the real, token-bearing stream URL + resume
-     * position, so the service's ExoPlayer can play it.
+     * play session and swapping in the real, token-bearing stream URL.
+     *
+     * onSetMediaItems (not onAddMediaItems) so we can hand back the RESUME
+     * POSITION alongside the item: preparation then begins at that offset instead
+     * of at 0-then-seek, which is what made a mid-book car resume buffer for
+     * ~a minute (and let the player reach STATE_ENDED before the seek landed).
      */
-    override fun onAddMediaItems(
-      session: MediaSession,
+    override fun onSetMediaItems(
+      mediaSession: MediaSession,
       controller: MediaSession.ControllerInfo,
-      mediaItems: MutableList<MediaItem>
-    ): ListenableFuture<MutableList<MediaItem>> {
-      // Returned directly (no .get()): resolveChapterWindows opens an ABS play
-      // session, and blocking the main thread on it is an ANR on a slow network.
-      return io.submit<MutableList<MediaItem>> {
-        // Resolve the FIRST selected book into its chapter windows (one MediaItem
-        // per chapter, all sharing the stream URL, clipped to the chapter's span).
-        // That makes the car's Queue the chapter list, matching ABS/Audible, and
-        // lets prev/next-chapter be plain window jumps. Any extra selected items
-        // are passed through unresolved (the car sends one book at a time).
+      mediaItems: MutableList<MediaItem>,
+      startIndex: Int,
+      startPositionMs: Long
+    ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+      // Returned directly (no .get()): resolveBookItem opens an ABS play session,
+      // and blocking the main thread on it is an ANR on a slow network.
+      return io.submit<MediaSession.MediaItemsWithStartPosition> {
+        // Resolve the FIRST selected book into ONE continuous media item (whole
+        // stream, no per-chapter clipping). Extra selected items are ignored -
+        // the car sends one book at a time.
         val first = mediaItems.firstOrNull()
         if (first != null) {
           val id = first.mediaId.removePrefix(PLAY_PREFIX)
-          val windows = resolveChapterWindows(id)
-          if (windows.isNotEmpty()) return@submit windows.toMutableList()
+          val item = resolveBookItem(id)
+          if (item != null) {
+            // resolveBookItem stashed the book's saved position in pendingSeekMs;
+            // consume it as the START position so prepare begins there.
+            val startMs = pendingSeekMs.coerceAtLeast(0)
+            pendingSeekMs = -1
+            return@submit MediaSession.MediaItemsWithStartPosition(
+              mutableListOf(item), 0, startMs,
+            )
+          }
         }
-        mediaItems.toMutableList()
+        MediaSession.MediaItemsWithStartPosition(mediaItems, startIndex, startPositionMs)
       }
     }
 
@@ -736,31 +850,31 @@ class HearthShelfAutoService : MediaLibraryService() {
   }
 
   /**
-   * POST /api/items/:id/play, then build ONE MediaItem per chapter - all pointing
-   * at the same stream URL but clipped to the chapter's [start, end) - so the
-   * car's Queue is the chapter list. Each window's title is the chapter title;
-   * the book title/author/cover ride along as the album metadata. Returns the
-   * windows in order, and stashes resume/sync state for onPlaybackStateChanged.
+   * POST /api/items/:id/play, then build ONE continuous MediaItem for the whole
+   * book (the raw stream URL, no per-chapter clipping) so resuming mid-book is a
+   * single fast seek. Populates `chapters` for the skip buttons / bookmark / note
+   * math, stashes resume + sync state for onPlaybackStateChanged, and mirrors the
+   * loaded book into the JS store. Returns null when the play session fails.
    */
-  private fun resolveChapterWindows(rawId: String): List<MediaItem> {
-    val base = serverUrl ?: return emptyList()
-    val tok = token ?: return emptyList()
+  private fun resolveBookItem(rawId: String): MediaItem? {
+    val base = serverUrl ?: return null
+    val tok = token ?: return null
     // Podcast episodes arrive as "libraryItemId/episodeId"; books are a plain id.
     val itemId = rawId.substringBefore('/')
     val episodeId = if (rawId.contains('/')) rawId.substringAfter('/') else null
-    Log.i(TAG, "resolveChapterWindows item=$itemId episode=$episodeId")
+    Log.i(TAG, "resolveBookItem item=$itemId episode=$episodeId")
     val playUrl = if (episodeId != null) "$base/api/items/$itemId/play/$episodeId"
       else "$base/api/items/$itemId/play"
     val body = httpPostPlay(playUrl, tok)
-    if (body == null) { Log.e(TAG, "play session failed for $rawId"); return emptyList() }
+    if (body == null) { Log.e(TAG, "play session failed for $rawId"); return null }
     val session = JSONObject(body)
-    val tracks = session.optJSONArray("audioTracks") ?: return emptyList()
-    if (tracks.length() == 0) return emptyList()
+    val tracks = session.optJSONArray("audioTracks") ?: return null
+    if (tracks.length() == 0) return null
     val contentUrl = tracks.getJSONObject(0).optString("contentUrl")
     val streamUrl = "$base$contentUrl?token=$tok"
     val startSec = session.optDouble("currentTime", 0.0)
     val art = "$base/api/items/$itemId/cover?token=$tok"
-    val bookTitle = session.optString("displayTitle", "Audiobook")
+    val title = session.optString("displayTitle", "Audiobook")
     val author = session.optString("displayAuthor", "")
 
     absSessionId = session.optString("id").ifEmpty { null }
@@ -777,11 +891,17 @@ class HearthShelfAutoService : MediaLibraryService() {
     lastNotesFetchMs = 0L
     setupNoteWatch(itemId, startSec)
 
+    // Stash book metadata for the single continuous item + the subtitle refresh.
+    bookTitle = title
+    bookAuthor = author
+    artUri = art
+    shownChapterIdx = -1
+
     val parsed = parseChapters(session.optJSONArray("chapters"))
-    // Fall back to a single full-book window when the book has no chapters, so
-    // the queue still shows the book and playback works.
+    // Fall back to a single full-book chapter when the book has none, so the
+    // skip buttons / bookmark / note math still have a chapter to work with.
     chapters = if (parsed.isNotEmpty()) parsed
-      else listOf(Chapter(bookTitle, 0.0, absDurationSec.coerceAtLeast(0.0)))
+      else listOf(Chapter(title, 0.0, absDurationSec.coerceAtLeast(0.0)))
 
     // Mirror the loaded book into the JS store so the phone UI shows the same
     // cover/title/chapters and its scrubber tracks the car. The phone cover
@@ -792,62 +912,104 @@ class HearthShelfAutoService : MediaLibraryService() {
       }
     }.toString()
     HearthShelfAutoModule.emitCarLoaded(
-      itemId, bookTitle, author, art, absDurationSec, startSec, chaptersJson,
+      itemId, title, author, art, absDurationSec, startSec, chaptersJson,
     )
 
-    // Resume into the window that holds the saved position; seek within it once
-    // that window is ready (applied in onPlaybackStateChanged).
-    pendingSeekWindow = chapters.indexOfFirst { startSec >= it.start && startSec < it.end }
-      .let { if (it >= 0) it else 0 }
-    pendingSeekMs = ((startSec - chapters[pendingSeekWindow].start) * 1000).toLong().coerceAtLeast(0)
+    // Resume at the saved absolute position; the seek runs once the (single)
+    // item is ready, in onPlaybackStateChanged. Absolute, not window-relative.
+    pendingSeekMs = (startSec * 1000).toLong().coerceAtLeast(0)
+    shownChapterIdx = chapters.indexOfFirst { startSec >= it.start && startSec < it.end }
 
-    val artUri = android.net.Uri.parse(art)
-    return chapters.mapIndexed { i, ch ->
-      val startMs = (ch.start * 1000).toLong()
-      val endMs = (ch.end * 1000).toLong()
-      val clip = MediaItem.ClippingConfiguration.Builder()
-        .setStartPositionMs(startMs)
-        // A chapter with a real end clips there; the last/unknown end plays to EOF.
-        .apply { if (endMs > startMs) setEndPositionMs(endMs) }
-        .build()
-      MediaItem.Builder()
-        .setMediaId("$PLAY_PREFIX$itemId#$i")
-        .setUri(streamUrl)
-        .setClippingConfiguration(clip)
-        .setMediaMetadata(
-          MediaMetadata.Builder()
-            .setTitle(ch.title)
-            .setArtist(author)
-            .setAlbumTitle(bookTitle)
-            .setTrackNumber(i + 1)
-            .setTotalTrackCount(chapters.size)
-            .setArtworkUri(artUri)
-            .setIsPlayable(true)
-            .setMediaType(MediaMetadata.MEDIA_TYPE_AUDIO_BOOK)
-            .build()
-        )
-        .build()
-    }
+
+    // ONE continuous media item for the whole book. The current chapter rides the
+    // metadata subtitle (refreshChapterMeta rewrites it as playback crosses
+    // chapters); no clipping, so resuming mid-book is a single fast seek instead
+    // of a deep-offset clip prepare (that cost ~a minute on a car resume).
+    return MediaItem.Builder()
+      .setMediaId("$PLAY_PREFIX$itemId")
+      .setUri(streamUrl)
+      .setMediaMetadata(chapterMeta(shownChapterIdx))
+      .build()
+  }
+
+  /** Now-playing metadata for the single item: book title, "author · chapter"
+   *  subtitle, cover. Rebuilt when playback crosses into a new chapter. */
+  private fun chapterMeta(chapterIdx: Int): MediaMetadata {
+    val ch = chapters.getOrNull(chapterIdx)
+    val subtitle = if (ch != null) "$bookAuthor · ${ch.title}" else bookAuthor
+    return MediaMetadata.Builder()
+      .setTitle(bookTitle)
+      .setArtist(subtitle)
+      .setAlbumTitle(bookTitle)
+      .apply { if (artUri.isNotEmpty()) setArtworkUri(android.net.Uri.parse(artUri)) }
+      .setIsPlayable(true)
+      .setMediaType(MediaMetadata.MEDIA_TYPE_AUDIO_BOOK)
+      .build()
+  }
+
+  /** Rewrite the now-playing subtitle when playback crosses into a new chapter
+   *  (same URI -> no reload/seek), matching the phone player's behavior. */
+  private fun refreshChapterMeta(player: Player) {
+    if (chapters.isEmpty()) return
+    val sec = absolutePositionMs(player) / 1000.0
+    val idx = chapters.indexOfFirst { sec >= it.start && sec < it.end }
+    if (idx < 0 || idx == shownChapterIdx) return
+    shownChapterIdx = idx
+    val cur = player.currentMediaItem ?: return
+    player.replaceMediaItem(player.currentMediaItemIndex, cur.buildUpon().setMediaMetadata(chapterMeta(idx)).build())
   }
 
   private data class Chapter(val title: String, val start: Double, val end: Double)
 
-  /** Absolute book position (ms) from the windowed player: the current chapter's
-   *  start plus the position within its clipped window. */
-  private fun absolutePositionMs(player: Player): Long {
-    val idx = player.currentMediaItemIndex
-    val chStartMs = chapters.getOrNull(idx)?.let { (it.start * 1000).toLong() } ?: 0L
-    return chStartMs + player.currentPosition
+  /** Absolute book position (ms). The book is one continuous window, so the
+   *  player's own position already IS the absolute book position. */
+  private fun absolutePositionMs(player: Player): Long = player.currentPosition
+
+  /** Seek to an absolute book position (ms) - a single seek on the one window. */
+  private fun seekToAbsolute(player: Player, absMs: Long) {
+    player.seekTo(absMs.coerceAtLeast(0))
   }
 
-  /** Seek the windowed player to an absolute book position (ms). */
-  private fun seekToAbsolute(player: Player, absMs: Long) {
-    val sec = absMs / 1000.0
-    val idx = chapters.indexOfFirst { sec >= it.start && sec < it.end }
-      .let { if (it >= 0) it else chapters.size - 1 }
-    if (idx < 0) { player.seekTo(absMs); return }
-    val offset = (absMs - (chapters[idx].start * 1000).toLong()).coerceAtLeast(0)
-    player.seekTo(idx, offset)
+  /** The chapter containing an absolute position (seconds), or null. */
+  private fun chapterAt(sec: Double): Chapter? =
+    chapters.firstOrNull { sec >= it.start && sec < it.end } ?: chapters.lastOrNull()
+
+  /**
+   * Presents CHAPTER-relative position/duration to the car's MediaSession while
+   * the wrapped ExoPlayer keeps absolute book time on one continuous stream.
+   *
+   * Dropping the per-chapter clipped windows (they made a mid-book resume buffer
+   * for ~a minute) also lost the car's chapter-scoped scrubber - the head unit
+   * started showing the whole book. This restores it the way the phone service
+   * already does: translate the numbers, don't clip the media. Seeks arriving in
+   * chapter-relative terms (the car scrubber) map back to absolute.
+   */
+  private inner class ChapterForwardingPlayer(inner: Player) : ForwardingPlayer(inner) {
+    private fun ch(): Chapter? =
+      if (chapters.isEmpty()) null else chapterAt(wrappedPlayer.currentPosition / 1000.0)
+
+    override fun getCurrentPosition(): Long {
+      val c = ch() ?: return super.getCurrentPosition()
+      return (super.getCurrentPosition() - (c.start * 1000).toLong()).coerceAtLeast(0)
+    }
+    override fun getContentPosition(): Long = currentPosition
+    override fun getDuration(): Long {
+      val c = ch() ?: return super.getDuration()
+      return ((c.end - c.start) * 1000).toLong()
+    }
+    override fun getContentDuration(): Long = duration
+    override fun getBufferedPosition(): Long {
+      val c = ch() ?: return super.getBufferedPosition()
+      // Buffered is absolute (usually past this chapter's end); clamp into
+      // [0, chapterDuration] so the car's buffer bar doesn't overflow.
+      val rel = (super.getBufferedPosition() - (c.start * 1000).toLong()).coerceAtLeast(0)
+      return rel.coerceAtMost(((c.end - c.start) * 1000).toLong())
+    }
+    override fun seekTo(positionMs: Long) {
+      val c = ch()
+      if (c != null) super.seekTo((c.start * 1000).toLong() + positionMs)
+      else super.seekTo(positionMs)
+    }
   }
 
   // ---- Club note-pops (Phase 7) ----
@@ -1525,7 +1687,7 @@ class HearthShelfAutoService : MediaLibraryService() {
 
   /**
    * Episodes of a podcast, newest first. The play route takes item id + episode
-   * id, so the Book we return carries a "podId/episodeId" id that resolveChapterWindows
+   * id, so the Book we return carries a "podId/episodeId" id that resolveBookItem
    * splits back apart. Title is the episode title.
    */
   private fun absPodcastEpisodes(base: String, tok: String, podId: String): List<Book> {
