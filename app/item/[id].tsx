@@ -19,6 +19,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import type {
   ABSBookmark,
   ABSChapter,
+  ABSDeviceInfo,
   ABSLibraryItemDetail,
   ABSListeningSession,
   ABSMediaProgress,
@@ -58,6 +59,7 @@ import {
   downloadFor,
 } from '@/player/downloads'
 import { offlineDetailFor } from '@/player/offlineCatalog'
+import { getPendingSessionState, subscribePendingSessions } from '@/player/pendingProgress'
 import { requestSeek } from '@/player/store'
 import { playItemById } from '@/player/playback'
 import { AddToListSheet } from '@/player/AddToListSheet'
@@ -1151,6 +1153,18 @@ function ChaptersPreview({
 
 // ---- Sessions sheet ----
 
+/** A unified Recent Listens row: a local offline session not yet on the server
+ *  (unsynced) or a confirmed server session. `offline` drives the unsynced accent
+ *  and lets a listen banked with no network still show here. */
+interface SessionRow {
+  key: string
+  offline: boolean
+  updatedAt: number
+  currentTime: number
+  timeListening: number
+  deviceInfo?: ABSDeviceInfo
+}
+
 const SessionsSheet = ({
   ref,
   itemId,
@@ -1163,12 +1177,44 @@ const SessionsSheet = ({
   const colors = useColors()
   const styles = useStyles()
   const [sessions, setSessions] = useState<ABSListeningSession[] | null>(null)
+  // Offline listens banked locally (not on the server yet). Kept live so a
+  // session recorded while offline appears the moment the sheet is open.
+  const pending = useSyncExternalStore(subscribePendingSessions, getPendingSessionState).byId
 
   const load = useCallback(() => {
     getRecentSessions()
       .then((all) => setSessions(all.filter((s) => s.libraryItemId === itemId)))
       .catch(() => setSessions([]))
   }, [itemId])
+
+  // Unified rows: this book's local (offline) session first - a listen banked
+  // with no network - then the server's confirmed sessions, newest first. The
+  // server list can't load offline, but the local row still gives the listener
+  // their most recent spot.
+  const rows: SessionRow[] = useMemo(() => {
+    const out: SessionRow[] = []
+    const local = pending.get(itemId)
+    if (local) {
+      out.push({
+        key: 'pending',
+        offline: true,
+        updatedAt: local.updatedAt,
+        currentTime: local.currentTime,
+        timeListening: local.timeListening,
+      })
+    }
+    for (const s of sessions ?? []) {
+      out.push({
+        key: s.id,
+        offline: false,
+        updatedAt: s.updatedAt,
+        currentTime: s.currentTime,
+        timeListening: s.timeListening,
+        deviceInfo: s.deviceInfo,
+      })
+    }
+    return out
+  }, [pending, sessions, itemId])
 
   return (
     <Sheet ref={ref} title="Recent Listens" snapPoints={['50%']}>
@@ -1178,34 +1224,35 @@ const SessionsSheet = ({
           if (sessions === null) load()
         }}
       >
-        {sessions === null ? (
+        {sessions === null && rows.length === 0 ? (
           <AppText variant="meta" color={colors.textMuted} style={{ paddingVertical: spacing.lg }}>
             Loading…
           </AppText>
-        ) : sessions.length === 0 ? (
+        ) : rows.length === 0 ? (
           <AppText variant="meta" color={colors.textMuted} style={{ paddingVertical: spacing.lg }}>
             You haven't listened to this book yet.
           </AppText>
         ) : (
-          sessions.map((s) => (
+          rows.map((r) => (
             <Touchable
-              key={s.id}
+              key={r.key}
               style={styles.sessionRow}
-              onPress={() => void onJump(s.currentTime)}
+              onPress={() => void onJump(r.currentTime)}
             >
-              <DeviceKindIcon deviceInfo={s.deviceInfo} size={18} color={colors.textMuted} />
+              <DeviceKindIcon deviceInfo={r.deviceInfo} size={18} color={colors.textMuted} />
               <View style={{ flex: 1 }}>
                 <AppText variant="meta">
-                  {new Date(s.updatedAt).toLocaleDateString(undefined, {
+                  {new Date(r.updatedAt).toLocaleDateString(undefined, {
                     month: 'short',
                     day: 'numeric',
                   })}
                   {' · '}
-                  {formatDuration(s.timeListening)} listened
+                  {formatDuration(r.timeListening)} listened
+                  {r.offline ? ' · not synced yet' : ''}
                 </AppText>
               </View>
-              <AppText variant="mono" color={colors.textMuted}>
-                {formatTimestamp(s.currentTime)}
+              <AppText variant="mono" color={r.offline ? colors.accent : colors.textMuted}>
+                {formatTimestamp(r.currentTime)}
               </AppText>
             </Touchable>
           ))
