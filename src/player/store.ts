@@ -19,6 +19,12 @@ import { getSettingsState } from '@/store/settings'
 import { parseHHMM } from '@/lib/timeFormat'
 import { haptics } from '@/ui/haptics'
 import { syncStateSeeked } from './syncState'
+import {
+  notePaused,
+  suppressNextRewind,
+  consumeRewindOnResume,
+  resetAutoRewind,
+} from './autoRewind'
 
 /** A chapter mark within the now-playing item (seconds, absolute in the book). */
 export interface ChapterMark {
@@ -130,6 +136,9 @@ function set(patch: Partial<PlayerState>): void {
  */
 export function loadTrack(track: NowPlaying, autoPlay = true): void {
   const s = getSettingsState()
+  // A new book resumes at its own saved spot - a pause left over from the
+  // previous book must not rewind it.
+  resetAutoRewind()
   set({
     nowPlaying: track,
     isPlaying: autoPlay,
@@ -152,8 +161,33 @@ export function loadTrack(track: NowPlaying, autoPlay = true): void {
 
 export function setPlaying(isPlaying: boolean): void {
   if (!state.nowPlaying) return
+  // A transient audio-focus duck (call, nav prompt) reaches us as an ordinary
+  // pause, which is what we want: both should rewind a little on resume.
+  if (!isPlaying) notePaused()
   set({ isPlaying })
-  if (isPlaying) maybeAutoArmSleep()
+  if (isPlaying) {
+    applyAutoRewind()
+    maybeAutoArmSleep()
+  }
+}
+
+/**
+ * Step back a few seconds on resume, scaled to how long we were paused. No-op
+ * when the pause was too short to matter, the setting is off, or something else
+ * already moved the position for this resume (see autoRewind.ts).
+ *
+ * Clamped at 0 and, like the sleep-timer rewind, kept inside the current chapter
+ * so resuming can't drop you into the previous one.
+ */
+function applyAutoRewind(): void {
+  const rewind = consumeRewindOnResume()
+  if (rewind <= 0) return
+  const from = state.position
+  let target = Math.max(0, from - rewind)
+  const ch = currentChapterAt(from)
+  if (ch) target = Math.max(ch.start, target)
+  if (target === from) return
+  requestSeek(target)
 }
 
 /** Native rebuffer signal (see PlayerState.buffering). */
@@ -188,14 +222,22 @@ export function togglePlay(): void {
   if (state.nowPlaying) {
     haptics.transport()
     const nowPlaying = !state.isPlaying
+    if (!nowPlaying) notePaused()
     set({ isPlaying: nowPlaying })
-    if (nowPlaying) maybeAutoArmSleep()
+    if (nowPlaying) {
+      applyAutoRewind()
+      maybeAutoArmSleep()
+    }
   }
 }
 
 export function requestSeek(seconds: number): void {
   if (!state.nowPlaying) return
   const target = Math.max(0, seconds)
+  // Seeking while paused picks the spot deliberately - resuming must start
+  // exactly there, not a few seconds earlier. (applyAutoRewind calls this too,
+  // but only after consuming the pending pause, so it can't suppress itself.)
+  if (!state.isPlaying) suppressNextRewind()
   // Optimistically move `position` so the UI (scrubber, time labels, chapter)
   // updates instantly - even while paused, where the native progress callback
   // won't fire to confirm the seek for a while. The host still applies seekTo.
@@ -378,7 +420,12 @@ export function addSleepMinutes(mins: number, viaShake = false): AddSleepMinutes
   set({
     sleepTimer:
       timer.kind === 'clock'
-        ? { ...timer, remainingSec, totalSec, atMs: timer.atMs + (remainingSec - timer.remainingSec) * 1000 }
+        ? {
+            ...timer,
+            remainingSec,
+            totalSec,
+            atMs: timer.atMs + (remainingSec - timer.remainingSec) * 1000,
+          }
         : { ...timer, remainingSec, totalSec },
   })
   return uncappedRemaining > MAX_SLEEP_TOTAL_SEC ? 'capped' : 'ok'
@@ -399,6 +446,11 @@ function fireStop(position: number): void {
       if (ch) target = Math.max(ch.start, target)
     }
   }
+  // The sleep timer just rewound; don't let the resume stack a second jump on
+  // top. (Start the pause clock either way so a later manual resume still knows
+  // how long the book sat.)
+  notePaused()
+  if (target !== position) suppressNextRewind()
   set({ position: target, sleepTimer: null, isPlaying: false, volume: 1 })
   if (target !== position) requestSeek(target)
 }
@@ -454,6 +506,7 @@ export function clearSeek(): void {
 }
 
 export function clearTrack(): void {
+  resetAutoRewind()
   set({
     nowPlaying: null,
     isPlaying: false,

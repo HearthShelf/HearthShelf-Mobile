@@ -129,6 +129,8 @@ export interface SettingsState {
   // Playback
   scrubber: ScrubberScope
   defaultSpeed: number
+  /** Rewind on resume, scaled to how long you were paused (see autoRewind.ts). */
+  autoRewind: boolean
   skipForward: number
   skipForwardCustom: number
   skipBack: number
@@ -235,6 +237,7 @@ let state: SettingsState = {
 
   scrubber: 'chapter',
   defaultSpeed: 1,
+  autoRewind: true,
   skipForward: 30,
   skipForwardCustom: 45,
   skipBack: 15,
