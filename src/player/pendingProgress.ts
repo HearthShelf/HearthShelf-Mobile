@@ -13,6 +13,10 @@
  * Persisted to AsyncStorage so an offline listen survives the app being killed
  * and still syncs the next time the network returns.
  *
+ * This module ALSO holds the streaming safety buffer (see the second half): the
+ * durable mirror of an online session's not-yet-synced listened-time, which is
+ * what makes a kill mid-stream lose one tick instead of a whole sync window.
+ *
  * Plain subscribe/snapshot store (same shape as the other stores).
  */
 import AsyncStorage from '@react-native-async-storage/async-storage'
@@ -126,4 +130,140 @@ export async function flushPendingProgress(): Promise<boolean> {
   emit(byId)
   persist()
   return true
+}
+
+// ---------------------------------------------------------------------------
+// Streaming safety buffer
+// ---------------------------------------------------------------------------
+
+/**
+ * Durable mirror of an ONLINE session's not-yet-synced listened-time.
+ *
+ * The live ABS session is still what reports listening; this is only a safety
+ * net. playback.ts accrues listened-time in memory and pushes it to the server
+ * every SYNC_LISTENED_THRESHOLD seconds (or on pause/stop). A swipe-away, an OS
+ * memory kill, or a crash in between takes that in-memory time with it - and if
+ * syncs have been failing, the rolled-back time can be far more than one
+ * threshold window.
+ *
+ * So: every tick writes the outstanding amount here, every confirmed sync
+ * subtracts what landed, and whatever survives to the next launch is migrated
+ * into the pending-session ledger above and replayed like any offline listen.
+ * Worst case loss is one tick.
+ *
+ * Keyed by libraryItemId. Values are seconds, always >= 0.
+ */
+const STREAMING_KEY = 'hs.streamingPending.v1'
+
+interface StreamingEntry {
+  /** Outstanding listened-time (seconds) not yet confirmed by a server sync. */
+  seconds: number
+  /** Book position (seconds) at the last tick - the replayed session's stop point. */
+  currentTime: number
+  duration: number
+  title: string
+  /** ms epoch the live session started, so a replay lands on the right day. */
+  startedAt: number
+}
+
+let streaming = new Map<string, StreamingEntry>()
+
+function persistStreaming(): void {
+  const items = [...streaming.entries()].map(([libraryItemId, e]) => ({ libraryItemId, ...e }))
+  void AsyncStorage.setItem(STREAMING_KEY, JSON.stringify({ items })).catch(() => {})
+}
+
+/** Load the streaming buffer from disk. Call before migrateOrphanStreaming(). */
+export async function hydrateStreamingBuffer(): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(STREAMING_KEY)
+    if (!raw) return
+    const parsed = JSON.parse(raw) as { items?: (StreamingEntry & { libraryItemId: string })[] }
+    const next = new Map<string, StreamingEntry>()
+    for (const it of parsed.items ?? []) {
+      if (!it || typeof it.libraryItemId !== 'string') continue
+      const { libraryItemId, ...entry } = it
+      if (entry.seconds > 0) next.set(libraryItemId, entry)
+    }
+    streaming = next
+  } catch {
+    // start empty on a bad payload
+  }
+}
+
+/**
+ * Record the outstanding (unsynced) listened-time for a live streaming session.
+ * Called every tick with the CURRENT outstanding total, not a delta - playback.ts
+ * already tracks the running figure, and an absolute write means a dropped call
+ * can't drift the buffer.
+ */
+export function setStreamingPending(
+  libraryItemId: string,
+  entry: {
+    seconds: number
+    currentTime: number
+    duration: number
+    title: string
+    startedAt: number
+  },
+): void {
+  if (!libraryItemId) return
+  if (entry.seconds <= 0) {
+    if (streaming.delete(libraryItemId)) persistStreaming()
+    return
+  }
+  streaming.set(libraryItemId, { ...entry })
+  persistStreaming()
+}
+
+/**
+ * Subtract listened-time a server sync just confirmed. Subtracts rather than
+ * clearing so time accrued while the request was in flight survives - clearing
+ * outright would drop it.
+ */
+export function reduceStreamingPending(libraryItemId: string, seconds: number): void {
+  if (!libraryItemId || seconds <= 0) return
+  const cur = streaming.get(libraryItemId)
+  if (!cur) return
+  const next = cur.seconds - seconds
+  if (next > 0) streaming.set(libraryItemId, { ...cur, seconds: next })
+  else streaming.delete(libraryItemId)
+  persistStreaming()
+}
+
+/** Drop a book's buffer outright - the session closed cleanly and banked its time. */
+export function clearStreamingPending(libraryItemId: string): void {
+  if (streaming.delete(libraryItemId)) persistStreaming()
+}
+
+/**
+ * A non-empty buffer at startup means a stream died before its last span synced.
+ * Fold each survivor into the pending-session ledger so the normal flush replays
+ * it as a real ABS session.
+ *
+ * MUST run at launch before playback opens any new session, otherwise a fresh
+ * session's writes race the migration.
+ */
+export async function migrateOrphanStreaming(): Promise<void> {
+  if (!streaming.size) return
+  const orphans = [...streaming.entries()]
+  streaming = new Map()
+  persistStreaming()
+
+  const now = Date.now()
+  for (const [libraryItemId, e] of orphans) {
+    if (e.seconds <= 0) continue
+    recordLocalSession({
+      id: `play_orphan_${libraryItemId}_${e.startedAt}`,
+      libraryItemId,
+      mediaType: 'book',
+      displayTitle: e.title,
+      duration: e.duration,
+      currentTime: Math.round(e.currentTime),
+      timeListening: Math.round(e.seconds),
+      startedAt: e.startedAt,
+      // The listen ended when the app died; we only know it was before now.
+      updatedAt: now,
+    })
+  }
 }

@@ -23,7 +23,12 @@ import { getSession } from '@/api/session'
 import { progressFor, recordLocalProgress } from '@/store/progress'
 import { loadTrack, getState, type NowPlaying, type ChapterMark } from './store'
 import { localSourceFor, applyAutoDownloads } from './downloads'
-import { recordLocalSession } from './pendingProgress'
+import {
+  recordLocalSession,
+  setStreamingPending,
+  reduceStreamingPending,
+  clearStreamingPending,
+} from './pendingProgress'
 import { breadcrumb } from '@/lib/crashLog'
 import { getQueueState } from './queue'
 import { armRecomputeCooldown, cancelRecomputeCooldown } from './recompute'
@@ -40,6 +45,9 @@ interface ActiveSession {
   sessionId: string
   itemId: string
   duration: number
+  /** Display title, carried so the durable streaming buffer can replay this
+   *  session as a proper local session if the app dies mid-listen. */
+  title: string
   /** ms epoch this session started (for the live Recent Listens row). */
   startedAt: number
   /** Book position (seconds) at the last successful server sync. */
@@ -180,6 +188,7 @@ export async function playItemById(
     sessionId: session.id,
     itemId,
     duration: session.duration,
+    title: np.title,
     startedAt: startedNow(),
     lastSyncedTime: startAt,
     pendingListened: 0,
@@ -309,6 +318,10 @@ export async function syncProgress(currentTime: number, force = false): Promise<
   active.totalListened += listened
   // Keep the live "Now" row current every tick (no status change).
   syncStateTick(currentTime, active.totalListened)
+  // Mirror the outstanding time to disk BEFORE any sync attempt. The live
+  // session is still what reports listening; this is the safety net that turns a
+  // kill mid-stream into a one-tick loss instead of a whole sync window.
+  bankStreaming(active, currentTime)
 
   // Sync on `force` (pause/stop/book-switch) ALWAYS - even a few seconds of
   // listening should land - or once enough real listened-time has accrued.
@@ -316,6 +329,18 @@ export async function syncProgress(currentTime: number, force = false): Promise<
   if (active.pendingListened <= 0) return
 
   await pushListened(active, currentTime)
+}
+
+/** Write the active session's outstanding listened-time to the durable streaming
+ *  buffer. Absolute (not a delta), so a dropped call can't drift the buffer. */
+function bankStreaming(a: ActiveSession, currentTime: number): void {
+  setStreamingPending(a.itemId, {
+    seconds: a.pendingListened,
+    currentTime,
+    duration: a.duration,
+    title: a.title,
+    startedAt: a.startedAt,
+  })
 }
 
 /** POST the active session's accrued listened-time + position. Marks pending only
@@ -331,6 +356,9 @@ async function pushListened(a: ActiveSession, currentTime: number): Promise<bool
       timeListened,
       duration: a.duration,
     })
+    // Confirmed on the server: drop exactly what landed from the safety buffer.
+    // Subtracting (not clearing) keeps time accrued during the in-flight request.
+    reduceStreamingPending(a.itemId, timeListened)
     syncStateSynced(startedNow())
     return true
   } catch (e) {
@@ -369,6 +397,7 @@ async function reopenAndResync(
         timeListened,
         duration: a.duration,
       })
+      reduceStreamingPending(a.itemId, timeListened)
       return true
     }
     a.sessionId = session.id
@@ -377,6 +406,7 @@ async function reopenAndResync(
       timeListened,
       duration: a.duration,
     })
+    reduceStreamingPending(a.itemId, timeListened)
     syncStateSynced(startedNow())
     return true
   } catch {
@@ -424,7 +454,7 @@ export async function handOffToCar(): Promise<void> {
 
 async function safeClose(): Promise<void> {
   if (!active) return
-  const { sessionId, duration, pendingListened } = active
+  const { sessionId, itemId, duration, pendingListened } = active
   const pos = getState().position
   active = null
   lastTickTime = null
@@ -435,8 +465,11 @@ async function safeClose(): Promise<void> {
       timeListened: Math.round(pendingListened),
       duration,
     })
+    // The close banked everything outstanding, so the safety buffer is spent.
+    clearStreamingPending(itemId)
     if (pendingListened > 0) syncStateSynced(startedNow())
   } catch {
+    // Close failed - leave the buffer alone so the next launch replays the time.
     if (pendingListened > 0) syncStateFailed()
   }
 }

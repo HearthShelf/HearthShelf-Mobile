@@ -17,6 +17,8 @@ import * as BackgroundTask from 'expo-background-task'
 import { hydrateSession } from '@/api/session'
 import {
   hydratePendingProgress,
+  hydrateStreamingBuffer,
+  migrateOrphanStreaming,
   flushPendingProgress,
   pendingCount,
   BACKGROUND_FLUSH_TASK,

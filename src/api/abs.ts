@@ -339,6 +339,37 @@ export async function getRecentSessions(itemsPerPage = 100) {
   return data.sessions ?? []
 }
 
+/** Remove a listening session outright - the fix for a sleep-through that banked
+ *  hours you didn't hear. Requires the user's delete permission on the server. */
+export async function deleteListeningSession(sessionId: string): Promise<void> {
+  await absRequest<void>(`/api/sessions/${sessionId}`, { method: 'DELETE' })
+}
+
+/**
+ * Correct an existing session's listened-time and/or which day it lands on.
+ *
+ * There is no session PATCH in ABS. Instead this re-submits the session through
+ * the same local-session ingest we use to replay offline listens, keeping the
+ * original id so the server updates in place rather than adding a duplicate.
+ * Only `timeListening` and the day (re-derived from `updatedAt`) are honored on
+ * an existing session, so those are the only fields worth exposing in the UI.
+ */
+export async function updateListeningSession(session: {
+  id: string
+  libraryItemId: string
+  displayTitle: string
+  duration: number
+  currentTime: number
+  timeListening: number
+  startedAt: number
+  updatedAt: number
+}): Promise<void> {
+  await absRequest<void>('/api/session/local', {
+    method: 'POST',
+    body: JSON.stringify({ ...session, mediaType: 'book' }),
+  })
+}
+
 // ---- Collections / Playlists (Add to list) ----
 
 export async function getLibraryCollections(libraryId: string): Promise<ABSCollection[]> {

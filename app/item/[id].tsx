@@ -30,10 +30,11 @@ import { coverHue, formatDuration, formatTimestamp, stripHtml } from '@hearthshe
 import {
   avatarUrl,
   coverUrl,
-  deleteBookmark,
+  deleteListeningSession,
   getItemDetail,
   getLibrarySeries,
   getRecentSessions,
+  updateListeningSession,
 } from '@/api/abs'
 import { getFinishedBy, getListeningNow } from '@/api/social'
 import { getNotes } from '@/api/notes'
@@ -1163,6 +1164,9 @@ interface SessionRow {
   currentTime: number
   timeListening: number
   deviceInfo?: ABSDeviceInfo
+  /** The server session behind this row, when there is one - only these can be
+   *  edited or deleted (an offline row hasn't reached ABS yet). */
+  session?: ABSListeningSession
 }
 
 const SessionsSheet = ({
@@ -1180,6 +1184,8 @@ const SessionsSheet = ({
   // Offline listens banked locally (not on the server yet). Kept live so a
   // session recorded while offline appears the moment the sheet is open.
   const pending = useSyncExternalStore(subscribePendingSessions, getPendingSessionState).byId
+  const editRef = useRef<SheetRef>(null)
+  const [editing, setEditing] = useState<ABSListeningSession | null>(null)
 
   const load = useCallback(() => {
     getRecentSessions()
@@ -1211,6 +1217,7 @@ const SessionsSheet = ({
         currentTime: s.currentTime,
         timeListening: s.timeListening,
         deviceInfo: s.deviceInfo,
+        session: s,
       })
     }
     return out
@@ -1238,6 +1245,19 @@ const SessionsSheet = ({
               key={r.key}
               style={styles.sessionRow}
               onPress={() => void onJump(r.currentTime)}
+              // Long-press to fix a session that logged time you didn't hear
+              // (the classic: falling asleep with the timer off). Only confirmed
+              // server sessions can be edited - an offline row isn't on the
+              // server yet, so there's nothing to correct there.
+              onLongPress={
+                r.session
+                  ? () => {
+                      haptics.warn()
+                      setEditing(r.session ?? null)
+                      editRef.current?.present()
+                    }
+                  : undefined
+              }
             >
               <DeviceKindIcon deviceInfo={r.deviceInfo} size={18} color={colors.textMuted} />
               <View style={{ flex: 1 }}>
@@ -1258,6 +1278,146 @@ const SessionsSheet = ({
           ))
         )}
       </BottomSheetScrollView>
+      <SessionEditSheet
+        ref={editRef}
+        session={editing}
+        onChanged={() => {
+          load()
+          void refreshProgress()
+        }}
+      />
+    </Sheet>
+  )
+}
+
+// ---- Session editor ----
+
+/**
+ * Correct or remove one listening session.
+ *
+ * ABS has no session PATCH: an edit re-submits the session through the
+ * local-session ingest with its original id, and only `timeListening` and the
+ * day (from `updatedAt`) are honored. So those are the only two things this
+ * offers - anything else would look editable and silently not save.
+ */
+const SessionEditSheet = ({
+  ref,
+  session,
+  onChanged,
+}: {
+  ref: React.RefObject<SheetRef | null>
+  session: ABSListeningSession | null
+  onChanged: () => void
+}) => {
+  const colors = useColors()
+  const [minutes, setMinutes] = useState(0)
+  const [dayShift, setDayShift] = useState(0)
+  const [saving, setSaving] = useState(false)
+
+  // Re-seed the draft whenever a different session is opened.
+  useEffect(() => {
+    if (!session) return
+    setMinutes(Math.round(session.timeListening / 60))
+    setDayShift(0)
+    setSaving(false)
+  }, [session])
+
+  if (!session) return null
+
+  const shiftedDate = new Date(session.updatedAt + dayShift * 86400_000)
+  const changed = minutes !== Math.round(session.timeListening / 60) || dayShift !== 0
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await updateListeningSession({
+        id: session.id,
+        libraryItemId: session.libraryItemId,
+        displayTitle: session.displayTitle,
+        duration: session.duration,
+        currentTime: session.currentTime,
+        timeListening: Math.max(0, Math.round(minutes * 60)),
+        startedAt: session.startedAt + dayShift * 86400_000,
+        updatedAt: session.updatedAt + dayShift * 86400_000,
+      })
+      showToast('Session updated')
+      onChanged()
+      ref.current?.dismiss()
+    } catch {
+      showToast('Could not update session')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const remove = async () => {
+    const ok = await confirm({
+      title: 'Delete this listen?',
+      message: `${formatDuration(session.timeListening)} on ${shiftedDate.toLocaleDateString()} will be removed from your stats.`,
+      confirmLabel: 'Delete',
+    })
+    if (!ok) return
+    setSaving(true)
+    try {
+      await deleteListeningSession(session.id)
+      showToast('Session deleted')
+      onChanged()
+      ref.current?.dismiss()
+    } catch {
+      showToast('Could not delete session')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Sheet ref={ref} kicker="Edit listen" title="Fix this session" stackBehavior="push">
+      <View style={{ gap: spacing.lg, paddingBottom: spacing.xxl }}>
+        <View style={{ gap: spacing.sm }}>
+          <AppText variant="meta" color={colors.textMuted}>
+            Time listened
+          </AppText>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+            <Chip label="-30m" onPress={() => setMinutes((m) => Math.max(0, m - 30))} />
+            <Chip label="-5m" onPress={() => setMinutes((m) => Math.max(0, m - 5))} />
+            <AppText variant="mono" style={{ flex: 1, textAlign: 'center' }}>
+              {formatDuration(Math.max(0, minutes * 60))}
+            </AppText>
+            <Chip label="+5m" onPress={() => setMinutes((m) => m + 5)} />
+            <Chip label="+30m" onPress={() => setMinutes((m) => m + 30)} />
+          </View>
+        </View>
+
+        <View style={{ gap: spacing.sm }}>
+          <AppText variant="meta" color={colors.textMuted}>
+            Day
+          </AppText>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+            <Chip label="-1 day" onPress={() => setDayShift((d) => d - 1)} />
+            <AppText variant="mono" style={{ flex: 1, textAlign: 'center' }}>
+              {shiftedDate.toLocaleDateString(undefined, {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+              })}
+            </AppText>
+            <Chip
+              label="+1 day"
+              onPress={() =>
+                setDayShift((d) =>
+                  session.updatedAt + (d + 1) * 86400_000 > Date.now() ? d : d + 1,
+                )
+              }
+            />
+          </View>
+        </View>
+
+        <PrimaryButton
+          label={saving ? 'Saving…' : 'Save'}
+          onPress={saving || !changed ? undefined : save}
+        />
+        <SheetRow icon={icons.delete} label="Delete this listen" destructive onPress={remove} />
+      </View>
     </Sheet>
   )
 }
