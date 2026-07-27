@@ -22,10 +22,14 @@ import * as BackgroundTask from 'expo-background-task'
 import * as TaskManager from 'expo-task-manager'
 import { CONTROL_PLANE_URL } from '@/lib/config'
 import { flushPendingProgress, BACKGROUND_FLUSH_TASK } from './pendingProgress'
+import { flushPendingBookmarks } from './pendingBookmarks'
 
 let unsub: (() => void) | null = null
 let lastOnline: boolean | null = null
 let lastType: string | null = null
+/** Settle window for a burst of connectivity events (see startConnectivityWatch). */
+const RECONNECT_DEBOUNCE_MS = 2000
+let reconnectDebounce: ReturnType<typeof setTimeout> | null = null
 
 function isOnline(s: NetInfoState): boolean {
   // isInternetReachable is null until the first probe resolves; treat null as
@@ -122,8 +126,17 @@ export function startConnectivityWatch(onOnline: () => void): void {
     // miss it and leave the app stuck offline). The caller no-ops when already
     // `ready`, so a redundant fire on a type change is cheap.
     if (online && (lastOnline !== true || (lastType !== null && s.type !== lastType))) {
-      onOnline()
-      void flushPendingProgress()
+      // Coalesce bursts. A handoff or a flaky signal emits several qualifying
+      // events in a row, and each one used to kick a reconnect probe plus two
+      // flushes - real battery and packets on exactly the bad network where it
+      // hurts. One settle window is enough; nothing here is latency-critical.
+      if (reconnectDebounce) clearTimeout(reconnectDebounce)
+      reconnectDebounce = setTimeout(() => {
+        reconnectDebounce = null
+        onOnline()
+        void flushPendingProgress()
+        void flushPendingBookmarks()
+      }, RECONNECT_DEBOUNCE_MS)
     }
     lastOnline = online
     lastType = s.type
@@ -135,14 +148,26 @@ export function startConnectivityWatch(onOnline: () => void): void {
  *  caller's handler if the device currently looks online. */
 export async function pokeConnectivity(onOnline: () => void): Promise<void> {
   if (await isCurrentlyReachable()) {
+    // An explicit poke supersedes a debounced reconnect - otherwise the timer
+    // fires moments later and probes a second time.
+    if (reconnectDebounce) {
+      clearTimeout(reconnectDebounce)
+      reconnectDebounce = null
+    }
     onOnline()
     void flushPendingProgress()
+    void flushPendingBookmarks()
   }
 }
 
 export function stopConnectivityWatch(): void {
   unsub?.()
   unsub = null
+  // Drop a debounced reconnect so it can't fire (and re-probe) after teardown.
+  if (reconnectDebounce) {
+    clearTimeout(reconnectDebounce)
+    reconnectDebounce = null
+  }
   lastOnline = null
   lastType = null
 }

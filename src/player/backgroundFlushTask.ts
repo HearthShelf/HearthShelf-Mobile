@@ -23,13 +23,27 @@ import {
   pendingCount,
   BACKGROUND_FLUSH_TASK,
 } from './pendingProgress'
+import {
+  hydratePendingBookmarks,
+  flushPendingBookmarks,
+  getPendingBookmarkState,
+} from './pendingBookmarks'
 
 TaskManager.defineTask(BACKGROUND_FLUSH_TASK, async () => {
   try {
     await hydratePendingProgress()
-    if (pendingCount() === 0) return BackgroundTask.BackgroundTaskResult.Success
+    // A headless wake right after the app was killed mid-stream is exactly when
+    // an orphaned streaming buffer exists - fold it in before counting, so the
+    // lost listening flushes on this wake rather than waiting for a launch.
+    await hydrateStreamingBuffer()
+    await migrateOrphanStreaming()
+    await hydratePendingBookmarks()
+    const bookmarks = getPendingBookmarkState()
+    const haveBookmarks = bookmarks.creates.length > 0 || bookmarks.deletes.length > 0
+    if (pendingCount() === 0 && !haveBookmarks) return BackgroundTask.BackgroundTaskResult.Success
     await hydrateSession()
     await flushPendingProgress()
+    await flushPendingBookmarks()
     return BackgroundTask.BackgroundTaskResult.Success
   } catch {
     return BackgroundTask.BackgroundTaskResult.Failed

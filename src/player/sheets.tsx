@@ -7,6 +7,8 @@
  */
 import {
   forwardRef,
+  useCallback,
+  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -22,12 +24,15 @@ import {
   type BottomSheetFlatListMethods,
 } from '@gorhom/bottom-sheet'
 import { formatTimestamp } from '@hearthshelf/core'
+import type { ABSBookmark } from '@hearthshelf/core'
 import {
   getState,
   subscribe,
   seekToChapter,
   currentChapter,
   setRate,
+  setPlaying,
+  requestSeek,
   setSleepTimer,
   cancelSleepTimer,
   addSleepMinutes,
@@ -104,9 +109,7 @@ export const ChaptersSheet = forwardRef<SheetHandle>(function ChaptersSheet(_pro
 
   const needle = query.trim().toLowerCase()
   const filtered = needle
-    ? chapters
-        .map((c, i) => ({ c, i }))
-        .filter(({ c }) => c.title.toLowerCase().includes(needle))
+    ? chapters.map((c, i) => ({ c, i })).filter(({ c }) => c.title.toLowerCase().includes(needle))
     : chapters.map((c, i) => ({ c, i }))
 
   const showSearch = chapters.length >= CHAPTER_SEARCH_THRESHOLD
@@ -193,7 +196,9 @@ export const BookmarksSheet = forwardRef<
   const sheetRef = useSheetHandle(ref)
   const { colors, shadow } = useTheme()
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
-  const { bookmarks, removeBookmark } = useBookmarks(itemId)
+  const { bookmarks, removeBookmark, moveBookmark } = useBookmarks(itemId)
+  const editRef = useRef<SheetRef>(null)
+  const [editing, setEditing] = useState<ABSBookmark | null>(null)
 
   return (
     <Sheet ref={sheetRef} kicker="Bookmarks" snapPoints={['60%']}>
@@ -207,6 +212,11 @@ export const BookmarksSheet = forwardRef<
         </AppText>
       ) : (
         <BottomSheetScrollView>
+          {/* Long-press is invisible otherwise, and the edit is the whole point
+              for a bookmark dropped a few seconds late in the car. */}
+          <AppText variant="caption" color={colors.textFaint} style={styles.bookmarkHint}>
+            Tap to jump · press and hold to edit
+          </AppText>
           {bookmarks.map((b) => (
             <Touchable
               key={`${b.time}-${b.createdAt ?? ''}`}
@@ -214,6 +224,13 @@ export const BookmarksSheet = forwardRef<
               onPress={() => {
                 onSeek(b.time)
                 sheetRef.current?.dismiss()
+              }}
+              // A bookmark set while driving is always a few seconds late;
+              // long-press opens the editor to nudge it into place.
+              onLongPress={() => {
+                haptics.warn()
+                setEditing(b)
+                editRef.current?.present()
               }}
             >
               <Icon name={icons.bookmarkFilled} size={18} color={colors.accent} />
@@ -232,6 +249,139 @@ export const BookmarksSheet = forwardRef<
           ))}
         </BottomSheetScrollView>
       )}
+      <BookmarkEditSheet ref={editRef} bookmark={editing} onSave={moveBookmark} />
+    </Sheet>
+  )
+})
+
+/** Nudge steps offered either side of a bookmark's timestamp. */
+const NUDGE_STEPS = [-10, -5, 5, 10]
+
+/**
+ * Fix up one bookmark: nudge the timestamp, retitle it, and listen to the spot
+ * before committing.
+ *
+ * The preview drives the LIVE player (seek + play) rather than a second engine -
+ * two players would fight for audio focus, and the book is already loaded. So
+ * closing the sheet has to put playback back exactly as it was found: same
+ * position, same play/pause state.
+ */
+const BookmarkEditSheet = forwardRef<
+  SheetRef,
+  {
+    bookmark: ABSBookmark | null
+    onSave: (fromTime: number, toTime: number, title: string) => Promise<void>
+  }
+>(function BookmarkEditSheet({ bookmark, onSave }, ref) {
+  const { colors, shadow } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
+  const [time, setTime] = useState(0)
+  const [title, setTitle] = useState('')
+  const [saving, setSaving] = useState(false)
+  // Playback state as we found it, restored when the sheet closes.
+  const restoreRef = useRef<{ position: number; wasPlaying: boolean } | null>(null)
+
+  // Re-seed whenever a different bookmark is opened.
+  useEffect(() => {
+    if (!bookmark) return
+    setTime(bookmark.time)
+    setTitle(bookmark.title ?? '')
+    setSaving(false)
+    restoreRef.current = null
+  }, [bookmark])
+
+  const restorePlayback = useCallback(() => {
+    const snap = restoreRef.current
+    restoreRef.current = null
+    if (!snap) return
+    // Seeking while paused suppresses the auto-rewind (see store.requestSeek),
+    // which is what we want on both legs here: a preview should start exactly
+    // where the user pointed, and a restore should land exactly where they were
+    // - neither is "resuming after a break".
+    requestSeek(snap.position)
+    setPlaying(snap.wasPlaying)
+  }, [])
+
+  if (!bookmark) return null
+
+  const moved = Math.round(time) !== Math.round(bookmark.time)
+  const retitled = title !== (bookmark.title ?? '')
+  const changed = moved || retitled
+
+  const preview = () => {
+    // Snapshot once per sheet visit, so repeated previews all restore to the
+    // spot the user was actually at - not to the previous preview.
+    if (!restoreRef.current) {
+      const s = getState()
+      restoreRef.current = { position: s.position, wasPlaying: s.isPlaying }
+    }
+    haptics.transport()
+    requestSeek(Math.max(0, time))
+    setPlaying(true)
+  }
+
+  const save = async () => {
+    setSaving(true)
+    restorePlayback()
+    await onSave(bookmark.time, Math.max(0, time), title)
+    setSaving(false)
+    ;(ref as React.RefObject<SheetRef | null>).current?.dismiss()
+  }
+
+  return (
+    <Sheet
+      ref={ref}
+      kicker="Edit bookmark"
+      title={formatTimestamp(Math.max(0, time))}
+      stackBehavior="push"
+      // Closing by swipe/backdrop must leave playback as we found it too, not
+      // just the Save/Cancel buttons.
+      onDismiss={restorePlayback}
+    >
+      <View style={styles.bookmarkEditBody}>
+        <BottomSheetTextInput
+          value={title}
+          onChangeText={setTitle}
+          placeholder="Bookmark name"
+          placeholderTextColor={colors.textFaint}
+          style={styles.bookmarkTitleInput}
+          maxLength={120}
+        />
+
+        <View style={styles.nudgeRow}>
+          {NUDGE_STEPS.map((step) => (
+            <Touchable
+              key={step}
+              style={styles.nudgeBtn}
+              hitSlop={6}
+              onPress={() => {
+                haptics.select()
+                setTime((t) => Math.max(0, t + step))
+              }}
+            >
+              <AppText variant="meta" color={colors.text}>
+                {step > 0 ? `+${step}s` : `${step}s`}
+              </AppText>
+            </Touchable>
+          ))}
+        </View>
+
+        <Touchable style={styles.previewBtn} onPress={preview}>
+          <Icon name={icons.play} size={18} color={colors.accent} />
+          <AppText variant="meta" color={colors.accent}>
+            Listen from here
+          </AppText>
+        </Touchable>
+
+        <Touchable
+          style={[styles.bookmarkSaveBtn, !changed && styles.bookmarkSaveBtnOff]}
+          onPress={changed && !saving ? save : undefined}
+        >
+          <AppText variant="label" color={changed ? colors.onAccent : colors.textFaint}>
+            {saving ? 'Saving…' : 'Save'}
+          </AppText>
+        </Touchable>
+      </View>
     </Sheet>
   )
 })
@@ -582,7 +732,12 @@ function SleepSetup({
               Start button below is for the slider's custom value. */}
           <View style={[styles.grid, { marginTop: spacing.lg }]}>
             {SLEEP_DURATIONS.map((m) => (
-              <SpringPressable key={m} style={styles.speed} scaleTo={0.92} onPress={() => armDuration(m)}>
+              <SpringPressable
+                key={m}
+                style={styles.speed}
+                scaleTo={0.92}
+                onPress={() => armDuration(m)}
+              >
                 <AppText variant="label" color={colors.text}>
                   {m}m
                 </AppText>
@@ -866,6 +1021,56 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof buildShadow>) =>
       paddingVertical: spacing.md,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.hairline,
+    },
+    bookmarkHint: {
+      paddingBottom: spacing.sm,
+    },
+    // --- bookmark editor ---
+    bookmarkEditBody: {
+      gap: spacing.lg,
+      paddingBottom: spacing.xxl,
+    },
+    bookmarkTitleInput: {
+      backgroundColor: colors.card,
+      borderRadius: radius.row,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.md,
+      color: colors.text,
+      fontSize: 15,
+    },
+    nudgeRow: {
+      flexDirection: 'row',
+      gap: spacing.sm,
+    },
+    // Deliberately tall: this gets used in the car and in bed, where a small
+    // target is the difference between fixing the bookmark and giving up.
+    nudgeBtn: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: spacing.md + 2,
+      borderRadius: radius.row,
+      backgroundColor: colors.card,
+    },
+    previewBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      paddingVertical: spacing.md + 2,
+      borderRadius: radius.row,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.accent,
+    },
+    bookmarkSaveBtn: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: spacing.md + 2,
+      borderRadius: radius.row,
+      backgroundColor: colors.accent,
+    },
+    bookmarkSaveBtnOff: {
+      backgroundColor: colors.card,
     },
     behaviorNote: {
       flexDirection: 'row',

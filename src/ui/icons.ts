@@ -136,6 +136,7 @@ export const icons = {
   checkCircleFilled: 'check-circle',
   link: 'link',
   add: 'add',
+  minus: 'remove',
   // Requests / missing books
   bolt: 'bolt',
   shoppingCart: 'shopping-cart',

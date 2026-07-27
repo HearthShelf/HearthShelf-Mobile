@@ -28,7 +28,8 @@ import {
   skipChapter,
   currentChapter,
 } from './store'
-import { coverUrl, createBookmark } from '@/api/abs'
+import { coverUrl } from '@/api/abs'
+import { addBookmarkPending } from './pendingBookmarks'
 import { handOffToCar, playItemById, syncProgress } from './playback'
 import { loadAutoCarBook } from './autoBridge'
 import { advanceQueueOnEnd } from './advance'
@@ -234,9 +235,12 @@ export function PlayerHost() {
         if (!s.nowPlaying) return
         const ch = currentChapter()
         const title = ch?.title || 'Bookmark'
-        void createBookmark(s.nowPlaying.itemId, s.position, title)
-          .then(() => showToast('Bookmark saved'))
-          .catch(() => showToast('Could not save bookmark'))
+        // Write-ahead through the pending store: bookmarking in the car is the
+        // likeliest place to be out of signal, and this never throws - an
+        // unconfirmed bookmark is banked and flushed on reconnect, not lost.
+        void addBookmarkPending(s.nowPlaying.itemId, s.position, title).then((confirmed) =>
+          showToast(confirmed ? 'Bookmark saved' : 'Bookmark saved (will sync)'),
+        )
       }),
     ]
     return () => subs.forEach((s) => s.remove())

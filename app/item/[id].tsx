@@ -61,6 +61,7 @@ import {
 } from '@/player/downloads'
 import { offlineDetailFor } from '@/player/offlineCatalog'
 import { getPendingSessionState, subscribePendingSessions } from '@/player/pendingProgress'
+import { mergeBookmarks, removeBookmarkPending } from '@/player/pendingBookmarks'
 import { requestSeek } from '@/player/store'
 import { playItemById } from '@/player/playback'
 import { AddToListSheet } from '@/player/AddToListSheet'
@@ -69,6 +70,7 @@ import {
   AppText,
   Avatar,
   Centered,
+  Chip,
   Cover,
   IconButton,
   PrimaryButton,
@@ -184,10 +186,12 @@ export default function ItemDetailScreen() {
         setDetail(d)
 
         // Progress + bookmarks ride the same /api/me call; both are best-effort.
+        // Merge pending local writes over the server list so a bookmark added
+        // offline shows up and one deleted offline doesn't spring back.
         refreshProgress()
           .then((me) => {
             if (cancelled) return
-            setBookmarks((me.bookmarks ?? []).filter((b) => b.libraryItemId === id))
+            setBookmarks(mergeBookmarks(me.bookmarks ?? [], id))
           })
           .catch(() => undefined)
 
@@ -392,12 +396,11 @@ export default function ItemDetailScreen() {
   const removeBookmark = async (b: ABSBookmark) => {
     haptics.warn()
     setBookmarks((list) => list.filter((x) => x.time !== b.time))
-    try {
-      await deleteBookmark(detail.id, b.time)
-    } catch {
-      setBookmarks((list) => [...list, b].sort((x, y) => x.time - y.time))
-      show('Could not delete bookmark')
-    }
+    // Write-ahead through the pending store: an offline delete is tombstoned and
+    // replayed on reconnect, so it stays deleted instead of springing back on
+    // the next /api/me refresh.
+    const confirmed = await removeBookmarkPending(detail.id, b.time)
+    if (!confirmed) show('Bookmark removed (will sync)')
   }
 
   const shareBook = async () => {
