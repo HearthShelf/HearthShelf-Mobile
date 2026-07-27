@@ -1,22 +1,27 @@
 name: Release
 
-# One release pipeline for BOTH platforms. A pushed version tag (or a manual
-# dispatch) fans out into two independent job chains - `android` and `ios` -
-# that build, sign, and publish in parallel. A shared `version` job resolves the
-# single version string both platforms bake, so the Android .aab, the iOS IPA,
-# the OTA runtimeVersion, and the website changelog all agree.
+# One release pipeline for BOTH platforms, driven solely by a pushed version tag.
+# The tag fans out into two independent platform jobs - `android` and `ios` -
+# that build, sign, and ship to their store in parallel. A shared `version` job
+# resolves the single version string both platforms bake, so the Android .aab,
+# the iOS IPA, the OTA runtimeVersion, and the website changelog all agree.
 #
-# Triggers:
-#   - push tag '*.*.*'  -> tag-driven CD. The tag is the source of version truth.
-#   - workflow_dispatch -> manual run. Publishes the same way a tag does, but
-#                          since there's no tag it resolves the version from the
-#                          latest tag (git describe). The `platform` input picks
-#                          android, ios, or both. Version display everywhere is
-#                          `<version> (BUILD NUM)`, identical to a tag build.
+# Shape:
+#   version -> android ┐
+#           -> ios     ┴-> publish (GitHub Release + website changelog)
+#
+# The platform jobs do platform work ONLY. Everything that announces the release
+# lives in `publish`, which needs BOTH platform jobs - so a release is only ever
+# announced when both halves actually shipped, and a changelog failure can't
+# red-flag an Android build that already uploaded to Play.
+#
+# Trigger: push tag '*.*.*'. The tag is the sole source of version truth; there
+# is no manual dispatch path (a dispatch has no tag to version or to hang a
+# GitHub Release on). To re-run a release, re-push the tag.
 #
 # Version model (identical on both platforms):
-#   - user-facing `version` comes from the tag (or latest tag on dispatch),
-#     v0.1.0 -> 0.1.0. Pre-release labels normalize to the website's channel
+#   - user-facing `version` comes from the tag, v0.1.0 -> 0.1.0. Pre-release
+#     labels normalize to the website's channel
 #     tokens (v0.1.0-beta.1 -> 0.1.0-Beta1) so the changelog lands in the right
 #     channel. That one string feeds EXPO_PUBLIC_APP_VERSION (baked app version +
 #     OTA runtime) and the uploaded changelog version.
@@ -40,38 +45,20 @@ name: Release
 on:
   push:
     tags: ['*.*.*']
-  workflow_dispatch:
-    inputs:
-      platform:
-        description: 'Which platform(s) to build and publish'
-        type: choice
-        default: both
-        options: [both, android, ios]
 
 jobs:
-  # Resolve the version string once so both platform chains bake the same value.
-  # On a tag push the version comes from the tag; on dispatch (no tag) it comes
-  # from the most recent tag so a manual publish still gets a real version.
+  # Resolve the version string once so both platform jobs bake the same value.
   version:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.resolve.outputs.version }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0 # need tags for `git describe` on dispatch
 
       - name: Resolve release version
         id: resolve
         run: |
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            RAW="${GITHUB_REF_NAME#v}"
-          else
-            # Dispatch: no tag on this ref, so use the latest tag in history.
-            LATEST=$(git describe --tags --abbrev=0)
-            RAW="${LATEST#v}"
-            echo "Dispatch build - using latest tag $LATEST"
-          fi
+          RAW="${GITHUB_REF_NAME#v}"
           VER=$(printf '%s' "$RAW" \
             | sed -E 's/-(beta|b)\.?([0-9]+)/-Beta\2/I' \
             | sed -E 's/-(alpha|a)\.?([0-9]+)/-Alpha\2/I' \
@@ -81,8 +68,6 @@ jobs:
 
   android:
     needs: version
-    # Skip when a dispatch picked ios-only. Tag pushes always build both.
-    if: github.ref_type == 'tag' || github.event.inputs.platform != 'ios'
     runs-on: ubuntu-latest
     env:
       APP_VERSION: ${{ needs.version.outputs.version }}
@@ -188,31 +173,15 @@ jobs:
           track: internal
           status: completed
 
-      - name: Publish changelog to hearthshelf.com
-        env:
-          CHANGELOG_API_KEY: ${{ secrets.CHANGELOG_API_KEY }}
-          CHANGELOG_API_URL: https://hearthshelf.com/api/v1/changelogs
-          PRODUCT: HearthShelf-Mobile
-          RELEASE_VERSION: ${{ env.APP_VERSION }}
-          DOWNLOAD_URL: https://play.google.com/store/apps/details?id=com.hearthshelf.mobile
-          # GITHUB_REF / GITHUB_REF_NAME are provided automatically.
-        run: |
-          chmod +x .github/scripts/changelog-items.sh .github/scripts/upload-changelog.sh
-          .github/scripts/upload-changelog.sh
-
-      - name: Add changelog to run summary
-        if: always()
-        run: |
-          if [ -f CHANGELOG.md ]; then cat CHANGELOG.md >> "$GITHUB_STEP_SUMMARY"; fi
-
-  # Publish a GitHub Release for the tag, using the same structured changelog
-  # that goes to hearthshelf.com as the release body. Runs after android so the
-  # .aab artifact exists to attach; iOS ships via TestFlight and has no artifact
-  # to attach here, so this does not wait on it.
-  github_release:
-    needs: [version, android]
-    # Only tag pushes get a Release - a dispatch has no tag to attach one to.
-    if: github.ref_type == 'tag'
+  # Announce the release once BOTH platforms have shipped: GitHub Release (with
+  # the .aab attached) plus the structured changelog POST to hearthshelf.com.
+  # Deliberately NOT part of the android job - the platform jobs do platform work
+  # only, so a red iOS build can't leave a published changelog claiming a release
+  # that only half exists, and a changelog script failure can't red-flag an
+  # Android build that already uploaded to Play.
+  publish:
+    # Both platform jobs must be green - `needs` alone gates this, no `if` guard.
+    needs: [version, android, ios]
     runs-on: ubuntu-latest
     permissions:
       contents: write # required to create the release
@@ -229,14 +198,33 @@ jobs:
           name: app-release-aab-${{ github.run_number }}
           path: release-assets
 
-      - name: Render changelog
+      # One chmod for the whole script dir - upload-changelog.sh shells out to
+      # render-changelog.sh, which shells out to changelog-items.sh, so missing
+      # any one of them fails the run with a bare "Permission denied" (126).
+      - name: Make changelog scripts executable
+        run: chmod +x .github/scripts/*.sh
+
+      - name: Publish changelog to hearthshelf.com
+        env:
+          CHANGELOG_API_KEY: ${{ secrets.CHANGELOG_API_KEY }}
+          CHANGELOG_API_URL: https://hearthshelf.com/api/v1/changelogs
+          PRODUCT: HearthShelf-Mobile
+          RELEASE_VERSION: ${{ env.APP_VERSION }}
+          DOWNLOAD_URL: https://play.google.com/store/apps/details?id=com.hearthshelf.mobile
+          # GITHUB_REF / GITHUB_REF_NAME are provided automatically.
+        # Renders CHANGELOG.md as a side effect, which the Release body uses.
+        run: .github/scripts/upload-changelog.sh
+
+      # Safety net: upload-changelog.sh skips (exit 0) without CHANGELOG_API_KEY,
+      # in which case no CHANGELOG.md was written. Render it directly so the
+      # Release body is never empty.
+      - name: Render changelog if the upload skipped
         env:
           PRODUCT: HearthShelf-Mobile
           RELEASE_VERSION: ${{ env.APP_VERSION }}
           DOWNLOAD_URL: https://play.google.com/store/apps/details?id=com.hearthshelf.mobile
         run: |
-          chmod +x .github/scripts/changelog-items.sh .github/scripts/render-changelog.sh
-          .github/scripts/render-changelog.sh CHANGELOG.md
+          test -f CHANGELOG.md || .github/scripts/render-changelog.sh CHANGELOG.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -248,10 +236,13 @@ jobs:
           # Release as a pre-release too, matching the website's channel.
           prerelease: ${{ contains(env.APP_VERSION, '-') }}
 
+      - name: Add changelog to run summary
+        if: always()
+        run: |
+          if [ -f CHANGELOG.md ]; then cat CHANGELOG.md >> "$GITHUB_STEP_SUMMARY"; fi
+
   ios:
     needs: version
-    # Skip when a dispatch picked android-only. Tag pushes always build both.
-    if: github.ref_type == 'tag' || github.event.inputs.platform != 'android'
     # macos-26: default Xcode 26.5 matches what the sim build uses; clerk-ios
     # needs Swift 6.2 tools (macos-15's default Xcode fails SPM resolution).
     runs-on: macos-26
@@ -272,8 +263,8 @@ jobs:
 
       - name: Prebuild iOS project
         env:
-          # Tag (or latest tag) drives the version; run_number is the monotonic
-          # iOS build number - matches Android's versionCode exactly.
+          # The tag drives the version; run_number is the monotonic iOS build
+          # number - matches Android's versionCode exactly.
           EXPO_PUBLIC_APP_VERSION: ${{ env.APP_VERSION }}
           EXPO_IOS_BUILD_NUMBER: ${{ github.run_number }}
         run: npx expo prebuild --platform ios --no-install
