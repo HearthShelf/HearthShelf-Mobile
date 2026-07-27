@@ -9,7 +9,13 @@ import { BottomSheetModalProvider } from '@gorhom/bottom-sheet'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import * as SplashScreen from 'expo-splash-screen'
 import { tokenCache, hasCachedClerkSession, clerkResourceCache } from '@/lib/tokenCache'
-import { CLERK_PUBLISHABLE_KEY, CLERK_JWT_TEMPLATE, SENTRY_DSN, FULL_VERSION, BUILD_NUMBER } from '@/lib/config'
+import {
+  CLERK_PUBLISHABLE_KEY,
+  CLERK_JWT_TEMPLATE,
+  SENTRY_DSN,
+  FULL_VERSION,
+  BUILD_NUMBER,
+} from '@/lib/config'
 import { PlayerHost } from '@/player/PlayerHost'
 import { MiniPlayerDock } from '@/player/MiniPlayerDock'
 import { PopToast } from '@/social/PopToast'
@@ -341,7 +347,7 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
       : status.phase === 'no-servers'
         ? { kind: 'no-servers' }
         : status.phase === 'error'
-          ? { kind: 'error', message: status.message }
+          ? { kind: 'error', message: status.message, details: status.details }
           : status.phase === 'select-server'
             ? { kind: 'select-server', servers: status.servers }
             : { kind: 'connecting' }
@@ -349,7 +355,7 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
   return (
     <View style={styles.gateRoot}>
       {children}
-      {status.phase === 'offline' ? <OfflineBanner onRetry={retry} /> : null}
+      {status.phase === 'offline' ? <OfflineBanner onRetry={retry} reason={status.reason} /> : null}
       {covered ? (
         <View style={StyleSheet.absoluteFill}>
           <HearthSplash

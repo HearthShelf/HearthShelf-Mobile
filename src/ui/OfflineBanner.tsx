@@ -12,10 +12,14 @@ import { Icon, icons } from '@/ui/icons'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 
-export function OfflineBanner({ onRetry }: { onRetry: () => void }) {
+export function OfflineBanner({ onRetry, reason }: { onRetry: () => void; reason?: string }) {
   const colors = useColors()
   const insets = useSafeAreaInsets()
   const styles = makeStyles(colors)
+  // Say WHY when we know it ("Server isn't answering on that address") rather
+  // than the generic line - the difference between the user fixing a typo
+  // themselves and assuming the app is broken. Falls back when unclassified.
+  const label = reason ?? 'Offline - downloaded books only'
 
   return (
     <View
@@ -24,7 +28,7 @@ export function OfflineBanner({ onRetry }: { onRetry: () => void }) {
     >
       <Icon name={icons.cloudOff} size={16} color={colors.brandHearth} />
       <AppText variant="caption" color={colors.text} numberOfLines={1} style={styles.label}>
-        Offline - downloaded books only
+        {label}
       </AppText>
       <Pressable style={styles.retryBtn} onPress={onRetry} accessibilityRole="button" hitSlop={6}>
         <Icon name={icons.retry} size={14} color={colors.accent} />

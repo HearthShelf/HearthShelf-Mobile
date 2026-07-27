@@ -10,6 +10,7 @@
  */
 import { mintGrant, type GetToken } from './controlPlane'
 import { fetchWithTimeout } from './fetchWithTimeout'
+import { ConnectionError, classifyHttpStatus } from './connectionError'
 
 export interface ConnectResult {
   serverUrl: string
@@ -42,10 +43,17 @@ export async function connectServer(
     } catch {
       // keep statusText
     }
-    throw new Error(`connect_failed: ${detail}`)
+    // Classified so the UI can say WHY - a rejected sign-in, a server error, and
+    // a wrong address all land here and need different fixes from the user.
+    throw classifyHttpStatus(res.status, { detail, url: `${origin}/hs/hosted/connect` })
   }
   const data = (await res.json()) as { token?: string }
-  if (!data.token) throw new Error('connect_failed: no_token')
+  if (!data.token) {
+    throw new ConnectionError('notFound', {
+      detail: 'server did not return a token',
+      url: `${origin}/hs/hosted/connect`,
+    })
+  }
 
   return { serverUrl: origin, token: data.token }
 }

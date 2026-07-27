@@ -156,7 +156,7 @@ export type SplashPhase =
   | { kind: 'connecting'; label?: string; serverName?: string }
   | { kind: 'select-server'; servers: SplashServer[] }
   | { kind: 'no-servers' }
-  | { kind: 'error'; message: string }
+  | { kind: 'error'; message: string; details?: string }
 
 export interface SplashActions {
   onRetry?: () => void
@@ -426,15 +426,24 @@ export function SplashScreen({
 
               {phase.kind === 'error' ? (
                 <>
+                  {/* The connect layer classifies the failure (see
+                  connectionError.ts), so `message` is already a plain, specific
+                  headline - "Can't find that server address", not a catch-all. */}
                   <Text style={styles.errorText}>{friendlyError(phase.message)}</Text>
-                  {/* Keep the raw string off the first-impression screen, but let the
-                  curious (or a bug report) reveal it. */}
-                  <Pressable onPress={() => setShowDetails((v) => !v)} hitSlop={8}>
-                    <Text style={styles.detailsToggle}>
-                      {showDetails ? 'Hide details' : 'Show details'}
-                    </Text>
-                  </Pressable>
-                  {showDetails ? <Text style={styles.detailsText}>{phase.message}</Text> : null}
+                  {/* Keep the raw status/URL off the first-impression screen, but
+                  let the curious (or a bug report) reveal it. */}
+                  {phase.details ? (
+                    <>
+                      <Pressable onPress={() => setShowDetails((v) => !v)} hitSlop={8}>
+                        <Text style={styles.detailsToggle}>
+                          {showDetails ? 'Hide details' : 'Show details'}
+                        </Text>
+                      </Pressable>
+                      {showDetails ? (
+                        <Text style={styles.detailsText}>{phase.details}</Text>
+                      ) : null}
+                    </>
+                  ) : null}
                 </>
               ) : null}
 
@@ -591,11 +600,17 @@ function InviteCodeEntry({ onSubmit }: { onSubmit?: (code: string) => Promise<st
   )
 }
 
-// The connect layer throws opaque strings like "connect_failed: no_token". Keep
-// the raw text out of the first-impression screen and show something human.
+// Connect failures are classified at the throw site now (connectionError.ts), so
+// `message` normally arrives already plain and specific. This only catches the
+// stragglers - an error from a path that doesn't route through ConnectionError
+// yet - so a raw string can't reach the first-impression screen.
 function friendlyError(message: string): string {
-  if (/no_token|connect_failed/i.test(message)) return "We couldn't reach your server."
-  if (/network|fetch|timeout/i.test(message)) return 'Network trouble reaching your server.'
+  if (/no_token|connect_failed|connect_stalled/i.test(message)) {
+    return "We couldn't reach your server."
+  }
+  if (/network request failed|fetch|timeout/i.test(message)) {
+    return 'Network trouble reaching your server.'
+  }
   return message
 }
 

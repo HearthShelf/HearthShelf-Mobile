@@ -16,6 +16,7 @@ import { AppState } from 'react-native'
 import { useAuth } from '@clerk/expo'
 import { fetchLinkedServers, acceptInvite, ApiError, type LinkedServer } from './controlPlane'
 import { connectServer } from './connect'
+import { ConnectionError } from './connectionError'
 import { setSession, setLastServerId, getLastServerId, takePendingInviteToken } from './session'
 import { CLERK_JWT_TEMPLATE } from '@/lib/config'
 import { hasCachedClerkSession } from '@/lib/tokenCache'
@@ -41,7 +42,13 @@ import {
   probeReachable,
   pokeConnectivity,
 } from '@/player/connectivity'
-import { hydratePendingProgress, flushPendingProgress } from '@/player/pendingProgress'
+import {
+  hydratePendingProgress,
+  hydrateStreamingBuffer,
+  migrateOrphanStreaming,
+  flushPendingProgress,
+} from '@/player/pendingProgress'
+import { hydratePendingBookmarks } from '@/player/pendingBookmarks'
 import { subscribeServerReached } from '@/player/syncState'
 import { hydrateProgress } from '@/store/progress'
 import type { SplashServer } from '@/ui/SplashScreen'
@@ -50,11 +57,52 @@ export type ConnectionStatus =
   | { phase: 'connecting' }
   | { phase: 'select-server'; servers: LinkedServer[] }
   | { phase: 'no-servers' }
-  | { phase: 'error'; message: string }
+  // `message` is the plain headline shown to the user; `details` is the raw
+  // status/URL for the "Show details" disclosure and bug reports.
+  | { phase: 'error'; message: string; details?: string }
   // Couldn't reach the server on launch, but downloaded books are on disk, so
   // we let the user into the app to play them. `retry` re-runs the connect.
-  | { phase: 'offline' }
+  // `reason` is the plain headline for why, when we managed to classify it.
+  | { phase: 'offline'; reason?: string }
   | { phase: 'ready'; serverName: string }
+
+/**
+ * Turn a thrown connect error into an error status. A ConnectionError already
+ * carries a plain headline and the raw detail; anything else falls back to its
+ * own message with no details row (there's nothing more to show).
+ */
+function errorStatus(e: unknown): ConnectionStatus {
+  if (e instanceof ConnectionError) {
+    return { phase: 'error', message: e.message, details: e.details || undefined }
+  }
+  return { phase: 'error', message: (e as Error)?.message ?? 'Something went wrong.' }
+}
+
+/**
+ * One-line "why we're offline" for the banner. Only worth showing when the cause
+ * is actionable (a typo, a down server, a rejected sign-in) - a plain "no
+ * internet" adds nothing over the cloud-off icon, so that falls back to the
+ * default copy. Kept short: the banner is a single narrow line.
+ */
+function offlineReason(e: unknown): string | undefined {
+  if (!(e instanceof ConnectionError)) return undefined
+  switch (e.kind) {
+    case 'dns':
+      return "Offline - can't find that server"
+    case 'refused':
+      return "Offline - server isn't answering"
+    case 'timeout':
+      return 'Offline - server timed out'
+    case 'tls':
+      return 'Offline - secure connection failed'
+    case 'auth':
+      return 'Offline - sign-in was rejected'
+    case 'server':
+      return 'Offline - the server had an error'
+    default:
+      return undefined
+  }
+}
 
 /** How long to wait for the launch connect before treating it as stalled. The
  *  connect is a multi-hop handshake (two Clerk token mints + a control-plane
@@ -344,8 +392,8 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         // their home server is down but the phone is still on Wi-Fi). A dead-end
         // error screen would needlessly hide the downloaded books they can still
         // play. Only with nothing downloaded is a hard error the right outcome.
-        if (hasOfflineContent()) setStatus({ phase: 'offline' })
-        else setStatus({ phase: 'error', message: (e as Error).message })
+        if (hasOfflineContent()) setStatus({ phase: 'offline', reason: offlineReason(e) })
+        else setStatus(errorStatus(e))
       }
     },
     [tokenFn],
@@ -466,8 +514,8 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
           }
           // Truly unreachable (or out of retries): play downloads offline rather
           // than stranding the user on an error.
-          if (hasOfflineContent()) setStatus({ phase: 'offline' })
-          else setStatus({ phase: 'error', message: (e as Error).message })
+          if (hasOfflineContent()) setStatus({ phase: 'offline', reason: offlineReason(e) })
+          else setStatus(errorStatus(e))
           return
         }
       }
@@ -481,12 +529,24 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   // and to resolve local playback. Runs regardless of auth/connection state.
   useEffect(() => {
     void hydrateDownloads()
-    void hydratePendingProgress()
     void hydrateCatalog()
     // Load last-known media progress from disk so downloaded books show their
     // real position/finished state on an offline cold start (the server refresh
     // that used to be the only source can't run with no network).
     void hydrateProgress()
+    // Ordered, unlike the rest: the pending ledger must be loaded before the
+    // streaming buffer migrates into it, and the migration must finish before
+    // playback can open a session whose writes would race it.
+    void (async () => {
+      await hydratePendingProgress()
+      await hydrateStreamingBuffer()
+      // A surviving streaming buffer means the app died mid-stream last run;
+      // fold that listening into the ledger so the normal flush ships it.
+      await migrateOrphanStreaming()
+    })()
+    // Bookmarks written offline (or interrupted mid-push) live here until they
+    // reach ABS; load them before any list renders so they're visible.
+    void hydratePendingBookmarks()
   }, [])
 
   // The provider is mounted for the whole app lifetime, signed in or not (screens
@@ -549,7 +609,11 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         if (cur.phase !== 'connecting') return cur
         return hasOfflineContent()
           ? { phase: 'offline' }
-          : { phase: 'error', message: 'connect_stalled' }
+          : {
+              phase: 'error',
+              message: 'Server took too long to respond.',
+              details: `no answer within ${Math.round(CONNECTING_FLOOR_MS / 1000)}s`,
+            }
       })
     }, CONNECTING_FLOOR_MS)
     return () => clearTimeout(t)
