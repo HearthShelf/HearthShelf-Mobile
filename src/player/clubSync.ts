@@ -23,6 +23,9 @@ import { getNotes } from '@/api/notes'
 const POLL_MS = 15_000
 
 let started = false
+// Whether the app is foregrounded. The 15s poll only runs while it is - see
+// ensurePolling(). Assumed true at startup (we start in the foreground).
+let foreground = true
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let appStateSub: { remove: () => void } | null = null
 let unsubPlayer: (() => void) | null = null
@@ -110,9 +113,14 @@ async function pull(): Promise<void> {
   }
 }
 
-// Poll only while there's a reason to (a club book playing, or an open surface).
+// Poll only while there's a reason to (a club book playing, or an open surface)
+// AND the app is in the foreground. A 15s poll is for keeping a visible surface
+// fresh; in the background nobody is looking at it, and it kept running for as
+// long as a club book stayed loaded - paused, pocketed, overnight. Backgrounding
+// suspends it and the 'active' handler pulls once and restarts it, so the user
+// still sees current data the moment they look.
 function ensurePolling(): void {
-  const shouldPoll = activeClubId !== '' || surfaceOpen > 0
+  const shouldPoll = (activeClubId !== '' || surfaceOpen > 0) && foreground
   if (shouldPoll && !pollTimer) {
     pollTimer = setInterval(() => void pull(), POLL_MS)
   } else if (!shouldPoll && pollTimer) {
@@ -130,7 +138,16 @@ function onPlayerChange(): void {
 }
 
 function onAppStateChange(next: AppStateStatus): void {
-  if (next === 'active') void pull().then(ensurePolling)
+  if (next === 'active') {
+    foreground = true
+    void pull().then(ensurePolling)
+    return
+  }
+  // 'background' / 'inactive': stop the poll. ('inactive' is a brief iOS
+  // transition - app switcher, incoming call - and stopping there too is fine
+  // since coming back always fires 'active' and pulls.)
+  foreground = false
+  ensurePolling()
 }
 
 /**

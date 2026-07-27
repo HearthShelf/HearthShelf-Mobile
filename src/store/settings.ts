@@ -16,8 +16,15 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Crypto from 'expo-crypto'
-import type { QueueMode, AutoRulePref, SettingValue } from '@hearthshelf/core'
-import { DEFAULT_AUTO_RULES, SETTINGS_CATALOG, normalizeAutoRules } from '@hearthshelf/core'
+import type { QueueMode, AutoRulePref, HomeSectionPref, SettingValue } from '@hearthshelf/core'
+import {
+  DEFAULT_AUTO_RULES,
+  DEFAULT_HOME_SECTIONS,
+  DEFAULT_REC_SHELF_COUNT,
+  SETTINGS_CATALOG,
+  normalizeAutoRules,
+  normalizeHomeSections,
+} from '@hearthshelf/core'
 
 export type ThemePref = 'auto' | 'dark' | 'light' | 'flat' | 'oled'
 export type AccentMode = 'dynamic' | 'manual'
@@ -117,6 +124,13 @@ export interface SettingsState {
   glow: number
   glowMode: GlowMode
   coverAspect: CoverAspect
+  // Home screen layout (account). homeSections is the arrangement of every band
+  // below the hero - array order is display order, `on` is visibility - edited
+  // from Home's own edit mode. homeRecShelfCount caps how many taste-derived
+  // rows ("Because you love Fantasy", "More from <author>") the "More picks for
+  // you" block may spawn.
+  homeSections: HomeSectionPref[]
+  homeRecShelfCount: number
   // Device-scoped (mobile only, not in the core catalog so it never syncs to web):
   // swap the full-width bottom tab bar for a floating glass icon pill
   // (Home / Now / Library / More). An in-app A/B of the nav treatment.
@@ -232,6 +246,8 @@ let state: SettingsState = {
   glow: 60,
   glowMode: 'gradient',
   coverAspect: 'square',
+  homeSections: DEFAULT_HOME_SECTIONS,
+  homeRecShelfCount: DEFAULT_REC_SHELF_COUNT,
   floatingNav: false,
   floatingNavOrientation: 'horizontal',
 
@@ -371,6 +387,7 @@ export function applyServerKeys(
       let value: unknown = remote.value
       if (key === 'playerActions') value = normalizePlayerActions(value as PlayerActionPref[])
       if (key === 'queueAutoRules') value = normalizeAutoRules(value)
+      if (key === 'homeSections') value = normalizeHomeSections(value)
       patch[key] = value
       nextMeta[key] = remote.updatedAt
       changed = true
@@ -385,6 +402,16 @@ export function applyServerKeys(
 /** Replace the player action arrangement (from the reorder editor). */
 export function setPlayerActions(playerActions: PlayerActionPref[]): void {
   set({ playerActions })
+}
+
+/** Replace the Home section arrangement (from Home's edit mode). */
+export function setHomeSections(homeSections: HomeSectionPref[]): void {
+  set({ homeSections })
+}
+
+/** Toggle one Home section's visibility, leaving its position alone. */
+export function toggleHomeSection(id: HomeSectionPref['id']): void {
+  set({ homeSections: state.homeSections.map((s) => (s.id === id ? { ...s, on: !s.on } : s)) })
 }
 
 export function setQueueMode(queueMode: QueueMode): void {
@@ -450,11 +477,7 @@ export function storedSettings(): Record<string, { value: SettingValue; updatedA
 const DEVICE_SETTINGS_KEY = 'hs.deviceSettings'
 
 function patchTouchesDeviceKeys(patch: Partial<SettingsState>): boolean {
-  return (
-    'floatingNav' in patch ||
-    'floatingNavOrientation' in patch ||
-    'shareInstallStats' in patch
-  )
+  return 'floatingNav' in patch || 'floatingNavOrientation' in patch || 'shareInstallStats' in patch
 }
 
 /** Persist the current device-scoped slice. Best-effort, fire-and-forget. */

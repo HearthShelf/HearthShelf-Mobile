@@ -320,22 +320,49 @@ class HearthShelfPlayerService : MediaSessionService() {
   }
 
   private val progressHandler = android.os.Handler(android.os.Looper.getMainLooper())
+  // Whether the 1s tick is currently scheduled. It only runs while audio is
+  // actually playing - see startProgressTick/stopProgressTick.
+  private var progressTicking = false
   private val progressTick = object : Runnable {
     override fun run() {
-      exo?.let { p ->
-        // While the car owns playback its service drives the store; a stray phone
-        // emit here would fight the car's mirror, so stay quiet.
-        if (p.isPlaying && HearthShelfAutoModule.carPlayer == null) {
-          HearthShelfAutoModule.emitProgress(p.currentPosition / 1000.0)
-          refreshChapterSubtitle()
-          maybeBeep(p.currentPosition / 1000.0)
-        }
+      val p = exo
+      // Stop rescheduling once playback stops. Everything below is either about
+      // advancing audio (progress, chapter subtitle, sleep beeps) or is
+      // re-evaluated on the state edge anyway, so a paused tick did nothing but
+      // wake the CPU every second - for as long as the service lived, which for
+      // a paused audiobook can be hours.
+      if (p == null || !p.isPlaying) {
+        progressTicking = false
+        // One last shake re-check so the sensor isn't left registered against a
+        // now-stale gate (the play/pause edge also calls this).
+        evaluateShake()
+        return
+      }
+      // While the car owns playback its service drives the store; a stray phone
+      // emit here would fight the car's mirror, so stay quiet.
+      if (HearthShelfAutoModule.carPlayer == null) {
+        HearthShelfAutoModule.emitProgress(p.currentPosition / 1000.0)
+        refreshChapterSubtitle()
+        maybeBeep(p.currentPosition / 1000.0)
       }
       // Heartbeat re-check so a missed state edge (e.g. car handoff) can't strand
       // the sensor registered/unregistered against the real gate.
       evaluateShake()
       progressHandler.postDelayed(this, 1000)
     }
+  }
+
+  /** Begin the 1s tick if it isn't already running. Idempotent. */
+  private fun startProgressTick() {
+    if (progressTicking) return
+    progressTicking = true
+    progressHandler.postDelayed(progressTick, 1000)
+  }
+
+  /** Cancel the tick outright (teardown). */
+  private fun stopProgressTick() {
+    progressHandler.removeCallbacks(progressTick)
+    progressTicking = false
   }
 
   override fun onCreate() {
@@ -369,6 +396,14 @@ class HearthShelfPlayerService : MediaSessionService() {
         // phone player is stopped in that mode, and its stop emit would otherwise
         // stomp the car's isPlaying in the store.
         if (HearthShelfAutoModule.carPlayer == null) HearthShelfAutoModule.emitState(isPlaying)
+        // The 1s tick only runs while audio advances; this edge is what starts it
+        // (the Runnable stops itself on pause). Emit the true stop position first
+        // so pausing still lands the exact spot before the tick goes quiet.
+        if (isPlaying) {
+          startProgressTick()
+        } else if (HearthShelfAutoModule.carPlayer == null) {
+          exo?.let { HearthShelfAutoModule.emitProgress(it.currentPosition / 1000.0) }
+        }
         // Pausing/resuming flips the shake gate (only listen while playing).
         evaluateShake()
       }
@@ -417,7 +452,9 @@ class HearthShelfPlayerService : MediaSessionService() {
       load(pl.url, pl.startSec, pl.title, pl.author, pl.artworkUri, pl.chaptersJson, pl.autoPlay)
     }
 
-    progressHandler.postDelayed(progressTick, 1000)
+    // Only tick if the pending load actually started playing; otherwise the
+    // play edge (onIsPlayingChanged) starts it.
+    if (exo?.isPlaying == true) startProgressTick()
   }
 
   override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -444,7 +481,7 @@ class HearthShelfPlayerService : MediaSessionService() {
   }
 
   override fun onDestroy() {
-    progressHandler.removeCallbacks(progressTick)
+    stopProgressTick()
     if (shakeRegistered) {
       sensorManager?.unregisterListener(shakeListener)
       shakeRegistered = false

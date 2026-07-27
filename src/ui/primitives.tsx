@@ -300,12 +300,15 @@ export function SectionHeader({
   icon,
   action,
   onPress,
+  onLongPress,
 }: {
   title: string
   icon?: IconName
   action?: React.ReactNode
   /** When set, the whole title area (icon + text) is tappable. */
   onPress?: () => void
+  /** When set, holding the title area fires this (Home uses it to arrange). */
+  onLongPress?: () => void
 }) {
   const colors = useColors()
   const styles = useStyles()
@@ -317,9 +320,11 @@ export function SectionHeader({
   )
   return (
     <View style={styles.sectionHeader}>
-      {onPress ? (
+      {onPress || onLongPress ? (
         <Pressable
           onPress={onPress}
+          onLongPress={onLongPress}
+          delayLongPress={350}
           hitSlop={8}
           style={({ pressed }) => [styles.sectionTitleTap, pressed && styles.pressed]}
         >

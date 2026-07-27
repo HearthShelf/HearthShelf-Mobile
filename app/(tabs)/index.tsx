@@ -14,13 +14,21 @@ import {
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
-import type { ABSLibraryItem, ABSShelf, ABSSeries, HSListeningStats } from '@hearthshelf/core'
+import type {
+  ABSLibraryItem,
+  ABSShelf,
+  ABSSeries,
+  HomeSectionId,
+  HSListeningStats,
+} from '@hearthshelf/core'
 import {
   coverHue,
   formatDuration,
   buildDiscoverShelves,
   rankDiscoverShelves,
   continueSeriesShelf,
+  GENERAL_REC_SECTIONS,
+  isGeneratedRecShelf,
 } from '@hearthshelf/core'
 import { setSessionExpiredHandler } from '@/api/controlPlane'
 import { clearSession } from '@/api/session'
@@ -90,6 +98,7 @@ import {
   isSeriesDismissed,
 } from '@/store/dismissals'
 import { HomeClubShelf } from '@/social/HomeClubShelf'
+import { HomeSectionsEditor } from '@/ui/HomeSectionsEditor'
 import { ReleaseCountdownBanner } from '@/ui/ReleaseCountdownBanner'
 import { Toast, useToast } from '@/ui/Toast'
 import { useBackHandler, useSheetBackHandler } from '@/ui/useBackHandler'
@@ -108,11 +117,14 @@ import {
 // long-press actions; `seriesByItemId` maps a Continue-Series tile (rendered as
 // its next book) to the series it stands for, so "Hide this series" dismisses
 // the right series id. `icon` is the shelf's declared leading icon - no
-// label-string guessing.
+// label-string guessing. `section` is which arrangeable Home band this shelf
+// belongs to; several taste-derived shelves share the 'recommended-picks'
+// section and render as a group wherever the user placed it.
 type HomeShelf = ABSShelf & {
   source?: BookActionsSource
   seriesByItemId?: Record<string, { id: string; name: string }>
   icon?: IconName
+  section: HomeSectionId
 }
 
 // Book shelves only, in the shape the pushed /shelf/[key] screen reads.
@@ -157,6 +169,25 @@ export default function HomeScreen() {
   const [libraryName, setLibraryName] = useState<string | null>(null)
   // Shared per-item progress; mark-finished anywhere updates tiles here live.
   const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
+  // The user's Home arrangement drives which bands render and in what order.
+  const { homeSections } = useSyncExternalStore(subscribeSettings, getSettingsState)
+  // Edit mode replaces the shelves with draggable section headers (covers off).
+  const [editing, setEditing] = useState(false)
+  const enterEdit = useCallback(() => {
+    haptics.longPress()
+    setEditing(true)
+  }, [])
+  // Book shelves keyed by the section they belong to, so the arrangement walk
+  // can render a whole section's rows at its chosen position in one step.
+  const shelvesBySection = useMemo(() => {
+    const map = new Map<HomeSectionId, HomeShelf[]>()
+    for (const s of shelves) {
+      const arr = map.get(s.section)
+      if (arr) arr.push(s)
+      else map.set(s.section, [s])
+    }
+    return map
+  }, [shelves])
   const { message: toast, show: showToast } = useToast()
   const actionsRef = useRef<BookActionsHandle>(null)
   const queueSheetRef = useRef<SheetHandle>(null)
@@ -182,6 +213,12 @@ export default function HomeScreen() {
   const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useBackHandler(
     useCallback(() => {
+      // Back leaves edit mode first - it's a mode on Home, not a screen to exit
+      // the app from.
+      if (editing) {
+        setEditing(false)
+        return true
+      }
       if (exitArmedRef.current) {
         if (exitTimerRef.current) clearTimeout(exitTimerRef.current)
         BackHandler.exitApp()
@@ -193,7 +230,7 @@ export default function HomeScreen() {
         exitArmedRef.current = false
       }, 2000)
       return true
-    }, [showToast]),
+    }, [showToast, editing]),
   )
   // Close any open sheet before the exit-arm logic above (registered after it so
   // it fires first; swallows the press only when a sheet was open).
@@ -274,7 +311,7 @@ export default function HomeScreen() {
     if (firstBookLib) {
       // Taste-engine recommendation shelves from the full library (limit=0 so
       // genres/narrator survive). Best-effort: a fetch failure just skips them.
-      let recShelves: ABSShelf[] = []
+      let recShelves: HomeShelf[] = []
       let carShelves: { id: string; label: string; items: ABSLibraryItem[] }[] = []
       try {
         const items = await getAllLibraryItems(firstBookLib.id)
@@ -282,13 +319,31 @@ export default function HomeScreen() {
         const { shelves: baseShelves } = buildDiscoverShelves(items, progressMap)
         const byId = new Map(items.map((it) => [it.id, it] as const))
         const ranked = rankDiscoverShelves(baseShelves, byId)
-        recShelves = ranked.map((s) => ({
-          id: s.id,
-          label: s.label,
-          type: 'book',
-          entities: s.items,
-          icon: icons.sparkle,
-        }))
+        // Fixed-id rec shelves ('recommended', 'series-next', 'recent',
+        // 'questgiver') each map to their own arrangeable section. The rest are
+        // taste-derived (genre/author/narrator/cold): they share the
+        // 'recommended-picks' section and are capped by homeRecShelfCount, so a
+        // listener decides how much of Home the engine gets to fill.
+        const recCap = getSettingsState().homeRecShelfCount
+        let generated = 0
+        recShelves = []
+        for (const s of ranked) {
+          const section = GENERAL_REC_SECTIONS[s.id]
+          if (isGeneratedRecShelf(s.id)) {
+            if (generated >= recCap) continue
+            generated++
+          }
+          recShelves.push({
+            id: s.id,
+            label: s.label,
+            type: 'book',
+            entities: s.items,
+            icon: icons.sparkle,
+            section: section ?? 'recommended-picks',
+          })
+        }
+        // The car browses the full ranked feed - the Home cap is a Home layout
+        // choice, not a statement about what the engine found.
         carShelves = ranked.map((s) => ({ id: s.id, label: s.label, items: s.items }))
       } catch {
         recShelves = []
@@ -306,7 +361,7 @@ export default function HomeScreen() {
       // "Hide this series" dismiss action needs. Both are the same sources the
       // Auto queue draws from, so the shelves expose what the rules will queue.
       const continueShelves: HomeShelf[] = []
-      let addedShelf: ABSShelf | null = null
+      let addedShelf: HomeShelf | null = null
       const finished = getProgressState().byId
       try {
         const personalized = await getPersonalized(firstBookLib.id)
@@ -315,8 +370,16 @@ export default function HomeScreen() {
           if (s.id === 'continue-listening') {
             const entities = s.entities.filter((e) => finished.get(e.id)?.isFinished !== true)
             if (entities.length)
-              continueShelves.push({ ...s, source: 'listening', entities, icon: icons.recent })
-          } else if (s.id === 'recently-added') addedShelf = { ...s, icon: icons.add } as HomeShelf
+              continueShelves.push({
+                ...s,
+                source: 'listening',
+                entities,
+                icon: icons.recent,
+                section: 'continue-listening',
+              })
+          } else if (s.id === 'recently-added') {
+            addedShelf = { ...s, icon: icons.add, section: 'recently-added' }
+          }
         }
       } catch {
         // Personalized is best-effort; the taste engine still carries Home.
@@ -341,6 +404,7 @@ export default function HomeScreen() {
             source: 'series',
             seriesByItemId,
             icon: icons.book,
+            section: 'continue-series',
           })
         }
       } catch {
@@ -381,9 +445,16 @@ export default function HomeScreen() {
   // Offline: build Home from downloaded books (Continue + genre categories)
   // instead of the server, so the home screen stays useful with no network.
   const loadHomeOffline = useCallback(() => {
-    const { inProgress: ip, shelves: sh } = catalogHomeShelves(
+    const { inProgress: ip, shelves: raw } = catalogHomeShelves(
       (id) => getProgressState().byId.get(id)?.progress,
     )
+    // Offline shelves are all genre groupings of your downloads, so they're the
+    // taste-derived block - same section, same cap, same place in the order the
+    // user arranged online.
+    const cap = getSettingsState().homeRecShelfCount
+    const sh: HomeShelf[] = raw
+      .slice(0, cap)
+      .map((s) => ({ ...s, icon: icons.sparkle, section: 'recommended-picks' as const }))
     setInProgress(ip)
     setShelves(sh)
     publishHomeShelves(toPublishedShelves(sh))
@@ -557,11 +628,22 @@ export default function HomeScreen() {
     )
   }
 
+  // Edit mode takes over Home: covers off, section headers become draggable
+  // rows. It's the same screen, so what you arrange is what you're looking at.
+  if (editing) {
+    return (
+      <Screen>
+        <HomeSectionsEditor onDone={() => setEditing(false)} />
+      </Screen>
+    )
+  }
+
   // Re-apply the finished filter at render against the live progress store so a
   // book that reaches 100% while Home is open drops out of the hero/Continue
   // immediately, without waiting for the next items-in-progress fetch.
   const visibleInProgress = inProgress.filter((it) => progressById.get(it.id)?.isFinished !== true)
   const hero = visibleInProgress[0]
+  const allSectionsHidden = homeSections.every((s) => !s.on)
 
   return (
     <Screen>
@@ -594,7 +676,7 @@ export default function HomeScreen() {
             </Touchable>
           </View>
         ) : null}
-        <HomeHeader firstName={firstName} libraryName={libraryName} />
+        <HomeHeader firstName={firstName} libraryName={libraryName} onEdit={enterEdit} />
         {nowPlaying ? (
           <PlayerHero
             nowPlaying={nowPlaying}
@@ -628,15 +710,48 @@ export default function HomeScreen() {
             onCta={() => router.push('/(tabs)/library')}
             style={{ minHeight: 420 }}
           />
+        ) : allSectionsHidden ? (
+          // The user hid every band. Say so plainly with a way straight back to
+          // arrange mode, so a bare Home reads as a choice, not a failure.
+          <EmptyState
+            title="Every section is hidden"
+            body="Your home screen is empty because all of its sections are turned off."
+            cta="Arrange your home"
+            onCta={enterEdit}
+            style={{ minHeight: 320 }}
+          />
         ) : (
-          <>
-            <DashboardRow stats={stats} onOpenQueue={() => queueSheetRef.current?.present()} />
-            <ReleaseCountdownBanner />
-            <HomeClubShelf />
-            {shelves.map((shelf) => (
-              <Shelf key={shelf.id} shelf={shelf} onLongPressItem={openActions} />
-            ))}
-          </>
+          // Render the bands in the order the user arranged, skipping hidden
+          // ones. Book shelves are grouped by the section they belong to, so
+          // every taste-derived row travels with the 'recommended-picks' block.
+          homeSections.map((sec) => {
+            if (!sec.on) return null
+            switch (sec.id) {
+              case 'dashboard':
+                return (
+                  <DashboardRow
+                    key={sec.id}
+                    stats={stats}
+                    onOpenQueue={() => queueSheetRef.current?.present()}
+                  />
+                )
+              case 'release-countdown':
+                return <ReleaseCountdownBanner key={sec.id} />
+              case 'book-club':
+                return <HomeClubShelf key={sec.id} />
+              default:
+                return shelvesBySection
+                  .get(sec.id)
+                  ?.map((shelf) => (
+                    <Shelf
+                      key={shelf.id}
+                      shelf={shelf}
+                      onLongPressItem={openActions}
+                      onEdit={enterEdit}
+                    />
+                  ))
+            }
+          })
         )}
       </Animated.ScrollView>
 
@@ -699,16 +814,19 @@ function HomeSkeleton() {
 
 /**
  * Header utility row above the hero: time-of-day greeting with the active
- * server/library context under it (tap opens the server switcher), plus
- * Downloads (accent activity dot while anything is in-flight) and Search on the
- * right edge. Deterministic per render (no Math.random in the hot path).
+ * server/library context under it (tap opens the server switcher), plus Arrange
+ * (pencil - reorder/hide the sections below), Downloads (accent activity dot
+ * while anything is in-flight) and Search on the right edge. Deterministic per
+ * render (no Math.random in the hot path).
  */
 function HomeHeader({
   firstName,
   libraryName,
+  onEdit,
 }: {
   firstName: string | null
   libraryName: string | null
+  onEdit: () => void
 }) {
   const colors = useColors()
   const styles = useStyles()
@@ -740,6 +858,13 @@ function HomeHeader({
         ) : null}
       </Touchable>
       <View style={styles.headerBtns}>
+        <Touchable
+          onPress={onEdit}
+          style={styles.headerBtn}
+          accessibilityLabel="Arrange your home screen"
+        >
+          <Icon name={icons.edit} size={19} color={colors.text} />
+        </Touchable>
         <Touchable onPress={() => router.push('/settings/storage')} style={styles.headerBtn}>
           <Icon name={icons.download} size={19} color={colors.text} />
           {downloading ? <View style={styles.headerDot} /> : null}
@@ -1050,6 +1175,7 @@ function DashboardRow({
 function Shelf({
   shelf,
   onLongPressItem,
+  onEdit,
 }: {
   shelf: HomeShelf
   onLongPressItem: (
@@ -1057,6 +1183,8 @@ function Shelf({
     source?: BookActionsSource,
     series?: { id: string; name: string },
   ) => void
+  /** Long-pressing the section header drops Home into arrange mode. */
+  onEdit: () => void
 }) {
   const colors = useColors()
   const styles = useStyles()
@@ -1090,6 +1218,7 @@ function Shelf({
         title={shelf.label}
         icon={shelf.icon ?? icons.library}
         onPress={openAll}
+        onLongPress={onEdit}
         action={
           <Touchable onPress={openAll} hitSlop={8} style={styles.seeAll}>
             <AppText variant="caption" color={colors.textMuted}>

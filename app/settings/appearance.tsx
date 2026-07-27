@@ -5,7 +5,13 @@
  * re-skin the whole app live.
  */
 import { useSyncExternalStore } from 'react'
-import { getSettingsState, subscribeSettings, setSetting, resetSettings, restoreSettings } from '@/store/settings'
+import {
+  getSettingsState,
+  subscribeSettings,
+  setSetting,
+  resetSettings,
+  restoreSettings,
+} from '@/store/settings'
 import {
   SettingsPanel,
   SettingsGroup,
@@ -37,9 +43,7 @@ export default function AppearancePanel() {
 
   return (
     <SettingsPanel>
-      <SettingsLabel
-        onReset={() => resetSection('Theme & accent', ['theme', 'accentHex'])}
-      >
+      <SettingsLabel onReset={() => resetSection('Theme & accent', ['theme', 'accentHex'])}>
         Theme & accent
       </SettingsLabel>
       <SettingsGroup>
@@ -108,6 +112,11 @@ export default function AppearancePanel() {
           }
         />
         <SettingsRow
+          icon="edit"
+          title="Home screen sections"
+          desc="Reorder or hide the sections on your home screen. Tap the pencil at the top of Home, or hold any section heading."
+        />
+        <SettingsRow
           icon="blur-on"
           title="Cover glow style"
           desc="Gradient blooms live; Image is the lighter-weight option."
@@ -155,9 +164,7 @@ export default function AppearancePanel() {
         ) : null}
       </SettingsGroup>
 
-      <SettingsLabel
-        onReset={() => resetSection('Haptics', ['haptics', 'hapticIntensity'])}
-      >
+      <SettingsLabel onReset={() => resetSection('Haptics', ['haptics', 'hapticIntensity'])}>
         Feel
       </SettingsLabel>
       <SettingsGroup>
