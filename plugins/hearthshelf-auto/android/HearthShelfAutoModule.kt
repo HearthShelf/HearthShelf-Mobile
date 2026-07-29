@@ -5,10 +5,12 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule
+import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
@@ -17,6 +19,8 @@ import com.facebook.react.bridge.Arguments
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.facebook.react.uimanager.ViewManager
 import com.google.common.util.concurrent.MoreExecutors
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Bridge between JS and the native phone media engine (HearthShelfPlayerService,
@@ -84,6 +88,91 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     prefs().edit().putString("discover", json).apply()
   }
 
+  /**
+   * Publish the downloaded books - local file paths, chapters, cover, saved
+   * position - so the car has a browse tree and something to play with no network.
+   * Everything the car surface does is otherwise a request to ABS, which is why an
+   * offline car showed nothing at all. Shape:
+   * { books: [{ id, title, sortKey, author, cover, duration, position, finished,
+   *             addedAt, seriesId, seriesName, sequence,
+   *             chapters: [{ title, start, end }],
+   *             tracks: [{ uri, startOffset, duration }] }] }
+   */
+  @ReactMethod
+  fun setOfflineLibrary(json: String) {
+    prefs().edit().putString("offlineLibrary", json).apply()
+  }
+
+  /** Progress the car banked while playing downloads with no server, keyed
+   *  "<itemId>@<startedAt>" (one entry per LISTEN, so a second listen of the same
+   *  book doesn't overwrite the first), as { itemId, title, duration, currentTime,
+   *  timeListening, startedAt, updatedAt }. JS folds these into its own
+   *  pending-sync ledger. */
+  @ReactMethod
+  fun getOfflineProgress(promise: Promise) {
+    promise.resolve(prefs().getString("offlineProgress", null) ?: "{}")
+  }
+
+  /** Drop the banked entries JS has taken ownership of. Only the keys passed in
+   *  are removed, so a car listen that started after the read isn't lost. */
+  @ReactMethod
+  fun clearOfflineProgress(keysJson: String) {
+    try {
+      val raw = prefs().getString("offlineProgress", null) ?: return
+      val all = JSONObject(raw)
+      val keys = JSONArray(keysJson)
+      for (i in 0 until keys.length()) all.remove(keys.getString(i))
+      prefs().edit().putString("offlineProgress", all.toString()).apply()
+    } catch (e: Exception) {
+      // A corrupt ledger is not worth failing the launch over; the next car
+      // session overwrites it.
+    }
+  }
+
+  /** Bookmarks the car couldn't POST (offline), as
+   *  [{ itemId, time, title, createdAt }]. JS pushes them on reconnect. */
+  @ReactMethod
+  fun getOfflineBookmarks(promise: Promise) {
+    promise.resolve(prefs().getString("offlineBookmarks", null) ?: "[]")
+  }
+
+  /** Drop only the queued bookmarks JS has taken ownership of, keyed
+   *  "<itemId>@<time>", so one queued mid-drain isn't lost. */
+  @ReactMethod
+  fun clearOfflineBookmarks(keysJson: String) {
+    try {
+      val raw = prefs().getString("offlineBookmarks", null) ?: return
+      val taken = HashSet<String>()
+      val keys = JSONArray(keysJson)
+      for (i in 0 until keys.length()) taken.add(keys.getString(i))
+      val kept = JSONArray()
+      val arr = JSONArray(raw)
+      for (i in 0 until arr.length()) {
+        val b = arr.getJSONObject(i)
+        if (!taken.contains("${b.optString("itemId")}@${b.optInt("time")}")) kept.put(b)
+      }
+      prefs().edit().putString("offlineBookmarks", kept.toString()).apply()
+    } catch (e: Exception) {
+      // Leave the queue alone rather than dropping bookmarks on a parse error.
+    }
+  }
+
+  /**
+   * Is the device in airplane mode? Sitting through a retry storm we KNOW can't
+   * succeed is the worst version of a slow launch, so the app checks this first
+   * and drops straight into offline mode instead.
+   */
+  @ReactMethod
+  fun isAirplaneMode(promise: Promise) {
+    promise.resolve(
+      try {
+        Settings.Global.getInt(ctx.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
+      } catch (e: Exception) {
+        false
+      }
+    )
+  }
+
   /** Mirror the notePops master on/off into the car service's prefs. The RN
    *  settings store persists to AsyncStorage (SQLite), which the headless Auto
    *  service can't read, so JS pushes the boolean here. See
@@ -138,10 +227,14 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
 
   @ReactMethod
   fun clearSession() {
+    // The offline library goes too: with no session handed over, the car must not
+    // keep serving this user's downloads. The banked offline progress/bookmarks do
+    // NOT - they are unsynced user data, drained by JS at the next launch.
     prefs().edit()
       .remove("serverUrl").remove("token")
       .remove("skipBackSec").remove("skipForwardSec")
       .remove("discover")
+      .remove("offlineLibrary")
       .apply()
     Handler(Looper.getMainLooper()).post {
       controller?.release()

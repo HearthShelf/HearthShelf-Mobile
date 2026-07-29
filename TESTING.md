@@ -179,6 +179,49 @@ old @iternio build would NOT appear in query #1 at all.)
 If HearthShelf doesn't appear in the car launcher, it's the sideload/category
 gate (Unknown sources, or @iternio's nav-category default), not a code fault.
 
+## Test Android Auto OFFLINE (the car surface with no server)
+
+The car service fetches everything from ABS, so "does it work offline" is a
+separate test from the one above - and the failure mode is silent (an empty app,
+not an error). What makes it work is a snapshot JS mirrors into the same prefs.
+
+1. Online, in the app: download at least one book (Continue Listening
+   auto-download, or the book's Download action). Leave and reopen the app once
+   so the snapshot is published.
+2. Confirm the snapshot reached prefs:
+   ```powershell
+   $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+   & $adb shell run-as com.hearthshelf.mobile cat /data/data/com.hearthshelf.mobile/shared_prefs/hearthshelf_auto.xml | Select-String offlineLibrary
+   #   -> <string name="offlineLibrary">{&quot;books&quot;:[...]}</string>
+   ```
+3. Put the phone in **airplane mode** (or kill the server), then plug into the
+   car / start the DHU and open HearthShelf.
+   - Expect: **Continue / Downloaded / Series** at the root, covers rendering
+     from the local files, and a book that plays with full transport controls.
+   - With nothing downloaded you should get the "No connection - no downloaded
+     books" row, not a blank screen.
+4. Listen for a minute in the car, then come back online and open the app.
+   Progress should land on the server: the car banks position + listened-time
+   under `offlineProgress` in the same prefs, and the app drains it into the
+   pending-session ledger at launch / on foreground.
+
+### Offline listening history (phone or car)
+
+Recent Listens has to survive an outage that lasts days, not minutes:
+
+- Listen offline, stop, then start a SECOND offline listen of the same book.
+  Both should appear as separate unsynced rows in Recent Listens - the ledger is
+  keyed per session now, so the later listen no longer replaces the earlier one.
+- Open Recent Listens for a downloaded book while offline: the server's history
+  should still be there (cached at connect), not an empty list.
+- Reconnect: every banked row should flush and reappear as a confirmed server
+  session with its real listened-time and date.
+
+The app-side half of the launch story: with the phone offline at launch, the splash
+should say "Connection issue"/"Airplane mode is on" (not "Warming up your
+library") and offer **Enter offline mode**; airplane mode should skip the retries
+entirely and land in offline mode immediately.
+
 ## Test Android Auto in the DHU (only if you install real Android Auto)
 
 1. On the phone/emulator, enable Android Auto **head-unit server**:

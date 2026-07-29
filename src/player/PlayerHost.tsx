@@ -30,6 +30,7 @@ import {
 } from './store'
 import { coverUrl } from '@/api/abs'
 import { addBookmarkPending } from './pendingBookmarks'
+import { localCoverFor } from './downloads'
 import { handOffToCar, playItemById, syncProgress } from './playback'
 import { loadAutoCarBook } from './autoBridge'
 import { advanceQueueOnEnd } from './advance'
@@ -195,7 +196,9 @@ export function PlayerHost() {
             sessionId: '',
             title: e.title,
             author: e.author,
-            artworkUrl: coverUrl(e.itemId),
+            // Prefer the downloaded cover: the server URL renders nothing when
+            // the car loaded this book with no network.
+            artworkUrl: localCoverFor(e.itemId) ?? coverUrl(e.itemId),
             url: '',
             duration: e.duration,
             startPosition: e.position,

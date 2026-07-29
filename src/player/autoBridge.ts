@@ -15,10 +15,57 @@ export interface AutoDiscoverShelf {
   items: { id: string; title: string; author: string }[]
 }
 
+/** One downloaded book as the car sees it offline: enough metadata to browse and
+ *  enough local file detail to play, with no server in the loop. */
+export interface AutoOfflineBook {
+  id: string
+  title: string
+  /** Title with a leading article dropped, so the car's A-Z matches the app's. */
+  sortKey: string
+  author: string
+  /** file:// uri of the downloaded cover, or '' when there isn't one. */
+  cover: string
+  duration: number
+  /** Last known position (seconds) - what the car resumes at with no server. */
+  position: number
+  finished: boolean
+  addedAt: number
+  seriesId: string
+  seriesName: string
+  sequence: number
+  chapters: { title: string; start: number; end: number }[]
+  tracks: { uri: string; startOffset: number; duration: number }[]
+}
+
+/** A playback session the car banked while offline (mirrors LocalSession). */
+export interface AutoOfflineProgress {
+  itemId: string
+  title: string
+  duration: number
+  currentTime: number
+  timeListening: number
+  startedAt: number
+  updatedAt: number
+}
+
+/** A bookmark the car couldn't POST because there was no server to take it. */
+export interface AutoOfflineBookmark {
+  itemId: string
+  time: number
+  title: string
+  createdAt: number
+}
+
 interface HearthShelfAutoNative {
   setSession(serverUrl: string, token: string, skipBackSec: number, skipForwardSec: number): void
   setSkipSeconds(skipBackSec: number, skipForwardSec: number): void
   setDiscover(json: string): void
+  setOfflineLibrary(json: string): void
+  getOfflineProgress(): Promise<string>
+  clearOfflineProgress(idsJson: string): void
+  getOfflineBookmarks(): Promise<string>
+  clearOfflineBookmarks(keysJson: string): void
+  isAirplaneMode(): Promise<boolean>
   setNotePopsEnabled(enabled: boolean): void
   setChapterProgress(enabled: boolean): void
   setSleepShake(enabled: boolean, minutes: number, timerActive: boolean, hapticLevel: string): void
@@ -57,6 +104,64 @@ export function setAutoSession(
  */
 export function setAutoSkipSeconds(skipBackSec: number, skipForwardSec: number): void {
   if (Platform.OS === 'android') native?.setSkipSeconds(skipBackSec, skipForwardSec)
+}
+
+/**
+ * Publish the downloaded books to the car surface, so Android Auto has a browse
+ * tree and something to play with no network. Everything else the car does is a
+ * request to the user's server, which is why an offline car showed no book list
+ * and no controls at all. Android only: iOS CarPlay routes taps up to JS, which
+ * already resolves downloads itself.
+ */
+export function setAutoOfflineLibrary(books: AutoOfflineBook[]): void {
+  if (Platform.OS === 'android') native?.setOfflineLibrary(JSON.stringify({ books }))
+}
+
+/** Progress the car banked while playing downloads offline, keyed per listen
+ *  ("<itemId>@<startedAt>"). Empty on any platform without the native side. */
+export async function getAutoOfflineProgress(): Promise<Record<string, AutoOfflineProgress>> {
+  if (Platform.OS !== 'android' || !native?.getOfflineProgress) return {}
+  try {
+    return JSON.parse(await native.getOfflineProgress()) as Record<string, AutoOfflineProgress>
+  } catch {
+    return {}
+  }
+}
+
+/** Drop the banked car listens we've taken ownership of, by their keys. */
+export function clearAutoOfflineProgress(keys: string[]): void {
+  if (Platform.OS !== 'android' || !keys.length) return
+  native?.clearOfflineProgress(JSON.stringify(keys))
+}
+
+/** Bookmarks the car queued while offline. */
+export async function getAutoOfflineBookmarks(): Promise<AutoOfflineBookmark[]> {
+  if (Platform.OS !== 'android' || !native?.getOfflineBookmarks) return []
+  try {
+    const parsed = JSON.parse(await native.getOfflineBookmarks()) as AutoOfflineBookmark[]
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+/** Drop the queued bookmarks we've taken ownership of, keyed "<itemId>@<time>". */
+export function clearAutoOfflineBookmarks(keys: string[]): void {
+  if (Platform.OS !== 'android' || !keys.length) return
+  native?.clearOfflineBookmarks(JSON.stringify(keys))
+}
+
+/**
+ * Is the device in airplane mode? Android only (iOS exposes no such API) - false
+ * everywhere else, which just means we fall back to the normal connect attempt.
+ */
+export async function isAirplaneMode(): Promise<boolean> {
+  if (Platform.OS !== 'android' || !native?.isAirplaneMode) return false
+  try {
+    return await native.isAirplaneMode()
+  } catch {
+    return false
+  }
 }
 
 /** Publish the current Discover shelves so the car's Discover tab can browse them. */

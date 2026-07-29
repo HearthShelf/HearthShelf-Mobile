@@ -28,6 +28,7 @@ import {
   getPendingSessionState,
   subscribePendingSessions,
   flushPendingProgress,
+  pendingBooks,
 } from './pendingProgress'
 import { haptics } from '@/ui/haptics'
 import { radius, spacing, type Palette } from '@/ui/theme'
@@ -157,9 +158,12 @@ const SyncStatusSheet = forwardRef<SyncStatusSheetHandle>(function SyncStatusShe
   const lastSynced =
     sync.lastSyncedAt != null ? relativeTime(sync.lastSyncedAt, Date.now()) : null
 
-  // Books listened offline that haven't reached the server yet, so we can name
-  // exactly what's waiting instead of a vague "some listening".
+  // Listening banked offline that hasn't reached the server yet, so we can name
+  // exactly what's waiting instead of a vague "some listening". Sessions drive
+  // the count; the list below names the distinct BOOKS, since one book can have
+  // several banked listens.
   const queued = [...pending.byId.values()]
+  const queuedBooks = pendingBooks()
 
   const syncing = feedback === 'syncing'
   // Green = nothing to push, so the button just confirms; every other state
@@ -233,7 +237,7 @@ const SyncStatusSheet = forwardRef<SyncStatusSheetHandle>(function SyncStatusShe
                 ? '1 offline session waiting to sync'
                 : `${queued.length} offline sessions waiting to sync`}
             </AppText>
-            {queued.slice(0, 4).map((s) => (
+            {queuedBooks.slice(0, 4).map((s) => (
               <View key={s.libraryItemId} style={styles.queuedRow}>
                 <Icon name={icons.cloudQueue} size={15} color={colors.accent} />
                 <AppText variant="meta" numberOfLines={1} style={{ flex: 1 }}>
@@ -241,9 +245,9 @@ const SyncStatusSheet = forwardRef<SyncStatusSheetHandle>(function SyncStatusShe
                 </AppText>
               </View>
             ))}
-            {queued.length > 4 && (
+            {queuedBooks.length > 4 && (
               <AppText variant="caption" color={colors.textFaint}>
-                and {queued.length - 4} more
+                and {queuedBooks.length - 4} more
               </AppText>
             )}
           </View>

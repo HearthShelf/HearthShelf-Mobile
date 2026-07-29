@@ -3,12 +3,19 @@
  * ABS.
  *
  * A downloaded book played offline (playback.ts, `offline` set) accrues a local
- * session here - real listened-time plus the final position - keyed by the book.
- * The newest record per item wins; a session only grows within one listen. On
- * reconnect (connectivity watcher / background task) flush() POSTs them to ABS's
+ * session here - real listened-time plus the final position. On reconnect
+ * (connectivity watcher / background task) flush() POSTs them to ABS's
  * /api/session/local-all, which ingests each as a real playback session, so an
  * hour listened offline shows up in recent listens and stats with the right
  * listened-time and date - not just a moved progress bar.
+ *
+ * KEYED BY SESSION ID, not by book. It used to be keyed by libraryItemId, which
+ * silently destroyed offline listening on a long outage: every new listen of the
+ * same book minted a new session id but wrote to the same slot, so starting a
+ * second listen REPLACED the first. An hour banked in the morning became a
+ * one-minute session in the evening - the position survived (progress.ts is a
+ * separate store), but the listening time and its place in the session history
+ * were gone, with nothing on screen to suggest anything had been lost.
  *
  * Persisted to AsyncStorage so an offline listen survives the app being killed
  * and still syncs the next time the network returns.
@@ -25,10 +32,16 @@ import { getSession } from '@/api/session'
 import { notifyServerReached } from './syncState'
 
 export interface PendingSessionState {
+  /** Keyed by SESSION id (not book id) - one book can have many banked listens. */
   byId: ReadonlyMap<string, LocalSession>
 }
 
 const STORE_KEY = 'hs.pendingSessions.v1'
+
+/** Ceiling on banked sessions, oldest dropped first. A multi-day outage with
+ *  aggressive listening is still only a few dozen; this exists so a pathological
+ *  case can't grow the payload without bound. */
+const MAX_PENDING = 500
 
 /** Name of the OS background task that flushes this store. Lives here (not in
  *  connectivity.ts) so the headless task module can reference it without pulling
@@ -63,6 +76,26 @@ export function pendingCount(): number {
   return state.byId.size
 }
 
+/** Every banked listen of one book, newest first. Recent Listens renders these
+ *  as unsynced rows, so a week of offline listening reads as a week of listens. */
+export function pendingSessionsFor(itemId: string): LocalSession[] {
+  return [...state.byId.values()]
+    .filter((s) => s.libraryItemId === itemId)
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+/** Distinct books with something banked (for the sync sheet's "what's waiting"). */
+export function pendingBooks(): { libraryItemId: string; displayTitle: string }[] {
+  const byBook = new Map<string, string>()
+  for (const s of state.byId.values()) {
+    if (!byBook.has(s.libraryItemId)) byBook.set(s.libraryItemId, s.displayTitle)
+  }
+  return [...byBook.entries()].map(([libraryItemId, displayTitle]) => ({
+    libraryItemId,
+    displayTitle,
+  }))
+}
+
 /** Load persisted pending sessions on app start. */
 export async function hydratePendingProgress(): Promise<void> {
   try {
@@ -71,7 +104,11 @@ export async function hydratePendingProgress(): Promise<void> {
     const parsed = JSON.parse(raw) as { items?: LocalSession[] }
     const byId = new Map<string, LocalSession>()
     for (const s of parsed.items ?? []) {
-      if (s && typeof s.libraryItemId === 'string') byId.set(s.libraryItemId, s)
+      if (!s || typeof s.libraryItemId !== 'string') continue
+      // Re-key on the session id. Payloads written by the book-keyed version are
+      // read back unchanged - every record already carried its own id, there was
+      // just only ever one of them per book.
+      byId.set(s.id || s.libraryItemId, s)
     }
     emit(byId)
   } catch {
@@ -80,14 +117,22 @@ export async function hydratePendingProgress(): Promise<void> {
 }
 
 /**
- * Record (or update) the offline session for a book. Keyed by libraryItemId so a
- * single offline listen accumulates into one session record - the latest tick's
- * position and listened-time overwrite the earlier one.
+ * Record (or update) one offline session. Keyed by the SESSION id, so ticks
+ * within a listen update that listen in place while a LATER listen of the same
+ * book lands beside it instead of overwriting it.
  */
 export function recordLocalSession(session: LocalSession): void {
-  if (!session.libraryItemId) return
+  if (!session.libraryItemId || !session.id) return
   const byId = new Map(state.byId)
-  byId.set(session.libraryItemId, session)
+  byId.set(session.id, session)
+  // Drop the oldest if we somehow blow past the ceiling. Never touches the
+  // session being written.
+  if (byId.size > MAX_PENDING) {
+    const oldest = [...byId.values()]
+      .sort((a, b) => a.updatedAt - b.updatedAt)
+      .slice(0, byId.size - MAX_PENDING)
+    for (const s of oldest) if (s.id !== session.id) byId.delete(s.id)
+  }
   emit(byId)
   persist()
 }
@@ -116,16 +161,13 @@ export async function flushPendingProgress(): Promise<boolean> {
   // recover even when there's no live session driving syncStateSynced.
   notifyServerReached()
 
-  // All ingested in one call - clear the ids we just sent (guarding against any
-  // that were re-recorded meanwhile, though offline playback can't run once a
-  // server session exists).
-  const sentIds = new Set(items.map((s) => s.libraryItemId))
+  // All ingested in one call - clear the sessions we just sent, but only if they
+  // haven't been written again since (a live offline listen keeps updating its
+  // own record while the flush is in flight).
   const byId = new Map(state.byId)
-  for (const id of sentIds) {
-    const cur = byId.get(id)
-    if (cur && cur.updatedAt <= (items.find((s) => s.libraryItemId === id)?.updatedAt ?? 0)) {
-      byId.delete(id)
-    }
+  for (const sent of items) {
+    const cur = byId.get(sent.id)
+    if (cur && cur.updatedAt <= sent.updatedAt) byId.delete(sent.id)
   }
   emit(byId)
   persist()

@@ -53,11 +53,16 @@ import { getImmersive, subscribeImmersive, setImmersive } from '@/player/immersi
 import { getActiveClub, subscribeActiveClub } from '@/player/clubSync'
 import { getSettingsState, subscribeSettings, COVER_ASPECT_RATIO } from '@/store/settings'
 import { useBookmarks } from '@/player/useBookmarks'
-import { coverUrl, getItemDetail, getRecentSessions } from '@/api/abs'
+import { coverUrl, getItemDetail } from '@/api/abs'
+import { recentSessionsFor } from '@/player/sessionCache'
 import { playItemById } from '@/player/playback'
 import { SyncStatusIcon } from '@/player/SyncStatusIcon'
 import { getSyncState, subscribeSyncState } from '@/player/syncState'
-import { getPendingSessionState, subscribePendingSessions } from '@/player/pendingProgress'
+import {
+  getPendingSessionState,
+  subscribePendingSessions,
+  pendingSessionsFor,
+} from '@/player/pendingProgress'
 import {
   getDownloadsState,
   subscribeDownloads,
@@ -1793,7 +1798,8 @@ const RecentSheet = forwardRef<
 
   // Live sync state (drives the pinned "Now" row + which rows read as unsynced).
   const sync = useSyncExternalStore(subscribeSyncState, getSyncState)
-  const pending = useSyncExternalStore(subscribePendingSessions, getPendingSessionState).byId
+  // Subscribed for re-renders; the rows themselves come from pendingSessionsFor.
+  const pending = useSyncExternalStore(subscribePendingSessions, getPendingSessionState)
   // Tick once a second while the sheet is open so the live row counts up.
   const [, force] = useState(0)
   useEffect(() => {
@@ -1802,9 +1808,11 @@ const RecentSheet = forwardRef<
     return () => clearInterval(t)
   }, [open])
 
+  // Server-first, falling back to the cached history for a downloaded book, so
+  // the sheet isn't blank the moment the server is unreachable.
   const load = useCallback(() => {
-    getRecentSessions()
-      .then((all) => setSessions(all.filter((s) => s.libraryItemId === itemId)))
+    recentSessionsFor(itemId)
+      .then(setSessions)
       .catch(() => setSessions([]))
   }, [itemId])
 
@@ -1858,17 +1866,21 @@ const RecentSheet = forwardRef<
         timeListening: live.timeListening,
       })
     }
-    const localForItem = pending.get(itemId)
-    if (localForItem) {
+    // EVERY banked listen of this book, newest first - not just the latest. A
+    // multi-day outage is a series of real sessions, and collapsing them to one
+    // row hid (and used to actually discard) all but the most recent.
+    for (const local of pendingSessionsFor(itemId)) {
+      // The live row is the same listen still in progress; don't show it twice.
+      if (live && live.itemId === itemId && local.startedAt === live.startedAt) continue
       out.push({
-        key: 'pending',
+        key: `pending:${local.id}`,
         kind: 'pending',
         synced: false,
         offline: true,
-        startedAt: localForItem.startedAt,
-        startTime: Math.max(0, localForItem.currentTime - localForItem.timeListening),
-        currentTime: localForItem.currentTime,
-        timeListening: localForItem.timeListening,
+        startedAt: local.startedAt,
+        startTime: Math.max(0, local.currentTime - local.timeListening),
+        currentTime: local.currentTime,
+        timeListening: local.timeListening,
       })
     }
     for (const s of sessions ?? []) {

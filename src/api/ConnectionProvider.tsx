@@ -27,13 +27,14 @@ import {
   setAutoNotePops,
   setAutoSkipSeconds,
   setAutoChapterProgress,
+  isAirplaneMode,
 } from '@/player/autoBridge'
 import { startQueueSync } from '@/player/queueSync'
 import { refreshSubscriptions } from '@/player/subscriptions'
 import { ensurePushRegistered } from '@/player/pushRegister'
 import { startClubSync } from '@/player/clubSync'
 import { ensureDeviceId, getSettingsState, subscribeSettings } from '@/store/settings'
-import { hydrateDownloads, getDownloadsState } from '@/player/downloads'
+import { hydrateDownloads, getDownloadsState, subscribeDownloads } from '@/player/downloads'
 import { hydrateCatalog, backfillCatalog } from '@/player/offlineCatalog'
 import { getItemDetail, getLibrarySeries } from './abs'
 import {
@@ -41,7 +42,14 @@ import {
   stopConnectivityWatch,
   probeReachable,
   pokeConnectivity,
+  isCurrentlyReachable,
 } from '@/player/connectivity'
+import {
+  startOfflineLibrarySync,
+  drainCarOfflineWork,
+  drainCarOfflineProgress,
+  drainCarOfflineBookmarks,
+} from '@/player/carOffline'
 import {
   hydratePendingProgress,
   hydrateStreamingBuffer,
@@ -49,12 +57,28 @@ import {
   flushPendingProgress,
 } from '@/player/pendingProgress'
 import { hydratePendingBookmarks } from '@/player/pendingBookmarks'
+import { hydrateSessionCache, refreshSessionCache } from '@/player/sessionCache'
 import { subscribeServerReached } from '@/player/syncState'
 import { hydrateProgress } from '@/store/progress'
 import type { SplashServer } from '@/ui/SplashScreen'
 
+/**
+ * Why the launch is taking a while, when we know. Drives the splash copy: sitting
+ * under "Warming up your library..." for 40s while the phone is in airplane mode
+ * tells the user nothing they can act on.
+ */
+export type ConnectIssue =
+  /** Airplane mode is on - nothing to connect to, and no point retrying. */
+  | 'airplane'
+  /** No network interface at all (no Wi-Fi, no signal). */
+  | 'no-network'
+  /** On a network, but the internet/server isn't answering. */
+  | 'unreachable'
+  /** A handshake attempt failed; another is running. */
+  | 'retrying'
+
 export type ConnectionStatus =
-  | { phase: 'connecting' }
+  | { phase: 'connecting'; attempt?: number; maxAttempts?: number; issue?: ConnectIssue }
   | { phase: 'select-server'; servers: LinkedServer[] }
   | { phase: 'no-servers' }
   // `message` is the plain headline shown to the user; `details` is the raw
@@ -140,6 +164,15 @@ const TOKEN_MINT_TIMEOUT_MS = 10000
  *  reintroduces that false-alarm class. */
 const CONNECTING_FLOOR_MS = 44000
 
+/** Headline for the offline banner when the user chose offline mode themselves,
+ *  or when we grounded the launch before a handshake was even worth trying. */
+const OFFLINE_REASON: Record<ConnectIssue, string | undefined> = {
+  airplane: 'Offline - airplane mode is on',
+  'no-network': 'Offline - no connection',
+  unreachable: "Offline - can't reach your server",
+  retrying: undefined,
+}
+
 class ConnectTimeoutError extends Error {
   constructor() {
     super('connect_timeout')
@@ -165,6 +198,12 @@ interface ConnectionValue {
   activeRole: 'admin' | 'user'
   /** Re-run the whole connect flow from the top. */
   retry: () => void
+  /** Stop waiting on the launch connect and go straight to downloaded books.
+   *  No-op unless we're still `connecting`. */
+  enterOffline: () => void
+  /** Is there anything downloaded to go offline WITH? Gates the splash's
+   *  "Enter offline mode" - it's not an escape hatch if it leads nowhere. */
+  canGoOffline: boolean
   /** Connect to a specific linked server (from the picker). */
   connectTo: (server: SplashServer) => void
   /** Redeem a typed invite code, then connect. Resolves to a user-facing error
@@ -349,8 +388,12 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     async (server: LinkedServer | SplashServer, opts?: { quiet?: boolean }) => {
       // A retry from offline mode stays on the banner (quiet) rather than flipping
       // to the covered connecting-splash: a failed retry must not yank the user out
-      // of their downloaded books and back to a loading screen.
-      if (!opts?.quiet) setStatus({ phase: 'connecting' })
+      // of their downloaded books and back to a loading screen. Guarded on the
+      // CURRENT phase too, so a connect still running after the user tapped "Enter
+      // offline mode" (or after we dropped them there) can't re-cover the app.
+      if (!opts?.quiet) {
+        setStatus((cur) => (cur.phase === 'offline' ? cur : { phase: 'connecting' }))
+      }
       try {
         const { serverUrl, token } = await tracePhase('connect:server-exchange', () =>
           connectServer(tokenFn, server.id, server.url),
@@ -381,6 +424,12 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         // Backfill offline browse metadata for any downloads missing it (books
         // downloaded before the catalog existed). Online-only; best-effort.
         void backfillDownloadedCatalog()
+        // Cache the server's recent listening sessions for downloaded books so
+        // Recent Listens still has history once the server goes away. It has to
+        // happen on connect - waiting for the user to open the sheet while online
+        // misses the common case (open the app, lose the network, look for your
+        // listens). One request, best-effort.
+        void refreshSessionCache()
         // The picker path (SplashServer) has no role; only linked-server objects
         // carry it. Fall back to 'user' so admin UI stays hidden when unknown.
         setActiveRole('role' in server && server.role === 'admin' ? 'admin' : 'user')
@@ -456,6 +505,36 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   const statusRef = useRef(status)
   statusRef.current = status
 
+  /**
+   * Leave the covered splash for offline mode, without stopping whatever connect
+   * is still running - it may yet succeed and flip us to `ready`.
+   *
+   * Only acts while we're still `connecting`, so it can never clobber a phase that
+   * already landed. With nothing downloaded there's nowhere to drop TO, so the
+   * splash stays up and only the explanation changes.
+   */
+  const dropToOffline = useCallback((issue: ConnectIssue) => {
+    setStatus((cur) => {
+      if (cur.phase !== 'connecting') return cur
+      if (!hasOfflineContent()) return { ...cur, issue }
+      return { phase: 'offline', reason: OFFLINE_REASON[issue] }
+    })
+  }, [])
+
+  /**
+   * Is the device grounded - airplane mode, or no network interface at all?
+   *
+   * Checked BEFORE the handshake, because there is nothing to retry against: the
+   * launch used to spend its full 20s connect timeout (and a retry, and the 44s
+   * floor) discovering what the OS could have told us instantly. Both checks are
+   * local, so this costs nothing.
+   */
+  const groundedReason = useCallback(async (): Promise<ConnectIssue | null> => {
+    if (await isAirplaneMode()) return 'airplane'
+    if (!(await isCurrentlyReachable())) return 'no-network'
+    return null
+  }, [])
+
   const connectingRef = useRef(false)
   const connect = useCallback(async () => {
     // One attempt at a time: Retry, the NetInfo watcher, and the foreground probe
@@ -466,14 +545,57 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     // Retrying from offline mode: don't uncover the splash. Stay on the offline
     // banner and only leave it if the reconnect actually succeeds.
     const quiet = statusRef.current.phase === 'offline'
+    // Never re-cover the app once we've left `connecting` (the user tapped "Enter
+    // offline mode", or a probe dropped us there while the handshake ran on).
+    const showConnecting = (
+      patch: Omit<Extract<ConnectionStatus, { phase: 'connecting' }>, 'phase'>,
+    ) => {
+      if (quiet) return
+      setStatus((cur) => (cur.phase === 'connecting' ? { phase: 'connecting', ...patch } : cur))
+    }
     if (!quiet) setStatus({ phase: 'connecting' })
     try {
+      // Grounded (airplane mode / no network): resolve the SCREEN now rather than
+      // making the user watch a retry window that can't succeed. A failed
+      // pre-check is not a failed connect, so it falls through to a normal try.
+      const grounded = await groundedReason().catch(() => null)
+      if (grounded && !quiet) {
+        if (hasOfflineContent()) {
+          setStatus({ phase: 'offline', reason: OFFLINE_REASON[grounded] })
+        } else {
+          setStatus({
+            phase: 'error',
+            message:
+              grounded === 'airplane'
+                ? 'Airplane mode is on, so there’s no way to reach your library.'
+                : 'No internet connection.',
+          })
+        }
+      }
+      // Airplane mode is the one case worth NOT attempting: the user asked the OS
+      // for no radios, so a handshake is guaranteed noise. The NetInfo watcher
+      // fires the moment they turn it off, and Retry is on screen meanwhile.
+      if (grounded === 'airplane') return
+      // "No network" we still try behind the resolved screen - NetInfo can be
+      // wrong (or stale on a cold start), and a connect that lands quietly
+      // upgrades the user to `ready` instead of stranding them offline until the
+      // next network edge. Every status write below is guarded on still being
+      // `connecting`, so this attempt can't re-cover the app.
+
       // Try the handshake, retrying a stall as long as the network is actually up -
       // a slow first connect on cellular shouldn't strand a connected user in
       // offline mode. Only a genuinely unreachable network (or exhausted retries)
       // falls back to offline.
       for (let attempt = 0; ; attempt++) {
         try {
+          showConnecting({ attempt: attempt + 1, maxAttempts: CONNECT_RETRIES + 1 })
+          // Actively confirm the internet is reachable WHILE the handshake runs.
+          // This is what makes a dead WAN resolve in ~3.5s instead of ~44s: the
+          // handshake keeps going (and still wins if it lands), but the user stops
+          // staring at a covered splash for a connect that isn't coming.
+          void probeReachable().then((ok) => {
+            if (!ok) dropToOffline('unreachable')
+          })
           // Race the connect against a timeout: a dead network can leave the ABS
           // fetch hanging well past when we should stop waiting.
           let timer: ReturnType<typeof setTimeout> | undefined
@@ -497,7 +619,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
           // isLoaded&&isSignedIn effect re-runs connect the moment Clerk settles,
           // and the foreground probe covers the case where it never does.
           if (e instanceof NoTokenError) {
-            if (!quiet) setStatus({ phase: 'connecting' })
+            showConnecting({})
             return
           }
           // If the internet is actually reachable, this was slowness, not
@@ -509,7 +631,14 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
           // (still counts as reachable), and the retry cap bounds any looping.
           const reachable = await probeReachable()
           if (reachable && attempt < CONNECT_RETRIES) {
-            if (!quiet) setStatus({ phase: 'connecting' })
+            // Say so on the splash: "still working" reads very differently from
+            // "we hit a problem and are trying again", and the second one is what
+            // tells a user with a dead router that offline mode is their move.
+            showConnecting({
+              attempt: attempt + 2,
+              maxAttempts: CONNECT_RETRIES + 1,
+              issue: 'retrying',
+            })
             continue
           }
           // Truly unreachable (or out of retries): play downloads offline rather
@@ -522,7 +651,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     } finally {
       connectingRef.current = false
     }
-  }, [runConnect])
+  }, [runConnect, groundedReason, dropToOffline])
 
   // Load downloaded books once at mount, before any connect attempt - offline
   // launch depends on the manifest being in memory to detect downloaded content
@@ -530,6 +659,9 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     void hydrateDownloads()
     void hydrateCatalog()
+    // Last-known server listening history for downloaded books, so Recent Listens
+    // has something to show on an offline start.
+    void hydrateSessionCache()
     // Load last-known media progress from disk so downloaded books show their
     // real position/finished state on an offline cold start (the server refresh
     // that used to be the only source can't run with no network).
@@ -543,10 +675,46 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
       // A surviving streaming buffer means the app died mid-stream last run;
       // fold that listening into the ledger so the normal flush ships it.
       await migrateOrphanStreaming()
+      // Same reason, for the car: a listen the Android Auto service banked with no
+      // network becomes a pending session here, so it replays to ABS like any
+      // other offline listen instead of being lost. Must follow the hydrate - it
+      // merges with whatever the phone already had pending for that book.
+      await drainCarOfflineProgress()
     })()
     // Bookmarks written offline (or interrupted mid-push) live here until they
-    // reach ABS; load them before any list renders so they're visible.
-    void hydratePendingBookmarks()
+    // reach ABS; load them before any list renders so they're visible. The car's
+    // queued ones fold in after, because this hydrate REPLACES the store.
+    void (async () => {
+      await hydratePendingBookmarks()
+      await drainCarOfflineBookmarks()
+    })()
+    // Mirror the downloaded books into the car surface, and keep them mirrored:
+    // the Android Auto service is headless and network-backed, so without this
+    // snapshot an offline car has no book list and no controls at all. Not gated
+    // on connecting - the whole point is the launch that never reaches a server.
+    startOfflineLibrarySync()
+  }, [])
+
+  // Does this device have downloads to fall back on? Read reactively (the
+  // downloads store hydrates from disk after mount) because it decides whether the
+  // splash offers "Enter offline mode" at all - offering it with nothing
+  // downloaded would just dump the user into an empty library.
+  const [canGoOffline, setCanGoOffline] = useState(false)
+  useEffect(() => {
+    const sync = () => setCanGoOffline(hasOfflineContent())
+    sync()
+    return subscribeDownloads(sync)
+  }, [])
+
+  /**
+   * The user telling us what we can't detect: "I know I'm offline, let me in."
+   *
+   * Doesn't cancel the connect in flight - if it lands, `ready` takes over and
+   * they're online after all. This is about not making someone who already knows
+   * their server is down watch a spinner run out its retries.
+   */
+  const enterOffline = useCallback(() => {
+    setStatus((cur) => (cur.phase === 'connecting' ? { phase: 'offline' } : cur))
   }, [])
 
   // The provider is mounted for the whole app lifetime, signed in or not (screens
@@ -646,7 +814,11 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     if (!effectiveSignedIn) return
     const sub = AppState.addEventListener('change', (s) => {
-      if (s === 'active') void pokeConnectivity(reconnectIfNeeded)
+      if (s !== 'active') return
+      void pokeConnectivity(reconnectIfNeeded)
+      // The car may have played downloads offline while we were backgrounded;
+      // collect that listening now so the reconnect above can ship it.
+      void drainCarOfflineWork()
     })
     return () => sub.remove()
   }, [reconnectIfNeeded, effectiveSignedIn])
@@ -685,6 +857,8 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         serverName,
         activeRole,
         retry: () => void connect(),
+        enterOffline,
+        canGoOffline,
         connectTo,
         redeemInvite,
       }}

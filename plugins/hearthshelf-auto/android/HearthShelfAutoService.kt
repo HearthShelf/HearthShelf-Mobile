@@ -5,6 +5,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -51,6 +53,16 @@ import java.util.concurrent.Executors
  * It reads the connected server URL + ABS token from SharedPreferences (written
  * by JS at sign-in via the HearthShelfAuto native module), then talks to ABS
  * directly - so the car works headlessly, even if the RN app isn't foregrounded.
+ *
+ * OFFLINE: every browse/play path above is network-backed, so with no server the
+ * car used to show an empty app - no book list, no controls, nothing (the phone
+ * could still play THROUGH the car, but the car's own surface was dead). So JS
+ * also mirrors a snapshot of the downloaded books (local file paths, chapters,
+ * covers, saved positions) into the same prefs, and when the network is down -
+ * or the server simply can't be reached - the browse tree and playback are
+ * served entirely from that snapshot + the files on disk. Progress made offline
+ * is banked into prefs and folded back into the app's pending-sync ledger on the
+ * next launch, so a car-only offline listen isn't lost.
  */
 class HearthShelfAutoService : MediaLibraryService() {
 
@@ -130,25 +142,28 @@ class HearthShelfAutoService : MediaLibraryService() {
       loadingItemId = itemId
     }
     io.execute {
-      val item = resolveBookItem(itemId)
-      if (item == null) {
+      val loaded = resolveBook(itemId)
+      if (loaded == null) {
         Log.e(TAG, "loadBookIntoCar: resolve failed for $itemId")
         // Release the guard so a retry (or a different book) can still load.
         synchronized(carControllers) { if (loadingItemId == itemId) loadingItemId = null }
         return@execute
       }
-      // The start position rides setMediaItem below, so clear the READY-seek
+      // The start position rides setMediaItems below, so clear the READY-seek
       // fallback - otherwise it would fire a second, redundant seek.
       pendingSeekMs = -1
       lastSyncedSec = positionSec
-      val startMs = (positionSec * 1000).toLong().coerceAtLeast(0)
+      // The JS-supplied position wins over the resolved one: it's the phone's
+      // exact live spot. Split it into (window, offset) so a multi-file local
+      // download resumes in the right track, not just the right second.
+      val (startIndex, startMs) = windowFor((positionSec * 1000).toLong().coerceAtLeast(0))
       runOnMain {
         val player = rawPlayer ?: return@runOnMain
-        // Hand the start position to setMediaItem so preparation BEGINS at the
+        // Hand the start position to setMediaItems so preparation BEGINS at the
         // resume offset (what the phone player does). Preparing at 0 and seeking
         // on STATE_READY makes ExoPlayer buffer from the file start first - that
         // is the slow path, and it also let the player reach STATE_ENDED.
-        player.setMediaItem(item, startMs)
+        player.setMediaItems(loaded.items, startIndex, startMs)
         player.prepare()
         player.playWhenReady = true
       }
@@ -162,6 +177,31 @@ class HearthShelfAutoService : MediaLibraryService() {
     get() = prefs.getString("serverUrl", null)?.trimEnd('/')
   private val token: String?
     get() = prefs.getString("token", null)
+
+  /**
+   * Is any network actually up? Checked BEFORE the browse/play network calls so an
+   * offline car doesn't sit through 8s connect timeouts per request (six of them
+   * on a single "Library" tap) before showing an empty screen - it goes straight
+   * to the downloaded snapshot instead. Validated capability, not just "an
+   * interface exists", so a Wi-Fi router with a dead WAN reads as offline.
+   */
+  private fun networkUp(): Boolean {
+    return try {
+      val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return true
+      val net = cm.activeNetwork ?: return false
+      val caps = cm.getNetworkCapabilities(net) ?: return false
+      caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+        caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    } catch (e: Exception) {
+      // Never let a permission/API surprise strand the car offline: assume up and
+      // let the request itself decide.
+      true
+    }
+  }
+
+  /** True when we must serve the car from downloaded books: no session handed over
+   *  yet, or no usable network. */
+  private fun offlineMode(): Boolean = serverUrl == null || token == null || !networkUp()
 
   // Skip amounts (seconds) for the seek buttons, read live from the prefs JS
   // writes at connect (setSession). Default to the in-app player's 15/30 until
@@ -189,6 +229,24 @@ class HearthShelfAutoService : MediaLibraryService() {
   // by the chapter-skip buttons, bookmark, and chapter-relative progress.
   @Volatile private var chapters: List<Chapter> = emptyList()
   @Volatile private var currentItemId: String? = null
+
+  // Absolute start offsets (seconds) of each media window, set only when the
+  // loaded book is playing from LOCAL files - a downloaded book can be many track
+  // files, so offline playback is a playlist rather than the single continuous
+  // stream we get from ABS. Empty while streaming (one window, so the player's own
+  // position already IS the absolute book position). Every position/seek path goes
+  // through absolutePositionMs / seekToAbsolute, which read this.
+  @Volatile private var trackOffsets: List<Double> = emptyList()
+
+  // True while the loaded book is playing from disk, so progress is banked into
+  // the offline ledger instead of POSTed to a play session that doesn't exist.
+  @Volatile private var playingOffline: Boolean = false
+
+  // Identity + running listened-time of the CURRENT offline listen. One listen is
+  // one banked session (see recordOfflineProgress), and the total is held here
+  // rather than in prefs so a JS drain mid-listen can't reset the count.
+  @Volatile private var offlineSessionStartedAt: Long = 0L
+  @Volatile private var offlineListenedSec: Double = 0.0
 
   // Book metadata for the single continuous media item. With per-chapter clipping
   // gone, the now-playing subtitle no longer changes on its own as playback
@@ -482,13 +540,18 @@ class HearthShelfAutoService : MediaLibraryService() {
     if (idx in 0 until chapters.size - 1) seekToAbsolute(player, (chapters[idx + 1].start * 1000).toLong())
   }
 
-  /** POST a bookmark at the given position (labelled with the chapter title). */
+  /** POST a bookmark at the given position (labelled with the chapter title), or
+   *  queue it for the app to push when there's no server to take it. */
   private fun bookmarkNow(posSec: Double) {
     val id = currentItemId ?: return
-    val base = serverUrl ?: return
-    val tok = token ?: return
     val ch = chapters.firstOrNull { posSec >= it.start && posSec < it.end }
     val title = ch?.title ?: "Bookmark"
+    val base = serverUrl
+    val tok = token
+    if (base == null || tok == null || offlineMode()) {
+      queueOfflineBookmark(id, posSec, title)
+      return
+    }
     io.execute {
       try {
         val conn = (URL("$base/api/items/$id/bookmarks").openConnection() as HttpURLConnection).apply {
@@ -501,20 +564,56 @@ class HearthShelfAutoService : MediaLibraryService() {
         }
         val body = JSONObject().put("time", posSec.toInt()).put("title", title)
         conn.outputStream.use { it.write(body.toString().toByteArray()) }
-        conn.responseCode
+        if (conn.responseCode !in 200..299) queueOfflineBookmark(id, posSec, title)
       } catch (e: Exception) {
         Log.w(TAG, "bookmark failed: ${e.message}")
+        queueOfflineBookmark(id, posSec, title)
       }
     }
   }
 
-  /** POST progress to ABS (throttled to ~15s unless forced on pause/stop). */
+  /** Park a bookmark the car couldn't POST in prefs. JS drains it into the app's
+   *  pending-bookmark ledger at the next launch, which pushes it on reconnect -
+   *  otherwise a bookmark set on a dead network just disappears. */
+  private fun queueOfflineBookmark(itemId: String, posSec: Double, title: String) {
+    try {
+      val raw = prefs.getString("offlineBookmarks", null)
+      val arr = if (raw != null) JSONArray(raw) else JSONArray()
+      val time = posSec.toInt()
+      // Same book + same second is the same bookmark; don't stack duplicates.
+      for (i in 0 until arr.length()) {
+        val b = arr.getJSONObject(i)
+        if (b.optString("itemId") == itemId && b.optInt("time") == time) return
+      }
+      arr.put(
+        JSONObject()
+          .put("itemId", itemId)
+          .put("time", time)
+          .put("title", title)
+          .put("createdAt", System.currentTimeMillis())
+      )
+      prefs.edit().putString("offlineBookmarks", arr.toString()).apply()
+      Log.i(TAG, "bookmark queued offline item=$itemId at ${time}s")
+    } catch (e: Exception) {
+      Log.w(TAG, "offline bookmark queue failed: ${e.message}")
+    }
+  }
+
+  /** POST progress to ABS (throttled to ~15s unless forced on pause/stop). With no
+   *  play session behind it - a downloaded book playing offline - the same tick
+   *  banks the position locally instead, so the listen survives to the next sync. */
   private fun syncProgress(posMs: Long, force: Boolean) {
-    val sid = absSessionId ?: return
     val sec = posMs / 1000.0
     if (!force && kotlin.math.abs(sec - lastSyncedSec) < 15.0) return
     val elapsed = kotlin.math.max(0.0, sec - lastSyncedSec)
     lastSyncedSec = sec
+    if (playingOffline || absSessionId == null) {
+      // A jump bigger than a sync window is a seek, not listening - don't credit
+      // it as time listened (same rule the phone's tick uses).
+      recordOfflineProgress(sec, if (elapsed <= 60.0) elapsed else 0.0)
+      return
+    }
+    val sid = absSessionId ?: return
     val base = serverUrl ?: return
     val tok = token ?: return
     io.execute {
@@ -565,6 +664,11 @@ class HearthShelfAutoService : MediaLibraryService() {
   // Discover shelves from the JS snapshot.
   private val DISC_SHELF = "disc:"     // disc:<shelfId>      -> books in a Discover shelf
   private val PLAY_PREFIX = "play:"
+  // Offline (downloaded-books) tree. Distinct ids from the online nodes so the
+  // two trees can't be confused in the car's browse cache.
+  private val OFF_ALL = "off:all"         // every downloaded book, A-Z
+  private val OFF_SERIES = "off:series"   // series that have a downloaded book
+  private val OFF_SERIES_ITEMS = "off:series:" // off:series:<seriesId>
 
   /**
    * Last search's results, cached so onGetSearchResult can serve them without a
@@ -572,7 +676,7 @@ class HearthShelfAutoService : MediaLibraryService() {
    * then notifies the client of the count; the client then pulls pages from this.
    */
   @Volatile private var lastSearchQuery: String? = null
-  @Volatile private var lastSearchBooks: List<Book> = emptyList()
+  @Volatile private var lastSearchItems: List<MediaItem> = emptyList()
 
   private inner class LibraryCallback : MediaLibrarySession.Callback {
 
@@ -749,20 +853,19 @@ class HearthShelfAutoService : MediaLibraryService() {
       // Returned directly (no .get()): resolveBookItem opens an ABS play session,
       // and blocking the main thread on it is an ANR on a slow network.
       return io.submit<MediaSession.MediaItemsWithStartPosition> {
-        // Resolve the FIRST selected book into ONE continuous media item (whole
-        // stream, no per-chapter clipping). Extra selected items are ignored -
-        // the car sends one book at a time.
+        // Resolve the FIRST selected book (one continuous stream online, one item
+        // per track file when playing a download offline). Extra selected items
+        // are ignored - the car sends one book at a time.
         val first = mediaItems.firstOrNull()
         if (first != null) {
           val id = first.mediaId.removePrefix(PLAY_PREFIX)
-          val item = resolveBookItem(id)
-          if (item != null) {
-            // resolveBookItem stashed the book's saved position in pendingSeekMs;
-            // consume it as the START position so prepare begins there.
-            val startMs = pendingSeekMs.coerceAtLeast(0)
-            pendingSeekMs = -1
+          val loaded = resolveBook(id)
+          if (loaded != null) {
+            // Start AT the saved position (split into window + offset for a
+            // multi-file download) so prepare begins there rather than at 0.
+            val (idx, offsetMs) = windowFor(loaded.startMs)
             return@submit MediaSession.MediaItemsWithStartPosition(
-              mutableListOf(item), 0, startMs,
+              loaded.items.toMutableList(), idx, offsetMs,
             )
           }
         }
@@ -784,16 +887,16 @@ class HearthShelfAutoService : MediaLibraryService() {
       // Returned directly (no .get()): searchAll fans out across libraries.
       return io.submit<LibraryResult<Void>> {
         try {
-          val books = searchAll(query)
+          val items = searchItems(query)
           lastSearchQuery = query
-          lastSearchBooks = books
-          Log.i(TAG, "onSearch query=\"$query\" -> ${books.size} items")
-          session.notifySearchResultChanged(browser, query, books.size, params)
+          lastSearchItems = items
+          Log.i(TAG, "onSearch query=\"$query\" -> ${items.size} items")
+          session.notifySearchResultChanged(browser, query, items.size, params)
           LibraryResult.ofVoid(params)
         } catch (e: Exception) {
           Log.e(TAG, "onSearch query=\"$query\" FAILED", e)
           lastSearchQuery = query
-          lastSearchBooks = emptyList()
+          lastSearchItems = emptyList()
           session.notifySearchResultChanged(browser, query, 0, params)
           LibraryResult.ofVoid(params)
         }
@@ -812,27 +915,51 @@ class HearthShelfAutoService : MediaLibraryService() {
       // Returned directly (no .get()): a cache miss re-runs the network search.
       return io.submit<LibraryResult<ImmutableList<MediaItem>>> {
         try {
-          val base = serverUrl
-          val tok = token
-          if (base == null || tok == null) {
-            return@submit LibraryResult.ofItemList(ImmutableList.of(), params)
-          }
           // The client searches before paging, so the cache is normally warm.
           // Re-run on a cache miss (e.g. a different query) to stay correct.
-          val books = if (query == lastSearchQuery) lastSearchBooks else searchAll(query)
+          val items = if (query == lastSearchQuery) lastSearchItems else searchItems(query)
           val from = page * pageSize
-          val pageItems = if (from >= books.size) emptyList()
-            else books.subList(from, minOf(from + pageSize, books.size))
+          val pageItems = if (from >= items.size) emptyList()
+            else items.subList(from, minOf(from + pageSize, items.size))
           Log.i(TAG, "onGetSearchResult query=\"$query\" page=$page -> ${pageItems.size} items")
-          LibraryResult.ofItemList(
-            ImmutableList.copyOf(pageItems.map { playable(base, tok, it) }), params
-          )
+          LibraryResult.ofItemList(ImmutableList.copyOf(pageItems), params)
         } catch (e: Exception) {
           Log.e(TAG, "onGetSearchResult query=\"$query\" FAILED", e)
           LibraryResult.ofItemList(ImmutableList.of(), params)
         }
       }
     }
+  }
+
+  /**
+   * Voice/text search results, as browse items. Offline (or when the server search
+   * comes back empty) this searches the downloaded books instead - "play <book>"
+   * from the driver's seat has to work on a book that's already on the phone.
+   */
+  private fun searchItems(query: String): List<MediaItem> {
+    if (!offlineMode()) {
+      val base = serverUrl
+      val tok = token
+      if (base != null && tok != null) {
+        val hits = searchAll(query)
+        if (hits.isNotEmpty()) return hits.map { playable(base, tok, it) }
+      }
+    }
+    return offlineSearch(query)
+  }
+
+  /** Substring match over the downloaded books' title / author / series. */
+  private fun offlineSearch(query: String): List<MediaItem> {
+    val needle = query.trim().lowercase()
+    if (needle.isEmpty()) return emptyList()
+    return offlineLibrary()
+      .filter {
+        it.title.lowercase().contains(needle) ||
+          it.author.lowercase().contains(needle) ||
+          it.seriesName.lowercase().contains(needle)
+      }
+      .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.sortKey })
+      .map { offlinePlayable(it) }
   }
 
   /** Search every book library and flatten the hits into one de-duped list. */
@@ -849,6 +976,26 @@ class HearthShelfAutoService : MediaLibraryService() {
     return out
   }
 
+  /** The player items for a book plus the absolute position to start at. Usually
+   *  one item (the whole ABS stream); a downloaded book played offline is one item
+   *  per track file. */
+  private data class LoadedBook(val items: List<MediaItem>, val startMs: Long)
+
+  /**
+   * Resolve a selected book into something playable, preferring the network and
+   * falling back to the downloaded copy.
+   *
+   * Offline we go straight to disk (no point burning 8s on a play POST that can't
+   * land). Online we still fall back to the download if the play session fails -
+   * a server that's up but wedged, or a token that just expired, shouldn't leave
+   * the driver with a book they have sitting on the phone.
+   */
+  private fun resolveBook(rawId: String): LoadedBook? {
+    val itemId = rawId.substringBefore('/')
+    if (offlineMode()) return resolveOfflineBook(itemId)
+    return resolveStreamBook(rawId) ?: resolveOfflineBook(itemId)
+  }
+
   /**
    * POST /api/items/:id/play, then build ONE continuous MediaItem for the whole
    * book (the raw stream URL, no per-chapter clipping) so resuming mid-book is a
@@ -856,7 +1003,7 @@ class HearthShelfAutoService : MediaLibraryService() {
    * math, stashes resume + sync state for onPlaybackStateChanged, and mirrors the
    * loaded book into the JS store. Returns null when the play session fails.
    */
-  private fun resolveBookItem(rawId: String): MediaItem? {
+  private fun resolveStreamBook(rawId: String): LoadedBook? {
     val base = serverUrl ?: return null
     val tok = token ?: return null
     // Podcast episodes arrive as "libraryItemId/episodeId"; books are a plain id.
@@ -881,6 +1028,9 @@ class HearthShelfAutoService : MediaLibraryService() {
     absDurationSec = session.optDouble("duration", 0.0)
     lastSyncedSec = startSec
     currentItemId = itemId
+    // Streaming: one continuous window, and progress goes to the play session.
+    trackOffsets = emptyList()
+    playingOffline = false
 
     // Begin (or clear) club note-watching for this book. Resolving the club is a
     // network call, so do it off the resolve path; the tick starts detecting once
@@ -915,9 +1065,9 @@ class HearthShelfAutoService : MediaLibraryService() {
       itemId, title, author, art, absDurationSec, startSec, chaptersJson,
     )
 
-    // Resume at the saved absolute position; the seek runs once the (single)
-    // item is ready, in onPlaybackStateChanged. Absolute, not window-relative.
-    pendingSeekMs = (startSec * 1000).toLong().coerceAtLeast(0)
+    // Resume at the saved absolute position; the caller hands it to the player as
+    // the start position so preparation begins there.
+    pendingSeekMs = -1
     shownChapterIdx = chapters.indexOfFirst { startSec >= it.start && startSec < it.end }
 
 
@@ -925,11 +1075,12 @@ class HearthShelfAutoService : MediaLibraryService() {
     // metadata subtitle (refreshChapterMeta rewrites it as playback crosses
     // chapters); no clipping, so resuming mid-book is a single fast seek instead
     // of a deep-offset clip prepare (that cost ~a minute on a car resume).
-    return MediaItem.Builder()
+    val item = MediaItem.Builder()
       .setMediaId("$PLAY_PREFIX$itemId")
       .setUri(streamUrl)
       .setMediaMetadata(chapterMeta(shownChapterIdx))
       .build()
+    return LoadedBook(listOf(item), (startSec * 1000).toLong().coerceAtLeast(0))
   }
 
   /** Now-playing metadata for the single item: book title, "author · chapter"
@@ -961,13 +1112,38 @@ class HearthShelfAutoService : MediaLibraryService() {
 
   private data class Chapter(val title: String, val start: Double, val end: Double)
 
-  /** Absolute book position (ms). The book is one continuous window, so the
-   *  player's own position already IS the absolute book position. */
-  private fun absolutePositionMs(player: Player): Long = player.currentPosition
+  /**
+   * Absolute book position (ms). A streamed book is one continuous window, so the
+   * player's own position already IS the absolute position; a downloaded book is a
+   * playlist of track files, so the current window's start offset is added.
+   */
+  private fun absolutePositionMs(player: Player): Long {
+    val offsets = trackOffsets
+    if (offsets.isEmpty()) return player.currentPosition
+    val base = offsets.getOrNull(player.currentMediaItemIndex) ?: return player.currentPosition
+    return (base * 1000).toLong() + player.currentPosition
+  }
 
-  /** Seek to an absolute book position (ms) - a single seek on the one window. */
+  /** The (window index, window-relative ms) an absolute book position lands in.
+   *  (0, absMs) while streaming; the containing track offline. */
+  private fun windowFor(absMs: Long): Pair<Int, Long> {
+    val target = absMs.coerceAtLeast(0)
+    val offsets = trackOffsets
+    if (offsets.isEmpty()) return 0 to target
+    var idx = 0
+    for (i in offsets.indices) if (target >= (offsets[i] * 1000).toLong()) idx = i
+    return idx to (target - (offsets[idx] * 1000).toLong()).coerceAtLeast(0)
+  }
+
+  /** Seek to an absolute book position (ms) - one seek on the single stream
+   *  window, or a seek into the right track file for a local playlist. */
   private fun seekToAbsolute(player: Player, absMs: Long) {
-    player.seekTo(absMs.coerceAtLeast(0))
+    if (trackOffsets.isEmpty()) {
+      player.seekTo(absMs.coerceAtLeast(0))
+      return
+    }
+    val (idx, rel) = windowFor(absMs)
+    player.seekTo(idx, rel)
   }
 
   /** The chapter containing an absolute position (seconds), or null. */
@@ -985,30 +1161,37 @@ class HearthShelfAutoService : MediaLibraryService() {
    * chapter-relative terms (the car scrubber) map back to absolute.
    */
   private inner class ChapterForwardingPlayer(inner: Player) : ForwardingPlayer(inner) {
-    private fun ch(): Chapter? =
-      if (chapters.isEmpty()) null else chapterAt(wrappedPlayer.currentPosition / 1000.0)
+    /** Absolute book ms of the wrapped player - window-offset aware, so a
+     *  downloaded book's per-track playlist still reads as one book. */
+    private fun absMs(): Long = absolutePositionMs(wrappedPlayer)
+    private fun ch(): Chapter? = if (chapters.isEmpty()) null else chapterAt(absMs() / 1000.0)
+    /** Absolute start of the current window (0 while streaming). */
+    private fun windowStartMs(): Long =
+      ((trackOffsets.getOrNull(wrappedPlayer.currentMediaItemIndex) ?: 0.0) * 1000).toLong()
 
     override fun getCurrentPosition(): Long {
-      val c = ch() ?: return super.getCurrentPosition()
-      return (super.getCurrentPosition() - (c.start * 1000).toLong()).coerceAtLeast(0)
+      val c = ch() ?: return absMs()
+      return (absMs() - (c.start * 1000).toLong()).coerceAtLeast(0)
     }
     override fun getContentPosition(): Long = currentPosition
     override fun getDuration(): Long {
-      val c = ch() ?: return super.getDuration()
+      val c = ch()
+        ?: return if (absDurationSec > 0) (absDurationSec * 1000).toLong() else super.getDuration()
       return ((c.end - c.start) * 1000).toLong()
     }
     override fun getContentDuration(): Long = duration
     override fun getBufferedPosition(): Long {
-      val c = ch() ?: return super.getBufferedPosition()
+      // super's buffered is window-relative; lift it to absolute first.
+      val bufferedAbs = windowStartMs() + super.getBufferedPosition()
+      val c = ch() ?: return bufferedAbs
       // Buffered is absolute (usually past this chapter's end); clamp into
       // [0, chapterDuration] so the car's buffer bar doesn't overflow.
-      val rel = (super.getBufferedPosition() - (c.start * 1000).toLong()).coerceAtLeast(0)
+      val rel = (bufferedAbs - (c.start * 1000).toLong()).coerceAtLeast(0)
       return rel.coerceAtMost(((c.end - c.start) * 1000).toLong())
     }
     override fun seekTo(positionMs: Long) {
       val c = ch()
-      if (c != null) super.seekTo((c.start * 1000).toLong() + positionMs)
-      else super.seekTo(positionMs)
+      seekToAbsolute(wrappedPlayer, if (c != null) (c.start * 1000).toLong() + positionMs else positionMs)
     }
   }
 
@@ -1318,11 +1501,35 @@ class HearthShelfAutoService : MediaLibraryService() {
     }
   }
 
-  /** Build the children for a browse node by querying ABS directly. */
+  /**
+   * Build the children for a browse node by querying ABS directly - or, with no
+   * usable network, from the downloaded-books snapshot.
+   *
+   * The offline check happens FIRST (before any HTTP), because the alternative is
+   * what shipped: six 8s-timeout requests behind one "Library" tap, and an empty
+   * list at the end of them.
+   *
+   * Online, an empty result also falls back to the downloads. A reachable network
+   * with an unreachable server (home internet down, server rebooting, token just
+   * expired) otherwise leaves the car with a blank browse tree while the books are
+   * sitting on the phone.
+   */
   private fun childrenOf(parentId: String): ImmutableList<MediaItem> {
-    val base = serverUrl ?: return ImmutableList.of()
-    val tok = token ?: return ImmutableList.of()
+    if (offlineMode()) return offlineChildrenOf(parentId)
+    val base = serverUrl ?: return offlineChildrenOf(parentId)
+    val tok = token ?: return offlineChildrenOf(parentId)
+    val fromServer = serverChildrenOf(base, tok, parentId)
+    if (fromServer.isEmpty()) {
+      val local = offlineChildrenOf(parentId)
+      if (local.isNotEmpty()) {
+        Log.i(TAG, "childrenOf parent=$parentId empty from server -> ${local.size} downloaded")
+        return local
+      }
+    }
+    return fromServer
+  }
 
+  private fun serverChildrenOf(base: String, tok: String, parentId: String): ImmutableList<MediaItem> {
     return when {
       // ---- root: the four tabs ----
       parentId == ROOT -> ImmutableList.copyOf(
@@ -1706,6 +1913,297 @@ class HearthShelfAutoService : MediaLibraryService() {
   // ---- Discover (snapshot handed over by JS) ----
 
   private data class DiscoverShelf(val id: String, val label: String, val items: List<Book>)
+
+  // ---- Offline library (downloaded books, snapshot handed over by JS) ----
+
+  private data class OfflineTrack(val uri: String, val startOffset: Double, val duration: Double)
+
+  private data class OfflineBook(
+    val id: String,
+    val title: String,
+    val sortKey: String,
+    val author: String,
+    /** file:// uri of the downloaded cover, or "" when it wasn't saved. */
+    val cover: String,
+    val duration: Double,
+    /** Last known position (seconds) - what the car resumes at with no server. */
+    val position: Double,
+    val finished: Boolean,
+    val addedAt: Long,
+    val seriesId: String,
+    val seriesName: String,
+    val sequence: Double,
+    val chapters: List<Chapter>,
+    val tracks: List<OfflineTrack>,
+  )
+
+  // Parsed snapshot, cached against the raw JSON so the browse callbacks don't
+  // re-parse the whole library on every node expansion.
+  @Volatile private var offlineCacheJson: String? = null
+  @Volatile private var offlineCacheBooks: List<OfflineBook> = emptyList()
+
+  /**
+   * The downloaded-books snapshot JS mirrors into prefs (setOfflineLibrary).
+   * Empty until the app has published it at least once - which it does at every
+   * launch, so a device that has ever opened the app online has it.
+   */
+  private fun offlineLibrary(): List<OfflineBook> {
+    val json = prefs.getString("offlineLibrary", null) ?: return emptyList()
+    if (json == offlineCacheJson) return offlineCacheBooks
+    val parsed = try {
+      val arr = JSONObject(json).optJSONArray("books") ?: JSONArray()
+      (0 until arr.length()).mapNotNull { i -> parseOfflineBook(arr.getJSONObject(i)) }
+    } catch (e: Exception) {
+      Log.w(TAG, "offline library parse failed: ${e.message}")
+      emptyList()
+    }
+    offlineCacheJson = json
+    offlineCacheBooks = parsed
+    return parsed
+  }
+
+  /** One snapshot row -> OfflineBook. Rows with no playable track are dropped:
+   *  they'd list in the car and then fail to play. */
+  private fun parseOfflineBook(o: JSONObject): OfflineBook? {
+    val id = o.optString("id")
+    if (id.isEmpty()) return null
+    val trackArr = o.optJSONArray("tracks") ?: return null
+    val tracks = (0 until trackArr.length()).map {
+      val t = trackArr.getJSONObject(it)
+      OfflineTrack(
+        t.optString("uri"),
+        t.optDouble("startOffset", 0.0),
+        t.optDouble("duration", 0.0),
+      )
+    }.filter { it.uri.isNotEmpty() }
+    if (tracks.isEmpty()) return null
+    val title = o.optString("title", "Untitled")
+    return OfflineBook(
+      id = id,
+      title = title,
+      sortKey = o.optString("sortKey", "").ifEmpty { title },
+      author = o.optString("author", ""),
+      cover = o.optString("cover", ""),
+      duration = o.optDouble("duration", 0.0),
+      position = o.optDouble("position", 0.0),
+      finished = o.optBoolean("finished", false),
+      addedAt = o.optLong("addedAt", 0L),
+      seriesId = o.optString("seriesId", ""),
+      seriesName = o.optString("seriesName", ""),
+      sequence = o.optDouble("sequence", 0.0),
+      chapters = parseChapters(o.optJSONArray("chapters")),
+      tracks = tracks,
+    )
+  }
+
+  private fun offlineBook(itemId: String): OfflineBook? =
+    offlineLibrary().firstOrNull { it.id == itemId }
+
+  /**
+   * The browse tree served from downloaded books. Deliberately a SHORTER tree than
+   * the online one - with no server there is no "everything", so offering Library
+   * -> Books -> 400 titles that can't play would be a lie. Three nodes at most:
+   * what you're partway through, everything on the device, and series (when the
+   * downloads have any).
+   */
+  private fun offlineChildrenOf(parentId: String): ImmutableList<MediaItem> {
+    val books = offlineLibrary()
+    if (books.isEmpty()) {
+      // An empty root reads as a broken app, so say what's actually true - but
+      // only to a signed-in user. With no session at all (signed out, or car mode
+      // switched off) "no downloaded books" would be the wrong explanation.
+      val explain = parentId == ROOT && serverUrl != null
+      return if (explain) ImmutableList.of(offlineNotice()) else ImmutableList.of()
+    }
+    val byTitle = books.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.sortKey })
+    return when {
+      parentId == ROOT -> {
+        val nodes = mutableListOf<MediaItem>()
+        if (books.any { inProgress(it) }) {
+          nodes.add(browsable(CONTINUE, "Continue", iconDrawable = "ic_hs_tab_continue"))
+        }
+        nodes.add(browsable(OFF_ALL, "Downloaded", iconDrawable = "ic_hs_tab_library"))
+        if (books.any { it.seriesId.isNotEmpty() }) {
+          nodes.add(browsable(OFF_SERIES, "Series", iconDrawable = "ic_hs_tab_new"))
+        }
+        ImmutableList.copyOf(nodes)
+      }
+
+      // Started but not finished, most-progressed first - the same ordering the
+      // phone's Continue shelf uses, so the car's first row matches the app's.
+      parentId == CONTINUE -> ImmutableList.copyOf(
+        books
+          .filter { inProgress(it) }
+          .sortedByDescending { if (it.duration > 0) it.position / it.duration else 0.0 }
+          .map { offlinePlayable(it) }
+      )
+
+      // The online "Library" node, reached from the car's cached tree while the
+      // server is unreachable: offer the same two things the offline root does.
+      parentId == LIBRARY -> {
+        val nodes = mutableListOf(browsable(OFF_ALL, "Downloaded"))
+        if (books.any { it.seriesId.isNotEmpty() }) {
+          nodes.add(browsable(OFF_SERIES, "Series"))
+        }
+        ImmutableList.copyOf(nodes)
+      }
+
+      parentId == OFF_SERIES -> {
+        val series = books
+          .filter { it.seriesId.isNotEmpty() }
+          .groupBy { it.seriesId }
+          .map { (id, list) -> id to (list.first().seriesName.ifEmpty { "Series" }) }
+          .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.second })
+        ImmutableList.copyOf(series.map { browsable("$OFF_SERIES_ITEMS${it.first}", it.second) })
+      }
+
+      parentId.startsWith(OFF_SERIES_ITEMS) -> {
+        val seriesId = parentId.removePrefix(OFF_SERIES_ITEMS)
+        ImmutableList.copyOf(
+          books
+            .filter { it.seriesId == seriesId }
+            .sortedWith(compareBy<OfflineBook>({ it.sequence }, { it.sortKey.lowercase() }))
+            .map { offlinePlayable(it) }
+        )
+      }
+
+      // OFF_ALL, plus any ONLINE node id the car still has cached from a
+      // connected session (a stale "Library - Books" tap): serve the downloads
+      // rather than the dead end an unresolvable online node would produce.
+      else -> ImmutableList.copyOf(byTitle.map { offlinePlayable(it) })
+    }
+  }
+
+  /** A non-playable row explaining an empty offline browse tree. Neither browsable
+   *  nor playable, so the car renders it as a label the driver can't get stuck in. */
+  private fun offlineNotice(): MediaItem =
+    MediaItem.Builder()
+      .setMediaId("off:notice")
+      .setMediaMetadata(
+        MediaMetadata.Builder()
+          .setTitle("No connection - no downloaded books")
+          .setSubtitle("Download books in the app to hear them here.")
+          .setIsBrowsable(false)
+          .setIsPlayable(false)
+          .build()
+      )
+      .build()
+
+  private fun inProgress(b: OfflineBook): Boolean =
+    !b.finished && b.position > 0 && (b.duration <= 0 || b.position < b.duration - 5)
+
+  /** A downloaded book in the offline browse list. Cover comes off the disk, so
+   *  artwork shows with no network. */
+  private fun offlinePlayable(b: OfflineBook): MediaItem =
+    MediaItem.Builder()
+      .setMediaId("$PLAY_PREFIX${b.id}")
+      .setMediaMetadata(
+        MediaMetadata.Builder()
+          .setTitle(b.title)
+          .setArtist(b.author)
+          .apply { if (b.cover.isNotEmpty()) setArtworkUri(Uri.parse(b.cover)) }
+          .setIsBrowsable(false)
+          .setIsPlayable(true)
+          .setMediaType(MediaMetadata.MEDIA_TYPE_AUDIO_BOOK)
+          .build()
+      )
+      .build()
+
+  /**
+   * Build the player items for a downloaded book straight off the disk. One media
+   * item per downloaded track (ABS books are often split into many files), with
+   * `trackOffsets` carrying each window's absolute start so every position, seek,
+   * chapter jump and bookmark keeps working in absolute book time.
+   *
+   * Returns null when the book isn't downloaded - the caller then has nothing to
+   * play, which is the honest outcome offline.
+   */
+  private fun resolveOfflineBook(itemId: String): LoadedBook? {
+    val b = offlineBook(itemId) ?: return null
+    Log.i(TAG, "resolveOfflineBook item=$itemId tracks=${b.tracks.size}")
+
+    absSessionId = null
+    playingOffline = true
+    // A fresh listen: its own banked session, its own listened-time total.
+    offlineSessionStartedAt = System.currentTimeMillis()
+    offlineListenedSec = 0.0
+    absDurationSec = if (b.duration > 0) b.duration else b.tracks.sumOf { it.duration }
+    lastSyncedSec = b.position
+    currentItemId = itemId
+    trackOffsets = b.tracks.map { it.startOffset }
+
+    // No server, so no club notes to watch - clear any watch from the last book.
+    noteClubId = null
+    noteStubs = emptyList()
+    notePrevPosSec = -1.0
+    lastNotesFetchMs = 0L
+
+    bookTitle = b.title
+    bookAuthor = b.author
+    artUri = b.cover
+    chapters = if (b.chapters.isNotEmpty()) b.chapters
+      else listOf(Chapter(b.title, 0.0, absDurationSec.coerceAtLeast(0.0)))
+    shownChapterIdx = chapters.indexOfFirst { b.position >= it.start && b.position < it.end }
+
+    val chaptersJson = JSONArray().apply {
+      for (ch in chapters) {
+        put(JSONObject().put("title", ch.title).put("start", ch.start).put("end", ch.end))
+      }
+    }.toString()
+    HearthShelfAutoModule.emitCarLoaded(
+      itemId, b.title, b.author, b.cover, absDurationSec, b.position, chaptersJson,
+    )
+
+    val meta = chapterMeta(shownChapterIdx)
+    val items = b.tracks.map { t ->
+      MediaItem.Builder()
+        .setMediaId("$PLAY_PREFIX${b.id}")
+        .setUri(t.uri)
+        .setMediaMetadata(meta)
+        .build()
+    }
+    return LoadedBook(items, (b.position * 1000).toLong().coerceAtLeast(0))
+  }
+
+  // ---- Offline progress ledger ----
+
+  /**
+   * Bank the car's offline position + listened-time in prefs. With no server there
+   * is no play session to sync, and the RN app may not even be running - without
+   * this an hour listened in the car on a dead network simply vanished. JS drains
+   * it into the pending-session ledger at the next launch
+   * (HearthShelfAutoModule.getOfflineProgress -> carOffline.ts), which replays it
+   * to ABS as a real session once the network returns.
+   *
+   * Keyed "<itemId>@<startedAt>", i.e. per LISTEN, not per book. Keyed by book, a
+   * second offline listen of the same book would overwrite the first - the exact
+   * bug that quietly ate a morning's listening on the phone side.
+   *
+   * The running total lives in memory (offlineListenedSec) rather than being read
+   * back from prefs, so a JS drain that clears the row mid-listen doesn't reset
+   * the count: the next write restates the whole session under the same key, and
+   * the drain updates that session in place instead of banking a second partial.
+   */
+  private fun recordOfflineProgress(posSec: Double, listenedSec: Double) {
+    val itemId = currentItemId ?: return
+    offlineListenedSec += listenedSec
+    try {
+      val raw = prefs.getString("offlineProgress", null)
+      val all = if (raw != null) JSONObject(raw) else JSONObject()
+      val entry = JSONObject()
+        .put("itemId", itemId)
+        .put("title", bookTitle)
+        .put("duration", absDurationSec)
+        .put("currentTime", posSec)
+        .put("timeListening", offlineListenedSec)
+        .put("startedAt", offlineSessionStartedAt)
+        .put("updatedAt", System.currentTimeMillis())
+      all.put("$itemId@$offlineSessionStartedAt", entry)
+      prefs.edit().putString("offlineProgress", all.toString()).apply()
+    } catch (e: Exception) {
+      Log.w(TAG, "offline progress record failed: ${e.message}")
+    }
+  }
 
   /** Parse the Discover snapshot the phone wrote to prefs (setDiscover). Empty
    *  until the app computes it at least once. */

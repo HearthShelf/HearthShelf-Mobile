@@ -108,6 +108,10 @@ function addManifestService(config) {
       'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
       // Android 13+ requires this to post the media notification at all.
       'android.permission.POST_NOTIFICATIONS',
+      // The car service checks for a validated network before it fires off browse
+      // requests, so an offline car goes straight to the downloaded books instead
+      // of sitting through a connect timeout per request.
+      'android.permission.ACCESS_NETWORK_STATE',
     ]) {
       const has = manifest['uses-permission'].find((p) => p.$ && p.$['android:name'] === perm)
       if (!has) manifest['uses-permission'].push({ $: { 'android:name': perm } })

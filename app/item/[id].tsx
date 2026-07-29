@@ -33,9 +33,9 @@ import {
   deleteListeningSession,
   getItemDetail,
   getLibrarySeries,
-  getRecentSessions,
   updateListeningSession,
 } from '@/api/abs'
+import { recentSessionsFor } from '@/player/sessionCache'
 import { getFinishedBy, getListeningNow } from '@/api/social'
 import { getNotes } from '@/api/notes'
 import { NotesSheet } from '@/social/NotesSheet'
@@ -60,7 +60,11 @@ import {
   downloadFor,
 } from '@/player/downloads'
 import { offlineDetailFor } from '@/player/offlineCatalog'
-import { getPendingSessionState, subscribePendingSessions } from '@/player/pendingProgress'
+import {
+  getPendingSessionState,
+  subscribePendingSessions,
+  pendingSessionsFor,
+} from '@/player/pendingProgress'
 import { mergeBookmarks, removeBookmarkPending } from '@/player/pendingBookmarks'
 import { requestSeek } from '@/player/store'
 import { playItemById } from '@/player/playback'
@@ -1186,13 +1190,15 @@ const SessionsSheet = ({
   const [sessions, setSessions] = useState<ABSListeningSession[] | null>(null)
   // Offline listens banked locally (not on the server yet). Kept live so a
   // session recorded while offline appears the moment the sheet is open.
-  const pending = useSyncExternalStore(subscribePendingSessions, getPendingSessionState).byId
+  const pending = useSyncExternalStore(subscribePendingSessions, getPendingSessionState)
   const editRef = useRef<SheetRef>(null)
   const [editing, setEditing] = useState<ABSListeningSession | null>(null)
 
+  // Server-first, cache-on-failure: offline this returns the sessions we last
+  // saw for this book instead of an empty list.
   const load = useCallback(() => {
-    getRecentSessions()
-      .then((all) => setSessions(all.filter((s) => s.libraryItemId === itemId)))
+    recentSessionsFor(itemId)
+      .then(setSessions)
       .catch(() => setSessions([]))
   }, [itemId])
 
@@ -1202,10 +1208,11 @@ const SessionsSheet = ({
   // their most recent spot.
   const rows: SessionRow[] = useMemo(() => {
     const out: SessionRow[] = []
-    const local = pending.get(itemId)
-    if (local) {
+    // Every banked listen, newest first - a long outage is several sessions, and
+    // only showing the latest hid the rest.
+    for (const local of pendingSessionsFor(itemId)) {
       out.push({
-        key: 'pending',
+        key: `pending:${local.id}`,
         offline: true,
         updatedAt: local.updatedAt,
         currentTime: local.currentTime,

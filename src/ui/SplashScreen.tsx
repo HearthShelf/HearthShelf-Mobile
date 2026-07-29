@@ -151,9 +151,21 @@ function HearthGlow({ pulse }: { pulse: SharedValue<number> }) {
  */
 export type SplashServer = { id: string; name: string; url: string }
 
+/** Why connecting is taking a while, when the connect layer could tell. Mirrors
+ *  ConnectIssue in ConnectionProvider. */
+export type SplashIssue = 'airplane' | 'no-network' | 'unreachable' | 'retrying'
+
 export type SplashPhase =
   | { kind: 'igniting' }
-  | { kind: 'connecting'; label?: string; serverName?: string }
+  | {
+      kind: 'connecting'
+      label?: string
+      serverName?: string
+      /** 1-based handshake attempt, and how many we'll make. */
+      attempt?: number
+      maxAttempts?: number
+      issue?: SplashIssue
+    }
   | { kind: 'select-server'; servers: SplashServer[] }
   | { kind: 'no-servers' }
   | { kind: 'error'; message: string; details?: string }
@@ -163,6 +175,9 @@ export interface SplashActions {
   onManageServers?: () => void
   onLogout?: () => void
   onSelectServer?: (server: SplashServer) => void
+  /** Skip the wait and go straight to downloaded books. Shown on the connecting
+   *  screen only when there's something downloaded to go to. */
+  onEnterOffline?: () => void
   /** Redeem a typed invite code. Resolves to an error message, or null on success
    *  (on success the connect flow takes over and this screen goes away). */
   onSubmitInviteCode?: (code: string) => Promise<string | null>
@@ -301,6 +316,22 @@ export function SplashScreen({
   const readyFired = useRef(false)
   const [showDetails, setShowDetails] = useState(false)
 
+  // "Enter offline mode" appears once the launch has visibly stalled, not on
+  // frame 0: a normal connect resolves in well under a second, and flashing an
+  // escape hatch through every healthy launch would read as something being
+  // wrong. A known connection problem shows it immediately - at that point
+  // waiting is the thing that needs justifying, not leaving.
+  const [waited, setWaited] = useState(false)
+  useEffect(() => {
+    if (phase.kind !== 'connecting') return
+    const t = setTimeout(() => setWaited(true), OFFLINE_OFFER_DELAY_MS)
+    return () => clearTimeout(t)
+  }, [phase.kind])
+  const offerOffline =
+    phase.kind === 'connecting' &&
+    !!actions?.onEnterOffline &&
+    (waited || (!!phase.issue && phase.issue !== 'retrying'))
+
   // A determinate progress bar for the static/reduce-motion path, so progress is
   // never conveyed by fire motion alone. A slow indeterminate creep - we don't
   // know real percent, but a moving bar reads as "working, not frozen".
@@ -399,16 +430,27 @@ export function SplashScreen({
             <View style={styles.statusArea}>
               {phase.kind === 'connecting' ? (
                 <>
-                  <Text style={styles.label}>
-                    {phase.serverName
-                      ? `Connecting to ${phase.serverName}…`
-                      : (phase.label ?? 'Warming up your library...')}
-                  </Text>
+                  <Text style={styles.label}>{connectingLabel(phase)}</Text>
                   {/* Static/reduce-motion path: a determinate bar so progress isn't
                   carried by the fire alone. */}
                   {staticMode ? (
                     <View style={styles.progressTrack}>
                       <Animated.View style={[styles.progressFill, progressStyle]} />
+                    </View>
+                  ) : null}
+                  {/* The user knows things we can't detect - that the server is off,
+                  that the house has no internet. Let them say so instead of
+                  sitting through the retries. */}
+                  {offerOffline ? (
+                    <View style={styles.actions}>
+                      <Pressable
+                        style={[styles.btn, styles.btnGhost]}
+                        onPress={actions?.onEnterOffline}
+                        accessibilityRole="button"
+                      >
+                        <Text style={styles.btnGhostText}>Enter offline mode</Text>
+                      </Pressable>
+                      <Text style={styles.helpText}>Play the books saved on this device.</Text>
                     </View>
                   ) : null}
                 </>
@@ -439,9 +481,7 @@ export function SplashScreen({
                           {showDetails ? 'Hide details' : 'Show details'}
                         </Text>
                       </Pressable>
-                      {showDetails ? (
-                        <Text style={styles.detailsText}>{phase.details}</Text>
-                      ) : null}
+                      {showDetails ? <Text style={styles.detailsText}>{phase.details}</Text> : null}
                     </>
                   ) : null}
                 </>
@@ -598,6 +638,40 @@ function InviteCodeEntry({ onSubmit }: { onSubmit?: (code: string) => Promise<st
       {error ? <Text style={styles.codeError}>{error}</Text> : null}
     </View>
   )
+}
+
+/** How long the connecting splash may sit before it offers a way out. */
+const OFFLINE_OFFER_DELAY_MS = 2000
+
+/**
+ * What the connecting splash says.
+ *
+ * "Warming up your library..." is the right line for the second or two a healthy
+ * launch takes. It is the wrong line for the fortieth second on a dead network,
+ * where it reads as the app being stuck and tells the user nothing they can act
+ * on. So the moment the connect layer knows something - airplane mode, no signal,
+ * a failed attempt - the copy says that instead, with the retry count, because
+ * "retrying 2 of 2" also tells you how long this can possibly go on.
+ */
+function connectingLabel(phase: SplashPhase & { kind: 'connecting' }): string {
+  const of =
+    phase.attempt && phase.maxAttempts && phase.maxAttempts > 1
+      ? ` Retrying ${phase.attempt} of ${phase.maxAttempts}…`
+      : ''
+  switch (phase.issue) {
+    case 'airplane':
+      return 'Airplane mode is on - no connection.'
+    case 'no-network':
+      return 'No network connection.'
+    case 'unreachable':
+      return `Connection issue - can't reach your server.${of}`
+    case 'retrying':
+      return `Connection issue.${of || ' Retrying…'}`
+    default:
+      break
+  }
+  if (phase.serverName) return `Connecting to ${phase.serverName}…`
+  return phase.label ?? 'Warming up your library...'
 }
 
 // Connect failures are classified at the throw site now (connectionError.ts), so

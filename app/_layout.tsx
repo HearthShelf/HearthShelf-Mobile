@@ -281,7 +281,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
  * routing (settings, sign-in) keeps working behind the overlay.
  */
 function ConnectionGate({ children }: { children: React.ReactNode }) {
-  const { status, retry, connectTo, redeemInvite } = useConnection()
+  const { status, retry, connectTo, redeemInvite, enterOffline, canGoOffline } = useConnection()
   const { signOut } = useAuth()
   const router = useRouter()
   // Lets the user step out to the servers screen while still not connected.
@@ -343,7 +343,12 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
 
   const phase: SplashPhase =
     status.phase === 'connecting'
-      ? { kind: 'connecting' }
+      ? {
+          kind: 'connecting',
+          attempt: status.attempt,
+          maxAttempts: status.maxAttempts,
+          issue: status.issue,
+        }
       : status.phase === 'no-servers'
         ? { kind: 'no-servers' }
         : status.phase === 'error'
@@ -373,6 +378,9 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
               onLogout: handleLogout,
               onSelectServer: (s) => connectTo(s),
               onSubmitInviteCode: redeemInvite,
+              // Only offered when there are downloads to land in - otherwise
+              // "offline mode" is an empty library, which is not an escape.
+              onEnterOffline: canGoOffline ? enterOffline : undefined,
             }}
           />
         </View>
