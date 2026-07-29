@@ -70,6 +70,24 @@ export function notifyServerReached(): void {
   reachedListeners.forEach((l) => l())
 }
 
+// Mirrors ConnectionProvider's phase:'offline' for the non-React modules
+// (playback, the ABS client) that can't read context. Those paths used to infer
+// connectivity from "is there a session object", but entering offline mode keeps
+// the stale session around - so they'd treat a known-dead server as online and
+// try it first, stalling every action until the request timed out. This lets them
+// skip straight to the local path.
+let offlineMode = false
+
+/** True when the connection layer has declared offline mode. */
+export function isOfflineMode(): boolean {
+  return offlineMode
+}
+
+/** Set by ConnectionProvider as it enters/leaves offline mode. */
+export function setOfflineMode(v: boolean): void {
+  offlineMode = v
+}
+
 function set(patch: Partial<SyncState>): void {
   state = { ...state, ...patch }
   listeners.forEach((l) => l())

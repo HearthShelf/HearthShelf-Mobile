@@ -60,6 +60,7 @@ import {
   downloadFor,
 } from '@/player/downloads'
 import { offlineDetailFor } from '@/player/offlineCatalog'
+import { isOfflineMode } from '@/player/syncState'
 import {
   getPendingSessionState,
   subscribePendingSessions,
@@ -163,6 +164,10 @@ export default function ItemDetailScreen() {
     void (async () => {
       let d: ABSLibraryItemDetail
       try {
+        // In offline mode the server is known-unreachable, so don't spend the
+        // request's timeout finding that out - the page would sit blank until it
+        // gave up. Jump to the same local rebuild the catch block does.
+        if (isOfflineMode()) throw new Error('offline_mode')
         d = await getItemDetail(id)
       } catch (e) {
         // Offline (or the server is unreachable): rebuild the detail from the
@@ -181,6 +186,10 @@ export default function ItemDetailScreen() {
           if (offlineDetail) {
             setDetail(offlineDetail)
             setOffline(true)
+          } else if (isOfflineMode()) {
+            // Not downloaded and no server to ask: say so plainly rather than
+            // leaking the internal reason string.
+            setError("You're offline and this book isn't downloaded.")
           } else setError((e as Error).message)
         }
         return

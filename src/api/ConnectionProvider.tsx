@@ -58,7 +58,7 @@ import {
 } from '@/player/pendingProgress'
 import { hydratePendingBookmarks } from '@/player/pendingBookmarks'
 import { hydrateSessionCache, refreshSessionCache } from '@/player/sessionCache'
-import { subscribeServerReached } from '@/player/syncState'
+import { subscribeServerReached, setOfflineMode } from '@/player/syncState'
 import { hydrateProgress } from '@/store/progress'
 import type { SplashServer } from '@/ui/SplashScreen'
 
@@ -785,6 +785,14 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
       })
     }, CONNECTING_FLOOR_MS)
     return () => clearTimeout(t)
+  }, [status.phase])
+
+  // Mirror offline mode out to the non-React modules (playback, ABS client) that
+  // decide whether to try the server or go straight to local files. Done as one
+  // effect on the resolved phase rather than at each setStatus site, so it can't
+  // drift out of sync as phases are added.
+  useEffect(() => {
+    setOfflineMode(status.phase === 'offline')
   }, [status.phase])
 
   // Watch connectivity for the whole signed-in lifetime: when the network

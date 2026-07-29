@@ -39,6 +39,7 @@ import {
   syncStatePending,
   syncStateFailed,
   syncStateClear,
+  isOfflineMode,
 } from './syncState'
 
 interface ActiveSession {
@@ -117,7 +118,11 @@ export async function playItemById(
   opts: { armRecompute?: boolean } = {},
 ): Promise<void> {
   const local = localSourceFor(itemId)
-  const online = !!getSession()
+  // A session object surviving into offline mode does NOT mean the server is
+  // reachable - entering offline mode keeps the last session around. Ask the
+  // connection layer, or a resume tap in offline mode tries the dead server first
+  // and only plays once that request gives up.
+  const online = !!getSession() && !isOfflineMode()
 
   // Starting a new book is a recompute trigger, but we defer it: arm a play-
   // cooldown so an accidental tap (or the settling just-finished book at an

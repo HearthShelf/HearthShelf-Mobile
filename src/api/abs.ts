@@ -71,13 +71,41 @@ export class ABSRequestError extends Error {
   }
 }
 
+/** How long an ABS call waits before we treat the server as unreachable.
+ *
+ *  Without this, `fetch` inherits the platform socket timeout (a minute or more
+ *  on Android), so every offline-mode fallback that's written as
+ *  try-server-then-use-local stalls for that whole window before the local path
+ *  runs: a resume tap or a book-detail open looks dead, then fires late. The
+ *  server is on the LAN or a quick hop away, so anything past a few seconds is
+ *  already a failure, not slowness. */
+const ABS_TIMEOUT_MS = 6000
+
 async function absRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const { serverUrl, token } = requireSession()
   const headers = new Headers(init?.headers)
   headers.set('Authorization', `Bearer ${token}`)
   if (init?.body) headers.set('Content-Type', 'application/json')
 
-  const res = await fetch(`${serverUrl}${path}`, { ...init, headers })
+  // Respect a caller-supplied signal (in-flight cancellation) while still
+  // enforcing our own deadline.
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), ABS_TIMEOUT_MS)
+  const onCallerAbort = () => controller.abort()
+  init?.signal?.addEventListener('abort', onCallerAbort)
+
+  let res: Response
+  try {
+    res = await fetch(`${serverUrl}${path}`, { ...init, headers, signal: controller.signal })
+  } catch {
+    // An abort (our timeout) reads the same as a network failure to callers:
+    // a plain Error with no `status`, i.e. "couldn't reach the server", which is
+    // what drives the offline/local fallbacks.
+    throw new Error(`abs_request_unreachable ${path}`)
+  } finally {
+    clearTimeout(timer)
+    init?.signal?.removeEventListener('abort', onCallerAbort)
+  }
   if (!res.ok) {
     throw new ABSRequestError(res.status, path)
   }
