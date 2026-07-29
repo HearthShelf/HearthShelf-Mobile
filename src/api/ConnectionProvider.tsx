@@ -16,6 +16,7 @@ import { AppState } from 'react-native'
 import { useAuth } from '@clerk/expo'
 import { fetchLinkedServers, acceptInvite, ApiError, type LinkedServer } from './controlPlane'
 import { connectServer } from './connect'
+import { currentNetworkScope } from './candidates'
 import { ConnectionError } from './connectionError'
 import { setSession, setLastServerId, getLastServerId, takePendingInviteToken } from './session'
 import { CLERK_JWT_TEMPLATE } from '@/lib/config'
@@ -42,7 +43,7 @@ import {
 } from '@/player/downloads'
 import { getQueueState } from '@/player/queue'
 import { hydrateCatalog, backfillCatalog } from '@/player/offlineCatalog'
-import { getItemDetail, getLibrarySeries } from './abs'
+import { getItemDetail, getLibrarySeries, setAbsReconnectHandler } from './abs'
 import {
   startConnectivityWatch,
   stopConnectivityWatch,
@@ -403,6 +404,12 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   // probe, not the user deciding, so it should still auto-recover to `ready`.
   const userChoseOffline = useRef(false)
 
+  // The server we last connected to, kept so a silent token refresh (triggered by
+  // a 401 from absRequest) can re-run the same candidate sweep without going back
+  // through server selection. Holds the FULL record when we have one, so the LAN
+  // candidate survives a refresh.
+  const connectedServer = useRef<LinkedServer | SplashServer | null>(null)
+
   // A connect SUCCEEDED while the user was holding the offline screen. The banner
   // stays (their choice), but the server is genuinely reachable, so the non-React
   // modules must not be told we're offline. Kept as state, not a ref, because the
@@ -420,10 +427,33 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         setStatus((cur) => (cur.phase === 'offline' ? cur : { phase: 'connecting' }))
       }
       try {
-        const { serverUrl, token } = await tracePhase('connect:server-exchange', () =>
-          connectServer(tokenFn, server.id, server.url),
+        // Pass the FULL linked-server record when we have one, so connectServer can
+        // see the LAN and hs.direct candidates. A SplashServer (picker path) only
+        // carries id/name/url, which degrades to the single-address behaviour.
+        const target: LinkedServer | string =
+          'role' in server ? (server as LinkedServer) : server.url
+        const {
+          serverUrl,
+          token,
+          via,
+          expiresAt: grantExpiresAt,
+        } = await tracePhase('connect:server-exchange', () =>
+          connectServer(tokenFn, server.id, target),
         )
-        await tracePhase('connect:set-session', () => setSession({ serverUrl, token }))
+        // Tag a LAN-scoped session with the network it was made on. A private
+        // origin rehydrated on a DIFFERENT network can only fail, or reach an
+        // unrelated device that inherited the address.
+        const scope = via === 'local' ? await currentNetworkScope() : undefined
+        await tracePhase('connect:set-session', () =>
+          setSession({
+            serverUrl,
+            token,
+            via,
+            ...(scope ? { networkScope: scope } : {}),
+            ...(grantExpiresAt ? { expiresAt: grantExpiresAt } : {}),
+          }),
+        )
+        connectedServer.current = server
         await setLastServerId(server.id)
         // Ensure the per-install deviceId is loaded before sync starts, so
         // device-scoped settings round-trip on the first pull.
@@ -893,6 +923,49 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     if (!effectiveSignedIn) return
     return subscribeServerReached(reconnectIfNeeded)
   }, [reconnectIfNeeded, effectiveSignedIn])
+
+  // Let absRequest silently re-establish the session when ABS rejects our token.
+  //
+  // An ABS token can stop being accepted (expiry, admin revocation, the server
+  // re-minting it) and until now nothing handled that: the only status branch in
+  // the app was a 404 in playback, so a stale token degraded into opaque failures
+  // until an unrelated reconnect happened to fix it. This re-runs the same
+  // candidate sweep - including the identity check on a LAN address - and swaps in
+  // a fresh token, without disturbing the UI phase.
+  useEffect(() => {
+    if (!effectiveSignedIn) {
+      setAbsReconnectHandler(null)
+      return
+    }
+    setAbsReconnectHandler(async () => {
+      const server = connectedServer.current
+      if (!server) return false
+      try {
+        const target: LinkedServer | string = 'role' in server ? (server as LinkedServer) : server.url
+        const { serverUrl, token, via, expiresAt } = await connectServer(
+          tokenFn,
+          server.id,
+          target,
+        )
+        const scope = via === 'local' ? await currentNetworkScope() : undefined
+        await setSession({
+          serverUrl,
+          token,
+          via,
+          ...(scope ? { networkScope: scope } : {}),
+          ...(expiresAt ? { expiresAt } : {}),
+        })
+        pushAutoSession(serverUrl, token)
+        return true
+      } catch {
+        // Could not refresh (offline, grant refused, no reachable address). The
+        // caller surfaces the original 401, and the normal recovery paths -
+        // network edge, foreground, server-reached - will retry.
+        return false
+      }
+    })
+    return () => setAbsReconnectHandler(null)
+  }, [effectiveSignedIn, tokenFn])
 
   // Also re-probe on foreground: NetInfo can miss a network change that happened
   // while backgrounded (or a handoff that never dipped offline), which otherwise

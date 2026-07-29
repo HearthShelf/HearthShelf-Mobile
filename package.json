@@ -20,6 +20,7 @@
     "@epubjs-react-native/core": "^1.4.7",
     "@expo/vector-icons": "^15.1.1",
     "@gorhom/bottom-sheet": "^5.2.14",
+    "@noble/curves": "^1.9.7",
     "@notifee/react-native": "^9.1.8",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "9.1.0",

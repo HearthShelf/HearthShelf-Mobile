@@ -80,7 +80,23 @@ async function request<T>(getToken: GetToken, path: string, init?: RequestInit):
 export interface LinkedServer {
   id: string
   name: string
+  /** Preferred address: the admin's own domain if set, else the hs.direct host. */
   url: string
+  /** The hs.direct fallback host, when this server has provisioned a cert. Tried
+   *  when `url` is unreachable (e.g. the admin's own domain/DNS is broken). */
+  fallbackUrl?: string
+  /** A private LAN origin that reaches this server WITHOUT leaving the local
+   *  network - so it still works when the server's own internet is down.
+   *
+   *  Only ever set together with `identityKey`. Never dial this without first
+   *  verifying identity (see src/api/serverIdentity.ts) and never off Wi-Fi: a
+   *  private IP on cellular can only time out or, on a CGNAT range, reach a
+   *  stranger's device. */
+  localUrl?: string
+  /** Ed25519 public key (base64 SPKI) proving which box a candidate origin is.
+   *  Obtained from the control plane over TLS, so it is trustworthy even when the
+   *  origin it authenticates is plain http on a LAN. */
+  identityKey?: string
   role: 'admin' | 'user'
   /** The user's chosen default server - a fresh device auto-connects here. */
   isDefault?: boolean
@@ -91,6 +107,9 @@ interface ServersResponse {
     id: string
     name: string
     url: string
+    fallback_url?: string
+    local_url?: string
+    identity_key?: string
     role: 'admin' | 'user'
     is_default?: boolean
   }>
@@ -103,6 +122,13 @@ export async function fetchLinkedServers(getToken: GetToken): Promise<LinkedServ
     id: s.id,
     name: s.name,
     url: s.url,
+    ...(s.fallback_url ? { fallbackUrl: s.fallback_url } : {}),
+    // Drop a LAN address that arrives without an identity key - it would be
+    // unverifiable, and an unverifiable origin must never receive a grant. The
+    // control plane already withholds these, so this is belt-and-braces.
+    ...(s.local_url && s.identity_key
+      ? { localUrl: s.local_url, identityKey: s.identity_key }
+      : {}),
     role: s.role,
     ...(s.is_default ? { isDefault: true } : {}),
   }))

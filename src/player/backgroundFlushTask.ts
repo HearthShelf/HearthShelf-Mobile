@@ -15,6 +15,7 @@
 import * as TaskManager from 'expo-task-manager'
 import * as BackgroundTask from 'expo-background-task'
 import { hydrateSession } from '@/api/session'
+import { currentNetworkScope } from '@/api/candidates'
 import {
   hydratePendingProgress,
   hydrateStreamingBuffer,
@@ -41,7 +42,13 @@ TaskManager.defineTask(BACKGROUND_FLUSH_TASK, async () => {
     const bookmarks = getPendingBookmarkState()
     const haveBookmarks = bookmarks.creates.length > 0 || bookmarks.deletes.length > 0
     if (pendingCount() === 0 && !haveBookmarks) return BackgroundTask.BackgroundTaskResult.Success
-    await hydrateSession()
+    // Pass the CURRENT network so a LAN-scoped session is reusable when we really
+    // are back on that Wi-Fi (the offline-listening case this task exists for),
+    // while hydrateSession still refuses a private origin anywhere else - a
+    // background task can wake on cellular or a different network, where a
+    // remembered 192.168.x.y would fail or reach an unrelated device.
+    const scope = (await currentNetworkScope().catch(() => null)) ?? undefined
+    await hydrateSession(scope)
     await flushPendingProgress()
     await flushPendingBookmarks()
     return BackgroundTask.BackgroundTaskResult.Success

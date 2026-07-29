@@ -102,6 +102,68 @@ export async function probeReachable(): Promise<boolean> {
   }
 }
 
+/** A server hop is a short one - either it answers quickly or it's the wrong address. */
+const SERVER_PROBE_TIMEOUT_MS = 2000
+
+/**
+ * Is a specific server origin reachable right now?
+ *
+ * Complements probeReachable, which deliberately measures the INTERNET (it hits
+ * the control plane). That is the right question for "should we drop to offline
+ * mode?", but it is the wrong question for "can I reach my library?" - and the two
+ * answers diverge in both directions:
+ *
+ *   - server's WAN is down, phone is on the same Wi-Fi: internet unreachable from
+ *     the server's perspective, but the LAN address works perfectly.
+ *   - phone is on cellular, server is off: internet fine, server gone.
+ *
+ * Hits `/healthcheck`, which nginx serves straight from the box with no internet
+ * involvement at all, so it works precisely in the case we care about. Any HTTP
+ * answer counts (even 4xx/5xx): it proves something is listening and routable,
+ * which is what "reachable" means here. Whether it is the RIGHT server is a
+ * separate question, answered by the identity handshake before any credential is
+ * sent - this probe intentionally sends nothing sensitive.
+ */
+export async function probeServerReachable(origin: string): Promise<boolean> {
+  if (!origin) return false
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), SERVER_PROBE_TIMEOUT_MS)
+  try {
+    await fetch(`${origin.replace(/\/$/, '')}/healthcheck`, {
+      method: 'GET',
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+    return true
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * Decide what a connect stall means, given both signals.
+ *
+ * The distinction matters because dropping to offline mode when the server is
+ * actually reachable is a real regression: it hides streaming books behind a
+ * "you're offline" banner and (before this change) left banked progress unsynced
+ * on disk while a perfectly good server waited on the LAN.
+ *
+ *   'server-ok'      the server answers - connect anyway, internet or not
+ *   'server-down'    internet is up but the server isn't - a genuine error
+ *   'all-down'       neither - offline mode is correct
+ */
+export async function diagnoseReachability(
+  serverOrigins: string[],
+): Promise<'server-ok' | 'server-down' | 'all-down'> {
+  // Ask about the server FIRST: if it answers, nothing else matters.
+  for (const origin of serverOrigins) {
+    if (await probeServerReachable(origin)) return 'server-ok'
+  }
+  return (await probeReachable()) ? 'server-down' : 'all-down'
+}
+
 /**
  * Start watching connectivity. `onOnline` fires when the device is online and
  * either it wasn't online on the previous event OR the network type changed

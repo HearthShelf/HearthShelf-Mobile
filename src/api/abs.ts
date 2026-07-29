@@ -81,7 +81,36 @@ export class ABSRequestError extends Error {
  *  already a failure, not slowness. */
 const ABS_TIMEOUT_MS = 6000
 
-async function absRequest<T>(path: string, init?: RequestInit): Promise<T> {
+/**
+ * Re-establish the ABS session (re-mint a grant, redeem it, setSession).
+ * Registered by ConnectionProvider so this module doesn't have to import it -
+ * that would be a cycle, and this file is also loaded by the headless car service.
+ *
+ * Resolves true when a NEW token is in place, false when it couldn't be refreshed.
+ */
+type Reconnect = () => Promise<boolean>
+let reconnectHandler: Reconnect | null = null
+
+export function setAbsReconnectHandler(fn: Reconnect | null): void {
+  reconnectHandler = fn
+}
+
+/** Serialize refreshes: a burst of 401s must trigger ONE reconnect, not N. */
+let inFlightRefresh: Promise<boolean> | null = null
+
+function refreshSession(): Promise<boolean> {
+  if (!reconnectHandler) return Promise.resolve(false)
+  if (!inFlightRefresh) {
+    inFlightRefresh = reconnectHandler()
+      .catch(() => false)
+      .finally(() => {
+        inFlightRefresh = null
+      })
+  }
+  return inFlightRefresh
+}
+
+async function absRequest<T>(path: string, init?: RequestInit, isRetry = false): Promise<T> {
   const { serverUrl, token } = requireSession()
   const headers = new Headers(init?.headers)
   headers.set('Authorization', `Bearer ${token}`)
@@ -107,6 +136,20 @@ async function absRequest<T>(path: string, init?: RequestInit): Promise<T> {
     init?.signal?.removeEventListener('abort', onCallerAbort)
   }
   if (!res.ok) {
+    // A 401 means our ABS token is no longer accepted - it expired, was revoked,
+    // or the server re-minted it. Previously NOTHING handled this: the only status
+    // branch in the app was a 404 in playback, so a stale token degraded into
+    // opaque request failures until some unrelated reconnect happened to fix it.
+    //
+    // Refresh once and replay. `isRetry` bounds this to a single attempt, so a
+    // server that 401s even a brand-new token surfaces the error instead of
+    // looping - which also means an origin that rejects everything (a spoofed or
+    // misbehaving endpoint) can never pull us into a re-mint loop that keeps
+    // handing out fresh grants.
+    if (res.status === 401 && !isRetry) {
+      const refreshed = await refreshSession()
+      if (refreshed) return absRequest<T>(path, init, true)
+    }
     throw new ABSRequestError(res.status, path)
   }
   // Some endpoints (sync/close, progress PATCH) return empty or plain-text
