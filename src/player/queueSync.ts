@@ -10,9 +10,17 @@
  * loaded in player/store.ts), it is the authority over its own queue - it
  * doesn't adopt a remote pull mid-session. An idle device always adopts the
  * latest queue/settings the next time the app comes to the foreground.
+ *
+ * Settings pushes are driven by the store's own pending set (`meta` vs `pushed`
+ * in store/settings.ts), not by a snapshot taken here. That distinction matters:
+ * the snapshot used to be re-baselined after every pull, so an edit still inside
+ * the push debounce - or one whose push had failed - was quietly diffed away and
+ * never reached the server. Now a key is retired only when the server says it
+ * took it, and because both maps are persisted, an edit made offline still
+ * pushes on a later launch.
  */
 import { AppState, type AppStateStatus } from 'react-native'
-import { validateSetting, SETTINGS_CATALOG, type QueueEntry } from '@hearthshelf/core'
+import { type QueueEntry } from '@hearthshelf/core'
 import {
   getQueueState,
   setQueueItems,
@@ -22,14 +30,15 @@ import {
 } from './queue'
 import { getState as getPlayerState } from './store'
 import { getServerQueue, putServerQueue, recomputeServerQueue } from '@/api/queue'
-import { getServerSettings, putServerSettings, type SettingChange } from '@/api/settings'
+import { getServerSettings, putServerSettings } from '@/api/settings'
 import {
   applyServerKeys,
   ensureDeviceId,
   getDeviceId,
-  getSettingsMeta,
   getSettingsState,
-  storedSettings,
+  hydrateSettings,
+  markPushed,
+  pendingSettingChanges,
   subscribeSettings,
 } from '@/store/settings'
 
@@ -50,8 +59,9 @@ let hydratingSettings = false
 let hydratedSettings = false
 let queueTimer: ReturnType<typeof setTimeout> | null = null
 let settingsTimer: ReturnType<typeof setTimeout> | null = null
-// Snapshot of per-key meta at last push, to diff which keys changed since.
-let lastSettingsMeta: Record<string, number> = {}
+// A push is in flight; its response will decide what's still pending, so don't
+// start a second one on top of it.
+let pushingSettings = false
 let unsubQueue: (() => void) | null = null
 let unsubSettings: (() => void) | null = null
 let appStateSub: { remove: () => void } | null = null
@@ -135,6 +145,10 @@ export function requestQueueRecompute(): void {
 
 async function pullSettings(): Promise<void> {
   try {
+    // Local state first: a pull must resolve against the persisted per-key
+    // timestamps, or an edit made in a previous (offline) run would look like a
+    // never-set key and lose the merge against an older server value.
+    await hydrateSettings()
     const deviceId = await ensureDeviceId()
     const server = await getServerSettings(deviceId)
     hydratingSettings = true
@@ -144,11 +158,14 @@ async function pullSettings(): Promise<void> {
     if (server.device) applyServerKeys(server.device)
     hydratingSettings = false
   } catch {
-    // Backend unreachable - keep local defaults/current values.
+    // Backend unreachable - keep local values; anything unpushed stays pending.
   } finally {
-    lastSettingsMeta = { ...getSettingsMeta() }
     hydratedSettings = true
   }
+  // Flush whatever the server still doesn't have. applyServerKeys has already
+  // retired every key the server acknowledged, so this pushes exactly the local
+  // edits that never landed - including ones made offline in an earlier run.
+  pushSettings()
 }
 
 function pushQueue(): void {
@@ -194,19 +211,14 @@ function pushSettings(): void {
   if (!hydratedSettings || hydratingSettings) return
   if (settingsTimer) clearTimeout(settingsTimer)
   settingsTimer = setTimeout(() => {
-    const stored = storedSettings()
-    const changes: SettingChange[] = []
-    for (const key of Object.keys(stored)) {
-      const row = stored[key]
-      if (row.updatedAt === 0) continue // never set locally - leave as default
-      if (lastSettingsMeta[key] === row.updatedAt) continue // unchanged since last push
-      const def = SETTINGS_CATALOG[key]
-      if (!def) continue
-      // Validate client-side so we never push a value the server would reject.
-      const v = validateSetting(key, row.value)
-      if (!v.ok) continue
-      changes.push({ scope: def.scope, key, value: v.value, updatedAt: row.updatedAt })
+    settingsTimer = null
+    // A request is already out; its response decides what's still pending, so
+    // wait for it rather than sending an overlapping batch.
+    if (pushingSettings) {
+      pushSettings()
+      return
     }
+    const changes = pendingSettingChanges()
     if (!changes.length) return
     // If the queue mode or auto-rules changed, ask the server to rebuild the
     // Auto queue now (a plain GET no longer recomputes) so the sheet reflects
@@ -214,9 +226,25 @@ function pushSettings(): void {
     const queueSettingsChanged = changes.some(
       (c) => c.key === 'queueMode' || c.key === 'queueAutoRules',
     )
+    pushingSettings = true
     putServerSettings(getDeviceId(), changes)
       .then((res) => {
+        // Retire exactly what the server took. A key that isn't acknowledged
+        // stays pending and rides along on the next push - which is the whole
+        // point: a change is only "synced" once the server says so.
+        const done: Record<string, number> = {}
+        for (const c of changes) {
+          if (res.applied?.includes(c.key)) done[c.key] = c.updatedAt
+        }
+        // Invalid values can never be accepted, so retrying them forever would
+        // just keep failing. Retire them too rather than re-sending each round.
+        for (const bad of res.invalid ?? []) {
+          const sent = changes.find((c) => c.key === bad.key)
+          if (sent) done[bad.key] = sent.updatedAt
+        }
+        if (Object.keys(done).length) markPushed(done)
         // Adopt any value the server rejected as stale (another device newer).
+        // applyServerKeys records the server's updatedAt, which retires the key.
         if (res.rejected?.length) {
           const rows: Record<string, { value: unknown; updatedAt: number }> = {}
           for (const r of res.rejected) rows[r.key] = { value: r.value, updatedAt: r.updatedAt }
@@ -224,11 +252,14 @@ function pushSettings(): void {
           applyServerKeys(rows as Record<string, { value: never; updatedAt: number }>)
           hydratingSettings = false
         }
-        lastSettingsMeta = { ...getSettingsMeta() }
         if (queueSettingsChanged) void recomputeQueue()
       })
       .catch(() => {
-        // Best-effort; the local store already holds the change.
+        // Best-effort; the local store already holds the change and it stays
+        // pending (persisted), so the next pull/foreground retries it.
+      })
+      .finally(() => {
+        pushingSettings = false
       })
   }, SETTINGS_PUSH_DEBOUNCE_MS)
 }
@@ -261,6 +292,7 @@ export function stopQueueSync(): void {
   hydratedQueue = false
   hydratedSettings = false
   adoptedUpdatedAt = 0
+  pushingSettings = false
   if (queueTimer) clearTimeout(queueTimer)
   if (settingsTimer) clearTimeout(settingsTimer)
   unsubQueue?.()
