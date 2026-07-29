@@ -11,11 +11,13 @@ import androidx.media3.session.SessionToken
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule
 import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.bridge.Arguments
+import com.facebook.react.common.LifecycleState
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.facebook.react.uimanager.ViewManager
 import com.google.common.util.concurrent.MoreExecutors
@@ -38,12 +40,17 @@ import org.json.JSONObject
  * HearthShelfAutoPackage in MainApplication (injected by the config plugin).
  */
 class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
-  ReactContextBaseJavaModule(ctx) {
+  ReactContextBaseJavaModule(ctx), LifecycleEventListener {
 
   override fun getName() = "HearthShelfAuto"
 
   init {
     emitter = { name, params -> sendEvent(name, params) }
+    // Registered once, for the module's lifetime, so a start we had to defer (see
+    // ensureService) can be retried on the next foreground edge. RN fires
+    // onHostResume immediately here if the host is already resumed, so this also
+    // covers a module created while the app is up front.
+    ctx.addLifecycleEventListener(this)
   }
 
   private fun prefs() =
@@ -251,10 +258,84 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
   @Volatile private var controller: MediaController? = null
   @Volatile private var connecting = false
 
+  // A start we could not legally perform, to be retried on the next foreground
+  // edge. The load itself is NOT held here - it is already stashed in
+  // HearthShelfPlayerService.pendingLoad for onCreate to drain, so this is only a
+  // "we still owe the service a start" flag.
+  @Volatile private var startDeferred = false
+
+  /**
+   * Start the media service if it isn't up yet.
+   *
+   * Android 12+ (API 31) forbids Context.startService from the background and
+   * throws BackgroundServiceStartNotAllowedException. This used to escape into RN
+   * and crash the app: JS would then believe it had handed a book to native while
+   * no player existed, which the user experienced as a book that loads forever and
+   * never plays.
+   *
+   * We do NOT reach for startForegroundService as a workaround. It is only legal
+   * from the background in a few narrow exemptions we cannot count on here (17
+   * minutes backgrounded, no visible task), and it carries a hard contract: the
+   * service must call startForeground() within a few seconds or the system kills
+   * the process with a ForegroundServiceDidNotStartInTimeException. Media3's
+   * MediaSessionService only promotes itself once the player is actually ready to
+   * play, which for a remote ABS stream means waiting on a network round-trip, and
+   * not at all when autoPlay is false. Trading this crash for a timeout crash on a
+   * slow connection would be strictly worse, so we stay on startService and treat
+   * "not allowed right now" as a deferral.
+   */
   private fun ensureService() {
-    // Start the media service if it isn't up yet.
-    ctx.startService(Intent(ctx, HearthShelfPlayerService::class.java))
-    connectController()
+    // Ask before throwing where we can. RN tracks the host activity's state, and a
+    // resumed host is the case the OS lets through, so this keeps the normal
+    // foreground path on exactly the call it has always made and reserves the catch
+    // below for the races RN's view of lifecycle can't cover (resumed-but-finishing,
+    // or a state flip between this check and the start).
+    if (ctx.lifecycleState == LifecycleState.RESUMED) {
+      if (tryStartService()) return
+    }
+    // No legal start right now. The load is safe in pendingLoad; remember that the
+    // service still owes us a start and let onHostResume do it. Nothing is lost and
+    // nothing polls.
+    startDeferred = true
+  }
+
+  /** Attempt the service start. Returns true when it went through. */
+  private fun tryStartService(): Boolean {
+    return try {
+      ctx.startService(Intent(ctx, HearthShelfPlayerService::class.java))
+      startDeferred = false
+      connectController()
+      true
+    } catch (e: Exception) {
+      // BackgroundServiceStartNotAllowedException on API 31+, but catch broadly:
+      // this runs on RN's native-modules thread, where anything thrown becomes an
+      // unhandled app crash.
+      false
+    }
+  }
+
+  // ---- LifecycleEventListener ----
+  //
+  // The retry edge for a deferred start. Coming to the foreground is exactly the
+  // condition that makes startService legal again, so one attempt here is enough -
+  // if it somehow fails the flag stays set for the next resume, with no loop and no
+  // duplicate start (tryStartService clears the flag, and the service itself is a
+  // singleton whose onCreate drains pendingLoad once).
+  override fun onHostResume() {
+    if (!startDeferred) return
+    // Only if there is still something to start. The service may have come up by
+    // another route (a car session, a later foreground load) while we were away.
+    if (HearthShelfPlayerService.instance != null) {
+      startDeferred = false
+      return
+    }
+    tryStartService()
+  }
+
+  override fun onHostPause() {}
+
+  override fun onHostDestroy() {
+    startDeferred = false
   }
 
   private fun connectController() {

@@ -179,6 +179,45 @@ class HearthShelfAutoService : MediaLibraryService() {
     get() = prefs.getString("token", null)
 
   /**
+   * Cached drawable name -> resId. resources.getIdentifier is a string-keyed
+   * lookup through the whole resource table, and the button builders call it a
+   * lot: customLayout() alone costs 8 lookups (each skip button probes for its
+   * numeral variant AND resolves the winner), and it is rebuilt on every connect,
+   * speed cycle and skip-setting change. Sentry HS-MOBILEAPP-N put customLayout()
+   * on the main thread inside onCreate, in the same window as the
+   * MediaLibrarySession build() that blocked - so these lookups are pure
+   * contention on the critical path. The resource table is immutable for the
+   * life of the process, so caching is safe.
+   *
+   * Resolution deliberately happens OUTSIDE any lock: the onCreate warm task and
+   * the main thread race for the same names by design, and a main thread that
+   * blocked waiting for the warmer's monitor would be exactly the contention this
+   * is meant to remove. Resolving twice is harmless - getIdentifier is a pure
+   * read of an immutable table, so both callers compute the same int.
+   */
+  private val drawableIds = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+  private fun drawableId(name: String): Int {
+    drawableIds[name]?.let { return it }
+    val id = resources.getIdentifier(name, "drawable", packageName)
+    drawableIds[name] = id
+    return id
+  }
+
+  /** Every fixed drawable name onCreate's notification provider + custom layout
+   *  resolve, warmed off the main thread. The two skip icons are name-dependent
+   *  (they carry the user's chosen seconds) so they are warmed separately. */
+  private val WARM_DRAWABLES = listOf(
+    "ic_hs_notification",
+    "ic_hs_prev_chapter",
+    "ic_hs_next_chapter",
+    "ic_hs_bookmark",
+    "ic_hs_speed",
+    "ic_hs_rewind",
+    "ic_hs_forward",
+  )
+
+  /**
    * Is any network actually up? Checked BEFORE the browse/play network calls so an
    * offline car doesn't sit through 8s connect timeouts per request (six of them
    * on a single "Library" tap) before showing an empty screen - it goes straight
@@ -310,7 +349,7 @@ class HearthShelfAutoService : MediaLibraryService() {
   private fun customButton(cmd: String, name: String, icon: String): CommandButton =
     CommandButton.Builder(CommandButton.ICON_UNDEFINED)
       .setDisplayName(name)
-      .setCustomIconResId(resources.getIdentifier(icon, "drawable", packageName))
+      .setCustomIconResId(drawableId(icon))
       .setSessionCommand(SessionCommand(cmd, Bundle.EMPTY))
       .setSlots(CommandButton.SLOT_OVERFLOW)
       .build()
@@ -354,14 +393,14 @@ class HearthShelfAutoService : MediaLibraryService() {
    *  Media3's semantic icons. */
   private fun skipIconName(prefix: String, sec: Long): String {
     val named = "${prefix}_$sec"
-    return if (resources.getIdentifier(named, "drawable", packageName) != 0) named else prefix
+    return if (drawableId(named) != 0) named else prefix
   }
 
   private fun rewindButton(): CommandButton {
     val icon = skipIconName("ic_hs_rewind", rewindSec)
     return CommandButton.Builder(rewindIcon(rewindSec))
       .setDisplayName("Back ${rewindSec}s")
-      .setCustomIconResId(resources.getIdentifier(icon, "drawable", packageName))
+      .setCustomIconResId(drawableId(icon))
       .setSessionCommand(SessionCommand(CMD_REWIND, Bundle.EMPTY))
       .setSlots(CommandButton.SLOT_BACK, CommandButton.SLOT_OVERFLOW)
       .build()
@@ -371,7 +410,7 @@ class HearthShelfAutoService : MediaLibraryService() {
     val icon = skipIconName("ic_hs_forward", forwardSec)
     return CommandButton.Builder(forwardIcon(forwardSec))
       .setDisplayName("Forward ${forwardSec}s")
-      .setCustomIconResId(resources.getIdentifier(icon, "drawable", packageName))
+      .setCustomIconResId(drawableId(icon))
       .setSessionCommand(SessionCommand(CMD_FORWARD, Bundle.EMPTY))
       .setSlots(CommandButton.SLOT_FORWARD, CommandButton.SLOT_OVERFLOW)
       .build()
@@ -387,17 +426,40 @@ class HearthShelfAutoService : MediaLibraryService() {
     val s = if (rate == rate.toInt().toFloat()) rate.toInt().toString()
       else rate.toString().trimEnd('0').trimEnd('.')
     val named = "ic_hs_speed_${s.replace('.', '_')}x"
-    val icon = if (resources.getIdentifier(named, "drawable", packageName) != 0) named else "ic_hs_speed"
+    val icon = if (drawableId(named) != 0) named else "ic_hs_speed"
     return customButton(CMD_SPEED, "Speed ${s}x", icon)
   }
 
   override fun onCreate() {
     super.onCreate()
-    Log.i(TAG, "onCreate: serverUrl=${serverUrl != null}, token=${token != null}")
+
+    // Warm the SharedPreferences file OFF the main thread. The first
+    // getSharedPreferences for a name does synchronous disk I/O (parse the whole
+    // XML) on whatever thread asks, and this service's onCreate used to ask
+    // first - via a log line that read serverUrl + token. Sentry HS-MOBILEAPP-N
+    // is a Background ANR whose blocked main-thread frame is the
+    // MediaLibrarySession build() a few lines below, so every avoidable
+    // millisecond of disk and lock work in this window matters. The io executor
+    // is single-threaded, so this task is also the ONLY thing that can be
+    // loading prefs when it runs; a later main-thread read either finds it
+    // loaded or blocks on the same one-time load it would have done itself, so
+    // there is no correctness change - only a chance to have finished early.
+    // It also pre-resolves the drawable ids the layout below needs, for the same
+    // reason: whichever thread asks first pays for the lookup.
+    io.execute {
+      try {
+        prefs.getString("serverUrl", null)
+        for (n in WARM_DRAWABLES) drawableId(n)
+        drawableId(skipIconName("ic_hs_rewind", rewindSec))
+        drawableId(skipIconName("ic_hs_forward", forwardSec))
+      } catch (e: Exception) {
+        // Warming is best-effort: the real call sites resolve on demand anyway.
+      }
+    }
 
     // HearthShelf flame as the notification small icon (not Media3's default).
     val notificationProvider = DefaultMediaNotificationProvider.Builder(this).build().apply {
-      setSmallIcon(resources.getIdentifier("ic_hs_notification", "drawable", packageName))
+      setSmallIcon(drawableId("ic_hs_notification"))
     }
     setMediaNotificationProvider(notificationProvider)
 
@@ -455,7 +517,15 @@ class HearthShelfAutoService : MediaLibraryService() {
         // Mirror car play/pause into the JS store so the phone UI stays in sync.
         HearthShelfAutoModule.emitState(isPlaying)
         HearthShelfAutoModule.emitProgress(absolutePositionMs(player) / 1000.0)
-        if (!isPlaying) syncProgress(absolutePositionMs(player), force = true)
+        // The progress tick lives exactly as long as playback does. Pausing must
+        // still force a sync: the tick is about to stop, so this is the last
+        // chance to bank the position.
+        if (isPlaying) {
+          startTick()
+        } else {
+          stopTick()
+          syncProgress(absolutePositionMs(player), force = true)
+        }
       }
       override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
         // The car player had NO error handler: a failed stream or prepare (expired
@@ -488,27 +558,66 @@ class HearthShelfAutoService : MediaLibraryService() {
       .setMediaButtonPreferences(customLayout())
       .build()
 
-    // Periodic progress sync while playing (throttled inside syncProgress).
-    progressHandler.postDelayed(progressTick, 5000)
+    // The tick is NOT started here. It is armed by onIsPlayingChanged, so a
+    // service that exists but isn't playing costs nothing (see progressTick).
   }
 
   private val progressHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+  // Whether progressTick is currently scheduled. Only ever touched on the main
+  // thread (the Handler's thread), so a plain Boolean is enough.
+  private var tickRunning = false
+
+  /**
+   * The 1Hz tick runs ONLY while audio is actually playing.
+   *
+   * It used to repost itself unconditionally forever from onCreate, so a service
+   * that had been created and then sat idle - which is most of this service's
+   * life, since Android Auto creates it on connect and the system keeps it around
+   * afterwards - still woke the main thread 3600 times an hour to ask
+   * `isPlaying`, plus a Handler message + Looper wake each time. Sentry
+   * HS-MOBILEAPP-N is a BACKGROUND ANR (in_foreground: false) whose main thread
+   * was blocked in the session build, with 3.8s of GC in the same report: that is
+   * a contention-and-allocation picture, and a permanent idle main-thread loop is
+   * exactly the kind of avoidable contention feeding it.
+   *
+   * Arming is driven by onIsPlayingChanged, the same callback that already
+   * mirrors play/pause into JS, so the tick's lifetime is tied to the one
+   * condition its body checked anyway. onDestroy still cancels it.
+   */
   private val progressTick = object : Runnable {
     override fun run() {
-      rawPlayer?.let {
-        if (it.isPlaying) {
-          // Mirror the car's absolute book position into the JS store every tick
-          // so the phone UI's scrubber advances in step with the car.
-          HearthShelfAutoModule.emitProgress(absolutePositionMs(it) / 1000.0)
-          syncProgress(absolutePositionMs(it), force = false)
-          // One continuous item, so the now-playing chapter subtitle no longer
-          // changes on its own - refresh it when playback crosses a boundary.
-          refreshChapterMeta(it)
-          checkNotes(it)
-        }
+      val player = rawPlayer
+      if (player == null || !player.isPlaying) {
+        // Playback stopped without onIsPlayingChanged landing first (player
+        // released, or a state we did not get a callback for): stand down rather
+        // than keep the loop alive.
+        tickRunning = false
+        return
       }
+      // Mirror the car's absolute book position into the JS store every tick
+      // so the phone UI's scrubber advances in step with the car.
+      HearthShelfAutoModule.emitProgress(absolutePositionMs(player) / 1000.0)
+      syncProgress(absolutePositionMs(player), force = false)
+      // One continuous item, so the now-playing chapter subtitle no longer
+      // changes on its own - refresh it when playback crosses a boundary.
+      refreshChapterMeta(player)
+      checkNotes(player)
       progressHandler.postDelayed(this, 1000)
     }
+  }
+
+  /** Arm the tick if playback is live and it isn't already scheduled. Main thread
+   *  only (callers are player callbacks and runOnMain blocks). */
+  private fun startTick() {
+    if (tickRunning) return
+    tickRunning = true
+    progressHandler.postDelayed(progressTick, 1000)
+  }
+
+  private fun stopTick() {
+    tickRunning = false
+    progressHandler.removeCallbacks(progressTick)
   }
 
   /** ExoPlayer must be touched on its Looper (the main thread). JS transport
@@ -546,13 +655,19 @@ class HearthShelfAutoService : MediaLibraryService() {
     val id = currentItemId ?: return
     val ch = chapters.firstOrNull { posSec >= it.start && posSec < it.end }
     val title = ch?.title ?: "Bookmark"
-    val base = serverUrl
-    val tok = token
-    if (base == null || tok == null || offlineMode()) {
-      queueOfflineBookmark(id, posSec, title)
-      return
-    }
+    // The whole decision hops to io, not just the POST. Its inputs are prefs
+    // reads (first-load disk I/O), offlineMode() -> networkUp() (a binder round
+    // trip to ConnectivityManager), and on the offline branch a prefs read +
+    // JSON rewrite + commit - and bookmarkNow's caller is onCustomCommand, a
+    // media3 callback, which runs on the MAIN thread. Only the player reads
+    // (position, chapters) above need the caller's thread, and they are done.
     io.execute {
+      val base = serverUrl
+      val tok = token
+      if (base == null || tok == null || offlineMode()) {
+        queueOfflineBookmark(id, posSec, title)
+        return@execute
+      }
       try {
         val conn = (URL("$base/api/items/$id/bookmarks").openConnection() as HttpURLConnection).apply {
           requestMethod = "POST"
@@ -602,26 +717,66 @@ class HearthShelfAutoService : MediaLibraryService() {
   /** POST progress to ABS (throttled to ~15s unless forced on pause/stop). With no
    *  play session behind it - a downloaded book playing offline - the same tick
    *  banks the position locally instead, so the listen survives to the next sync. */
-  private fun syncProgress(posMs: Long, force: Boolean) {
+  private fun syncProgress(posMs: Long, force: Boolean, awaitFinal: Boolean = false) {
     val sec = posMs / 1000.0
     if (!force && kotlin.math.abs(sec - lastSyncedSec) < 15.0) return
     val elapsed = kotlin.math.max(0.0, sec - lastSyncedSec)
     lastSyncedSec = sec
-    if (playingOffline || absSessionId == null) {
-      // A jump bigger than a sync window is a seek, not listening - don't credit
-      // it as time listened (same rule the phone's tick uses).
-      recordOfflineProgress(sec, if (elapsed <= 60.0) elapsed else 0.0)
-      return
-    }
-    val sid = absSessionId ?: return
-    val base = serverUrl ?: return
-    val tok = token ?: return
-    io.execute {
+    val offline = playingOffline || absSessionId == null
+    val sid = absSessionId
+    // Everything past this point is disk or network, and EVERY caller of
+    // syncProgress is on the main thread (the tick, onIsPlayingChanged,
+    // onPlaybackStateChanged, onDestroy). The offline branch in particular used
+    // to read prefs, parse the banked-progress JSON, rebuild it and commit an
+    // edit inline - i.e. real disk work on the main thread once per sync window
+    // for the whole of an offline listen. Hop to io for both branches; the
+    // position/elapsed values are already captured, so what gets banked or
+    // POSTed is identical to what the caller computed.
+    //
+    // Banking stays on io even for the final onDestroy sync, so it stays ordered
+    // behind any bank still queued: recordOfflineProgress is a read-modify-write
+    // of both offlineListenedSec and the offlineProgress blob, and running the
+    // last one on the main thread in parallel with a queued one could drop
+    // listened time or clobber the row. `awaitFinal` instead makes onDestroy WAIT for
+    // this task to finish (see awaitSync) - the write still lands before the
+    // process can go away, and it lands in order.
+    val task = io.submit {
       try {
-        httpPostSync("$base/api/session/$sid/sync", tok, sec, elapsed, absDurationSec)
+        if (offline) {
+          // A jump bigger than a sync window is a seek, not listening - don't
+          // credit it as time listened (same rule the phone's tick uses).
+          recordOfflineProgress(sec, if (elapsed <= 60.0) elapsed else 0.0)
+          return@submit
+        }
+        val id = sid ?: return@submit
+        val base = serverUrl ?: return@submit
+        val tok = token ?: return@submit
+        httpPostSync("$base/api/session/$id/sync", tok, sec, elapsed, absDurationSec)
       } catch (e: Exception) {
         Log.w(TAG, "sync failed: ${e.message}")
       }
+    }
+    if (awaitFinal) awaitSync(task, offline)
+  }
+
+  /**
+   * Wait (briefly) for the final onDestroy sync to land.
+   *
+   * This is the ONE place this service blocks the main thread on purpose, and it
+   * is not a media3 callback - onDestroy is already the teardown path, and the
+   * process can be killed right after it returns, so a fire-and-forget bank of
+   * the last offline position could simply be lost. The budget is deliberately
+   * small: an offline bank is a prefs write (fast), while the online branch is an
+   * 8s+8s HTTP POST that we must NOT sit through - that one keeps the old
+   * fire-and-forget behavior with only a token wait, because ABS also has the
+   * position from the previous throttled sync.
+   */
+  private fun awaitSync(task: java.util.concurrent.Future<*>, offline: Boolean) {
+    try {
+      task.get(if (offline) 1500L else 150L, java.util.concurrent.TimeUnit.MILLISECONDS)
+    } catch (e: Exception) {
+      // Timed out, interrupted, or the task threw: nothing further to do here.
+      Log.w(TAG, "final sync did not complete in time: ${e.message}")
     }
   }
 
@@ -629,7 +784,7 @@ class HearthShelfAutoService : MediaLibraryService() {
     session
 
   override fun onDestroy() {
-    progressHandler.removeCallbacks(progressTick)
+    stopTick()
     // Hand control back to the phone player and tell JS the car is gone, so the
     // phone UI stops mirroring and resumes driving the phone service.
     carControllers.clear()
@@ -638,7 +793,8 @@ class HearthShelfAutoService : MediaLibraryService() {
       HearthShelfAutoModule.emitCarActive(false)
     }
     // Persist the final ABSOLUTE position so closing the car app doesn't lose it.
-    rawPlayer?.let { val abs = absolutePositionMs(it); if (abs > 0) syncProgress(abs, force = true) }
+    // awaitFinal: the offline bank must complete before this process can go away.
+    rawPlayer?.let { val abs = absolutePositionMs(it); if (abs > 0) syncProgress(abs, force = true, awaitFinal = true) }
     session?.run {
       player.release()
       release()
@@ -1264,9 +1420,15 @@ class HearthShelfAutoService : MediaLibraryService() {
    * Refreshes stubs on a ~45s throttle so newly-posted ahead-notes appear.
    */
   private fun checkNotes(player: Player) {
+    // Ordered cheapest-first, deliberately. noteClubId is a volatile field and is
+    // null unless the loaded book actually belongs to a club the user is in - the
+    // common case - so the usual tick now costs one null check instead of the
+    // three prefs lookups (notePopsEnabled, serverUrl, token) it used to do every
+    // second on the main thread before finding out there was nothing to watch.
     val clubId = noteClubId ?: return
-    if (!notePopsEnabled) return
+    val stubs = noteStubs
     val itemId = currentItemId ?: return
+    if (!notePopsEnabled) return
     val base = serverUrl ?: return
     val tok = token ?: return
 
@@ -1291,10 +1453,9 @@ class HearthShelfAutoService : MediaLibraryService() {
     if (prev < 0) { notePrevPosSec = nowSec; return } // seed on first tick
     notePrevPosSec = nowSec
 
-    val stubs = noteStubs
     if (stubs.isEmpty()) return
 
-    val seen = loadNoteSeen(clubId)
+    val seen = noteSeen(clubId)
     val seeked = nowSec < prev || nowSec - prev > 30.0
     val crossed = stubs.filter {
       val t = it.timeSec
@@ -1395,7 +1556,7 @@ class HearthShelfAutoService : MediaLibraryService() {
       this, notifId, replyIntent, pendingIntentFlags(mutable = true),
     )
     val replyAction = NotificationCompat.Action.Builder(
-      resources.getIdentifier("ic_hs_notification", "drawable", packageName),
+      drawableId("ic_hs_notification"),
       "Reply",
       replyPi,
     )
@@ -1416,7 +1577,7 @@ class HearthShelfAutoService : MediaLibraryService() {
       this, notifId + 1, markReadIntent, pendingIntentFlags(),
     )
     val markReadAction = NotificationCompat.Action.Builder(
-      resources.getIdentifier("ic_hs_notification", "drawable", packageName),
+      drawableId("ic_hs_notification"),
       "Mark as read",
       markReadPi,
     )
@@ -1425,7 +1586,7 @@ class HearthShelfAutoService : MediaLibraryService() {
       .build()
 
     val notification = NotificationCompat.Builder(this, NOTE_CHANNEL_ID)
-      .setSmallIcon(resources.getIdentifier("ic_hs_notification", "drawable", packageName))
+      .setSmallIcon(drawableId("ic_hs_notification"))
       .setStyle(messagingStyle)
       .setContentIntent(contentPi)
       .addInvisibleAction(markReadAction)
@@ -1462,6 +1623,25 @@ class HearthShelfAutoService : MediaLibraryService() {
 
   // ---- car-local seen-set (per club, in hearthshelf_auto prefs) ----
 
+  // The loaded seen-set and the club it belongs to. checkNotes runs at 1Hz on the
+  // main thread and used to re-read + re-JSON-parse this out of prefs on EVERY
+  // tick that had stubs to test. This service is the only writer of these keys
+  // (JS keeps its own AsyncStorage set - see noteSeenKey), so an in-memory copy
+  // is authoritative for the life of the process and prefs is just the durable
+  // mirror. Main thread only, like the rest of the tick's state.
+  private var noteSeenClubId: String? = null
+  private var noteSeenCache: LinkedHashSet<String>? = null
+
+  /** The seen-set for a club, loaded from prefs at most once per club. */
+  private fun noteSeen(clubId: String): LinkedHashSet<String> {
+    val cached = noteSeenCache
+    if (cached != null && noteSeenClubId == clubId) return cached
+    val set = loadNoteSeen(clubId)
+    noteSeenClubId = clubId
+    noteSeenCache = set
+    return set
+  }
+
   private fun loadNoteSeen(clubId: String): LinkedHashSet<String> {
     val set = LinkedHashSet<String>()
     val raw = prefs.getString(noteSeenKey(clubId), null) ?: return set
@@ -1478,7 +1658,13 @@ class HearthShelfAutoService : MediaLibraryService() {
     // Keep only the most-recent NOTE_SEEN_CAP ids (insertion order preserved).
     var ids = set.toList()
     if (ids.size > NOTE_SEEN_CAP) ids = ids.subList(ids.size - NOTE_SEEN_CAP, ids.size)
-    prefs.edit().putString(noteSeenKey(clubId), JSONArray(ids).toString()).apply()
+    // Snapshot taken on the caller's thread (so it can't tear while the set keeps
+    // being mutated), serialized + committed on io: the caller is checkNotes, on
+    // the main thread. The in-memory set is what suppresses a duplicate pop
+    // within this run, so the write only has to be durable, not immediate.
+    val payload = JSONArray(ids).toString()
+    val key = noteSeenKey(clubId)
+    io.execute { prefs.edit().putString(key, payload).apply() }
   }
 
   private fun enc(s: String): String = java.net.URLEncoder.encode(s, "UTF-8")
@@ -1627,7 +1813,7 @@ class HearthShelfAutoService : MediaLibraryService() {
       .setIsPlayable(false)
       .setMediaType(mediaType)
     if (iconDrawable != null) {
-      val resId = resources.getIdentifier(iconDrawable, "drawable", packageName)
+      val resId = drawableId(iconDrawable)
       if (resId != 0) {
         meta.setArtworkUri(Uri.parse("android.resource://$packageName/$resId"))
       }

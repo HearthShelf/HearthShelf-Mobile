@@ -70,6 +70,9 @@ interface OfflineSession {
   title: string
   duration: number
   currentTime: number
+  /** Position the session opened at. Kept so a session that never moved and never
+   *  accrued time can be recognised as carrying no information (see bankOffline). */
+  startPosition: number
   /** Real listened-time (seconds) accrued this session. */
   timeListening: number
   startedAt: number
@@ -208,6 +211,10 @@ export async function playItemById(
 
   // Close any prior ABS session first.
   if (active) await safeClose()
+  // An offline session being replaced by a real one has its accrued time on disk
+  // already (every tick banks it), but bank once more so the row carries the true
+  // position at handoff rather than the position at the last tick.
+  if (offline) bankOffline(offline, getState().position)
   offline = null
   lastTickTime = null
 
@@ -268,6 +275,31 @@ async function playFromDownloadOffline(itemId: string, autoPlay = true): Promise
   if (active) await safeClose()
   lastTickTime = null
 
+  // Re-entry for the SAME book continues the SAME banked session instead of
+  // minting a new id.
+  //
+  // The ledger is keyed by session id (see pendingProgress.ts), which is what
+  // stops a second listen from overwriting the first. That keying assumes one id
+  // per LISTEN, but nothing guaranteed one CALL per listen: a native start
+  // failure (BackgroundServiceStartNotAllowedException) had the load retried over
+  // and over, and every retry minted `play_local_${itemId}_${Date.now()}`. Result
+  // was one sitting shattered into six Recent Listens rows seconds apart, each
+  // with a couple of seconds listened and a position slightly BEHIND the last
+  // (each retry re-resumed from the saved spot while the previous fragment had
+  // already banked a little further on).
+  //
+  // How we tell re-entry from a genuinely new listen, without persisting anything:
+  // `offline` is module-level in-memory state. It is non-null only while a live
+  // offline listen is in progress, and it is cleared by stopPlayback() (which
+  // snapshots the final position first) and by switching to a real online session.
+  // A relaunch starts the module fresh, so it is null there too. So "offline is
+  // non-null AND names this same itemId" is exactly "we are still inside one
+  // sitting" - every path that ends a listen has already nulled it, and every
+  // path that starts a later one begins from null. A different itemId falls
+  // through to a brand-new session, which is what keeps the old overwrite bug
+  // fixed.
+  const resumed = offline && offline.itemId === itemId ? offline : null
+
   // Resume from the persisted media-progress spot. Offline there's no ABS session
   // to carry currentTime, so the disk-hydrated progress store (hs.progress.v1) is
   // the only source of "where was I". Without this a downloaded book started
@@ -275,7 +307,12 @@ async function playFromDownloadOffline(itemId: string, autoPlay = true): Promise
   // back over the real saved position through recordLocalProgress, wiping it.
   // resumePositionFor() also decides whether a FINISHED book's saved spot is a
   // real re-listen position or just an end-of-book leftover.
-  const startAt = resumePositionFor(progressFor(itemId))
+  //
+  // On a re-entry, prefer the position the live session already holds. It is at or
+  // ahead of the saved spot (it is what recordLocalProgress has been writing), and
+  // deferring to it means a retry can't drag the listener backwards - which is the
+  // backwards-hopping positions seen in the shattered rows.
+  const startAt = resumed ? resumed.currentTime : resumePositionFor(progressFor(itemId))
 
   const np: NowPlaying = {
     itemId,
@@ -290,17 +327,30 @@ async function playFromDownloadOffline(itemId: string, autoPlay = true): Promise
   }
   loadTrack(np, autoPlay)
   active = null
-  const startedAt = startedNow()
-  offline = {
-    localId: `play_local_${itemId}_${startedAt}`,
-    itemId,
-    title: local.title,
-    duration: local.duration,
-    currentTime: startAt,
-    timeListening: 0,
-    startedAt,
+  if (resumed) {
+    // Keep localId/startedAt/timeListening exactly as they were: the id keeps the
+    // ledger writing to the one row, startedAt keeps the listen dated to when it
+    // actually began, and timeListening carries the seconds already accrued (a
+    // reset here would silently discard them, since the next recordLocalSession
+    // overwrites that row wholesale).
+    resumed.title = local.title
+    resumed.duration = local.duration
+    resumed.currentTime = startAt
+    offline = resumed
+  } else {
+    const startedAt = startedNow()
+    offline = {
+      localId: `play_local_${itemId}_${startedAt}`,
+      itemId,
+      title: local.title,
+      duration: local.duration,
+      currentTime: startAt,
+      startPosition: startAt,
+      timeListening: 0,
+      startedAt,
+    }
   }
-  syncStateStartSession(itemId, startedAt, startAt)
+  syncStateStartSession(itemId, offline.startedAt, startAt)
   // Offline downloaded book: it's banked locally, not on the server yet.
   syncStateFailed()
 }
@@ -308,6 +358,26 @@ async function playFromDownloadOffline(itemId: string, autoPlay = true): Promise
 /** Wall-clock ms; isolated so the one Date.now() call is easy to reason about. */
 function startedNow(): number {
   return Date.now()
+}
+
+/**
+ * Bank the live offline session, unless the record would carry no information at
+ * all: zero listened-time AND no movement off the position it started at.
+ *
+ * Such a record is not merely useless, it is harmful. It shows up in Recent
+ * Listens as a "0:00 listened" row (the fragments in the shattered-session bug
+ * were mostly these), and ABS rejects zero-duration sessions - which sends the
+ * whole flush down pendingProgress's slow one-at-a-time path until the record is
+ * quarantined, holding a ledger slot the whole time.
+ *
+ * The test is deliberately AND, not OR: a listen with real position movement but
+ * under a second of accrued time is a legitimate session (Math.round takes its
+ * timeListening to 0, but ABS still gets the moved position), so movement alone
+ * is enough to bank. Only the truly inert case is dropped.
+ */
+function bankOffline(o: OfflineSession, currentTime: number): void {
+  if (o.timeListening < 1 && Math.round(currentTime) === Math.round(o.startPosition)) return
+  recordLocalSession(offlineSnapshot(o, currentTime))
 }
 
 /** Snapshot the live offline session into the persisted LocalSession shape ABS
@@ -354,7 +424,7 @@ export async function syncProgress(currentTime: number, force = false): Promise<
     // ABS session on reconnect. Stays red (banked, not on the server).
     offline.currentTime = currentTime
     offline.timeListening += listened
-    recordLocalSession(offlineSnapshot(offline, currentTime))
+    bankOffline(offline, currentTime)
     // Advance the shared (persisted) progress store too, so the book's position
     // and progress bar are correct across a cold offline start - the local
     // session alone doesn't feed the progress store the screens read.
@@ -529,7 +599,7 @@ export async function stopPlayback(): Promise<void> {
   if (offline) {
     // Persist the final offline position + listened-time before forgetting which
     // book was playing, so stopping lands the true end point for later replay.
-    recordLocalSession(offlineSnapshot(offline, getState().position))
+    bankOffline(offline, getState().position)
     offline = null
     lastTickTime = null
   }
