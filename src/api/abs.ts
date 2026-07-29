@@ -4,8 +4,12 @@
  * Unlike the web app (which proxies everything through /abs-api on its own
  * origin), the mobile client talks DIRECTLY to the connected server's origin
  * with the per-user ABS token. JSON calls use `Authorization: Bearer`; media
- * URLs (cover, audio stream) carry the token as a `?token=` query param because
- * native players/image loaders can't set headers - same convention ABS uses.
+ * URLs (audio stream) carry the token as a `?token=` query param because native
+ * players can't set headers - same convention ABS uses.
+ *
+ * Covers and author images are the exception: ABS serves those two routes
+ * unauthenticated, so they get token-free URLs to keep the native image cache
+ * from being invalidated every time the token rotates. See coverUrl().
  */
 import { Platform } from 'react-native'
 import { getSession } from './session'
@@ -175,8 +179,34 @@ export function mediaUrl(path: string): string {
   return `${s.serverUrl}${path}${sep}token=${encodeURIComponent(s.token)}`
 }
 
+/**
+ * Cover art URL - deliberately WITHOUT a token, unlike every other media URL.
+ *
+ * ABS whitelists `GET /api/items/:id/cover` (and author images) as
+ * unauthenticated: they sit in `Auth.ignorePatterns`, so `ifAuthNeeded` calls
+ * next() without ever consulting a credential. Verified against ABS 2.35.1
+ * (server/Auth.js).
+ *
+ * WHY it matters that we leave the token off: the native image loader (Fresco on
+ * Android) keys its disk+memory cache on the FULL url. Baking in the rotating ABS
+ * token meant that any time the token changed, every cover URI in the app changed
+ * with it, orphaning the entire cover cache - so every visible cover was
+ * re-downloaded and re-decoded at once. That decode burst is heap pressure we were
+ * paying for a query param ABS does not even read here.
+ *
+ * `?ts` is ABS's own opt-in for a cacheable response (it sets
+ * `Cache-Control: private, max-age=86400`), but it takes the item's mtime, which
+ * a render-path helper with only an id cannot know. Omitted rather than faked: a
+ * wrong/rotating ts value would re-introduce exactly the churn this fixes.
+ *
+ * Still returns '' with no session so callers degrade to fallback art: the URL
+ * needs no token, but the server ORIGIN comes from the session, and a
+ * half-built URL against no server is worse than the typeset cover.
+ */
 export function coverUrl(itemId: string): string {
-  return mediaUrl(`/api/items/${itemId}/cover`)
+  const s = getSession()
+  if (!s) return ''
+  return `${s.serverUrl}/api/items/${encodeURIComponent(itemId)}/cover`
 }
 
 /** Tokenized URL to download a set of items as a single zip (bulk download).
@@ -257,9 +287,14 @@ export async function getLibraryAuthors(libraryId: string): Promise<ABSLibraryAu
   return data.authors ?? []
 }
 
-/** ABS author photo (token-bearing). '' when disconnected; falls back to initials. */
+/** ABS author photo. Token-free for the same reason as coverUrl - author images
+ *  are the other entry in ABS's auth bypass list, and a rotating token in the URL
+ *  would re-key the image cache on every reconnect. '' when disconnected; falls
+ *  back to initials. */
 export function authorImageUrl(authorId: string): string {
-  return mediaUrl(`/api/authors/${authorId}/image`)
+  const s = getSession()
+  if (!s) return ''
+  return `${s.serverUrl}/api/authors/${encodeURIComponent(authorId)}/image`
 }
 
 /** HearthShelf's custom narrator photo (NOT ABS - lives at /hs/narrators/:name/image),
