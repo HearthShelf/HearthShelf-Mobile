@@ -20,6 +20,7 @@ import {
   ABSRequestError,
 } from '@/api/abs'
 import { getSession } from '@/api/session'
+import type { ABSMediaProgress } from '@hearthshelf/core'
 import { progressFor, recordLocalProgress } from '@/store/progress'
 import { loadTrack, getState, type NowPlaying, type ChapterMark } from './store'
 import { localSourceFor, applyAutoDownloads } from './downloads'
@@ -86,6 +87,53 @@ let lastTickTime: number | null = null
 const MAX_TICK_GAP = 10
 /** Sync to the server once this much real listened-time has accrued. */
 const SYNC_LISTENED_THRESHOLD = 15
+
+/** How far into a book a FINISHED book's saved position has to sit before we
+ *  treat it as a leftover end-of-book marker rather than a real re-listen spot.
+ *  A book you listened to the end of parks its position in the last few percent
+ *  (ABS marks finished at the end, and our own removeDownloadOnFinish path fires
+ *  from there too), so anything past this line is "you're done", not "you're
+ *  here". 90% is deliberately loose: it comfortably covers credits/outro tracks
+ *  and books ABS marked finished a little short of the true end, while a genuine
+ *  re-listen has to get 90% of the way through again before it stops resuming -
+ *  and at that point restarting costs the listener almost nothing. */
+const FINISHED_RELISTEN_MAX_PROGRESS = 0.9
+
+/**
+ * Where a book should start, given its saved media progress. Returns 0 for "start
+ * at the beginning".
+ *
+ * Unfinished books simply resume at their saved spot. Finished books are the
+ * subtle case, and both play paths must agree on it - hence one helper.
+ * recordLocalProgress() keeps writing position for a finished book (so an offline
+ * re-listen has somewhere to resume FROM) while deliberately leaving isFinished
+ * true, so isFinished alone can no longer mean "ignore the saved position". But
+ * we still can't resume every finished book: a book you just finished has its
+ * position parked at the end, and tapping it should start it over, not drop you
+ * in the credits. So decide on how far through the saved position sits - early or
+ * mid-book on a finished book means the listener already restarted it and is
+ * genuinely partway through a re-listen.
+ *
+ * Duration is the denominator and offline rows can be sparse, so fall back to the
+ * server-supplied `progress` fraction when duration is missing/0, and refuse to
+ * resume a finished book when neither is usable (starting over is the safe wrong
+ * answer; landing at the credits is the bad one).
+ */
+function resumePositionFor(saved: ABSMediaProgress | undefined): number {
+  if (!saved || !(saved.currentTime > 0)) return 0
+  if (!saved.isFinished) return saved.currentTime
+  // A finished book reads as progress 1 in our own store regardless of where the
+  // re-listen sits, so derive the fraction from currentTime/duration first and
+  // only fall back to `progress` when there's no usable duration.
+  const fraction =
+    saved.duration > 0
+      ? saved.currentTime / saved.duration
+      : saved.progress > 0 && saved.progress < 1
+        ? saved.progress
+        : null
+  if (fraction === null) return 0
+  return fraction < FINISHED_RELISTEN_MAX_PROGRESS ? saved.currentTime : 0
+}
 
 /**
  * Coerce raw chapter data from the server (or a local download) into well-typed
@@ -170,10 +218,7 @@ export async function playItemById(
   // first progress tick would sync 0 back over the real server position and
   // wipe it. The saved progress is the same value ABS shows on tiles.
   let startAt = session.currentTime > 0 ? session.currentTime : 0
-  if (startAt === 0) {
-    const saved = progressFor(itemId)
-    if (saved && !saved.isFinished && saved.currentTime > 0) startAt = saved.currentTime
-  }
+  if (startAt === 0) startAt = resumePositionFor(progressFor(itemId))
   const np: NowPlaying = {
     itemId,
     sessionId: session.id,
@@ -228,8 +273,9 @@ async function playFromDownloadOffline(itemId: string, autoPlay = true): Promise
   // the only source of "where was I". Without this a downloaded book started
   // offline always began at 0 - and worse, the first progress tick synced that 0
   // back over the real saved position through recordLocalProgress, wiping it.
-  const saved = progressFor(itemId)
-  const startAt = saved && !saved.isFinished && saved.currentTime > 0 ? saved.currentTime : 0
+  // resumePositionFor() also decides whether a FINISHED book's saved spot is a
+  // real re-listen position or just an end-of-book leftover.
+  const startAt = resumePositionFor(progressFor(itemId))
 
   const np: NowPlaying = {
     itemId,

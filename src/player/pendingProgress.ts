@@ -27,8 +27,9 @@
  * Plain subscribe/snapshot store (same shape as the other stores).
  */
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { syncLocalSessions, type LocalSession } from '@/api/abs'
+import { ABSRequestError, syncLocalSession, syncLocalSessions, type LocalSession } from '@/api/abs'
 import { getSession } from '@/api/session'
+import { breadcrumb } from '@/lib/crashLog'
 import { notifyServerReached } from './syncState'
 
 export interface PendingSessionState {
@@ -131,16 +132,56 @@ export function recordLocalSession(session: LocalSession): void {
     const oldest = [...byId.values()]
       .sort((a, b) => a.updatedAt - b.updatedAt)
       .slice(0, byId.size - MAX_PENDING)
-    for (const s of oldest) if (s.id !== session.id) byId.delete(s.id)
+    let dropped = 0
+    for (const s of oldest) {
+      if (s.id !== session.id && byId.delete(s.id)) {
+        dropped++
+        forgetFailures(s.id)
+      }
+    }
+    // Destroying banked offline listening with nothing on screen to show it was
+    // the original bug this store was re-keyed to fix (see the module header), and
+    // the ceiling reintroduces that shape. Nothing can be surfaced in the UI from
+    // here, so at minimum leave a trail: if this crumb ever appears in a crash
+    // report, real listening was thrown away and the cap needs revisiting.
+    if (dropped > 0) {
+      breadcrumb('pending', `evicted ${dropped} banked session(s) at cap ${MAX_PENDING}`)
+    }
   }
   emit(byId)
   persist()
+}
+
+/** How many times ABS may REJECT one session before we stop replaying it.
+ *
+ *  A record ABS refuses (duration 0, a library item that's since been deleted) is
+ *  never going to be accepted, and every flush that includes it used to fail the
+ *  whole batch, so one poison session blocked every other banked listen forever -
+ *  and held a slot while the cap evicted good ones. Retry a couple of times in case
+ *  the rejection was transient (mid-scan library, a 5xx), then drop it. */
+const MAX_SEND_FAILURES = 3
+
+/** Rejection counts keyed by session id. Deliberately NOT persisted: a relaunch
+ *  retrying a bad record a few more times is harmless and costs nothing, whereas
+ *  writing counters to disk would mean a schema migration on the stored payload. */
+const sendFailures = new Map<string, number>()
+
+function forgetFailures(sessionId: string): void {
+  sendFailures.delete(sessionId)
 }
 
 /**
  * Replay every pending session to ABS, clearing each on success and keeping it on
  * failure (so a partial network blip retries next time). No-op when there's no
  * session (still offline) or nothing pending. Safe to call repeatedly.
+ *
+ * Two failure modes, handled differently:
+ *  - UNREACHABLE (plain Error, no status): the network went away mid-flush. Keep
+ *    everything and retry on the next reconnect/background pass.
+ *  - REJECTED (ABSRequestError): the server was reached and said no, so the
+ *    PAYLOAD is at fault, not the link. /local-all is all-or-nothing, so resend
+ *    one at a time: the good sessions land and only the genuinely-bad records stay
+ *    behind, quarantined after MAX_SEND_FAILURES rather than blocking forever.
  *
  * Returns true when there was nothing to send OR everything sent, false when a
  * send was attempted and failed - so a manual retry (the sync sheet) can tell the
@@ -151,27 +192,74 @@ export async function flushPendingProgress(): Promise<boolean> {
   const items = [...state.byId.values()]
   if (!items.length) return true
 
+  /** Sessions ABS accepted (or permanently refused) and that can leave the store. */
+  const settled: LocalSession[] = []
+  let allSent = true
+
   try {
     await syncLocalSessions(items)
-  } catch {
-    // Leave everything pending; the next reconnect/background pass retries.
-    return false
-  }
-  // Reaching ABS is proof the server is up: let a stale offline connection phase
-  // recover even when there's no live session driving syncStateSynced.
-  notifyServerReached()
+    settled.push(...items)
+  } catch (err) {
+    if (!(err instanceof ABSRequestError)) {
+      // Couldn't reach the server. Leave everything pending untouched.
+      return false
+    }
+    // Server reached and it refused the batch. Reaching it at all still proves it
+    // is up, and the per-session pass below needs that recorded even if every
+    // record turns out to be bad.
+    notifyServerReached()
+    allSent = false
 
-  // All ingested in one call - clear the sessions we just sent, but only if they
-  // haven't been written again since (a live offline listen keeps updating its
-  // own record while the flush is in flight).
+    for (const item of items) {
+      try {
+        await syncLocalSession(item)
+        settled.push(item)
+        forgetFailures(item.id)
+      } catch (single) {
+        if (!(single instanceof ABSRequestError)) {
+          // Network dropped partway through the one-at-a-time pass. Stop here and
+          // let the next flush retry whatever is left; the ones already accepted
+          // are cleared below.
+          break
+        }
+        const failures = (sendFailures.get(item.id) ?? 0) + 1
+        if (failures >= MAX_SEND_FAILURES) {
+          // Give up on this record. Dropping it is the lesser evil: it can never
+          // sync, and keeping it means it consumes a slot and forces every future
+          // flush down this slow one-at-a-time path.
+          breadcrumb(
+            'pending',
+            `quarantined session ${item.id} after ${failures} rejections (status ${single.status})`,
+          )
+          settled.push(item)
+          forgetFailures(item.id)
+        } else {
+          sendFailures.set(item.id, failures)
+        }
+      }
+    }
+  }
+
+  if (allSent) {
+    // Reaching ABS is proof the server is up: let a stale offline connection phase
+    // recover even when there's no live session driving syncStateSynced.
+    notifyServerReached()
+  }
+
+  // Clear the sessions that are done with, but only if they haven't been written
+  // again since (a live offline listen keeps updating its own record while the
+  // flush is in flight).
   const byId = new Map(state.byId)
-  for (const sent of items) {
+  for (const sent of settled) {
     const cur = byId.get(sent.id)
-    if (cur && cur.updatedAt <= sent.updatedAt) byId.delete(sent.id)
+    if (cur && cur.updatedAt <= sent.updatedAt) {
+      byId.delete(sent.id)
+      forgetFailures(sent.id)
+    }
   }
   emit(byId)
   persist()
-  return true
+  return allSent
 }
 
 // ---------------------------------------------------------------------------

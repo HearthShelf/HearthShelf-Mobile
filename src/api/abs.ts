@@ -607,6 +607,17 @@ export async function syncLocalSessions(sessions: LocalSession[]): Promise<void>
   })
 }
 
+/** Replay ONE locally-recorded session. Same endpoint, batch of one.
+ *
+ *  ABS rejects or accepts the whole /local-all batch, so a single bad record (a
+ *  deleted library item, a zero duration) fails every good session banked
+ *  alongside it - forever, since a failed flush clears nothing. The pending-store
+ *  flush falls back to this on a server REJECTION so the good ones land and only
+ *  the genuinely-bad record stays behind. */
+export async function syncLocalSession(session: LocalSession): Promise<void> {
+  await syncLocalSessions([session])
+}
+
 /** Title/author helpers tolerant of ABS's nullable metadata. */
 export function itemTitle(item: ABSLibraryItem): string {
   return item.media.metadata.title || 'Untitled'

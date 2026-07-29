@@ -77,18 +77,34 @@ export async function hydrateProgress(): Promise<void> {
  * Write a single item's live position into the store (and to disk) without a
  * server round-trip. Used by offline playback so a downloaded book's progress
  * bar advances and persists across a cold start while there's no network.
+ *
+ * A finished book keeps its finished flag but still records position. This used
+ * to early-return on isFinished, which threw away every tick of a re-listen -
+ * and since offline resume reads this store and skips finished books, a
+ * re-listened book restarted from 0 on each cold start (online, the real ABS
+ * session's currentTime masked it). Un-finishing here would be the wrong fix:
+ * a local tick is not the user saying "I'm not done", it would fight the
+ * server's own finished state on the next refresh, and it would let a stray tick
+ * undo the removeDownloadOnFinish cleanup. So position advances, finished stays
+ * - only an explicit markItemsFinished(false) clears the flag.
  */
 export function recordLocalProgress(itemId: string, currentTime: number, duration: number): void {
   if (!itemId) return
   const prev = state.byId.get(itemId)
-  if (prev?.isFinished) return
   const next = new Map(state.byId)
+  const total = duration || prev?.duration || 0
   next.set(itemId, {
     libraryItemId: itemId,
-    duration: duration || prev?.duration || 0,
+    duration: total,
     currentTime,
-    progress: duration > 0 ? Math.min(currentTime / duration, 1) : (prev?.progress ?? 0),
-    isFinished: false,
+    // A finished book reads as 100% regardless of where the re-listen sits, so
+    // shelves and tiles don't show it sliding backwards from complete.
+    progress: prev?.isFinished
+      ? 1
+      : duration > 0
+        ? Math.min(currentTime / duration, 1)
+        : (prev?.progress ?? 0),
+    isFinished: prev?.isFinished === true,
   })
   emit(next)
 }

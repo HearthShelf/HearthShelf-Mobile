@@ -22,6 +22,19 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { ABSBookmark } from '@hearthshelf/core'
 import { createBookmark, deleteBookmark } from '@/api/abs'
 import { getSession } from '@/api/session'
+import { isOfflineMode } from '@/player/syncState'
+
+/**
+ * Can we actually reach ABS right now? A session object surviving into offline
+ * mode does NOT mean the server is reachable - entering offline mode keeps the
+ * last session around. Gating on `getSession()` alone made every offline
+ * bookmark write burn a full ABS_TIMEOUT_MS (6s) before banking, so saving a
+ * bookmark with no signal felt hung and the sync sheet's retry stalled to report
+ * a failure it already knew. Same check playback.ts uses.
+ */
+function canReachServer(): boolean {
+  return !!getSession() && !isOfflineMode()
+}
 
 /** A create that hasn't been confirmed by the server yet. */
 export interface PendingBookmark {
@@ -151,7 +164,7 @@ export async function addBookmarkPending(
     deletes: state.deletes.filter((d) => keyOf(d.libraryItemId, d.time) !== k),
   })
 
-  if (!getSession()) return false
+  if (!canReachServer()) return false
   try {
     await createBookmark(libraryItemId, t, title)
   } catch {
@@ -191,7 +204,7 @@ export async function removeBookmarkPending(libraryItemId: string, time: number)
     ],
   })
 
-  if (!getSession()) return false
+  if (!canReachServer()) return false
   try {
     await deleteBookmark(libraryItemId, t)
   } catch {
@@ -247,7 +260,7 @@ export async function moveBookmarkPending(
   ]
   emit({ creates, deletes })
 
-  if (!getSession()) return false
+  if (!canReachServer()) return false
 
   let ok = true
   if (!sameSpot && !originUnconfirmed) {
@@ -275,13 +288,15 @@ export async function moveBookmarkPending(
 
 /**
  * Replay every pending bookmark write to ABS, clearing each on success and
- * keeping it on failure. No-op with no session (still offline) or nothing
- * pending. Safe to call repeatedly.
+ * keeping it on failure. No-op while unreachable (no session, or offline mode
+ * declared) or with nothing pending. Safe to call repeatedly.
  *
- * Returns true when there was nothing to send OR everything sent.
+ * Returns true when there was nothing to send OR everything sent. Unreachable
+ * returns false even with an empty queue - the sync sheet reads that as "could
+ * not sync", which is the honest answer while offline.
  */
 export async function flushPendingBookmarks(): Promise<boolean> {
-  if (!getSession()) return false
+  if (!canReachServer()) return false
   const creates = [...state.creates]
   const deletes = [...state.deletes]
   if (!creates.length && !deletes.length) return true

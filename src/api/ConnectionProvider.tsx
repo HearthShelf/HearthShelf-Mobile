@@ -34,7 +34,13 @@ import { refreshSubscriptions } from '@/player/subscriptions'
 import { ensurePushRegistered } from '@/player/pushRegister'
 import { startClubSync } from '@/player/clubSync'
 import { ensureDeviceId, getSettingsState, subscribeSettings } from '@/store/settings'
-import { hydrateDownloads, getDownloadsState, subscribeDownloads } from '@/player/downloads'
+import {
+  hydrateDownloads,
+  getDownloadsState,
+  subscribeDownloads,
+  applyAutoDownloadsOnReconnect,
+} from '@/player/downloads'
+import { getQueueState } from '@/player/queue'
 import { hydrateCatalog, backfillCatalog } from '@/player/offlineCatalog'
 import { getItemDetail, getLibrarySeries } from './abs'
 import {
@@ -204,8 +210,12 @@ interface ConnectionValue {
   /** Is there anything downloaded to go offline WITH? Gates the splash's
    *  "Enter offline mode" - it's not an escape hatch if it leads nowhere. */
   canGoOffline: boolean
-  /** Connect to a specific linked server (from the picker). */
-  connectTo: (server: SplashServer) => void
+  /** Connect to a specific linked server (from the picker). Resolves once the
+   *  connect has settled, so a caller can wait before navigating - the server
+   *  settings screen relies on that to avoid leaving before the session points at
+   *  the server the user just picked. Never rejects: connectTo resolves the
+   *  failure into an `offline`/`error` phase instead. */
+  connectTo: (server: SplashServer) => Promise<void>
   /** Redeem a typed invite code, then connect. Resolves to a user-facing error
    *  message, or null on success (the connect flow takes over from there). */
   redeemInvite: (code: string) => Promise<string | null>
@@ -384,6 +394,21 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     }
   }, [])
 
+  // The user has explicitly said "I know I'm offline, let me in" and we haven't
+  // been asked to go back online since. Latched by enterOffline, cleared by
+  // Retry (and by a fresh sign-in), and read by connectTo's success path so a
+  // connect that lands AFTER that choice can't silently overrule it.
+  //
+  // Deliberately NOT set by dropToOffline: that's us guessing from a failed
+  // probe, not the user deciding, so it should still auto-recover to `ready`.
+  const userChoseOffline = useRef(false)
+
+  // A connect SUCCEEDED while the user was holding the offline screen. The banner
+  // stays (their choice), but the server is genuinely reachable, so the non-React
+  // modules must not be told we're offline. Kept as state, not a ref, because the
+  // effect that mirrors offline mode has to re-run when it flips.
+  const [connectedOffline, setConnectedOffline] = useState(false)
+
   const connectTo = useCallback(
     async (server: LinkedServer | SplashServer, opts?: { quiet?: boolean }) => {
       // A retry from offline mode stays on the banner (quiet) rather than flipping
@@ -430,11 +455,40 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         // misses the common case (open the app, lose the network, look for your
         // listens). One request, best-effort.
         void refreshSessionCache()
+        // Re-apply auto-download prefs now that a server is reachable. Prefetch
+        // needs an ABS session to enumerate tracks, so it can only ever run
+        // online - and the only other triggers are user actions (start a book,
+        // change a pref). Without this, someone who set "keep the next 3
+        // downloaded", drove out of signal and came back has no prefetch until
+        // they happen to start something, which is precisely backwards: the
+        // point was to be ready BEFORE the next trip. Best-effort like its
+        // neighbors; autoDownload() already skips anything done/in-flight and
+        // honors the storage cap, so re-running on every connect is free.
+        applyAutoDownloadsOnReconnect(() => getQueueState().items)
         // The picker path (SplashServer) has no role; only linked-server objects
         // carry it. Fall back to 'user' so admin UI stays hidden when unknown.
         setActiveRole('role' in server && server.role === 'admin' ? 'admin' : 'user')
+        // Everything above still runs when the user chose offline mode - they ARE
+        // online now, so their listening should sync and their queue should
+        // refresh. Only the SCREEN respects the choice: flipping to `ready` here
+        // would yank someone who explicitly asked for their downloaded books into
+        // the online app mid-listen, which is the "don't silently overwrite what
+        // the user chose" rule. Retry is on the banner the whole time and clears
+        // the latch, so going back online stays one obvious tap away.
+        if (userChoseOffline.current) {
+          // Hold the screen, but record that the server IS reachable so offline
+          // mode is not mirrored out to playback/bookmarks/detail (see the
+          // setOfflineMode effect).
+          setConnectedOffline(true)
+          return
+        }
+        setConnectedOffline(false)
         setStatus({ phase: 'ready', serverName: server.name })
       } catch (e) {
+        // The server is not reachable after all (or stopped being): drop any
+        // "connected behind the offline banner" claim so playback goes back to the
+        // local path instead of trying a dead server on every action.
+        setConnectedOffline(false)
         // A failed connect to a specific server drops to offline mode whenever
         // there's downloaded content - whether it was a quiet (offline-origin)
         // retry or the user picking a server that turns out unreachable (e.g.
@@ -709,11 +763,22 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   /**
    * The user telling us what we can't detect: "I know I'm offline, let me in."
    *
-   * Doesn't cancel the connect in flight - if it lands, `ready` takes over and
-   * they're online after all. This is about not making someone who already knows
-   * their server is down watch a spinner run out its retries.
+   * Doesn't cancel the connect in flight - it may still be useful, and letting it
+   * finish is what keeps their listening syncing. But it no longer gets to move
+   * them to `ready`: this is a deliberate choice, and a late connect landing
+   * seconds later would otherwise undo it (see the latch at connectTo). This is
+   * about not making someone who already knows their server is down watch a
+   * spinner run out its retries, and then not overruling them when it does.
    */
   const enterOffline = useCallback(() => {
+    // Latch outside the updater: a setStatus updater must stay pure (React may run
+    // it more than once), and this is a side effect. Setting it unconditionally is
+    // safe - it only has meaning while the phase is `offline`, and every explicit
+    // "go online" path clears it.
+    userChoseOffline.current = true
+    // A fresh choice starts from "the server is not known to be reachable"; only a
+    // connect that actually lands sets this back.
+    setConnectedOffline(false)
     setStatus((cur) => (cur.phase === 'connecting' ? { phase: 'offline' } : cur))
   }, [])
 
@@ -724,6 +789,10 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   // loading, and the redirect to /sign-in takes over.
   useEffect(() => {
     if (!effectiveSignedIn) {
+      // A fresh sign-out/sign-in is a clean slate; a previous session's offline
+      // choice must not follow the next user into their launch.
+      userChoseOffline.current = false
+      setConnectedOffline(false)
       setStatus({ phase: 'connecting' })
       return
     }
@@ -791,9 +860,19 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   // decide whether to try the server or go straight to local files. Done as one
   // effect on the resolved phase rather than at each setStatus site, so it can't
   // drift out of sync as phases are added.
+  //
+  // This tracks whether the SERVER IS REACHABLE, which is not the same thing as
+  // which screen the user is on. When someone chooses "Enter offline mode" and the
+  // connect then lands, we hold the offline SCREEN (see the userChoseOffline latch
+  // at connectTo) but a real session now exists - and telling playback we're
+  // offline in that state would be a lie with teeth: it would bank listening as
+  // pending sessions, bank bookmarks, and refuse to load book detail from a server
+  // sitting right there. So a landed connect clears offline mode even while the
+  // banner stays up.
+  const sessionLanded = status.phase === 'ready' || connectedOffline
   useEffect(() => {
-    setOfflineMode(status.phase === 'offline')
-  }, [status.phase])
+    setOfflineMode(status.phase === 'offline' && !sessionLanded)
+  }, [status.phase, sessionLanded])
 
   // Watch connectivity for the whole signed-in lifetime: when the network
   // returns (incl. a Wi-Fi<->cellular handoff) while we're not `ready`, retry the
@@ -834,6 +913,25 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   const serverName = status.phase === 'ready' ? status.serverName : null
 
   /**
+   * The server picker's connect: the same explicit "get me onto this server"
+   * intent as Retry, so it releases the offline-mode latch. The internal caller
+   * (runConnect) uses connectTo directly and deliberately does NOT clear it - an
+   * automatic reconnect is not the user changing their mind.
+   *
+   * Returns connectTo's promise rather than firing and forgetting: the server
+   * settings screen awaits this so it only navigates once the session actually
+   * points at the newly chosen server.
+   */
+  const connectToExplicit = useCallback(
+    (server: SplashServer): Promise<void> => {
+      userChoseOffline.current = false
+      setConnectedOffline(false)
+      return connectTo(server)
+    },
+    [connectTo],
+  )
+
+  /**
    * Redeem a code the user typed on the no-servers screen. Unlike the deep-link
    * path in runConnect (which swallows failures and falls through), this is a
    * deliberate user action, so every failure needs its own plain-language
@@ -852,6 +950,10 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         }
         return 'Something went wrong. Check your connection and try again.'
       }
+      // Typing an invite code is an explicit "get me onto this server", so it
+      // releases the offline-mode latch the same way Retry does.
+      userChoseOffline.current = false
+      setConnectedOffline(false)
       void connect()
       return null
     },
@@ -864,10 +966,20 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         status,
         serverName,
         activeRole,
-        retry: () => void connect(),
+        // Retry IS the user asking to go back online, so it releases the
+        // offline-mode latch enterOffline set - otherwise the fix for "a late
+        // connect overrules my choice" would also break the one control on the
+        // offline banner. Only this explicit path clears it: the NetInfo watcher
+        // and foreground probe call connect() too, and a network edge is not the
+        // user changing their mind.
+        retry: () => {
+          userChoseOffline.current = false
+          setConnectedOffline(false)
+          void connect()
+        },
         enterOffline,
         canGoOffline,
-        connectTo,
+        connectTo: connectToExplicit,
         redeemInvite,
       }}
     >

@@ -36,6 +36,7 @@ import {
   removeCatalogItem,
   backfillFromDownloads,
 } from './offlineCatalog'
+import { subscribeQueue } from './queue'
 
 export interface DownloadedTrack {
   index: number
@@ -78,6 +79,14 @@ export interface AutoDownloadCandidate {
   author: string
 }
 
+/** The subset of a queue entry auto-download needs. Kept structural rather than
+ *  importing QueueEntry so this module doesn't depend on the queue's full shape. */
+export interface AutoDownloadQueueEntry {
+  libraryItemId: string
+  title: string
+  author?: string
+}
+
 /** Sentinel for "no cap - use any available space" (the slider's far right). */
 export const UNLIMITED_BYTES = -1
 
@@ -88,6 +97,10 @@ export interface DownloadsState {
   auto: AutoDownloadPrefs
 }
 
+/** How long a post-connect prefetch waits for the queue sync's pull to land before
+ *  giving up on it. Bounded so this never becomes a standing subscription. */
+const QUEUE_SETTLE_MS = 30000
+
 const STORE_KEY = 'hs.downloads.v1'
 const DEFAULT_MAX_BYTES = UNLIMITED_BYTES
 const DEFAULT_AUTO: AutoDownloadPrefs = { onStart: false, queueAhead: 0, continueListening: true }
@@ -97,6 +110,11 @@ const listeners = new Set<() => void>()
 // Live resumables, so a download can be cancelled. Not persisted.
 const active = new Map<string, DownloadResumable>()
 let latestContinueListening: AutoDownloadCandidate[] = []
+// The single pending "wait for the queue pull after a reconnect" (see
+// applyAutoDownloadsOnReconnect). Module-level so repeat reconnects replace the
+// wait instead of stacking subscriptions and timers.
+let queueSettleTimer: ReturnType<typeof setTimeout> | null = null
+let queueSettleUnsub: (() => void) | null = null
 
 function emit(next: Partial<DownloadsState>): void {
   state = { ...state, ...next }
@@ -160,7 +178,10 @@ export async function hydrateDownloads(): Promise<void> {
         healed = true
         continue
       }
-      if (rebased.coverUri !== e.coverUri || rebased.tracks.some((t, i) => t.uri !== e.tracks[i]?.uri)) {
+      if (
+        rebased.coverUri !== e.coverUri ||
+        rebased.tracks.some((t, i) => t.uri !== e.tracks[i]?.uri)
+      ) {
         healed = true
       }
       byId.set(e.itemId, rebased)
@@ -304,29 +325,22 @@ export async function downloadItem(itemId: string, title: string, author: string
     for (const track of audioTracks) {
       const ext = extFor(track.mimeType, track.contentUrl)
       const dest = new File(dir, `track-${track.index}.${ext}`)
-      const resumable = createDownloadResumable(
-        mediaUrl(track.contentUrl),
-        dest.uri,
-        {},
-        (p) => {
-          const trackFrac =
-            p.totalBytesExpectedToWrite > 0
-              ? p.totalBytesWritten / p.totalBytesExpectedToWrite
-              : 0
-          // Weight each track by its share of the book's duration.
-          const doneDuration = downloaded.reduce((s, t) => s + t.duration, 0)
-          const overall = (doneDuration + trackFrac * track.duration) / totalDuration
-          patch(itemId, {
-            progress: Math.min(0.999, overall),
-            bytes: cumulativeBytes + p.totalBytesWritten,
-          })
-        },
-      )
+      const resumable = createDownloadResumable(mediaUrl(track.contentUrl), dest.uri, {}, (p) => {
+        const trackFrac =
+          p.totalBytesExpectedToWrite > 0 ? p.totalBytesWritten / p.totalBytesExpectedToWrite : 0
+        // Weight each track by its share of the book's duration.
+        const doneDuration = downloaded.reduce((s, t) => s + t.duration, 0)
+        const overall = (doneDuration + trackFrac * track.duration) / totalDuration
+        patch(itemId, {
+          progress: Math.min(0.999, overall),
+          bytes: cumulativeBytes + p.totalBytesWritten,
+        })
+      })
       active.set(itemId, resumable)
       const result = await resumable.downloadAsync()
       active.delete(itemId)
       if (!result) throw new Error('download_cancelled')
-      const info = dest.exists ? dest.size ?? 0 : 0
+      const info = dest.exists ? (dest.size ?? 0) : 0
       cumulativeBytes += info
       downloaded.push({
         index: track.index,
@@ -478,7 +492,8 @@ export function setAutoPrefs(patch: Partial<AutoDownloadPrefs>): void {
  *  the size cap (if any) isn't already exceeded. Silent - for auto-download. */
 export function autoDownload(itemId: string, title: string, author: string): void {
   const cur = state.byId.get(itemId)
-  if (cur && (cur.status === 'done' || cur.status === 'downloading' || cur.status === 'queued')) return
+  if (cur && (cur.status === 'done' || cur.status === 'downloading' || cur.status === 'queued'))
+    return
   if (state.maxBytes === 0) return
   if (state.maxBytes > 0 && totalBytes() >= state.maxBytes) return
   void downloadItem(itemId, title, author)
@@ -496,7 +511,7 @@ export function downloadsAllowed(): boolean {
  */
 export function applyAutoDownloads(input: {
   nowPlaying?: { itemId: string; title: string; author: string } | null
-  queue?: { libraryItemId: string; title: string; author?: string }[]
+  queue?: AutoDownloadQueueEntry[]
   continueListening?: AutoDownloadCandidate[]
 }): void {
   const { auto } = state
@@ -518,6 +533,63 @@ export function applyAutoDownloads(input: {
 export function setAutoDownloadContinueListening(items: AutoDownloadCandidate[]): void {
   latestContinueListening = items
   applyAutoDownloads({ continueListening: latestContinueListening })
+}
+
+/**
+ * Re-apply the auto-download prefs now that a server is reachable again.
+ *
+ * downloadItem() needs an ABS play session to enumerate tracks, so prefetch is
+ * inherently online-only - which means the trip that most needs it (drive out of
+ * signal and come back) is exactly the one that never got it. Every other trigger
+ * is a user action (starting a book, toggling a pref) or a queue change, so a
+ * reconnect could leave "keep the next N downloaded" unhonored indefinitely.
+ *
+ * The queue is the wrinkle: the connect flow starts its queue sync in the same
+ * breath, and that pull is asynchronous, so `items` is still empty the instant
+ * connect finishes. Rather than poll for it, apply twice - once immediately (so
+ * onStart/continueListening prefetch doesn't wait on a network round-trip that
+ * may never land) and once more on the first queue change, which is the queue
+ * sync's pull arriving. The second pass is a ONE-SHOT subscription that also
+ * self-cancels on a timer, so a connect against a server whose queue never
+ * changes leaves nothing subscribed and nothing running.
+ *
+ * Safe to call on every connect: autoDownload() no-ops for done/downloading/
+ * queued items and honors the size cap, so repeats can't double-download.
+ */
+export function applyAutoDownloadsOnReconnect(queueItems: () => AutoDownloadQueueEntry[]): void {
+  // Nothing to do at all when the user has storage set to Off, or hasn't enabled
+  // any prefetch pref - don't arm a subscription for it.
+  const { auto } = state
+  if (!downloadsAllowed()) return
+  if (!auto.queueAhead && !auto.continueListening) return
+
+  applyAutoDownloads({ queue: queueItems(), continueListening: latestContinueListening })
+  if (!auto.queueAhead) return
+
+  // Only ever one pending wait: reconnects can fire in bursts (a NetInfo edge, a
+  // foreground probe, and a Clerk flip can all land together), and arming a fresh
+  // subscription + timer per call would stack them.
+  cancelQueueSettleWait()
+  const settle = () => {
+    cancelQueueSettleWait()
+  }
+  // The pull may legitimately produce no change (queue unchanged since last run),
+  // so the wait has to end on its own rather than linger for the session.
+  queueSettleTimer = setTimeout(settle, QUEUE_SETTLE_MS)
+  queueSettleUnsub = subscribeQueue(() => {
+    settle()
+    applyAutoDownloads({ queue: queueItems() })
+  })
+}
+
+/** Tear down any pending post-connect queue wait (see above). */
+function cancelQueueSettleWait(): void {
+  if (queueSettleTimer) {
+    clearTimeout(queueSettleTimer)
+    queueSettleTimer = null
+  }
+  queueSettleUnsub?.()
+  queueSettleUnsub = null
 }
 
 /** Build a NowPlaying-shaped source from a completed download, or null if the
