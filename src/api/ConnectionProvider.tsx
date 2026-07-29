@@ -34,7 +34,12 @@ import { startQueueSync } from '@/player/queueSync'
 import { refreshSubscriptions } from '@/player/subscriptions'
 import { ensurePushRegistered } from '@/player/pushRegister'
 import { startClubSync } from '@/player/clubSync'
-import { ensureDeviceId, getSettingsState, subscribeSettings } from '@/store/settings'
+import {
+  ensureDeviceId,
+  getSettingsState,
+  hydrateSettings,
+  subscribeSettings,
+} from '@/store/settings'
 import {
   hydrateDownloads,
   getDownloadsState,
@@ -455,9 +460,13 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         )
         connectedServer.current = server
         await setLastServerId(server.id)
-        // Ensure the per-install deviceId is loaded before sync starts, so
-        // device-scoped settings round-trip on the first pull.
-        await tracePhase('connect:ensure-device-id', () => ensureDeviceId())
+        // Ensure the per-install deviceId AND the persisted settings are loaded
+        // before sync starts: the deviceId so device-scoped settings round-trip
+        // on the first pull, the stored per-key timestamps so that pull merges
+        // against what this device actually knows rather than an empty store.
+        await tracePhase('connect:ensure-device-id', () =>
+          Promise.all([ensureDeviceId(), hydrateSettings()]),
+        )
         pushAutoSession(serverUrl, token)
         ensureCarModeMirror()
         // Push skip-second settings to native (phone notification honors these),
