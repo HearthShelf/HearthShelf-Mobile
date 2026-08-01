@@ -8,9 +8,11 @@
  * - A manifest per item (enough to rebuild the player's NowPlaying offline:
  *   tracks with local uri + startOffset + duration, chapters, title/author).
  * - The whole index (manifests + in-flight download state) persists to
- *   AsyncStorage so downloads and their metadata survive a restart. In-flight
- *   downloads don't resume across launches yet - a killed download is marked
- *   'failed' on next boot so the user can retry.
+ *   AsyncStorage so downloads and their metadata survive a restart. An
+ *   interrupted download (app killed in the background, crash, force quit) is
+ *   restored as 'failed' on next boot carrying the tracks it already finished
+ *   plus a resume token for the track it was mid-way through, so retrying
+ *   continues from where it stopped instead of restarting from zero.
  *
  * Plain subscribe/snapshot store (same shape as the other stores) for
  * useSyncExternalStore + non-React reads (offline playback resolution).
@@ -61,6 +63,28 @@ export interface DownloadEntry {
   chapters: ABSChapter[]
   tracks: DownloadedTrack[]
   error?: string
+  /**
+   * Where an interrupted download left off, so a retry resumes instead of
+   * restarting. Present only on 'failed'/'downloading' entries; cleared on 'done'.
+   * `tracks` above holds the tracks that fully completed - this describes the one
+   * that was in flight when we stopped.
+   */
+  partial?: PartialTrack
+}
+
+/** The in-flight track of an interrupted download, and how to continue it. */
+export interface PartialTrack {
+  index: number
+  /** Absolute uri of the half-written file (rebased on hydrate, like tracks). */
+  uri: string
+  startOffset: number
+  duration: number
+  /** Source url, so a resume can rebuild the request without a fresh ABS session. */
+  contentUrl: string
+  /** expo-file-system resume token (HTTP Range state) from pauseAsync(). */
+  resumeData?: string
+  /** Bytes already on disk for this track, for progress display before resuming. */
+  bytes: number
 }
 
 /** Device-local auto-download preferences (not synced - storage is per-device). */
@@ -128,9 +152,14 @@ function persist(): void {
     capV: 2,
     maxBytes: state.maxBytes,
     auto: state.auto,
-    // Only finished downloads are worth persisting as playable; in-flight ones
-    // can't resume across launches, so drop them (they'll show as absent).
-    items: [...state.byId.values()].filter((e) => e.status === 'done'),
+    // Persist finished downloads (playable) AND interrupted ones (resumable).
+    // A 'downloading' entry is written as 'failed': if we're reading it back at
+    // all, the process died mid-transfer, so that's what it is on next launch.
+    // Its completed tracks + partial-track resume token come along, which is
+    // what lets a retry continue instead of restarting from zero.
+    items: [...state.byId.values()]
+      .filter((e) => e.status === 'done' || e.status === 'failed' || e.status === 'downloading')
+      .map((e) => (e.status === 'downloading' ? { ...e, status: 'failed' as const } : e)),
   }
   void AsyncStorage.setItem(STORE_KEY, JSON.stringify(payload)).catch(() => {})
 }
@@ -171,20 +200,28 @@ export async function hydrateDownloads(): Promise<void> {
     // persisted point at a dead container path even though the files survive.
     let healed = false
     for (const e of parsed.items ?? []) {
-      const rebased = rebaseEntry({ ...e, status: 'done' })
-      // If not a single track file survived, the download is truly gone (user
-      // cleared app data, etc.) - drop it so the UI stops claiming it's saved.
-      if (rebased.tracks.length === 0) {
+      // Anything not already finished was interrupted mid-transfer (the process
+      // died); surface it as failed-but-resumable rather than silently gone.
+      const status: DownloadStatus = e.status === 'done' ? 'done' : 'failed'
+      const rebased = rebaseEntry({ ...e, status })
+      // If nothing survived on disk - no completed tracks AND no partial - the
+      // download is truly gone (app data cleared), so drop it rather than claim
+      // it's saved. A partial alone is still worth keeping: it's a resume point.
+      if (rebased.tracks.length === 0 && !rebased.partial) {
         healed = true
         continue
       }
       if (
         rebased.coverUri !== e.coverUri ||
+        rebased.partial?.uri !== e.partial?.uri ||
         rebased.tracks.some((t, i) => t.uri !== e.tracks[i]?.uri)
       ) {
         healed = true
       }
-      byId.set(e.itemId, rebased)
+      byId.set(e.itemId, {
+        ...rebased,
+        error: status === 'failed' ? (e.error ?? 'interrupted') : rebased.error,
+      })
     }
     // Migrate legacy payloads (no capV): 0 used to mean "no limit" before it
     // became "downloads off" - carry those users over to the unlimited sentinel.
@@ -198,6 +235,8 @@ export async function hydrateDownloads(): Promise<void> {
     // Rewrite the index with healed URIs so later saves don't reintroduce the
     // stale container path.
     if (healed) persist()
+    // Reclaim space from folders no entry points at anymore.
+    void sweepOrphanedDownloads()
     // Seed the offline catalog from what we know locally, so downloaded books are
     // browseable offline even before (or without) a richer server-detail backfill.
     // libraryId isn't stored per download; a shared 'offline' placeholder is fine -
@@ -255,7 +294,16 @@ function rebaseEntry(entry: DownloadEntry): DownloadEntry {
     if (coverFile.exists) coverUri = coverFile.uri
   }
 
-  return { ...entry, tracks, coverUri }
+  // Heal the resume point the same way. If the half-written file is gone the
+  // resume token is meaningless, so drop it and let that track start over -
+  // the already-completed tracks are still worth keeping.
+  let partial: PartialTrack | undefined
+  if (entry.partial) {
+    const pf = new File(dir, baseName(entry.partial.uri))
+    if (pf.exists) partial = { ...entry.partial, uri: pf.uri, bytes: pf.size ?? 0 }
+  }
+
+  return { ...entry, tracks, coverUri, partial }
 }
 
 function patch(itemId: string, p: Partial<DownloadEntry>): void {
@@ -287,17 +335,23 @@ export async function downloadItem(itemId: string, title: string, author: string
   const existing = state.byId.get(itemId)
   if (existing && (existing.status === 'done' || existing.status === 'downloading')) return
 
+  // Resume point from an interrupted run, if any: the tracks that finished and
+  // the one that was in flight. Retrying a failed download continues from here.
+  const priorTracks = existing?.tracks ?? []
+  const priorPartial = existing?.partial
+
   upsert({
     itemId,
     title,
     author,
     status: 'queued',
-    progress: 0,
-    bytes: 0,
-    coverUri: null,
-    duration: 0,
-    chapters: [],
-    tracks: [],
+    progress: existing?.progress ?? 0,
+    bytes: existing?.bytes ?? 0,
+    coverUri: existing?.coverUri ?? null,
+    duration: existing?.duration ?? 0,
+    chapters: existing?.chapters ?? [],
+    tracks: priorTracks,
+    partial: priorPartial,
   })
 
   let sessionId: string | null = null
@@ -319,13 +373,40 @@ export async function downloadItem(itemId: string, title: string, author: string
 
     const audioTracks = session.audioTracks
     const totalDuration = Math.max(1, session.duration)
-    const downloaded: DownloadedTrack[] = []
-    let cumulativeBytes = 0
+    // Carry over tracks a previous run already finished, so we neither re-fetch
+    // them nor lose them. Keyed by index - track order comes from the session.
+    const doneIndexes = new Set(priorTracks.map((t) => t.index))
+    const downloaded: DownloadedTrack[] = [...priorTracks]
+    let cumulativeBytes = priorTracks.reduce((s, t) => {
+      const f = new File(dir, baseName(t.uri))
+      return s + (f.exists ? (f.size ?? 0) : 0)
+    }, 0)
 
     for (const track of audioTracks) {
+      if (doneIndexes.has(track.index)) continue
+
       const ext = extFor(track.mimeType, track.contentUrl)
       const dest = new File(dir, `track-${track.index}.${ext}`)
-      const resumable = createDownloadResumable(mediaUrl(track.contentUrl), dest.uri, {}, (p) => {
+      // Resume this track only if the interrupted run stopped inside THIS one
+      // and its half-written file is still on disk.
+      const resumeData =
+        priorPartial && priorPartial.index === track.index && dest.exists
+          ? priorPartial.resumeData
+          : undefined
+      // A stale partial for a different track (or a vanished file) is dead
+      // weight - clear it so we don't try to resume against the wrong file.
+      if (!resumeData && dest.exists && priorPartial?.index === track.index) {
+        try {
+          dest.delete()
+        } catch {
+          // fall through; the download overwrites it
+        }
+      }
+
+      const onProgress = (p: {
+        totalBytesWritten: number
+        totalBytesExpectedToWrite: number
+      }): void => {
         const trackFrac =
           p.totalBytesExpectedToWrite > 0 ? p.totalBytesWritten / p.totalBytesExpectedToWrite : 0
         // Weight each track by its share of the book's duration.
@@ -335,9 +416,34 @@ export async function downloadItem(itemId: string, title: string, author: string
           progress: Math.min(0.999, overall),
           bytes: cumulativeBytes + p.totalBytesWritten,
         })
-      })
+      }
+
+      const resumable = createDownloadResumable(
+        mediaUrl(track.contentUrl),
+        dest.uri,
+        {},
+        onProgress,
+        resumeData,
+      )
       active.set(itemId, resumable)
-      const result = await resumable.downloadAsync()
+      // Record where we are BEFORE the transfer, so a hard kill mid-download
+      // still leaves a resume point on disk. There's no token yet on a fresh
+      // track, so this alone resumes at the partial file's size; the catch block
+      // upgrades it with a real pauseAsync() token when the failure is graceful.
+      patch(itemId, {
+        partial: {
+          index: track.index,
+          uri: dest.uri,
+          startOffset: track.startOffset,
+          duration: track.duration,
+          contentUrl: track.contentUrl,
+          resumeData,
+          bytes: dest.exists ? (dest.size ?? 0) : 0,
+        },
+      })
+      persist()
+
+      const result = resumeData ? await resumable.resumeAsync() : await resumable.downloadAsync()
       active.delete(itemId)
       if (!result) throw new Error('download_cancelled')
       const info = dest.exists ? (dest.size ?? 0) : 0
@@ -348,6 +454,10 @@ export async function downloadItem(itemId: string, title: string, author: string
         startOffset: track.startOffset,
         duration: track.duration,
       })
+      // This track is whole now: fold it into tracks and drop the resume point,
+      // then checkpoint. A kill after this resumes at the NEXT track.
+      patch(itemId, { tracks: [...downloaded], bytes: cumulativeBytes, partial: undefined })
+      persist()
     }
 
     // Cover: best-effort, not fatal if it fails.
@@ -367,6 +477,8 @@ export async function downloadItem(itemId: string, title: string, author: string
       bytes: cumulativeBytes,
       coverUri,
       tracks: downloaded,
+      partial: undefined,
+      error: undefined,
     })
     persist()
 
@@ -389,12 +501,29 @@ export async function downloadItem(itemId: string, title: string, author: string
       // Rich offline browse for this item is degraded, but playback is intact.
     }
   } catch (e) {
+    const resumable = active.get(itemId)
     active.delete(itemId)
     const msg = (e as Error).message
     if (msg === 'download_cancelled') {
       // cancel() already removed the entry + files
     } else {
-      patch(itemId, { status: 'failed', error: msg })
+      // Capture a fresh resume token where we can. On a network drop the
+      // resumable is still live, and pauseAsync() yields the exact byte offset
+      // to continue from - better than the pre-transfer checkpoint. Best-effort:
+      // if it fails we keep the coarser checkpoint already on disk.
+      let resumeData: string | undefined
+      try {
+        resumeData = (await resumable?.pauseAsync())?.resumeData
+      } catch {
+        // keep the existing checkpoint
+      }
+      const cur = state.byId.get(itemId)
+      patch(itemId, {
+        status: 'failed',
+        error: msg,
+        partial: cur?.partial && resumeData ? { ...cur.partial, resumeData } : cur?.partial,
+      })
+      persist()
     }
   } finally {
     if (sessionId) {
@@ -439,6 +568,34 @@ export async function deleteDownload(itemId: string): Promise<void> {
   persist()
   // Drop its offline browse metadata too.
   void removeCatalogItem(itemId)
+}
+
+/**
+ * Delete download folders with no entry in the index.
+ *
+ * Interrupted downloads used to vanish from the index while their half-written
+ * files stayed on disk, so those bytes were unreclaimable and invisible to the
+ * storage meter. Entries now survive a kill, but a folder can still be orphaned
+ * (index dropped as unrecoverable at hydrate, a failed delete). Runs after
+ * hydrate, once, best-effort.
+ */
+async function sweepOrphanedDownloads(): Promise<void> {
+  try {
+    const root = new Directory(Paths.document, 'downloads')
+    if (!root.exists) return
+    for (const child of root.list()) {
+      if (!(child instanceof Directory)) continue
+      // Folder name is the itemId (see itemDir).
+      if (state.byId.has(baseName(child.uri))) continue
+      try {
+        child.delete()
+      } catch {
+        // leave it; next sweep retries
+      }
+    }
+  } catch {
+    // listing unavailable - nothing to reclaim this launch
+  }
 }
 
 /** Total bytes used by all downloads. */

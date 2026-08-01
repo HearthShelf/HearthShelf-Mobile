@@ -93,7 +93,8 @@ export default function StorageScreen() {
     })
   }
 
-  // Retry a failed download - re-runs downloadItem, which restarts the transfer.
+  // Retry a failed download - re-runs downloadItem, which picks up from the
+  // tracks already on disk and resumes the one it stopped part-way through.
   const retryDownload = (e: DownloadEntry) => {
     haptics.select()
     void downloadItem(e.itemId, e.title, e.author)
