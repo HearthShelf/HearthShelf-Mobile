@@ -298,17 +298,26 @@ export function authorImageUrl(authorId: string): string {
 }
 
 /** HearthShelf's custom narrator photo (NOT ABS - lives at /hs/narrators/:name/image),
- *  keyed by name. '' when disconnected; falls back to initials. */
+ *  keyed by name. Token-free for the same cache-stability reason as coverUrl: the
+ *  route's GET is public (server/routes/narrators.js), so a rotating token would
+ *  re-key the image cache on every reconnect for nothing. '' when disconnected;
+ *  falls back to initials. */
 export function narratorImageUrl(name: string): string {
-  return mediaUrl(`/hs/narrators/${encodeURIComponent(name)}/image`)
+  const s = getSession()
+  if (!s) return ''
+  return `${s.serverUrl}/hs/narrators/${encodeURIComponent(name)}/image`
 }
 
-/** A user's HearthShelf profile photo (NOT ABS - lives at /hs/avatars/:userId,
- *  public GET so no token is required, but mediaUrl's session-gated '' fallback
- *  still applies mid server-switch). 404s to Gravatar or initials server-side;
- *  the client just falls back to the Avatar component's initials on load failure. */
+/** A user's HearthShelf profile photo (NOT ABS - lives at /hs/avatars/:userId).
+ *  Public GET (server/routes/avatars.js), so no token - same cache-stability
+ *  reason as coverUrl. The session is still required for the origin, and ''
+ *  mid server-switch keeps callers on their fallback. 404s to Gravatar or
+ *  initials server-side; the client falls back to the Avatar initials on load
+ *  failure. */
 export function avatarUrl(userId: string): string {
-  return mediaUrl(`/hs/avatars/${encodeURIComponent(userId)}`)
+  const s = getSession()
+  if (!s) return ''
+  return `${s.serverUrl}/hs/avatars/${encodeURIComponent(userId)}`
 }
 
 /** An author's books (for the group drilldown) - richer than the library list. */
