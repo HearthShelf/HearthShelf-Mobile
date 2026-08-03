@@ -358,7 +358,11 @@ export async function downloadItem(itemId: string, title: string, author: string
   let sessionResumeTime = 0
   let sessionDuration = 0
   try {
-    const session = await startPlay(itemId)
+    // 'download' gives this session its own deviceId. Without it ABS treats it
+    // as the same device as the player and force-closes the live listening
+    // session (PlaybackSessionManager.startSession), silently stopping playback
+    // mid-listen - the auto-download-while-listening bug.
+    const session = await startPlay(itemId, 'download')
     sessionId = session.id
     sessionResumeTime = Math.max(0, session.currentTime ?? 0)
     sessionDuration = session.duration

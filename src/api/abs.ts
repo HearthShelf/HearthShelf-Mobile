@@ -622,22 +622,40 @@ export async function getStatsHistory(
 
 /** Device info sent with every session we open. The platform is baked into both
  *  deviceId and osName so Recent Listens can tell an Apple phone apart from an
- *  Android one (the server can't infer it - our client sends no User-Agent). */
-function mobileDeviceInfo() {
+ *  Android one (the server can't infer it - our client sends no User-Agent).
+ *
+ *  `purpose` splits the deviceId for sessions that are NOT the user listening.
+ *  ABS's PlaybackSessionManager.startSession() force-closes every existing
+ *  session matching (userId, deviceId) before opening a new one - so a session
+ *  opened under the listening deviceId while playback is live kills that
+ *  playback server-side, with syncData=null (no final position sync). Giving
+ *  non-listening sessions their own deviceId makes that filter miss.
+ *
+ *  Keep any suffix free of the substring "auto" - classifyDevice() matches that
+ *  first and would file the session under Android Auto in Recent Listens. */
+function mobileDeviceInfo(purpose?: 'download') {
   const isApple = Platform.OS === 'ios'
+  const base = isApple ? 'hearthshelf-mobile-ios' : 'hearthshelf-mobile-android'
   return {
-    deviceId: isApple ? 'hearthshelf-mobile-ios' : 'hearthshelf-mobile-android',
+    deviceId: purpose ? `${base}-${purpose}` : base,
     clientName: 'HearthShelf Mobile',
     osName: isApple ? 'iOS' : 'Android',
     clientVersion: '0.0.1',
   }
 }
 
-export async function startPlay(itemId: string): Promise<ABSPlaybackSession> {
+/**
+ * Open an ABS playback session.
+ *
+ * `purpose: 'download'` marks a session opened only to enumerate a book's tracks
+ * for offline download - not a listen. It gets its own deviceId so it can't
+ * evict the user's live listening session (see mobileDeviceInfo).
+ */
+export async function startPlay(itemId: string, purpose?: 'download'): Promise<ABSPlaybackSession> {
   return absRequest<ABSPlaybackSession>(`/api/items/${itemId}/play`, {
     method: 'POST',
     body: JSON.stringify({
-      deviceInfo: mobileDeviceInfo(),
+      deviceInfo: mobileDeviceInfo(purpose),
       supportedMimeTypes: ['audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/flac', 'audio/ogg'],
     }),
   })
