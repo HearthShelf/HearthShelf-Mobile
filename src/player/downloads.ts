@@ -769,11 +769,31 @@ function cancelQueueSettleWait(): void {
   queueSettleUnsub = null
 }
 
-/** Build a NowPlaying-shaped source from a completed download, or null if the
- *  item isn't downloaded. Used by playback to prefer local files when offline. */
+/**
+ * Build a NowPlaying-shaped source from a completed download, or null if the
+ * item isn't downloaded. Used by playback to prefer local files when offline.
+ *
+ * The first track is checked against the disk rather than trusted from the
+ * index, because an entry can outlive its files (an OS storage reclaim, a
+ * partial delete). Handing the player a uri with nothing behind it fails the
+ * load with no fallback - the book just won't play - so a missing file drops
+ * the entry instead: the UI stops claiming the book is saved, auto-download can
+ * fetch it again, and this listen streams. One stat per play.
+ */
 export function localSourceFor(itemId: string): DownloadEntry | null {
   const e = state.byId.get(itemId)
-  return e && e.status === 'done' && e.tracks.length > 0 ? e : null
+  if (!e || e.status !== 'done' || e.tracks.length === 0) return null
+  try {
+    if (!new File(e.tracks[0].uri).exists) {
+      void deleteDownload(itemId)
+      return null
+    }
+  } catch {
+    // Can't stat: trust the index. Refusing to play here would break offline
+    // playback on any device that won't answer the question.
+    return e
+  }
+  return e
 }
 
 /** Local file uri of a downloaded book's cover, or null. Covers show offline

@@ -387,7 +387,15 @@ export function Cover({
   const localCover = useSyncExternalStore(subscribeDownloads, () =>
     itemId ? localCoverFor(itemId) : null,
   )
-  const src = localCover ?? uri
+  // A saved cover file can go missing while the index still names it (an OS
+  // storage reclaim, a stale entry). That must not cost the book its artwork:
+  // on a failed local load, fall through to the server URL - the same cover a
+  // book that was never downloaded would show - instead of the typeset fallback.
+  const [localCoverFailed, setLocalCoverFailed] = useState(false)
+  useEffect(() => {
+    setLocalCoverFailed(false)
+  }, [localCover])
+  const src = (localCoverFailed ? null : localCover) ?? uri
   // A changed source (download completed, or a recycled row rebinds a new item)
   // deserves a fresh load attempt - clear any prior failure and retry schedule.
   useEffect(() => {
@@ -409,6 +417,12 @@ export function Cover({
   // fallback now but quietly retry with backoff so the real art fills in once
   // bytes arrive (fixes covers never appearing on the player under bad LTE).
   const onImageError = () => {
+    // The local cover is gone: swap to the remote one (there is nothing to retry
+    // on a file:// uri) and let its own error path handle a second failure.
+    if (localCover && src === localCover && uri) {
+      setLocalCoverFailed(true)
+      return
+    }
     setFailed(true)
     const isRemote = !!src && /^https?:/i.test(src)
     if (!isRemote) return
