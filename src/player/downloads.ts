@@ -236,7 +236,7 @@ export async function hydrateDownloads(): Promise<void> {
     // stale container path.
     if (healed) persist()
     // Reclaim space from folders no entry points at anymore.
-    void sweepOrphanedDownloads()
+    void sweepOrphanedDownloads(byId)
     // Seed the offline catalog from what we know locally, so downloaded books are
     // browseable offline even before (or without) a richer server-detail backfill.
     // libraryId isn't stored per download; a shared 'offline' placeholder is fine -
@@ -262,9 +262,15 @@ function upsert(entry: DownloadEntry): void {
   emit({ byId })
 }
 
-/** File name (e.g. "track-0.m4a") from a persisted uri, ignoring its directory. */
+/**
+ * Last path segment of a uri (e.g. "track-0.m4a"), ignoring its directory.
+ *
+ * Trailing slashes are stripped first: expo-file-system reports DIRECTORY uris
+ * with one ("file:///.../downloads/li_abc/") and file uris without, so without
+ * the strip a directory would resolve to the empty string.
+ */
 function baseName(uri: string): string {
-  const clean = uri.split('?')[0]
+  const clean = uri.split('?')[0].replace(/\/+$/, '')
   const slash = clean.lastIndexOf('/')
   return slash >= 0 ? clean.slice(slash + 1) : clean
 }
@@ -582,15 +588,25 @@ export async function deleteDownload(itemId: string): Promise<void> {
  * storage meter. Entries now survive a kill, but a folder can still be orphaned
  * (index dropped as unrecoverable at hydrate, a failed delete). Runs after
  * hydrate, once, best-effort.
+ *
+ * Takes the hydrated index as an argument rather than reading `state`: this
+ * deletes files, so what counts as "kept" must be passed in explicitly instead
+ * of depending on the caller having already emitted its map.
  */
-async function sweepOrphanedDownloads(): Promise<void> {
+async function sweepOrphanedDownloads(keep: ReadonlyMap<string, DownloadEntry>): Promise<void> {
   try {
     const root = new Directory(Paths.document, 'downloads')
     if (!root.exists) return
     for (const child of root.list()) {
       if (!(child instanceof Directory)) continue
-      // Folder name is the itemId (see itemDir).
-      if (state.byId.has(baseName(child.uri))) continue
+      // Folder name is the itemId (see itemDir). Directory uris carry a trailing
+      // slash, which baseName() strips; before it did, every folder here resolved
+      // to '', matched no entry, and so every downloaded book on the device was
+      // deleted on the first launch after it was saved. The empty-name guard is
+      // the second line of defence: a name we can't read is not evidence the
+      // folder is garbage.
+      const itemId = baseName(child.uri)
+      if (!itemId || keep.has(itemId)) continue
       try {
         child.delete()
       } catch {
