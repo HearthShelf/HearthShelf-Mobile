@@ -159,6 +159,23 @@ export function loadTrack(track: NowPlaying, autoPlay = true): void {
   if (autoPlay) maybeAutoArmSleep()
 }
 
+/**
+ * Stamp an ABS session id onto the already-loaded track.
+ *
+ * Used when the session is opened at first play rather than at load (see
+ * playback.ensureSessionForPlayback). The book, its URL and its position are all
+ * unchanged - only the id it reports under.
+ *
+ * Safe to publish normally: PlayerHost keys its native (re)load on the book and
+ * its audio URL, not the session id, so stamping an id never re-loads the track
+ * or moves the playhead.
+ */
+export function attachSessionId(sessionId: string): void {
+  const np = state.nowPlaying
+  if (!np || np.sessionId === sessionId) return
+  set({ nowPlaying: { ...np, sessionId } })
+}
+
 export function setPlaying(isPlaying: boolean): void {
   if (!state.nowPlaying) return
   // A transient audio-focus duck (call, nav prompt) reaches us as an ordinary

@@ -31,7 +31,7 @@ import {
 import { coverUrl } from '@/api/abs'
 import { addBookmarkPending } from './pendingBookmarks'
 import { localCoverFor } from './downloads'
-import { handOffToCar, playItemById, syncProgress } from './playback'
+import { handOffToCar, playItemById, syncProgress, ensureSessionForPlayback } from './playback'
 import { loadAutoCarBook } from './autoBridge'
 import { advanceQueueOnEnd } from './advance'
 import { useShakeToExtend } from './shakeToExtend'
@@ -298,7 +298,16 @@ export function PlayerHost() {
       if (!np.url) return
 
       // (Re)load when the track changes.
-      const key = `${np.itemId}:${np.sessionId}`
+      //
+      // Keyed on the book and its AUDIO SOURCE, deliberately NOT on the session
+      // id. A session id can change while the same audio keeps playing - a 404
+      // reopen, or the session being opened at first play rather than at load -
+      // and keying on it made each of those look like a new track, re-issuing
+      // Native.load(url, startPosition) and yanking live audio back to the
+      // position the track was loaded at. The url covers the cases that do
+      // require a reload (a different book, or the same book switching between
+      // stream and local file).
+      const key = `${np.itemId}:${np.url}`
       if (key !== loadedKey.current) {
         loadedKey.current = key
         lastPlaying.current = null
@@ -324,8 +333,15 @@ export function PlayerHost() {
       }
       if (s.isPlaying !== lastPlaying.current) {
         lastPlaying.current = s.isPlaying
-        if (s.isPlaying) Native.play()
-        else Native.pause()
+        if (s.isPlaying) {
+          Native.play()
+          // A book loaded paused (the Now Playing tab) has no ABS session yet -
+          // opening one at load made the server record a listen for a book
+          // nobody played. This is the moment it becomes a real listen, so open
+          // it now. Fire-and-forget: it never blocks or moves the audio, and a
+          // failure just means this stretch reports late, not that playback stops.
+          void ensureSessionForPlayback().catch(() => {})
+        } else Native.pause()
       }
       if (s.rate !== lastRate.current) {
         lastRate.current = s.rate

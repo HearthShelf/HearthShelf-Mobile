@@ -46,6 +46,12 @@ const OVERRIDE_TTL_MS = 20_000
 // came from, and a fresh launch refreshes before any resume decision matters.
 const serverUpdatedAt = new Map<string, number>()
 
+/** How stale (ms) a local position may be and still survive a refresh. Matches
+ *  playback's LOCAL_RESUME_MAX_AGE_MS: past this the server is the better
+ *  authority, so there is nothing to protect and holding the local value would
+ *  only keep a dead row alive. */
+const LOCAL_POSITION_MAX_AGE_MS = 12 * 60 * 60 * 1000
+
 /** When the server last moved this book's progress, per the most recent refresh.
  *  undefined when the server has never reported a stamp for it. */
 export function serverProgressUpdatedAt(itemId: string): number | undefined {
@@ -169,6 +175,7 @@ export async function refreshProgress(): Promise<ABSMeResponse> {
   for (const p of me.mediaProgress) {
     if (typeof p.lastUpdate === 'number') serverUpdatedAt.set(p.libraryItemId, p.lastUpdate)
   }
+  keepFresherLocalPositions(prev, next)
   const now = Date.now()
   for (const [id, o] of [...overrides]) {
     if (now - o.atMs > OVERRIDE_TTL_MS) {
@@ -191,6 +198,64 @@ export async function refreshProgress(): Promise<ABSMeResponse> {
   cleanupFinishedDownloads(prev, next)
   emit(next)
   return me
+}
+
+/**
+ * Carry a still-unsynced local position across a refresh.
+ *
+ * refreshProgress() replaces the whole map with the server's rows, which is right
+ * for finished-state and for books another device moved on. It is WRONG for the
+ * one row we may know better than the server: the book playing right now.
+ * recordLocalProgress writes that row on every tick, but the server only learns
+ * the position when a sync lands (throttled to SYNC_LISTENED_THRESHOLD of real
+ * listened-time, and a seek accrues none at all). So between syncs the local row
+ * is legitimately ahead, and a wholesale replace threw that away.
+ *
+ * That is the progress-reset bug (HS-MOBILEAPP-P/Q/R). The Now Playing tab
+ * refreshes immediately before resolving a resume position, so the refresh was
+ * destroying the very row resolveResumePosition() exists to prefer: by the time
+ * resume ran, the local row WAS the server row, `savedAt > serverAt` could never
+ * be true, and the kill-before-sync branch was unreachable. The listener came
+ * back to the last position the server happened to have - for a screen-off listen
+ * with no syncs, the spot they started at.
+ *
+ * Only the position is carried. isFinished stays the server's (protected
+ * separately by `overrides`), and a local row older than LOCAL_POSITION_MAX_AGE_MS
+ * is left behind - by then the server is the better authority. Rows the server
+ * doesn't return are still dropped, so a server-side progress reset/delete
+ * propagates as before.
+ *
+ * Note `serverUpdatedAt` is snapshotted from the response BEFORE this runs, so
+ * resume can still tell a carried-over local write from the server's own value.
+ */
+function keepFresherLocalPositions(
+  prev: ReadonlyMap<string, ABSMediaProgress>,
+  next: Map<string, ABSMediaProgress>,
+): void {
+  const now = Date.now()
+  for (const [id, server] of next) {
+    const local = prev.get(id)
+    if (!local || !(local.currentTime > 0)) continue
+    const localAt = typeof local.lastUpdate === 'number' ? local.lastUpdate : 0
+    const serverAt = typeof server.lastUpdate === 'number' ? server.lastUpdate : 0
+    // Strictly newer only: equal stamps mean this row already came from the
+    // server, and there is nothing local to protect.
+    if (localAt <= serverAt) continue
+    if (now - localAt > LOCAL_POSITION_MAX_AGE_MS) continue
+    const duration = server.duration || local.duration || 0
+    next.set(id, {
+      ...server,
+      currentTime: local.currentTime,
+      lastUpdate: localAt,
+      // Finished books read as 100% regardless of where a re-listen sits, exactly
+      // as recordLocalProgress keeps them.
+      progress: server.isFinished
+        ? 1
+        : duration > 0
+          ? Math.min(local.currentTime / duration, 1)
+          : server.progress,
+    })
+  }
 }
 
 /** Free the device for books that just became finished server-side (the common

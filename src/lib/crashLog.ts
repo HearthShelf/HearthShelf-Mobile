@@ -173,6 +173,21 @@ export function priorRunStart(): number | null {
   return priorRunStartedAt
 }
 
+/** When THIS JS runtime started. Module-load time is a good proxy, and it has to
+ *  live in an eagerly-loaded module to be one: crashLog is imported from the app
+ *  entry and from playback, so it is evaluated at startup. Measuring this from a
+ *  lazily-evaluated screen instead would time that screen's first render - which
+ *  is what the feedback diagnostics were accidentally reporting. */
+const runStartedAt = Date.now()
+
+/** Seconds this JS runtime has been alive. A small number on a report about lost
+ *  progress means the runtime restarted just before the listener noticed - the
+ *  single most useful bit for the progress-reset family, since the media service
+ *  outlives the runtime and keeps playing across one. */
+export function currentRunAgeSeconds(): number {
+  return Math.round((Date.now() - runStartedAt) / 1000)
+}
+
 /**
  * Retrieve the prior-run crash report captured at boot, consuming it so it is
  * only ever returned once (the caller flushes it upstream). Awaits init so it

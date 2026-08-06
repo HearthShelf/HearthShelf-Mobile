@@ -28,7 +28,12 @@ import { getState } from '@/player/store'
 import { getSyncState } from '@/player/syncState'
 import { getProgressState } from '@/store/progress'
 import { isDownloaded } from '@/player/downloads'
-import { readBreadcrumbs, didPriorRunEndUncleanly, priorRunStart } from '@/lib/crashLog'
+import {
+  readBreadcrumbs,
+  didPriorRunEndUncleanly,
+  priorRunStart,
+  currentRunAgeSeconds,
+} from '@/lib/crashLog'
 
 /** Cap on breadcrumbs attached to one report. The ring holds ~120; Sentry's own
  *  breadcrumb list is capped around 100, so sending the whole ring is fine and
@@ -151,14 +156,17 @@ function attachLaunchContext(): void {
     priorRunEndedUncleanly: unclean,
     priorRunStartedAt: startedAt ? new Date(startedAt).toISOString() : null,
     /** Seconds this JS runtime has been alive. A small number on a report about
-     *  losing progress means the app restarted just before the listener noticed. */
-    currentRunAgeSeconds: Math.round((Date.now() - runStartedAt) / 1000),
+     *  losing progress means the app restarted just before the listener noticed.
+     *
+     *  Sourced from crashLog, which is evaluated at startup. It used to be a
+     *  module-local Date.now() in THIS file - but this module is only reachable
+     *  from the feedback screen, an expo-router route that is not evaluated until
+     *  the listener navigates to it. So the field reported "seconds since the
+     *  feedback tab was opened", which reads exactly like a fresh restart on every
+     *  report and is worthless precisely where it was meant to help. */
+    currentRunAgeSeconds: currentRunAgeSeconds(),
   })
 }
-
-/** When this JS runtime started. Module-load time is a good proxy for the launch
- *  the listener is describing, and it needs no native call. */
-const runStartedAt = Date.now()
 
 /**
  * Replay the on-disk breadcrumb ring onto the Sentry scope.

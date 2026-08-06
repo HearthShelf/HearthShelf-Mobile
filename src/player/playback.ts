@@ -17,12 +17,13 @@ import {
   coverUrl,
   closeSession,
   syncSession,
+  getItemDetail,
   ABSRequestError,
 } from '@/api/abs'
 import { getSession } from '@/api/session'
 import type { ABSMediaProgress } from '@hearthshelf/core'
 import { progressFor, recordLocalProgress, serverProgressUpdatedAt } from '@/store/progress'
-import { loadTrack, getState, type NowPlaying, type ChapterMark } from './store'
+import { loadTrack, getState, attachSessionId, type NowPlaying, type ChapterMark } from './store'
 import { localSourceFor, applyAutoDownloads } from './downloads'
 import {
   recordLocalSession,
@@ -245,6 +246,42 @@ function resolveResumePosition(itemId: string, sessionTime: number): number {
 }
 
 /**
+ * Never resume BEHIND the playhead our own native player is already sitting on.
+ *
+ * The audio lives in a foreground media service that outlives the JS runtime and
+ * keeps playing with the screen off. Reloading the same book mints a new session
+ * id, which makes PlayerHost re-issue Native.load(url, startPosition) - and that
+ * seeks the running service to whatever position JS just reconstructed. So a
+ * re-resolve while the service is still playing does not merely display a stale
+ * spot, it drags the audio back to it.
+ *
+ * Every server-side candidate is a reconstruction; the live playhead is the one
+ * value that was actually observed. When the store already holds THIS book with a
+ * position meaningfully ahead, keep it.
+ *
+ * Scoped deliberately:
+ *  - same itemId only, so switching books is untouched;
+ *  - not while the car owns playback (the store is mirroring the car there, and
+ *    the handoff paths set the position on purpose);
+ *  - ahead only, by more than LOCAL_RESUME_MIN_DELTA, so a genuine backwards move
+ *    resolved from the server (a re-listen, a rewind elsewhere) still wins and
+ *    ordinary rounding never nudges the resume point.
+ *
+ * This does not help when the JS runtime restarted - the store is empty there and
+ * the position has to come off disk, which is what keepFresherLocalPositions() in
+ * the progress store protects.
+ */
+function preferLivePlayhead(itemId: string, startAt: number): number {
+  const s = getState()
+  if (s.carActive) return startAt
+  if (s.nowPlaying?.itemId !== itemId) return startAt
+  const live = s.position
+  if (!(live > 0) || live - startAt <= LOCAL_RESUME_MIN_DELTA) return startAt
+  breadcrumb('resume', `live playhead ${Math.round(live)}s over resolved ${Math.round(startAt)}s`)
+  return live
+}
+
+/**
  * Coerce raw chapter data from the server (or a local download) into well-typed
  * ChapterMark[]. ABS's response is only type-asserted, not validated, so a
  * mid-restart/stale response with a null/missing title would otherwise flow
@@ -280,6 +317,24 @@ export async function playItemById(
   // connection layer, or a resume tap in offline mode tries the dead server first
   // and only plays once that request gives up.
   const online = !!getSession() && !isOfflineMode()
+
+  // Loading the player WITHOUT starting audio must not open an ABS session.
+  //
+  // The Now Playing tab calls this with autoPlay=false purely to render the
+  // player on your last book. It is the only caller that does. Opening a real
+  // play session there made the server record a listen for every cold start that
+  // landed on the tab: rows reading "0:00 listened", and - because the session
+  // opens at whatever position was resolved and closes at the real one - rows
+  // that appear to travel between two unrelated chapters. Those are the phantom
+  // entries in Recent Listens.
+  //
+  // A session is what REPORTS listening, so it belongs to the act of listening.
+  // Deferred to the first play (see ensureSessionForPlayback), which every
+  // transport path already funnels through.
+  if (!autoPlay) {
+    await loadPreview(itemId, local, online)
+    return
+  }
 
   // Starting a new book is a recompute trigger, but we defer it: arm a play-
   // cooldown so an accidental tap (or the settling just-finished book at an
@@ -332,6 +387,7 @@ export async function playItemById(
   let startAt = session.currentTime > 0 ? session.currentTime : 0
   if (startAt === 0) startAt = resumePositionFor(progressFor(itemId))
   else startAt = resolveResumePosition(itemId, startAt)
+  startAt = preferLivePlayhead(itemId, startAt)
   const np: NowPlaying = {
     itemId,
     sessionId: session.id,
@@ -368,6 +424,133 @@ export async function playItemById(
     nowPlaying: { itemId, title: np.title, author: np.author },
     queue: getQueueState().items,
   })
+}
+
+/**
+ * Load a book into the player PAUSED, without opening an ABS session.
+ *
+ * This is the "show me the player on my last book" path (the Now Playing tab).
+ * No audio plays, so there is nothing to report, so no session should exist -
+ * see the note in playItemById. The session is opened later by
+ * ensureSessionForPlayback() when the listener actually presses play.
+ *
+ * The resume position comes from the same media-progress row a session would
+ * have been opened from, so where the player lands is unchanged. A downloaded
+ * book uses its local files; otherwise we fetch the stream URL from the item
+ * detail (a read-only call that records nothing).
+ *
+ * Falls back to the offline path when the book is downloaded and the server is
+ * unreachable, matching playItemById.
+ */
+async function loadPreview(
+  itemId: string,
+  local: ReturnType<typeof localSourceFor>,
+  online: boolean,
+): Promise<void> {
+  // Close whatever was live: loading a different book into the player ends the
+  // previous listen, exactly as the session-opening path does.
+  if (active) await safeClose()
+  if (offline) bankOffline(offline, getState().position)
+  offline = null
+  lastTickTime = null
+
+  const startAt = resumePositionFor(progressFor(itemId))
+
+  if (local) {
+    const first = local.tracks[0]
+    if (!first) throw new Error('no_local_track')
+    loadTrack(
+      {
+        itemId,
+        sessionId: '',
+        title: local.title,
+        author: local.author,
+        artworkUrl: local.coverUri ?? coverUrl(itemId),
+        url: first.uri,
+        duration: local.duration,
+        startPosition: startAt,
+        chapters: sanitizeChapters(local.chapters),
+      },
+      false,
+    )
+    breadcrumb('play', `${itemId} preview (local) @${Math.round(startAt)}s`)
+    return
+  }
+
+  if (!online) throw new Error('not_downloaded')
+
+  // Not downloaded: we need a stream URL and chapters, which a session would
+  // normally have carried. getItemDetail is a plain read - it creates no session
+  // and records no listening, and it carries the chapters itself.
+  const detail = await getItemDetail(itemId)
+  const files = detail.media?.audioFiles ?? []
+  const file = files[0]
+  if (!file) throw new Error('no_audio_track')
+  // The detail response omits a top-level duration; the audio files sum to it.
+  const duration = files.reduce((t, f) => t + (f.duration || 0), 0)
+  loadTrack(
+    {
+      itemId,
+      sessionId: '',
+      title: detail.media?.metadata?.title ?? '',
+      author: detail.media?.metadata?.authorName ?? '',
+      artworkUrl: coverUrl(itemId),
+      url: mediaUrl(`/api/items/${itemId}/file/${file.ino}`),
+      duration,
+      startPosition: startAt,
+      chapters: sanitizeChapters(detail.media?.chapters ?? []),
+    },
+    false,
+  )
+  breadcrumb('play', `${itemId} preview (stream) @${Math.round(startAt)}s`)
+}
+
+/**
+ * Open the ABS session for a book already loaded in the player, if it doesn't
+ * have one yet.
+ *
+ * Pairs with loadPreview: the player can hold a book with sessionId '' (loaded
+ * but never played). The first actual play opens the session so listening is
+ * reported from that moment - which is the only moment it means anything.
+ *
+ * Resumes from the LIVE playhead rather than re-resolving a position, so opening
+ * the session cannot move the audio. Returns false when no session could be
+ * opened (offline / server error); the caller keeps playing locally either way -
+ * failing to report a listen must never stop playback.
+ */
+export async function ensureSessionForPlayback(): Promise<boolean> {
+  const s = getState()
+  const np = s.nowPlaying
+  if (!np || np.sessionId || active || offline) return false
+  if (s.carActive) return false
+  if (!getSession() || isOfflineMode()) return false
+
+  let session
+  try {
+    session = await startPlay(np.itemId)
+  } catch {
+    return false
+  }
+
+  const pos = getState().position
+  active = {
+    sessionId: session.id,
+    itemId: np.itemId,
+    duration: session.duration || np.duration,
+    title: np.title,
+    startedAt: startedNow(),
+    lastSyncedTime: pos,
+    pendingListened: 0,
+    totalListened: 0,
+  }
+  lastTickTime = null
+  // Stamp the session onto the loaded track WITHOUT touching position: the audio
+  // is already playing and PlayerHost keys its native load on itemId:sessionId,
+  // so this must not look like a new track to load.
+  attachSessionId(session.id)
+  syncStateStartSession(np.itemId, active.startedAt, pos)
+  breadcrumb('play', `${np.itemId} session opened on play @${Math.round(pos)}s`)
+  return true
 }
 
 /**
@@ -544,7 +727,18 @@ export async function syncProgress(currentTime: number, force = false): Promise<
     return
   }
 
-  if (!active) return
+  if (!active) {
+    // No ABS session, but a book IS loaded: either it was loaded paused and the
+    // session hasn't opened yet (ensureSessionForPlayback is in flight), or the
+    // open failed. Position still has to be recorded - it is what resume reads,
+    // and dropping these ticks would silently lose a listen. Listened-time is not
+    // accrued here; only a session can report that.
+    const np = getState().nowPlaying
+    if (np?.itemId && !getState().carActive) {
+      recordLocalProgress(np.itemId, currentTime, np.duration)
+    }
+    return
+  }
 
   active.pendingListened += listened
   active.totalListened += listened
