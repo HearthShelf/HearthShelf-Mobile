@@ -59,11 +59,15 @@ function IdleResolver() {
     let cancelled = false
     void (async () => {
       try {
-        // Make sure the shared progress store is populated before we resume. On
-        // a cold app reload this tab can run before Home loads progress, leaving
-        // the store empty - then playItemById would have no saved spot to fall
-        // back to and could resume (and sync) from 0, wiping real progress.
-        if (getProgressState().byId.size === 0) await refreshProgress().catch(() => {})
+        // Pull fresh media progress before resuming. This is ALWAYS refreshed,
+        // not just when the store is empty: hydrateProgress() fills the store
+        // from disk at launch, so a size check is never zero and the refresh was
+        // always skipped - leaving a stale local row in place. That mattered once
+        // resume started reconciling against the server's row: listening in the
+        // car advanced ABS's progress, the phone opened with yesterday's disk
+        // copy, and ABS resumed this device's old still-open session on top of
+        // it, so nothing on the phone knew the book had moved on.
+        await refreshProgress().catch(() => {})
         const items = await getItemsInProgress()
         const last = items[0]
         if (!last) {

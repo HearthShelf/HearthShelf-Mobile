@@ -152,44 +152,94 @@ const LOCAL_RESUME_MIN_DELTA = 5
 const LOCAL_RESUME_MAX_AGE_MS = 12 * 60 * 60 * 1000
 
 /**
- * Choose between the play-session's position and the locally persisted one.
+ * Decide where to actually resume, given the position the play-session came back
+ * with.
  *
- * The server is normally right, but it only learns a position when a sync lands,
- * and syncs are throttled to SYNC_LISTENED_THRESHOLD of real listened-time. Kill
- * the app inside that window - which Android does freely once the screen is off,
- * while the media service keeps playing - and the server's `currentTime` is stale
- * by however much was heard since the last push. That is the reported progress
- * reset: a chapter skip (which accrues no listened-time at all, so it never
- * crosses the threshold) followed by a lock, resuming at the pre-skip spot.
+ * There are THREE candidate positions at this moment, from three different
+ * sources, and none of them is reliably authoritative on its own:
  *
- * Deciding by "whichever is further along" would be wrong: when another device
- * carries the listen forward, the server is correctly AHEAD, but when that device
- * moves BACKWARD (a re-listen, a rewind) the server is correctly behind, and a
- * max() would resurrect our own stale local row and undo it. So order the two by
- * when they were WRITTEN instead. `lastUpdate` is ABS's own epoch-ms stamp on the
- * progress row, refreshed by /api/me; recordLocalProgress stamps local writes the
- * same way. Local wins only when it is strictly newer, is meaningfully different,
- * and is recent enough to belong to the sitting we're resuming.
+ *  1. `sessionTime` - the play-session's own currentTime, from POST /items/:id/play.
+ *  2. The MEDIA PROGRESS row from /api/me (progressFor + serverProgressUpdatedAt),
+ *     which every device writes to and which carries ABS's own `lastUpdate` stamp.
+ *  3. Our LOCAL row, written by recordLocalProgress on each playback tick and
+ *     stamped with a local clock.
+ *
+ * Two distinct failure modes made all three necessary:
+ *
+ * KILL-BEFORE-SYNC (candidate 3 wins). Syncs are throttled to
+ * SYNC_LISTENED_THRESHOLD of real listened-time, and a seek accrues none at all.
+ * Kill the app inside that window - which Android does freely once the screen is
+ * off, while the media service keeps playing - and both server-side values are
+ * stale by everything heard since the last push.
+ *
+ * STALE SESSION POSITION (candidate 2 wins). Observed: listened to ch.41 in the
+ * car (WebApp), opened the phone, hit play, and resumed at ch.38 - the spot the
+ * phone had died at earlier, while /api/me's progress row correctly held ch.41.
+ * So a session opened by this device can come back carrying a position older than
+ * the media-progress row, and it is not safe to assume the session reflects the
+ * most recent listening.
+ *
+ * The precise server-side mechanism is NOT confirmed - ABS keys sessions on
+ * (userId, deviceId) and its reaper runs on a long horizon, so this device's
+ * abandoned session is still present, but whether startPlay resumes it or opens a
+ * fresh one seeded from stale state has not been verified against ABS's source.
+ * The reconciliation below is correct either way, because it only relies on the
+ * observation: when the session and the progress row disagree, the row is the one
+ * every device writes and is the better authority.
+ *
+ * So: never trust the session position by itself. Take whichever of the three was
+ * WRITTEN most recently. Ordering by timestamp rather than by magnitude is what
+ * keeps a legitimate backwards move (a re-listen, a rewind on another device)
+ * from being undone by a max().
+ *
+ * The session has no timestamp of its own, so it is treated as the floor: it wins
+ * only when neither stamped candidate beats it. That is the right default,
+ * because a genuinely fresh session's position is also reflected in the media
+ * progress row it was opened from.
  */
-function preferFresherLocal(itemId: string, serverTime: number): number {
+function resolveResumePosition(itemId: string, sessionTime: number): number {
   const saved = progressFor(itemId)
-  if (!saved || !(saved.currentTime > 0)) return serverTime
-  const localAt = saved.lastUpdate
-  if (!localAt) return serverTime
-  if (Date.now() - localAt > LOCAL_RESUME_MAX_AGE_MS) return serverTime
-  if (Math.abs(saved.currentTime - serverTime) < LOCAL_RESUME_MIN_DELTA) return serverTime
+  if (!saved || !(saved.currentTime > 0)) return sessionTime
 
-  // The server's stamp for this book. /api/me is refreshed at launch, so on the
-  // relaunch-after-kill path this is the row the stale session position came
-  // from. Missing (a local-only stub) means we have nothing to order against -
-  // keep the server's value rather than guess.
+  const savedAt = saved.lastUpdate
+  if (!savedAt) return sessionTime
+  // Too close to matter: keep the session's value so ordinary rounding between a
+  // tick and its sync can never nudge the resume point.
+  if (Math.abs(saved.currentTime - sessionTime) < LOCAL_RESUME_MIN_DELTA) return sessionTime
+
+  // Is the stored row a local write or the server's own? serverUpdatedAt holds
+  // ABS's stamp as of the last /api/me refresh; recordLocalProgress restamps
+  // `lastUpdate` with a local clock on every tick. When the row's stamp is newer
+  // than the server's, a local tick wrote it last.
   const serverAt = serverProgressUpdatedAt(itemId)
-  if (!serverAt) return serverTime
-  if (localAt <= serverAt) return serverTime
+  const isLocalWrite = !serverAt || savedAt > serverAt
 
+  if (isLocalWrite) {
+    // Kill-before-sync: only trust a local row recent enough to belong to the
+    // sitting we're resuming. An older one is some earlier listen, and by then
+    // the server (or another device) is the better authority.
+    if (Date.now() - savedAt > LOCAL_RESUME_MAX_AGE_MS) return sessionTime
+    breadcrumb(
+      'resume',
+      `local ${Math.round(saved.currentTime)}s over session ${Math.round(sessionTime)}s`,
+    )
+    return saved.currentTime
+  }
+
+  // Server-written row, disagreeing with the session it was fetched alongside.
+  //
+  // Both come from ABS, so one of them is a ghost. The media-progress row is the
+  // one every device writes on every sync, and it is the value ABS itself shows
+  // on tiles and hands to the WebApp; a session is per-device state that can sit
+  // untouched for as long as the reaper allows. When the two disagree, the row is
+  // the better authority - it is where the LISTENER actually is, whereas the
+  // session is only where THIS DEVICE last was.
+  //
+  // Deliberately not gated on which is further along: the car moving forward and
+  // a re-listen moving backward must both win over a stale phone session.
   breadcrumb(
     'resume',
-    `local ${Math.round(saved.currentTime)}s beats server ${Math.round(serverTime)}s (${Math.round((localAt - serverAt) / 1000)}s newer)`,
+    `server progress ${Math.round(saved.currentTime)}s over stale session ${Math.round(sessionTime)}s`,
   )
   return saved.currentTime
 }
@@ -274,15 +324,14 @@ export async function playItemById(
   offline = null
   lastTickTime = null
 
-  // Resume position: trust the play-session's currentTime, but fall back to the
-  // saved media-progress spot when the session reports 0. ABS sometimes opens a
-  // fresh session at 0 (e.g. right after a cold app reload) even though the
-  // user's media progress is well into the book - without this fallback the
-  // first progress tick would sync 0 back over the real server position and
-  // wipe it. The saved progress is the same value ABS shows on tiles.
+  // Resume position. The play-session's currentTime is a STARTING POINT, not the
+  // answer: it can be 0 on a freshly-opened session even when media progress is
+  // well into the book (a cold reload), and it can be stale when this device left
+  // a session behind and listening continued elsewhere. resolveResumePosition
+  // reconciles it against the media-progress row and our own local writes.
   let startAt = session.currentTime > 0 ? session.currentTime : 0
   if (startAt === 0) startAt = resumePositionFor(progressFor(itemId))
-  else startAt = preferFresherLocal(itemId, startAt)
+  else startAt = resolveResumePosition(itemId, startAt)
   const np: NowPlaying = {
     itemId,
     sessionId: session.id,
@@ -573,6 +622,9 @@ function bankStreaming(a: ActiveSession, currentTime: number): void {
     duration: a.duration,
     title: a.title,
     startedAt: a.startedAt,
+    // Carried so a relaunch can close this session if this run dies before
+    // safeClose() runs - see StreamingEntry.sessionId.
+    sessionId: a.sessionId,
   })
 }
 

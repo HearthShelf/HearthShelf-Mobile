@@ -27,9 +27,16 @@
  * Plain subscribe/snapshot store (same shape as the other stores).
  */
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { ABSRequestError, syncLocalSession, syncLocalSessions, type LocalSession } from '@/api/abs'
+import {
+  ABSRequestError,
+  closeSession,
+  syncLocalSession,
+  syncLocalSessions,
+  type LocalSession,
+} from '@/api/abs'
 import { getSession } from '@/api/session'
 import { breadcrumb } from '@/lib/crashLog'
+import { progressFor } from '@/store/progress'
 import { notifyServerReached } from './syncState'
 
 export interface PendingSessionState {
@@ -294,6 +301,17 @@ interface StreamingEntry {
   title: string
   /** ms epoch the live session started, so a replay lands on the right day. */
   startedAt: number
+  /** The ABS session this time was accruing against, when there was one.
+   *
+   *  Carried so a relaunch can CLOSE a session the previous run abandoned. A
+   *  process killed mid-listen never runs safeClose(), so its session is left
+   *  open on the server holding the position it died at, until ABS's reaper gets
+   *  to it many hours later. That ghost is not inert: it is this device's session
+   *  for this book, so it shadows what the phone believes about where the book
+   *  is, and any later listening elsewhere (car, WebApp) leaves it stale and
+   *  contradicting the media-progress row. Optional: entries written by older
+   *  builds, and offline sessions, have no server session id. */
+  sessionId?: string
 }
 
 let streaming = new Map<string, StreamingEntry>()
@@ -335,6 +353,7 @@ export function setStreamingPending(
     duration: number
     title: string
     startedAt: number
+    sessionId?: string
   },
 ): void {
   if (!libraryItemId) return
@@ -396,4 +415,69 @@ export async function migrateOrphanStreaming(): Promise<void> {
       updatedAt: now,
     })
   }
+
+  void closeOrphanSessions(orphans)
 }
+
+/**
+ * Close the ABS sessions the previous run abandoned.
+ *
+ * A process killed mid-listen never reaches safeClose(), so its session stays
+ * open on the server holding the position it died at. ABS's reaper only sweeps
+ * those after many hours, and until then this device has an abandoned session
+ * carrying a position that goes stale the moment listening continues anywhere
+ * else. That was present in the car-to-phone resume that came back at the phone's
+ * old spot; closing the ghost at launch removes it as a variable regardless of
+ * exactly how the server was using it.
+ *
+ * CRITICAL - a close WRITES the position it is given. safeClose() depends on that
+ * (it is how a clean stop lands the true stop point), which means closing a ghost
+ * with the position it died at would push that old position back onto the book.
+ * In the very case this exists for - listening continued in the car after this
+ * phone died - that would overwrite the newer progress with the phone's stale
+ * spot: the exact clobber this is meant to prevent.
+ *
+ * So a ghost is only closed when its position is NOT behind what the server now
+ * holds. Behind means someone has listened past it since, and the safe move is to
+ * leave the session alone and let the reaper take it; the resume path already
+ * ignores a stale session position (see resolveResumePosition). Equal or ahead is
+ * safe to write: it is either the same spot or genuinely this device's furthest
+ * point, banked before it died.
+ *
+ * The listened-time is NOT sent here - migrateOrphanStreaming has already banked
+ * it as a local session for replay, and sending it twice would double-count it.
+ *
+ * Best-effort and fire-and-forget: offline, or against a session ABS already
+ * reaped, this just fails and the reaper handles it as before.
+ */
+async function closeOrphanSessions(orphans: [string, StreamingEntry][]): Promise<void> {
+  for (const [libraryItemId, e] of orphans) {
+    if (!e.sessionId) continue
+    // Refuse to write a position behind the current one. progressFor is the
+    // freshest thing we have at this point in launch (disk-hydrated, and
+    // refreshed from /api/me once that lands).
+    const current = progressFor(libraryItemId)?.currentTime
+    if (typeof current === 'number' && e.currentTime < current - ORPHAN_CLOSE_BEHIND_TOLERANCE) {
+      breadcrumb(
+        'session',
+        `left orphan ${e.sessionId} open - its ${Math.round(e.currentTime)}s is behind ${Math.round(current)}s`,
+      )
+      continue
+    }
+    try {
+      await closeSession(e.sessionId, {
+        currentTime: Math.round(e.currentTime),
+        timeListened: 0,
+        duration: e.duration,
+      })
+      breadcrumb('session', `closed orphan ${e.sessionId} @${Math.round(e.currentTime)}s`)
+    } catch {
+      // Already reaped, or no network - the reaper still gets it eventually.
+    }
+  }
+}
+
+/** Slack (seconds) allowed before a ghost's position counts as "behind" the
+ *  current one. Absorbs the ordinary gap between a final tick and the sync that
+ *  recorded it, so a normal kill still gets its session closed. */
+const ORPHAN_CLOSE_BEHIND_TOLERANCE = 10
