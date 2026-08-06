@@ -29,7 +29,7 @@ const CRUMB_MAX = 300
 /** Cap on the serialized breadcrumb blob sent upstream (collector caps at 8000). */
 const REPORT_CRUMBS_MAX_CHARS = 6000
 
-interface Crumb {
+export interface Crumb {
   /** ms since epoch */
   t: number
   /** 'log' | 'warn' | 'error' | free-form tag */
@@ -147,9 +147,30 @@ export async function initCrashLog(): Promise<PriorCrashReport | null> {
   state = { running: true, startedAt: Date.now(), crumbs: [] }
   writePersisted()
 
+  priorRunUnclean = !!(prior && prior.running)
+  priorRunStartedAt = prior?.startedAt ?? null
   priorReport = report
   initResolve?.()
   return report
+}
+
+/** Whether the PREVIOUS run ended without clearing its sentinel (native abort,
+ *  OOM/background kill, force-stop). Unlike takePriorCrashReport() this is not
+ *  consumed - crashReporter takes the report at startup, but a feedback report
+ *  sent minutes later still needs to know the app came back from an unclean exit.
+ *  That single bit is what distinguishes "progress reset for no reason" from
+ *  "the process died mid-listen and resumed from the last synced spot". */
+let priorRunUnclean = false
+let priorRunStartedAt: number | null = null
+
+/** True when the previous run died without a clean shutdown. See priorRunUnclean. */
+export function didPriorRunEndUncleanly(): boolean {
+  return priorRunUnclean
+}
+
+/** When the previous run started (ms epoch), or null if there was no prior run. */
+export function priorRunStart(): number | null {
+  return priorRunStartedAt
 }
 
 /**
@@ -163,6 +184,19 @@ export async function takePriorCrashReport(): Promise<PriorCrashReport | null> {
   const r = priorReport
   priorReport = null
   return r
+}
+
+/**
+ * The current run's breadcrumb trail, oldest first. Exposed so a user-submitted
+ * feedback report can carry the same trail a crash report would - when someone
+ * takes the trouble to describe a bug, the events leading up to it are already on
+ * disk and should ship with the description.
+ *
+ * Returns a shallow copy so a caller can't mutate the live ring. Empty before
+ * initCrashLog() has run.
+ */
+export function readBreadcrumbs(): Crumb[] {
+  return state ? [...state.crumbs] : []
 }
 
 /** Keep the breadcrumb blob under the upstream detail cap, newest-first priority. */

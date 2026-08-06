@@ -20,6 +20,7 @@ import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { useContentInset } from '@/ui/useContentInset'
 import { FULL_VERSION, SENTRY_DSN } from '@/lib/config'
+import { attachFeedbackDiagnostics } from '@/lib/feedbackDiagnostics'
 
 type Kind = 'bug' | 'idea' | 'other'
 
@@ -50,6 +51,11 @@ export default function FeedbackScreen() {
     }
     setSending(true)
     try {
+      // Attach player state + the breadcrumb trail BEFORE capturing, so the
+      // report carries what the app was actually doing. A description alone
+      // ("progress reset when I unlocked my phone") can't distinguish a sync
+      // failure from a process kill from a bad resume - the snapshot can.
+      attachFeedbackDiagnostics()
       Sentry.captureFeedback({
         message: message.trim(),
         name: user?.username ?? user?.fullName ?? undefined,
