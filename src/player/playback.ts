@@ -21,7 +21,7 @@ import {
 } from '@/api/abs'
 import { getSession } from '@/api/session'
 import type { ABSMediaProgress } from '@hearthshelf/core'
-import { progressFor, recordLocalProgress } from '@/store/progress'
+import { progressFor, recordLocalProgress, serverProgressUpdatedAt } from '@/store/progress'
 import { loadTrack, getState, type NowPlaying, type ChapterMark } from './store'
 import { localSourceFor, applyAutoDownloads } from './downloads'
 import {
@@ -41,6 +41,7 @@ import {
   syncStateFailed,
   syncStateClear,
   isOfflineMode,
+  subscribeSeeked,
 } from './syncState'
 
 interface ActiveSession {
@@ -138,6 +139,61 @@ function resumePositionFor(saved: ABSMediaProgress | undefined): number {
   return fraction < FINISHED_RELISTEN_MAX_PROGRESS ? saved.currentTime : 0
 }
 
+/** How far apart (seconds) the local and server positions must be before the
+ *  freshness comparison is worth making. Inside this the two are effectively the
+ *  same spot and the server's value is kept, so ordinary rounding between a tick
+ *  and its sync can never nudge the resume point. */
+const LOCAL_RESUME_MIN_DELTA = 5
+
+/** How stale (ms) a local write may be and still be trusted over the server. A
+ *  local row older than this belongs to some earlier sitting - by then the server
+ *  is the better authority, whatever the timestamps say. Generous enough to cover
+ *  a kill mid-listen plus the time it takes the listener to reopen the app. */
+const LOCAL_RESUME_MAX_AGE_MS = 12 * 60 * 60 * 1000
+
+/**
+ * Choose between the play-session's position and the locally persisted one.
+ *
+ * The server is normally right, but it only learns a position when a sync lands,
+ * and syncs are throttled to SYNC_LISTENED_THRESHOLD of real listened-time. Kill
+ * the app inside that window - which Android does freely once the screen is off,
+ * while the media service keeps playing - and the server's `currentTime` is stale
+ * by however much was heard since the last push. That is the reported progress
+ * reset: a chapter skip (which accrues no listened-time at all, so it never
+ * crosses the threshold) followed by a lock, resuming at the pre-skip spot.
+ *
+ * Deciding by "whichever is further along" would be wrong: when another device
+ * carries the listen forward, the server is correctly AHEAD, but when that device
+ * moves BACKWARD (a re-listen, a rewind) the server is correctly behind, and a
+ * max() would resurrect our own stale local row and undo it. So order the two by
+ * when they were WRITTEN instead. `lastUpdate` is ABS's own epoch-ms stamp on the
+ * progress row, refreshed by /api/me; recordLocalProgress stamps local writes the
+ * same way. Local wins only when it is strictly newer, is meaningfully different,
+ * and is recent enough to belong to the sitting we're resuming.
+ */
+function preferFresherLocal(itemId: string, serverTime: number): number {
+  const saved = progressFor(itemId)
+  if (!saved || !(saved.currentTime > 0)) return serverTime
+  const localAt = saved.lastUpdate
+  if (!localAt) return serverTime
+  if (Date.now() - localAt > LOCAL_RESUME_MAX_AGE_MS) return serverTime
+  if (Math.abs(saved.currentTime - serverTime) < LOCAL_RESUME_MIN_DELTA) return serverTime
+
+  // The server's stamp for this book. /api/me is refreshed at launch, so on the
+  // relaunch-after-kill path this is the row the stale session position came
+  // from. Missing (a local-only stub) means we have nothing to order against -
+  // keep the server's value rather than guess.
+  const serverAt = serverProgressUpdatedAt(itemId)
+  if (!serverAt) return serverTime
+  if (localAt <= serverAt) return serverTime
+
+  breadcrumb(
+    'resume',
+    `local ${Math.round(saved.currentTime)}s beats server ${Math.round(serverTime)}s (${Math.round((localAt - serverAt) / 1000)}s newer)`,
+  )
+  return saved.currentTime
+}
+
 /**
  * Coerce raw chapter data from the server (or a local download) into well-typed
  * ChapterMark[]. ABS's response is only type-asserted, not validated, so a
@@ -226,6 +282,7 @@ export async function playItemById(
   // wipe it. The saved progress is the same value ABS shows on tiles.
   let startAt = session.currentTime > 0 ? session.currentTime : 0
   if (startAt === 0) startAt = resumePositionFor(progressFor(itemId))
+  else startAt = preferFresherLocal(itemId, startAt)
   const np: NowPlaying = {
     itemId,
     sessionId: session.id,
@@ -240,6 +297,10 @@ export async function playItemById(
     chapters: sanitizeChapters(session.chapters ?? []),
   }
   loadTrack(np, autoPlay)
+  breadcrumb(
+    'play',
+    `${itemId} online @${Math.round(startAt)}s (session ${session.currentTime > 0 ? 'had' : 'no'} pos, ${local ? 'local file' : 'stream'})`,
+  )
 
   active = {
     sessionId: session.id,
@@ -326,6 +387,7 @@ async function playFromDownloadOffline(itemId: string, autoPlay = true): Promise
     chapters: sanitizeChapters(local.chapters),
   }
   loadTrack(np, autoPlay)
+  breadcrumb('play', `${itemId} offline @${Math.round(startAt)}s (${resumed ? 're-entry' : 'new'})`)
   active = null
   if (resumed) {
     // Keep localId/startedAt/timeListening exactly as they were: the id keeps the
@@ -443,14 +505,64 @@ export async function syncProgress(currentTime: number, force = false): Promise<
   // session is still what reports listening; this is the safety net that turns a
   // kill mid-stream into a one-tick loss instead of a whole sync window.
   bankStreaming(active, currentTime)
+  // Persist the POSITION locally every tick, exactly as the offline branch does.
+  // bankStreaming above banks listened-TIME, which pendingProgress replays as
+  // accrued time - it is never read as a resume position. So without this an
+  // online session kept position only in RAM and on the server, and the server
+  // only learns it when the sync threshold below is crossed. A process death in
+  // between (Android killing the app while the screen is off, with the media
+  // service still playing) lost everything since the last sync: the reported bug
+  // was a skip to a new chapter followed by a lock, where the seek accrued no
+  // listened-time, never crossed the threshold, and resumed at the pre-skip spot.
+  recordLocalProgress(active.itemId, currentTime, active.duration)
 
   // Sync on `force` (pause/stop/book-switch) ALWAYS - even a few seconds of
   // listening should land - or once enough real listened-time has accrued.
   if (!force && active.pendingListened < SYNC_LISTENED_THRESHOLD) return
-  if (active.pendingListened <= 0) return
+  // A forced sync still pushes with zero accrued time when a seek left the
+  // server's position stale (pause right after a skip) - otherwise the stop point
+  // the listener chose never lands.
+  if (active.pendingListened <= 0 && !(force && seekDirty)) return
 
+  seekDirty = false
   await pushListened(active, currentTime)
 }
+
+/** Position moved by a seek/skip that the server hasn't been told about yet. */
+let seekDirty = false
+/** Timer that pushes a settled seek. Rearmed by each seek, so a scrub drag sends
+ *  one request at the end instead of one per frame. */
+let seekPushTimer: ReturnType<typeof setTimeout> | null = null
+/** How long the playhead must sit still after a seek before the new spot is
+ *  pushed - long enough to coalesce a drag, short enough to beat a screen-off
+ *  kill. */
+const SEEK_SETTLE_MS = 3000
+
+// Remember every seek as an unsynced position change, and push it once the
+// playhead settles.
+//
+// This is driven by a TIMER rather than by progress ticks, because the cases that
+// most need it produce no ticks at all: seeking while paused, and seeking then
+// immediately locking the phone. A tick-driven check would also never fire for a
+// backwards seek (the playhead has to pass the target to "settle", which it never
+// does going back). The timer fires regardless of whether audio is advancing.
+//
+// The store fires this through syncState (the leaf module both sides already
+// import) rather than calling here directly, which would cycle - playback
+// imports store.
+subscribeSeeked(() => {
+  if (!active) return
+  seekDirty = true
+  if (seekPushTimer) clearTimeout(seekPushTimer)
+  seekPushTimer = setTimeout(() => {
+    seekPushTimer = null
+    // Re-check: the book may have been switched, stopped, or already synced by a
+    // threshold push in the meantime.
+    if (!active || !seekDirty) return
+    seekDirty = false
+    void pushListened(active, getState().position).catch(() => {})
+  }, SEEK_SETTLE_MS)
+})
 
 /** Write the active session's outstanding listened-time to the durable streaming
  *  buffer. Absolute (not a delta), so a dropped call can't drift the buffer. */
@@ -471,6 +583,9 @@ async function pushListened(a: ActiveSession, currentTime: number): Promise<bool
   const timeListened = Math.round(a.pendingListened)
   a.pendingListened = 0
   a.lastSyncedTime = currentTime
+  // Whatever prompted this push, it carries the current position - so any seek
+  // debt is settled and a pending settle-timer has nothing left to send.
+  seekDirty = false
   try {
     await syncSession(a.sessionId, {
       currentTime: Math.round(currentTime),
@@ -492,6 +607,10 @@ async function pushListened(a: ActiveSession, currentTime: number): Promise<bool
     // Connectivity blip: roll the unsynced time back so the next tick retries it,
     // and show red - we couldn't reach the server.
     a.pendingListened += timeListened
+    breadcrumb(
+      'sync',
+      `push failed @${Math.round(currentTime)}s, ${timeListened}s unsynced (${e instanceof ABSRequestError ? `http ${e.status}` : 'network'})`,
+    )
     syncStateFailed()
     return false
   }
@@ -579,6 +698,13 @@ async function safeClose(): Promise<void> {
   const pos = getState().position
   active = null
   lastTickTime = null
+  // The close below carries the final position, so a queued settle-push would be
+  // both redundant and aimed at a session that no longer exists.
+  if (seekPushTimer) {
+    clearTimeout(seekPushTimer)
+    seekPushTimer = null
+  }
+  seekDirty = false
   try {
     await closeSession(sessionId, {
       currentTime: Math.round(pos),

@@ -38,6 +38,20 @@ const listeners = new Set<() => void>()
 const overrides = new Map<string, { isFinished: boolean; atMs: number }>()
 const OVERRIDE_TTL_MS = 20_000
 
+// The server's own lastUpdate per item, as of the last refresh. Kept apart from
+// the row because recordLocalProgress restamps `lastUpdate` on every tick - so
+// the row alone can't say when the SERVER last moved. Resume needs both stamps to
+// tell "we died before syncing" (local newer) from "another device listened on"
+// (server newer). Not persisted: a value is only meaningful next to the row it
+// came from, and a fresh launch refreshes before any resume decision matters.
+const serverUpdatedAt = new Map<string, number>()
+
+/** When the server last moved this book's progress, per the most recent refresh.
+ *  undefined when the server has never reported a stamp for it. */
+export function serverProgressUpdatedAt(itemId: string): number | undefined {
+  return serverUpdatedAt.get(itemId)
+}
+
 function persist(): void {
   const items = [...state.byId.values()]
   void AsyncStorage.setItem(STORE_KEY, JSON.stringify({ items })).catch(() => {})
@@ -97,6 +111,12 @@ export function recordLocalProgress(itemId: string, currentTime: number, duratio
     libraryItemId: itemId,
     duration: total,
     currentTime,
+    // Stamp the write so resume can order this against the server's own
+    // lastUpdate. A process kill can leave this row ahead of the server (the
+    // position moved but the sync window hadn't elapsed); a listen on another
+    // device leaves the server ahead. Whichever was written last wins - see
+    // resumePositionFor's caller in playback.ts.
+    lastUpdate: Date.now(),
     // A finished book reads as 100% regardless of where the re-listen sits, so
     // shelves and tiles don't show it sliding backwards from complete.
     progress: prev?.isFinished
@@ -145,6 +165,10 @@ export async function refreshProgress(): Promise<ABSMeResponse> {
   const prev = state.byId
   const me = await getMe()
   const next = new Map(me.mediaProgress.map((p) => [p.libraryItemId, p] as const))
+  // Snapshot the server's stamps before any local write can restamp these rows.
+  for (const p of me.mediaProgress) {
+    if (typeof p.lastUpdate === 'number') serverUpdatedAt.set(p.libraryItemId, p.lastUpdate)
+  }
   const now = Date.now()
   for (const [id, o] of [...overrides]) {
     if (now - o.atMs > OVERRIDE_TTL_MS) {

@@ -64,6 +64,21 @@ export function subscribeServerReached(fn: () => void): () => void {
   }
 }
 
+// Notified when the listener moves the playhead. playback.ts subscribes so it can
+// remember an unsynced position change; the seek itself originates in store.ts,
+// which must not import playback (playback already imports store, and the cycle
+// would be real). syncState is the leaf both already depend on, so the signal
+// routes through here - the same shape as subscribeServerReached above.
+const seekListeners = new Set<(target: number) => void>()
+
+/** Subscribe to "the listener seeked". Returns an unsubscribe fn. */
+export function subscribeSeeked(fn: (target: number) => void): () => void {
+  seekListeners.add(fn)
+  return () => {
+    seekListeners.delete(fn)
+  }
+}
+
 /** Announce that a request reached the server. Fired by syncStateSynced and by a
  *  successful pending-session flush (which has no live session to mark synced). */
 export function notifyServerReached(): void {
@@ -148,6 +163,10 @@ export function syncStateSeeked(currentTime: number): void {
     status: state.status === 'failed' ? 'failed' : 'pending',
     live: state.live ? { ...state.live, currentTime } : state.live,
   })
+  // Tell playback the position moved with no listened-time behind it, so it can
+  // push the new spot instead of waiting for a listened-time threshold that a
+  // seek alone will never cross.
+  seekListeners.forEach((l) => l(currentTime))
 }
 
 /** Nothing playing. */
