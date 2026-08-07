@@ -103,19 +103,42 @@ export function tabFromParam(from: string | undefined, fallback: string): string
 
 export function AppTabBar({
   activeName,
+  expandedName,
   onPressTab,
 }: {
   /** Route name of the active tab, or null when none should read as active. */
   activeName: string | null
+  /** Route name of a tab that currently owns an open popup (the More menu), so
+   *  it can expose an expanded state to accessibility services. */
+  expandedName?: string | null
   onPressTab: (name: string) => void
 }) {
   const mode = useNavMode()
-  if (mode === 'classic') return <ClassicTabBar activeName={activeName} onPressTab={onPressTab} />
+  const props = { activeName, expandedName: expandedName ?? null, onPressTab }
+  if (mode === 'classic') return <ClassicTabBar {...props} />
   return mode === 'floating-vertical' ? (
-    <VerticalPillNav activeName={activeName} onPressTab={onPressTab} />
+    <VerticalPillNav {...props} />
   ) : (
-    <FloatingPillNav activeName={activeName} onPressTab={onPressTab} />
+    <FloatingPillNav {...props} />
   )
+}
+
+/** Shared shape of the three nav renderers. */
+interface NavProps {
+  activeName: string | null
+  expandedName: string | null
+  onPressTab: (name: string) => void
+}
+
+/**
+ * Accessibility state for one tab. Every tab reports `selected`; the More tab
+ * additionally reports `expanded`, since it owns a popup rather than a
+ * destination. `expandedName` is the name of the tab whose popup is currently
+ * open, or null when none is.
+ */
+function tabA11yState(name: string, focused: boolean, expandedName: string | null) {
+  if (name !== 'more') return { selected: focused }
+  return { selected: focused, expanded: name === expandedName }
 }
 
 /** Shared tap handling: re-tapping the active tab emits a scroll-to-top signal;
@@ -128,13 +151,7 @@ function handleTabPress(name: string, focused: boolean, onPressTab: (name: strin
 
 // ---- Classic full-width bar ----
 
-function ClassicTabBar({
-  activeName,
-  onPressTab,
-}: {
-  activeName: string | null
-  onPressTab: (name: string) => void
-}) {
+function ClassicTabBar({ activeName, expandedName, onPressTab }: NavProps) {
   const insets = useSafeAreaInsets()
   const colors = useColors()
   return (
@@ -157,6 +174,8 @@ function ClassicTabBar({
             key={meta.name}
             style={({ pressed }) => [styles.tab, pressed && styles.tabPressed]}
             onPress={() => handleTabPress(meta.name, focused, onPressTab)}
+            accessibilityRole="tab"
+            accessibilityState={tabA11yState(meta.name, focused, expandedName)}
           >
             <TabPill focused={focused} activeColor={colors.accentTile}>
               <Icon name={iconFor(meta.icon, focused)} size={22} color={tint} />
@@ -185,13 +204,7 @@ function ClassicTabBar({
  * container is transparent to touches (content shows beneath the pill), so only
  * the pill's own buttons are tappable.
  */
-function FloatingPillNav({
-  activeName,
-  onPressTab,
-}: {
-  activeName: string | null
-  onPressTab: (name: string) => void
-}) {
+function FloatingPillNav({ activeName, expandedName, onPressTab }: NavProps) {
   const insets = useSafeAreaInsets()
   const colors = useColors()
   const styles = makePillStyles(colors)
@@ -257,6 +270,7 @@ function FloatingPillNav({
               meta={meta}
               focused={focused}
               colors={colors}
+              a11yState={tabA11yState(meta.name, focused, expandedName)}
               onLayout={onItemLayout(meta.name)}
               onPress={() => handleTabPress(meta.name, focused, onPressTab)}
             />
@@ -276,13 +290,7 @@ function FloatingPillNav({
  * reserves VNAV_WIDTH along the right edge; the mini player insets to sit beside
  * it and drops to the bottom, so nothing overlaps.
  */
-function VerticalPillNav({
-  activeName,
-  onPressTab,
-}: {
-  activeName: string | null
-  onPressTab: (name: string) => void
-}) {
+function VerticalPillNav({ activeName, expandedName, onPressTab }: NavProps) {
   const insets = useSafeAreaInsets()
   const colors = useColors()
   const styles = makePillStyles(colors)
@@ -337,6 +345,7 @@ function VerticalPillNav({
               meta={meta}
               focused={focused}
               colors={colors}
+              a11yState={tabA11yState(meta.name, focused, expandedName)}
               onLayout={onItemLayout(meta.name)}
               onPress={() => handleTabPress(meta.name, focused, onPressTab)}
             />
@@ -353,12 +362,14 @@ function VerticalPillItem({
   meta,
   focused,
   colors,
+  a11yState,
   onLayout,
   onPress,
 }: {
   meta: TabDef
   focused: boolean
   colors: Palette
+  a11yState: { selected: boolean; expanded?: boolean }
   onLayout: (e: LayoutChangeEvent) => void
   onPress: () => void
 }) {
@@ -373,7 +384,14 @@ function VerticalPillItem({
   const iconStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }))
   const tint = focused ? colors.accent : colors.textMuted
   return (
-    <Pressable onPress={onPress} hitSlop={4} onLayout={onLayout}>
+    <Pressable
+      onPress={onPress}
+      hitSlop={4}
+      onLayout={onLayout}
+      accessibilityRole="tab"
+      accessibilityLabel={meta.label}
+      accessibilityState={a11yState}
+    >
       <View style={styles.vitem}>
         <Animated.View style={iconStyle}>
           <Icon name={iconFor(meta.icon, focused)} size={22} color={tint} />
@@ -392,12 +410,14 @@ function PillItem({
   meta,
   focused,
   colors,
+  a11yState,
   onLayout,
   onPress,
 }: {
   meta: TabDef
   focused: boolean
   colors: Palette
+  a11yState: { selected: boolean; expanded?: boolean }
   onLayout: (e: LayoutChangeEvent) => void
   onPress: () => void
 }) {
@@ -421,7 +441,14 @@ function PillItem({
   }))
   const tint = focused ? colors.accent : colors.textMuted
   return (
-    <Pressable onPress={onPress} hitSlop={4} onLayout={onLayout}>
+    <Pressable
+      onPress={onPress}
+      hitSlop={4}
+      onLayout={onLayout}
+      accessibilityRole="tab"
+      accessibilityLabel={meta.label}
+      accessibilityState={a11yState}
+    >
       <View style={styles.item}>
         <Animated.View style={iconStyle}>
           <Icon name={iconFor(meta.icon, focused)} size={20} color={tint} />

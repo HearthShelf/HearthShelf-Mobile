@@ -1,7 +1,7 @@
 /**
- * Settings drill-down stack. The grouped menu now lives on the More tab
- * (app/(tabs)/more.tsx); this stack only holds the detail panels. Each panel is
- * its own screen so it gets a native header, back button, and back-swipe. Header
+ * Settings drill-down stack. `index` is the grouped menu (pushed from the More
+ * menu's Settings entry); the rest are its detail panels. Each screen gets a
+ * native header, back button, and back-swipe. Header
  * colours track the active theme (useTheme), so the whole flow re-skins with
  * Light/OLED/accent.
  */
@@ -40,6 +40,7 @@ export default function SettingsLayout() {
             animation: 'slide_from_right',
           }}
         >
+          <Stack.Screen name="index" options={{ title: 'Settings' }} />
           <Stack.Screen name="appearance" options={{ title: 'Appearance & feel' }} />
           <Stack.Screen name="playback" options={{ title: 'Player' }} />
           <Stack.Screen name="sleep" options={{ title: 'Sleep timer' }} />

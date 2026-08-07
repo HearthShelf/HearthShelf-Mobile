@@ -6,10 +6,17 @@
  * nav stays visible there unless the player goes immersive.
  */
 import { Tabs, type BottomTabBarProps, type BottomTabNavigationOptions } from 'expo-router/js-tabs'
-import { View } from 'react-native'
+import { StyleSheet, View } from 'react-native'
 import { useSyncExternalStore } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { AppTabBar, TAB_BAR_HEIGHT, useNavMode } from '@/ui/AppTabBar'
+import { MoreMenu } from '@/ui/MoreMenu'
+import {
+  getMoreMenuOpen,
+  setMoreMenuOpen,
+  subscribeMoreMenu,
+  toggleMoreMenu,
+} from '@/ui/moreMenuState'
 import { getImmersive, subscribeImmersive } from '@/player/immersive'
 import { LIFT, useReducedMotion } from '@/ui/motion'
 
@@ -67,7 +74,12 @@ const fadeTransitionSpec: TransitionSpec = {
   config: { duration: LIFT.zero.duration },
 }
 
-function TabBar({ state, navigation }: BottomTabBarProps) {
+function TabBar({
+  state,
+  navigation,
+  menuOpen,
+  onToggleMenu,
+}: BottomTabBarProps & { menuOpen: boolean; onToggleMenu: () => void }) {
   const immersive = useSyncExternalStore(subscribeImmersive, getImmersive)
   const activeName = state.routes[state.index]?.name
   const navMode = useNavMode()
@@ -92,8 +104,16 @@ function TabBar({ state, navigation }: BottomTabBarProps) {
       }
     >
       <AppTabBar
-        activeName={activeName ?? null}
+        // While the menu is up, More reads as the active destination even though
+        // the router is still on whatever tab the user was on.
+        activeName={menuOpen ? 'more' : (activeName ?? null)}
+        expandedName={menuOpen ? 'more' : null}
         onPressTab={(name) => {
+          // More never navigates - it opens (or toggles) the bubble instead.
+          if (name === 'more') {
+            onToggleMenu()
+            return
+          }
           const route = state.routes.find((r) => r.name === name)
           if (!route) return
           const focused = state.routes[state.index]?.name === name
@@ -111,21 +131,35 @@ function TabBar({ state, navigation }: BottomTabBarProps) {
 
 export default function TabsLayout() {
   const reducedMotion = useReducedMotion()
+  // The bubble is rendered here, above the scenes, so it overlays every tab and
+  // survives tab switches. Opening it is not a navigation: the current screen
+  // stays mounted and the back stack is untouched. The open flag lives in a
+  // module store so pushed routes (which render their own tab bar) can request
+  // it too - see src/ui/moreMenuState.ts.
+  const menuOpen = useSyncExternalStore(subscribeMoreMenu, getMoreMenuOpen)
+
   return (
-    <Tabs
-      tabBar={(props) => <TabBar {...props} />}
-      screenOptions={{
-        headerShown: false,
-        sceneStyleInterpolator: reducedMotion ? fadeSceneInterpolator : liftSceneInterpolator,
-        transitionSpec: reducedMotion ? fadeTransitionSpec : liftTransitionSpec,
-      }}
-    >
-      <Tabs.Screen name="index" />
-      <Tabs.Screen name="library" />
-      <Tabs.Screen name="now" />
-      <Tabs.Screen name="stats" />
-      <Tabs.Screen name="feedback" />
-      <Tabs.Screen name="more" />
-    </Tabs>
+    <View style={styles.root}>
+      <Tabs
+        tabBar={(props) => <TabBar {...props} menuOpen={menuOpen} onToggleMenu={toggleMoreMenu} />}
+        screenOptions={{
+          headerShown: false,
+          sceneStyleInterpolator: reducedMotion ? fadeSceneInterpolator : liftSceneInterpolator,
+          transitionSpec: reducedMotion ? fadeTransitionSpec : liftTransitionSpec,
+        }}
+      >
+        <Tabs.Screen name="index" />
+        <Tabs.Screen name="library" />
+        <Tabs.Screen name="now" />
+        <Tabs.Screen name="stats" />
+        <Tabs.Screen name="feedback" />
+        <Tabs.Screen name="more" />
+      </Tabs>
+      <MoreMenu open={menuOpen} onClose={() => setMoreMenuOpen(false)} />
+    </View>
   )
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+})

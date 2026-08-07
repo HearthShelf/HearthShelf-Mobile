@@ -4,6 +4,8 @@
  *  - DUR matches the settings accordion's fade/layout timings.
  *  - PULSE_MS is the splash glow's breathing period, reused wherever something
  *    should feel like a live hearth rather than a static tint.
+ *  - BUBBLE_SPRING grows the More menu out of its corner (a slower, larger-
+ *    surface entrance than POP).
  * New animation work should draw from these instead of inventing new curves.
  */
 import { useEffect } from 'react'
@@ -28,6 +30,26 @@ export function useReducedMotion(): boolean {
 export const POP_SPRING = { damping: 13, stiffness: 380, mass: 0.5 } as const
 
 export const DUR = { fast: 120, base: 180, slow: 220 } as const
+
+/**
+ * The More menu bubble's growth (docs/redesign/more-menu.html). Deliberately NOT
+ * POP_SPRING: that one is tuned for press feedback and snaps in ~200ms, which
+ * reads as a flash on a surface this large. This is slower and only just
+ * underdamped - ~520ms to rest with roughly 2% overshoot, matching the mockup's
+ * cubic-bezier(0.2, 0.82, 0.26, 1.12).
+ *
+ * Driven as ONE spring per axis from start to rest. Intermediate waypoints
+ * restart the easing mid-growth, which reads as a stutter (see design.md).
+ */
+export const BUBBLE_SPRING = { damping: 26, stiffness: 190, mass: 1 } as const
+
+/** Bubble dismissal: no overshoot, just a quick shrink back to the corner. */
+export const BUBBLE_CLOSE_MS = 160
+
+/** Per-row reveal, counted back from the row nearest the growth corner. */
+export const BUBBLE_STAGGER_MS = 34
+export const BUBBLE_STAGGER_DELAY_MS = 150
+export const BUBBLE_ROW_FADE_MS = 220
 
 /**
  * Shelf Lift navigation doses (docs/redesign/08-transitions-2.html). Every

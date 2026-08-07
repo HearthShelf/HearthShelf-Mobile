@@ -869,13 +869,6 @@ function HomeHeader({
           <Icon name={icons.download} size={19} color={colors.text} />
           {downloading ? <View style={styles.headerDot} /> : null}
         </Touchable>
-        <Touchable
-          onPress={() => router.push('/discover?from=home')}
-          style={styles.headerBtn}
-          accessibilityLabel="Discover"
-        >
-          <Icon name={icons.sparkle} size={19} color={colors.text} />
-        </Touchable>
         <Touchable onPress={() => router.push('/search?from=home')} style={styles.headerBtn}>
           <Icon name={icons.search} size={19} color={colors.text} />
         </Touchable>

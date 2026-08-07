@@ -114,6 +114,13 @@ export const icons = {
   star: 'star',
   starOutline: 'star-border',
   notInterested: 'block',
+  // More menu destinations (Discover reuses `sparkle`, Downloads `download`)
+  questGiver: 'explore',
+  history: 'history',
+  collections: 'collections-bookmark',
+  playlists: 'playlist-play',
+  settings: 'settings',
+  serverSettings: 'admin-panel-settings',
   // Nav / actions
   search: 'search',
   back: 'arrow-back',
