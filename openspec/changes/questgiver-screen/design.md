@@ -53,10 +53,28 @@ a phone each step gets its own view with a progress indicator. This is a layout
 change, not a flow change - the questions, their order, and their options are
 unchanged, which is what the spec pins down.
 
-The weights step is the pressure point: it renders a slider per owned genre plus
-explore genres, which on a phone is a long scroll of near-identical controls.
-Worth checking against a real library early; if it reads badly, the fix is a
-more compact control, not fewer questions.
+### The weights step shows four genres, with the rest behind an expand
+
+Web renders a slider per owned genre plus the explore genres - on a large
+library that is a dozen-plus near-identical controls. On a phone that is a long
+scroll of sliders with no sense of which ones matter, and it buries the Continue
+button.
+
+Default to the top four by listening, with the rest behind an expand. "Top" is
+already computed: `qgBuildProfile` sorts `profile.listened` by score descending
+(`packages/core/src/lib/questgiver.ts:181`), where score is
+`finished * 2 + started`. So this is a slice, not new ranking logic.
+
+The critical property is that this stays presentational. Web seeds a weight for
+*every* genre when the step is first reached and passes the whole map to the run
+(`HearthShelf/src/pages/QuestGiverPage.tsx:111-122, 198`). Collapsed genres keep
+their seeded weights and still influence the result - the spec pins this down,
+because a version that only submitted visible genres would quietly change what
+QuestGiver recommends.
+
+Four is a judgement call: enough to feel like real control, short enough that
+Continue stays on screen. If it reads thin against a real library, the number
+moves; the shape does not.
 
 ### Do not port the picker's FLIP animation
 
@@ -94,5 +112,8 @@ the source of truth so runs follow the listener.
   needs an equivalent. If feedback ever needs to influence results server-side
   rather than client-side, this becomes a real design question rather than a
   storage detail.
-- **The weights step may not survive contact with a phone.** Flagged above; the
-  risk is discovering it late, after the flow is built around it.
+- **Collapsing weights hides a failure mode.** If the implementation submits
+  only the visible genres, QuestGiver still returns plausible-looking picks -
+  just subtly worse ones, with no error and nothing obviously wrong on screen.
+  It would survive a casual test. Hence the explicit spec scenario and the
+  verify step comparing submitted weight maps rather than eyeballing results.

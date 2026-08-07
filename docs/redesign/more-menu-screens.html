@@ -812,6 +812,20 @@
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
   }
 
+  /* Reveals the genres below the top four. The count tells the listener how
+     much is behind it, so an unexpanded list never reads as the whole set. */
+  .q-expand {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    color: var(--accent);
+    padding: 5px 11px 5px 8px;
+    border-radius: var(--r-pill);
+    border: 1px solid var(--hairline);
+    margin-top: 2px;
+  }
+
   .q-foot {
     margin-top: 14px;
     display: flex;
@@ -1184,7 +1198,9 @@
       <p class="note">
         A 4-step wizard, one question per screen. Web fits all four steps in a column; on a phone
         each step gets its own view with a progress bar. The engine is already in core, so the AI
-        backend is optional - the heuristic completes the flow unaided.
+        backend is optional - the heuristic completes the flow unaided. The weights preview shows
+        the top four genres with the rest behind an expand; hidden genres keep their seeded weight
+        and still count, so collapsing never changes the result.
       </p>
       <div class="phone">
         <div class="status"><span>9:41</span><span>▮▮▮</span></div>
@@ -1217,7 +1233,7 @@
             </div>
           </div>
 
-          <div class="sec-label" style="margin-top:20px">Preview — step 3</div>
+          <div class="sec-label" style="margin-top:14px">Preview — step 3</div>
           <div class="q-slider">
             <div class="top"><b>Fantasy</b><span class="v">8</span></div>
             <div class="track"><i style="width:80%"></i><span class="knob" style="left:80%"></span></div>
@@ -1227,9 +1243,18 @@
             <div class="track"><i style="width:50%"></i><span class="knob" style="left:50%"></span></div>
           </div>
           <div class="q-slider">
-            <div class="top"><b>Mystery</b><span class="v">2</span></div>
+            <div class="top"><b>Mystery</b><span class="v">4</span></div>
+            <div class="track"><i style="width:40%"></i><span class="knob" style="left:40%"></span></div>
+          </div>
+          <div class="q-slider">
+            <div class="top"><b>History</b><span class="v">2</span></div>
             <div class="track"><i style="width:20%"></i><span class="knob" style="left:20%"></span></div>
           </div>
+
+          <span class="q-expand">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 9.5l6 6 6-6"/></svg>
+            9 more genres
+          </span>
 
           <div class="q-foot">
             <span class="q-back">Back</span>

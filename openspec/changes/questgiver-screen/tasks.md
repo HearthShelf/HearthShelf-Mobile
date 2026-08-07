@@ -27,13 +27,17 @@
 - [ ] 3.2 Step 1 basis: history vs a chosen set. The chosen-set path needs a
       book selector - plain, no FLIP animation.
 - [ ] 3.3 Step 2 direction, with copy derived from the listener's own profile.
-- [ ] 3.4 Step 3 weights: a slider per genre using the existing `AppSlider`.
-      **Check this against a real library early** - a dozen-plus sliders on a
-      phone may need a more compact control, and finding that out after the flow
-      is built around it is expensive.
-- [ ] 3.5 Step 4 fine-tune: length, familiarity, narrator preference, and the
+- [ ] 3.4 Step 3 weights: sliders via the existing `AppSlider`, showing the top
+      four genres from `profile.listened` (already sorted by score) with the
+      rest behind an expand.
+- [ ] 3.5 Seed weights for EVERY genre on arrival and submit the whole map,
+      exactly as web does - collapsed genres must still influence the result.
+      A version that submits only visible genres silently changes what
+      QuestGiver recommends, and would pass a casual test.
+- [ ] 3.6 Hide the expand affordance when there is nothing behind it.
+- [ ] 3.7 Step 4 fine-tune: length, familiarity, narrator preference, and the
       look-beyond toggle.
-- [ ] 3.6 Running state, then results.
+- [ ] 3.8 Running state, then results.
 
 ## 4. Results, feedback, history
 
@@ -62,6 +66,11 @@
       external picks appear when the option is on.
 - [ ] 6.4 With the option on and NO request backend connected, confirm external
       candidates are still searched and the buy action appears - the gate fix.
-- [ ] 6.5 Confirm runs made on mobile appear on web and vice versa.
-- [ ] 6.6 Walk the flow backwards from step 4 to step 1; confirm no answers are
+- [ ] 6.5 Run twice with identical answers - once without touching the weights
+      expand, once after expanding - and confirm the submitted weight map is the
+      same both times. If collapsed genres were dropped, results would still
+      look plausible, which is exactly why this needs checking rather than
+      eyeballing.
+- [ ] 6.6 Confirm runs made on mobile appear on web and vice versa.
+- [ ] 6.7 Walk the flow backwards from step 4 to step 1; confirm no answers are
       lost.

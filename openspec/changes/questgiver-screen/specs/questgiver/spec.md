@@ -31,6 +31,34 @@ SHALL always be able to go back and change an earlier answer.
 - **WHEN** a question refers to genres, counts or listening habits
 - **THEN** those come from the listener's own library and history
 
+### Requirement: The weights step shows a few genres at a time
+
+The weights step SHALL present the listener's most-listened genres by default,
+not every genre it holds a weight for, and SHALL offer a way to reach the rest.
+
+Genres that are not on screen SHALL still carry their seeded weight into the
+run - collapsing is a presentation choice and MUST NOT change the result.
+
+#### Scenario: Arriving at the weights step
+- **WHEN** the listener reaches the weights step
+- **THEN** their most-listened genres are shown, ordered strongest first
+- **AND** the remaining genres are not shown initially
+
+#### Scenario: Reaching the rest
+- **WHEN** the listener chooses to see more genres
+- **THEN** the remaining genres are shown, including ones they do not own
+- **AND** any adjustments already made are preserved
+
+#### Scenario: Collapsed genres still count
+- **WHEN** the listener runs QuestGiver without ever expanding the list
+- **THEN** every genre's weight is submitted, not only the visible ones
+- **AND** the result matches what the same answers would produce with the list
+  expanded
+
+#### Scenario: A listener with only a few genres
+- **WHEN** the listener has fewer genres than the collapsed view would show
+- **THEN** all of them are shown and no expand affordance is offered
+
 ### Requirement: A run always produces results
 
 A run SHALL produce a shortlist whether or not an AI provider is configured or
