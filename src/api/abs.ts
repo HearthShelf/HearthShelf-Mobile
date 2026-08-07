@@ -37,6 +37,8 @@ import type {
   ABSMeResponse,
   ABSBookmark,
   ABSListeningSessionsResponse,
+  ABSListeningSession,
+  ABSDeviceInfo,
   ABSCollection,
   ABSCollectionsResponse,
   ABSPlaylist,
@@ -447,9 +449,61 @@ export async function deleteBookmark(libraryItemId: string, time: number): Promi
 
 // ---- Recent listening sessions ----
 
-export async function getRecentSessions(itemsPerPage = 100) {
+/** One session, flattened to the fields a list actually renders. ABS's own field
+ *  names (libraryItemId/displayTitle/timeListening) leak its API shape into the
+ *  UI; normalizing here keeps screens readable and gives one place to absorb a
+ *  rename. */
+export interface SessionRow {
+  id: string
+  itemId: string
+  title: string
+  author: string
+  /** Seconds actually listened in this session. */
+  seconds: number
+  /** Epoch ms the session began - what history groups by. */
+  startedAt: number
+  device?: ABSDeviceInfo
+}
+
+export function toSessionRow(s: ABSListeningSession): SessionRow {
+  return {
+    id: s.id,
+    itemId: s.libraryItemId,
+    title: s.displayTitle,
+    author: s.displayAuthor,
+    seconds: s.timeListening ?? 0,
+    startedAt: s.startedAt,
+    device: s.deviceInfo,
+  }
+}
+
+/**
+ * A page of listening sessions WITH the server's envelope, which is what an
+ * infinite list needs: `total` is the only honest session count (a client can
+ * only ever see what it has loaded), and `numPages` is how paging knows it is
+ * done.
+ *
+ * `getRecentSessions` below keeps returning a bare array for the callers that
+ * only ever want "the most recent N".
+ */
+export async function getSessionsPage(
+  page = 0,
+  itemsPerPage = 25,
+): Promise<{ rows: SessionRow[]; total: number; page: number; numPages: number }> {
   const data = await absRequest<ABSListeningSessionsResponse>(
-    `/api/me/listening-sessions?page=0&itemsPerPage=${itemsPerPage}`,
+    `/api/me/listening-sessions?page=${page}&itemsPerPage=${itemsPerPage}`,
+  )
+  return {
+    rows: (data.sessions ?? []).map(toSessionRow),
+    total: data.total ?? 0,
+    page: data.page ?? page,
+    numPages: Math.max(1, data.numPages ?? 1),
+  }
+}
+
+export async function getRecentSessions(itemsPerPage = 100, page = 0) {
+  const data = await absRequest<ABSListeningSessionsResponse>(
+    `/api/me/listening-sessions?page=${page}&itemsPerPage=${itemsPerPage}`,
   )
   return data.sessions ?? []
 }

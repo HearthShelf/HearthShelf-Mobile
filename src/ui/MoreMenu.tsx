@@ -63,7 +63,7 @@ interface MenuEntry {
 }
 
 /**
- * Every destination in display order. Three of these (History, Collections,
+ * Every destination in display order. Two of these (Collections and
  * Playlists) have no screen on mobile yet and are held back by `available`
  * until they land - adding one is a one-line change.
  */
@@ -99,7 +99,7 @@ function buildEntries(isAdmin: boolean): MenuEntry[] {
       icon: 'history',
       href: '/history',
       group: 2,
-      available: false,
+      available: true,
     },
     {
       id: 'collections',
