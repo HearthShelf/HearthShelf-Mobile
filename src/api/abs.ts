@@ -463,6 +463,12 @@ export interface SessionRow {
   /** Epoch ms the session began - what history groups by. */
   startedAt: number
   device?: ABSDeviceInfo
+  /** Carried through unrendered so a correction can re-submit the session
+   *  through the local-session ingest, which needs the whole record (see
+   *  updateListeningSession - ABS has no session PATCH). */
+  duration: number
+  currentTime: number
+  updatedAt: number
 }
 
 export function toSessionRow(s: ABSListeningSession): SessionRow {
@@ -474,6 +480,9 @@ export function toSessionRow(s: ABSListeningSession): SessionRow {
     seconds: s.timeListening ?? 0,
     startedAt: s.startedAt,
     device: s.deviceInfo,
+    duration: s.duration ?? 0,
+    currentTime: s.currentTime ?? 0,
+    updatedAt: s.updatedAt ?? s.startedAt,
   }
 }
 
@@ -499,6 +508,24 @@ export async function getSessionsPage(
     page: data.page ?? page,
     numPages: Math.max(1, data.numPages ?? 1),
   }
+}
+
+/**
+ * Offset-addressed sessions, for the shared paged-list hook.
+ *
+ * ABS only pages by index, so an offset is translated to the page containing it.
+ * The caller always asks from the count of rows it holds, and a page boundary
+ * rarely lands there exactly, so the response is trimmed to start at the
+ * requested offset - the hook de-dupes any remaining overlap.
+ */
+export async function getSessionsAtOffset(
+  offset = 0,
+  limit = 25,
+): Promise<{ rows: SessionRow[]; total: number }> {
+  const page = Math.floor(offset / limit)
+  const res = await getSessionsPage(page, limit)
+  const skip = offset - page * limit
+  return { rows: skip > 0 ? res.rows.slice(skip) : res.rows, total: res.total }
 }
 
 export async function getRecentSessions(itemsPerPage = 100, page = 0) {

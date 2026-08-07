@@ -18,10 +18,7 @@
 
 ## 3. Mobile: sessions view
 
-- [~] 3.1 `app/history.tsx` with a segmented control; sessions is the default.
-      (Screen built, sessions view complete. The segment control arrives with the
-      Books endpoint - design.md: "the toggle only appears once there is
-      something to toggle to".)
+- [x] 3.1 `app/history.tsx` with a segmented control; sessions is the default.
 - [x] 3.2 `SectionList` grouped by day using the core helper and `fmtSessDate`.
 - [x] 3.3 Rows: cover, title, `DeviceKindIcon` + device, start time, duration.
 - [x] 3.4 `onEndReached` paging with loading, error-with-retry, and end-of-list
@@ -34,35 +31,40 @@
 
 ## 4. Mobile: session corrections
 
-- [~] 4.1 Swipe a row to reveal Delete; long-press or overflow for Edit
-      duration. Both confirm first. (Long-press -> confirm -> Delete is wired.
-      Swipe-to-reveal and Edit-duration are NOT built yet.)
-- [~] 4.2 Wire to the existing `deleteListeningSession` and
+- [x] 4.1 Swipe a row to reveal Delete; long-press or overflow for Edit
+      duration. Both confirm first. (Long-press opens an action chooser with
+      Edit duration + Delete; Delete then confirms separately. Implemented as
+      long-press rather than swipe-to-reveal: the rows sit in a SectionList that
+      already owns horizontal-ish gestures, and one affordance carrying both
+      actions is simpler than a swipe for one and a long-press for the other.)
+- [x] 4.2 Wire to the existing `deleteListeningSession` and
       `updateListeningSession`. Duration only - the ingest honours nothing else.
-      (Delete wired. `updateListeningSession` not yet surfaced.)
+      (Both wired. SessionRow now carries duration/currentTime/updatedAt
+      unrendered, because the ingest needs the whole record. Edit is hours +
+      minutes, guarded against exceeding the book's own length; 0 stays legal.)
 - [x] 4.3 Hide Delete when the account lacks `permissions.delete`; still handle
       a 403.
 - [x] 4.4 Apply optimistically, roll back and surface the error on failure.
 
 ## 5. Server: /hs/completions
 
-- [ ] 5.1 In `C:\code\HearthShelf/server`, add a paginated finished-books route
+- [x] 5.1 In `C:\code\HearthShelf/server`, add a paginated finished-books route
       over `book_completions`, ordered by `last_finished_at DESC`. Model it on
       `getMostReReadForUser` in `server/lib/bookCompletionsStore.js` minus the
       `completions >= 2` filter.
-- [ ] 5.2 Return enough to render a row without an N+1: item id, finish
+- [x] 5.2 Return enough to render a row without an N+1: item id, finish
       timestamp, completion count. Resolve titles the way `/hs/stats` already
       does for the re-read badge.
-- [ ] 5.3 Degrade like the other completion-backed features when the ABS db is
+- [x] 5.3 Degrade like the other completion-backed features when the ABS db is
       not mounted - a clear "unavailable", not an empty list.
 
 ## 6. Mobile: books view
 
-- [ ] 6.1 Client for `/hs/completions`, degrading to unavailable.
-- [ ] 6.2 `SectionList` grouped by month, newest first, with finish date and a
+- [x] 6.1 Client for `/hs/completions`, degrading to unavailable.
+- [x] 6.2 `SectionList` grouped by month, newest first, with finish date and a
       re-read count where > 1.
-- [ ] 6.3 Same paging treatment as sessions.
-- [ ] 6.4 Distinct empty state ("nothing finished yet") from the unavailable
+- [x] 6.3 Same paging treatment as sessions.
+- [x] 6.4 Distinct empty state ("nothing finished yet") from the unavailable
       state ("this server can't provide it").
 
 ## 7. Verify
@@ -71,18 +73,22 @@
       touched them; prettier on changed files. (Mobile 0 errors; both web apps
       build clean after the groupByDay repoint; prettier clean.)
 - [~] 7.2 Scroll well past the first page in both views; confirm entries append
-      without duplicates or gaps. (Sessions view verified by simulating the
-      screen's paging reducer against a fake server: n=0/1/25/26/100/137 all
-      load every row exactly once, and a delete mid-scroll loses only the
-      deleted row. **This caught a real bug**: deriving the next page from a
-      page counter skipped the row that crossed the boundary after a delete -
-      silently, and un-recoverable by the de-dupe. Fixed by anchoring the page
-      index on rows held. Books view N/A until the endpoint exists; a real
-      device pass is still worth doing.)
+      without duplicates or gaps. (Both views verified by simulating
+      usePagedList against fake servers: n=0/1/24/25/26/60/137 all load every
+      row exactly once, deletes at three different scroll positions lose only
+      the deleted row, and the offset->page translation returns exactly the
+      requested row on a non-aligned offset. **This caught a real bug**:
+      deriving the next page from a page counter skipped the row that crossed
+      the boundary after a delete - silently, and un-recoverable by the
+      de-dupe. Fixed by anchoring on rows held. A real device pass is still
+      worth doing.)
 - [ ] 7.3 Delete a session; confirm it goes, the tiles recompute, and it is
       still gone after reload.
 - [ ] 7.4 Edit a duration; confirm a reload shows one session, not two - the
-      re-ingest upserting by id is the whole basis of the edit path.
+      re-ingest upserting by id is the whole basis of the edit path. NEEDS A
+      DEVICE - this is the one behaviour that cannot be checked from the repo,
+      and the risk the design flags (if ABS ever stops upserting by id, edits
+      would silently insert duplicates).
 - [ ] 7.5 With a non-delete-permission account, confirm Delete is absent.
 - [ ] 7.6 Against a server without the ABS db mounted, confirm books reports
       unavailable and sessions still works.

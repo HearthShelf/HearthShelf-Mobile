@@ -169,6 +169,7 @@ export function Touchable({
   accessibilityLabel,
   accessibilityRole,
   accessibilityValue,
+  accessibilityState,
 }: {
   children: React.ReactNode
   onPress?: () => void
@@ -181,6 +182,9 @@ export function Touchable({
   accessibilityLabel?: PressableProps['accessibilityLabel']
   accessibilityRole?: PressableProps['accessibilityRole']
   accessibilityValue?: PressableProps['accessibilityValue']
+  /** Selected/checked/expanded state. Without this a tab or toggle built on
+   *  Touchable announces only its label, never which one is active. */
+  accessibilityState?: PressableProps['accessibilityState']
 }) {
   const colors = useColors()
   const styles = useStyles()
@@ -195,6 +199,7 @@ export function Touchable({
       accessibilityLabel={accessibilityLabel}
       accessibilityRole={accessibilityRole}
       accessibilityValue={accessibilityValue}
+      accessibilityState={accessibilityState}
       android_ripple={{ color: ripple }}
       style={({ pressed }) => [
         style,
