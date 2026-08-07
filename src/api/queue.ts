@@ -49,6 +49,24 @@ export async function recomputeServerQueue(currentItemId?: string | null): Promi
   return (await res.json()) as ServerQueue
 }
 
+/** What the Auto-mode UI needs to explain itself: when this user's queue last
+ *  changed, and when the nightly catch-up next runs (ms epoch, or null if the
+ *  server has no usable schedule). Not admin-gated - every Auto user sees it. */
+export interface QueueStatus {
+  mode: string
+  updatedAt: number
+  nextRebuildAt: number | null
+}
+
+export async function getQueueStatus(): Promise<QueueStatus> {
+  const { serverUrl, token } = requireSession()
+  const res = await fetch(`${serverUrl}/hs/queue/status`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error(`queue ${res.status}`)
+  return (await res.json()) as QueueStatus
+}
+
 export async function putServerQueue(
   items: QueueEntry[],
   manual: QueueEntry[],

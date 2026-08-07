@@ -14,6 +14,7 @@ import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { getSettingsState, subscribeSettings, setSetting } from '@/store/settings'
 import { AutoRuleList, ManualQueueEditor } from '@/player/QueueEditors'
+import { AutoQueueInfo } from '@/player/AutoQueueInfo'
 import {
   getDismissalsState,
   subscribeDismissals,
@@ -41,6 +42,7 @@ export default function QueueEditorScreen() {
               rules={s.queueAutoRules}
               onChange={(r) => setSetting('queueAutoRules', r)}
             />
+            <AutoQueueInfo />
           </View>
         )}
         <View style={styles.section}>
