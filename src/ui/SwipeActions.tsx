@@ -16,7 +16,7 @@
  * drag. Dragging past the panel width keeps pulling the row (friction handles
  * the rubber-band) but the buttons stay put.
  */
-import { useCallback, useRef } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import { StyleSheet } from 'react-native'
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated'
 import ReanimatedSwipeable, {
@@ -45,8 +45,8 @@ export interface SwipeAction {
 export function SwipeableRow({
   actions,
   children,
-  /** Forwarded to the row's accessibility hint by the caller; kept here only so
-   *  a row with no actions skips the wrapper entirely. */
+  /** Renders the row bare, without the gesture wrapper. For a list that turns
+   *  swiping off wholesale; an empty `actions` does the same thing. */
   enabled = true,
 }: {
   actions: SwipeAction[]
@@ -110,7 +110,7 @@ function ActionPanel({
   actions: SwipeAction[]
   translation: SharedValue<number>
   panelWidth: number
-  styles: ReturnType<typeof useStyles>
+  styles: ReturnType<typeof makeStyles>
   colors: Palette
   onRun: (run: () => void) => void
 }) {
@@ -146,7 +146,7 @@ function ActionPanel({
   )
 }
 
-const useStyles = (colors: Palette) =>
+const makeStyles = (colors: Palette) =>
   StyleSheet.create({
     panel: { flexDirection: 'row' },
     action: {

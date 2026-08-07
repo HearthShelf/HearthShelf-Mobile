@@ -46,7 +46,7 @@ import {
 import { radius, spacing, type Palette } from './theme'
 import { useColors } from './ThemeProvider'
 
-const BUBBLE_WIDTH = 232
+const BUBBLE_WIDTH = 256
 /** Start scale: small enough to read as a point at the corner rather than as an
  *  already-visible rectangle (design.md). */
 const START_SCALE = 0.04
@@ -312,10 +312,10 @@ function MenuRow({
         accessibilityRole="menuitem"
         accessibilityLabel={entry.label}
       >
-        <View style={[styles.rowIcon, hero && { backgroundColor: colors.accentWash }]}>
+        <View style={styles.rowIcon}>
           <Icon
             name={icons[entry.icon]}
-            size={16}
+            size={22}
             color={hero ? colors.accent : colors.textMuted}
           />
         </View>
@@ -348,19 +348,18 @@ const makeStyles = (colors: Palette) =>
     row: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.md - 1,
-      paddingVertical: spacing.sm,
+      gap: spacing.md,
+      paddingVertical: spacing.sm + 3,
       paddingHorizontal: spacing.sm + 2,
       borderRadius: radius.row,
     },
     rowPressed: { backgroundColor: colors.fill },
+    // No tile behind the glyph - the icon carries the row on its own. Keeps a
+    // fixed width so labels stay on a common left edge regardless of glyph width.
     rowIcon: {
-      width: 28,
-      height: 28,
-      borderRadius: 8,
+      width: 26,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: colors.fill,
     },
     rowLabel: { flex: 1, minWidth: 0 },
     divider: {

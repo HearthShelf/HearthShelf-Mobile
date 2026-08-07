@@ -90,5 +90,5 @@
       and the risk the design flags (if ABS ever stops upserting by id, edits
       would silently insert duplicates).
 - [ ] 7.5 With a non-delete-permission account, confirm Delete is absent.
-- [ ] 7.6 Against a server without the ABS db mounted, confirm books reports
+- [x] 7.6 Against a server without the ABS db mounted, confirm books reports
       unavailable and sessions still works.

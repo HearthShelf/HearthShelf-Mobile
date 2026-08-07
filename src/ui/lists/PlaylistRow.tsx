@@ -10,7 +10,8 @@
  * are ABSENT on a book entry rather than null. Reading the row off `libraryItem`
  * regardless is the bug that makes every episode in a playlist display its
  * show's name; ABS's own client branches the same way we do here
- * (client/components/tables/playlist/ItemTableRow.vue:100).
+ * (client/components/tables/playlist/ItemTableRow.vue:100). The resolution
+ * itself lives in @hearthshelf/core so all three clients agree.
  *
  * No drag handle. ABS stores playlist order and reordering is a real feature,
  * but it is not implemented here, and a handle wired to nothing is worse than
@@ -18,54 +19,18 @@
  */
 import { memo } from 'react'
 import { StyleSheet, View } from 'react-native'
-import { coverHue, coverInitial, formatTimestamp, type ABSPlaylistItem } from '@hearthshelf/core'
+import {
+  coverHue,
+  coverInitial,
+  formatTimestamp,
+  resolvePlaylistEntry,
+  type ResolvedPlaylistEntry,
+} from '@hearthshelf/core'
 import { coverUrl } from '@/api/abs'
 import { AppText, Cover, Touchable } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
-
-/** What a row actually renders, after resolving which of the two shapes it is. */
-export interface ResolvedPlaylistEntry {
-  isEpisode: boolean
-  title: string
-  /** Author for a book; the podcast's name for an episode. */
-  source: string
-  seconds: number
-  /** Artwork always comes from the library item - an episode has none of its own. */
-  coverId: string
-  libraryItemId: string
-  episodeId?: string
-}
-
-/**
- * Resolve a raw ABS playlist item into what the row shows. Exported so the
- * screen (and tests) can reason about the two shapes in one place.
- */
-export function resolvePlaylistEntry(item: ABSPlaylistItem): ResolvedPlaylistEntry {
-  const libraryItem = item.libraryItem
-  if (item.episode) {
-    return {
-      isEpisode: true,
-      title: item.episode.title || 'Untitled episode',
-      // libraryItem is the podcast here, and minified - its metadata title is
-      // the show's name, which is exactly what an episode row wants as source.
-      source: libraryItem?.media?.metadata?.title ?? 'Podcast',
-      seconds: item.episode.duration ?? 0,
-      coverId: item.libraryItemId,
-      libraryItemId: item.libraryItemId,
-      episodeId: item.episodeId,
-    }
-  }
-  return {
-    isEpisode: false,
-    title: libraryItem?.media?.metadata?.title ?? 'Untitled',
-    source: libraryItem?.media?.metadata?.authorName ?? '',
-    seconds: libraryItem?.media?.duration ?? 0,
-    coverId: item.libraryItemId,
-    libraryItemId: item.libraryItemId,
-  }
-}
 
 export const PlaylistRow = memo(function PlaylistRow({
   entry,
@@ -97,10 +62,10 @@ export const PlaylistRow = memo(function PlaylistRow({
         {String(position)}
       </AppText>
       <Cover
-        uri={coverUrl(entry.coverId)}
+        uri={coverUrl(entry.libraryItemId)}
         width={44}
         aspectRatio={1}
-        fallback={{ hue: coverHue(entry.coverId), initial: coverInitial(entry.title) }}
+        fallback={{ hue: coverHue(entry.libraryItemId), initial: coverInitial(entry.title) }}
       />
       <View style={s.meta}>
         <AppText variant="label" numberOfLines={1}>
@@ -172,3 +137,6 @@ function makeStyles(c: Palette) {
     },
   })
 }
+
+export { resolvePlaylistEntry }
+export type { ResolvedPlaylistEntry }

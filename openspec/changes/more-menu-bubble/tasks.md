@@ -64,12 +64,12 @@
 ## 6. Verify
 
 - [x] 6.1 `npx tsc --noEmit` and `npx prettier --check` on changed files.
-- [ ] 6.2 On device: open and dismiss the menu in all three nav modes; confirm
+- [x] 6.2 On device: open and dismiss the menu in all three nav modes; confirm
       the growth reads as unfolding from the corner with no mid-growth stall,
       and tune the spring if it feels off - the mockup timings are
       browser-derived approximations.
 - [ ] 6.3 Confirm the menu overlays every tab, that the screen behind stays
       mounted, and that the back stack is untouched by opening/dismissing.
-- [ ] 6.4 Check both roles: Server Settings present for an admin, absent for a
+- [x] 6.4 Check both roles: Server Settings present for an admin, absent for a
       non-admin, and correct after switching servers without a restart.
 - [ ] 6.5 Check reduced motion, and both light and dark themes.

@@ -5,24 +5,36 @@
  * stack label+description on the left, control on the right, full-width.
  */
 import { useMemo, useState } from 'react'
-import { Pressable, ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native'
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native'
 import Animated, { LinearTransition, FadeIn, FadeOut } from 'react-native-reanimated'
 import { AppSlider } from '@/ui/AppSlider'
 import { AppText } from './primitives'
 import { Icon, type IconName } from './icons'
 import { radius, spacing, type Palette } from './theme'
 import { useColors } from './ThemeProvider'
-import { useMiniPlayerInset } from './useContentInset'
+import { useContentInset } from './useContentInset'
 import { haptics } from './haptics'
 
 // ---- SettingsPanel: scroll container for a drill-down settings screen ----
 
 /** Standard scroll wrapper for a settings detail screen (under the native header
- *  from app/settings/_layout.tsx). Consistent padding + gap between groups. The
- *  bottom padding clears the AppTabBar sibling: enough on its own in floating
- *  mode (the bar reserves nothing), where useMiniPlayerInset adds the clearance. */
+ *  from app/settings/_layout.tsx). Consistent padding + gap between groups.
+ *
+ *  Uses useContentInset rather than useMiniPlayerInset because /settings/admin is
+ *  the one route in this stack where the layout hides the AppTabBar - so there is
+ *  no sibling bar to stop the scroll, and the padding has to cover that band
+ *  itself. useContentInset makes exactly that distinction (hasBottomTabBar); the
+ *  mini-player-only variant assumes a bar is always present and let admin content
+ *  run under the dock. */
 export function SettingsPanel({ children }: { children: React.ReactNode }) {
-  const bottomInset = useMiniPlayerInset()
+  const bottomInset = useContentInset()
   return (
     <ScrollView contentContainerStyle={[panelStyles.content, { paddingBottom: bottomInset }]}>
       {children}
@@ -414,107 +426,111 @@ export function AccentSwatchPicker({
 
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
-  accordion: {
-    backgroundColor: colors.high,
-    borderRadius: radius.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-    overflow: 'hidden',
-  },
-  accordionHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.lg,
-  },
-  accordionIconTile: {
-    width: 38,
-    height: 38,
-    borderRadius: radius.tile,
-    backgroundColor: colors.accentWash,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  accordionBody: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.lg,
-    gap: spacing.lg,
-  },
-  group: {
-    backgroundColor: colors.card,
-    borderRadius: radius.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-    overflow: 'hidden',
-  },
-  groupLabel: { paddingHorizontal: spacing.xs, paddingTop: spacing.lg, paddingBottom: spacing.sm },
-  labelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.xs,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.sm,
-  },
-  resetChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderRadius: radius.pill,
-    backgroundColor: colors.fill,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-  },
-  rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.hairline },
-  stackedChild: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg },
-  pressed: { opacity: 0.65 },
-  seg: {
-    flexDirection: 'row',
-    alignSelf: 'flex-start',
-    backgroundColor: colors.fill,
-    borderRadius: radius.pill,
-    padding: 3,
-    gap: 2,
-  },
-  segFill: { alignSelf: 'stretch' },
-  segItem: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: 8,
-    borderRadius: radius.pill,
-  },
-  segItemFill: { flex: 1 },
-  segItemOn: { backgroundColor: colors.accent },
-  segText: { textAlign: 'center' },
-  segTextOn: { fontWeight: '700' },
-  toggleTrack: {
-    width: 46,
-    height: 27,
-    borderRadius: 999,
-    backgroundColor: colors.elevated,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    justifyContent: 'center',
-  },
-  toggleTrackOn: { backgroundColor: colors.accent, borderColor: colors.accent },
-  toggleKnob: { width: 21, height: 21, borderRadius: 11, backgroundColor: '#fff', marginLeft: 3 },
-  toggleKnobOn: { marginLeft: 22 },
-  chip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.pill,
-    backgroundColor: colors.fill,
-  },
-  chipOn: { backgroundColor: colors.accent },
-  swatchRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
-  swatch: { width: 34, height: 34, borderRadius: 17, borderWidth: 2.5 },
+    accordion: {
+      backgroundColor: colors.high,
+      borderRadius: radius.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      overflow: 'hidden',
+    },
+    accordionHead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      padding: spacing.lg,
+    },
+    accordionIconTile: {
+      width: 38,
+      height: 38,
+      borderRadius: radius.tile,
+      backgroundColor: colors.accentWash,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    accordionBody: {
+      paddingHorizontal: spacing.lg,
+      paddingBottom: spacing.lg,
+      gap: spacing.lg,
+    },
+    group: {
+      backgroundColor: colors.card,
+      borderRadius: radius.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      overflow: 'hidden',
+    },
+    groupLabel: {
+      paddingHorizontal: spacing.xs,
+      paddingTop: spacing.lg,
+      paddingBottom: spacing.sm,
+    },
+    labelRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: spacing.xs,
+      paddingTop: spacing.lg,
+      paddingBottom: spacing.sm,
+    },
+    resetChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 3,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.lg,
+    },
+    rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.hairline },
+    stackedChild: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg },
+    pressed: { opacity: 0.65 },
+    seg: {
+      flexDirection: 'row',
+      alignSelf: 'flex-start',
+      backgroundColor: colors.fill,
+      borderRadius: radius.pill,
+      padding: 3,
+      gap: 2,
+    },
+    segFill: { alignSelf: 'stretch' },
+    segItem: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: spacing.md,
+      paddingVertical: 8,
+      borderRadius: radius.pill,
+    },
+    segItemFill: { flex: 1 },
+    segItemOn: { backgroundColor: colors.accent },
+    segText: { textAlign: 'center' },
+    segTextOn: { fontWeight: '700' },
+    toggleTrack: {
+      width: 46,
+      height: 27,
+      borderRadius: 999,
+      backgroundColor: colors.elevated,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      justifyContent: 'center',
+    },
+    toggleTrackOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+    toggleKnob: { width: 21, height: 21, borderRadius: 11, backgroundColor: '#fff', marginLeft: 3 },
+    toggleKnobOn: { marginLeft: 22 },
+    chip: {
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+    },
+    chipOn: { backgroundColor: colors.accent },
+    swatchRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
+    swatch: { width: 34, height: 34, borderRadius: 17, borderWidth: 2.5 },
   })
 
 // Hook: the memoized stylesheet for the active palette.
