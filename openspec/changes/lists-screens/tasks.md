@@ -1,8 +1,16 @@
+## 0. Core types
+
+- [x] 0.1 Correct `ABSPlaylistItem` in `HearthShelf-Core/src/types/abs.ts` to
+      ABS's real two-shape response: `episodeId?: string` and
+      `episode?: ABSPodcastEpisode`, both absent on book entries. Done in
+      HearthShelf-Core; consumers pull the submodule.
+
 ## 1. Mobile API
 
-- [ ] 1.1 Add `?limit=0` to `getLibraryCollections` and `getLibraryPlaylists` in
-      `src/api/abs.ts` - without it a browse screen silently drops lists past
-      the ABS default page size.
+- [ ] 1.1 Pass `?limit=0` on `getLibraryCollections` and `getLibraryPlaylists`
+      in `src/api/abs.ts`. NOT a truncation fix - ABS already returns everything
+      when `limit` is absent. This is parity with hosted web plus insurance
+      against the `// TODO: Create paginated queries` in `LibraryController.js`.
 - [ ] 1.2 Add `getCollection(id)`, `updateCollection(id, patch)`,
       `deleteCollection(id)`, remove-book-from-collection.
 - [ ] 1.3 Add `getPlaylist(id)`, `updatePlaylist(id, patch)`,
@@ -41,16 +49,17 @@
 
 ## 5. Mobile playlist detail
 
-- [ ] 5.1 **Check an episode item against a real server before building the row**
-      - confirm `ABSPlaylistItem.libraryItem` carries enough to render an
-      episode's title and its podcast. If it does not, stop and reassess: a
-      per-episode lookup changes this screen's cost.
-- [ ] 5.2 `app/playlists/[id].tsx`: ordered list, each row showing position,
-      cover, title, source line and a play control. No drag handle.
-- [ ] 5.3 Build `PlaylistRow` by adapting an existing row primitive
+- [ ] 5.1 `app/playlists/[id].tsx`: ordered list, each row showing position,
+      cover, title, source line and a play control. No drag handle. Render in
+      server order; do not re-sort.
+- [ ] 5.2 Build `PlaylistRow` by adapting an existing row primitive
       (`QueueSheet`'s rows or the library list mode) rather than from scratch,
       so it does not drift visually.
-- [ ] 5.4 Header: name, item count, total duration, Play all.
+- [ ] 5.3 Header: name, item count, total duration, Play all.
+- [ ] 5.4 Branch the row on `item.episode` being present (NOT on
+      `episodeId != null` - both keys are absent on book entries). Episode rows
+      take title and duration from `episode`; `libraryItem` is the podcast and
+      is minified. Mirrors ABS's own `ItemTableRow.vue:100`.
 - [ ] 5.5 Episode items open the episode, not the podcast.
 - [ ] 5.6 Overflow: Rename, Delete. Long-press a row to remove it.
 
@@ -73,9 +82,10 @@
 
 ## 8. Web bug fixes found while specifying
 
-- [ ] 8.1 Both web apps: playlist rows navigate to `/book/${libraryItemId}`
-      ignoring `episodeId` (`PlaylistDetailPage.tsx:78`), so an episode opens
-      the podcast. Route episode items to the episode.
+- [ ] 8.1 Both web apps: playlist rows render from `libraryItem` and navigate to
+      `/book/${libraryItemId}` without consulting `episode`
+      (`PlaylistDetailPage.tsx:78`), so an episode shows and opens its podcast.
+      Render episode rows from `episode` and route them to the episode.
 - [ ] 8.2 Self-hosted: remove the `drag_indicator` handle from playlist rows
       (`PlaylistDetailPage.tsx:80`). Nothing is wired to it.
 
@@ -83,8 +93,7 @@
 
 - [ ] 9.1 Typecheck all three repos (`npx tsc --noEmit` on mobile, `npm run
       build` on both web apps); prettier on changed files.
-- [ ] 9.2 With more lists than one ABS page, confirm all are listed - the
-      `limit=0` fix is the point of this check.
+- [ ] 9.2 With a large number of lists, confirm all are listed on every client.
 - [ ] 9.3 Rename, remove an item, and delete on mobile for **both** kinds;
       confirm each persists and that removed items are still in the library.
 - [ ] 9.4 Confirm playlist order matches the server and survives a reload.

@@ -73,9 +73,40 @@ reuse that costs more than the duplication it removes.
    Deleting a collection affects everyone on the server; deleting a playlist
    affects one person. The confirmations differ accordingly, and a collection's
    must not imply it is personal.
-3. **Episodes.** `ABSPlaylistItem.episodeId` is optional but real. This is why
-   the playlist body is a list of *items*, not a grid of `BookTile` - a
+3. **Episodes.** A playlist entry may address a single podcast episode. This is
+   why the playlist body is a list of *items*, not a grid of `BookTile` - a
    `BookTile` addresses a library item, and an episode row needs the episode.
+
+### The two playlist-item shapes (verified against the ABS source)
+
+`Playlist.toOldJSONExpanded()` (`server/models/Playlist.js:347`) emits two
+different shapes, and this drives the whole playlist detail row:
+
+```
+book:    { libraryItemId, libraryItem }                     // libraryItem EXPANDED
+episode: { libraryItemId, libraryItem, episodeId, episode } // libraryItem MINIFIED
+```
+
+Three consequences the implementation must honour:
+
+- **`episode` is the discriminator, not `episodeId != null`.** Both keys are
+  *absent* on book entries, not null. Our `ABSPlaylistItem` in core declared
+  `episodeId: string | null` and omitted `episode` entirely - both wrong, and
+  corrected as part of this change.
+- **Episode rows must read `episode.title` and `episode.duration`.** The
+  sibling `libraryItem` is the *podcast*, so
+  `libraryItem.media.metadata.title` is the show's name. ABS's own client does
+  exactly this (`client/components/tables/playlist/ItemTableRow.vue:100` -
+  `if (this.episode) return this.episode.title`). Rendering the row from
+  `libraryItem` is the bug that makes every episode in a playlist show the
+  podcast's title.
+- **`libraryItem` is minified on episode entries.** Anything a book row reads
+  off the expanded shape may simply be missing on an episode row.
+
+This retires the "episode metadata may be thin" risk: `episode` is a full
+`toOldJSONExpanded()` payload carrying `title`, `subtitle`, `duration`,
+`season`, `episode`, `pubDate` and `audioTrack`. No per-episode lookup is
+needed, and the screen stays cheap.
 
 ### Cover stacks come from the list response
 
@@ -84,13 +115,19 @@ tiles needs no N+1 fetch: take the first four ids for artwork and the length for
 the count. Book art is roughly 2:3 - the stack must use `Cover`'s `aspectRatio`
 rather than forcing squares.
 
-### Fix `?limit=0` as part of this change
+### `?limit=0` is already the default - pass it anyway, but not urgently
 
-Mobile's `getLibraryCollections` and `getLibraryPlaylists` both omit it, so ABS
-applies its default page size. Today only `AddToListSheet` calls them and only
-reads names, so truncation is invisible. A browse screen turns it into silent
-data loss: lists simply missing, no error. Hosted web already passes `limit=0`
-(`absLibrary.ts:285`).
+**Corrected against the ABS source.** Both library routes build
+`limit: req.query.limit || 0` and then slice only `if (payload.limit)`
+(`server/controllers/LibraryController.js:823, 861`). Zero is falsy, so omitting
+`limit` returns **everything** - there is no default page size, and no
+truncation bug. The earlier framing of this as silent data loss was wrong.
+
+Passing `limit=0` explicitly is still worth doing for parity with hosted web
+(`absLibrary.ts:285`) and to pin the behaviour against a future ABS that does
+add pagination - both controllers carry a `// TODO: Create paginated queries`
+comment. It is a defensive tidy, not a fix, and the verification step should not
+claim to be testing a bug.
 
 ### Remove-an-item must read as scoped
 
@@ -120,10 +157,10 @@ books it holds precisely so it is clear they are not being deleted.
 - **Collections are library-wide.** Deleting one affects everyone, and ABS does
   not obviously expose a permission for it. This ships without a gate and is
   flagged rather than solved.
-- **Episode metadata may be thin.** `ABSPlaylistItem` carries `libraryItem`, but
-  how much episode detail rides along should be checked against a real server
-  before the row's second line is designed. If it is missing, a per-episode
-  lookup changes this from a cheap screen to a moderate one - see tasks.
+- **Playlist order is server-side and must not be re-sorted.** ABS orders items
+  by an explicit `order` column (`Playlist.js:81, 305`), so the array arrives in
+  the right order and the client's only job is not to disturb it. Position
+  numbers are display-only, derived from array index.
 - **Optimistic maintenance against a list another client may have changed.**
   Rename/delete are cheap to re-fetch on failure; the risk is a stale list, not
   lost data.

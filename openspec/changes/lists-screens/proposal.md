@@ -38,16 +38,25 @@ never read as deleting the underlying book.
 collection is an unordered grid of books; a playlist is an ordered list that can
 hold a single podcast episode.
 
-Also fixed in passing:
+Also fixed in passing, all three verified against the ABS source in
+`C:\code\audiobookshelf`:
 
-- Mobile's `getLibraryCollections` and `getLibraryPlaylists` omit `?limit=0`, so
-  both truncate at the ABS default page size. Invisible today because only the
-  add-to-list sheet calls them and it reads names; a browse screen makes it
-  silent data loss.
-- Web playlist rows navigate to `/book/${libraryItemId}` regardless of
-  `episodeId`, so a podcast episode in a playlist opens the podcast instead of
-  the episode.
-- Self-hosted's playlist rows draw a `drag_indicator` handle wired to nothing.
+- **`ABSPlaylistItem` in core is wrong.** ABS emits two shapes - a book entry
+  `{libraryItemId, libraryItem}` and an episode entry
+  `{libraryItemId, libraryItem, episodeId, episode}` - and our type declares
+  `episodeId: string | null` with no `episode` field at all. An episode row
+  built from this type cannot render correctly.
+- **Web playlist rows show the podcast, not the episode.** They render from
+  `libraryItem` and navigate to `/book/${libraryItemId}` without consulting the
+  entry's `episode`, so every episode in a playlist reads as its show.
+- **Self-hosted's playlist rows draw a `drag_indicator` handle wired to
+  nothing.**
+
+Not a bug after all: mobile's `getLibraryCollections` / `getLibraryPlaylists`
+omit `?limit=0`, which an earlier draft called silent truncation. ABS treats a
+missing `limit` as "return everything" (`LibraryController.js:837, 862`), so
+there is nothing being dropped. The parameter is still worth passing for parity
+and future-proofing - see design.md.
 
 ## Capabilities
 
@@ -74,9 +83,11 @@ Also fixed in passing:
 **Self-hosted web** (`C:\code\HearthShelf`)
 - Remove the dead drag handle; fix episode navigation.
 
-No `@hearthshelf/core` change - `ABSCollection`, `ABSPlaylist` and
-`ABSPlaylistItem` already cover this. No server change; every endpoint is
-ABS-native.
+**Core** (`C:\code\HearthShelf-Core`)
+- `src/types/abs.ts`: correct `ABSPlaylistItem` to ABS's real two-shape
+  response. Done as part of this change; no consumer read the old fields yet.
+
+No server change; every endpoint is ABS-native.
 
 ## Supersedes
 

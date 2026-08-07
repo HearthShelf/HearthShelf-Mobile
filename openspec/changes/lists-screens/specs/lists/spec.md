@@ -87,7 +87,13 @@ episode item SHALL be presented as an episode, not as a book.
 
 #### Scenario: An episode in a playlist
 - **WHEN** a playlist contains a podcast episode
-- **THEN** the row identifies the episode and the podcast it belongs to
+- **THEN** the row shows the episode's own title and duration
+- **AND** it identifies the podcast the episode belongs to
+
+#### Scenario: An episode row is not mistaken for its podcast
+- **WHEN** a playlist entry carries episode detail alongside its library item
+- **THEN** the entry is presented from the episode, not from the library item
+- **AND** the library item is treated as the containing podcast
 
 #### Scenario: Opening an episode item
 - **WHEN** the listener opens an episode item
