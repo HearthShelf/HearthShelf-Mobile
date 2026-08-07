@@ -1,0 +1,1161 @@
+<meta charset="utf-8" />
+<title>More menu - the four missing screens</title>
+<style>
+  /* Tokens lifted from src/ui/theme.ts (DARK_BASE + EMBER) so the mockup and
+     the app can't drift. Same block as more-menu.html. */
+  :root {
+    --scaffold: #131211;
+    --lowest: #131211;
+    --low: #201e1c;
+    --base: #242220;
+    --high: #2a2825;
+    --highest: #322f2b;
+    --sheet: #222120;
+    --text: #f4f1ea;
+    --text-muted: #aba498;
+    --text-faint: #756f64;
+    --border: #383530;
+    --hairline: rgba(255, 255, 255, 0.08);
+    --fill: rgba(255, 255, 255, 0.06);
+    --fill-strong: rgba(255, 255, 255, 0.1);
+    --accent: #e0654a;
+    --accent-wash: rgba(224, 101, 74, 0.12);
+    --on-accent: #ffffff;
+    --gold: #bd863f;
+
+    --r-card: 16px;
+    --r-row: 12px;
+    --r-pill: 999px;
+    --r-sheet: 20px;
+
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --brand: 'Libre Baskerville', Georgia, 'Times New Roman', serif;
+    --mono: ui-monospace, 'Geist Mono', 'SF Mono', Menlo, monospace;
+
+    --page-bg: #17161a;
+    --page-panel: #1e1d21;
+    --page-text: #e8e6e3;
+    --page-muted: #9b968f;
+    --page-hairline: rgba(255, 255, 255, 0.09);
+  }
+
+  :root[data-theme='light'] {
+    --page-bg: #f2f0ed;
+    --page-panel: #ffffff;
+    --page-text: #23211e;
+    --page-muted: #6c665d;
+    --page-hairline: rgba(0, 0, 0, 0.1);
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root {
+      --page-bg: #f2f0ed;
+      --page-panel: #ffffff;
+      --page-text: #23211e;
+      --page-muted: #6c665d;
+      --page-hairline: rgba(0, 0, 0, 0.1);
+    }
+    :root[data-theme='dark'] {
+      --page-bg: #17161a;
+      --page-panel: #1e1d21;
+      --page-text: #e8e6e3;
+      --page-muted: #9b968f;
+      --page-hairline: rgba(255, 255, 255, 0.09);
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    background: var(--page-bg);
+    color: var(--page-text);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+
+  header .eyebrow {
+    font-family: var(--brand);
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 8px;
+  }
+
+  header h1 {
+    margin: 0 0 10px;
+    font-size: 27px;
+    letter-spacing: -0.02em;
+  }
+
+  header p {
+    margin: 0;
+    max-width: 70ch;
+    line-height: 1.6;
+    color: var(--page-muted);
+    font-size: 14.5px;
+  }
+
+  .cost {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 26px 0 34px;
+  }
+
+  .cost-card {
+    flex: 1 1 220px;
+    background: var(--page-panel);
+    border: 1px solid var(--page-hairline);
+    border-radius: 12px;
+    padding: 14px 16px;
+  }
+
+  .cost-card b {
+    font-size: 14px;
+    display: block;
+  }
+
+  .cost-card .size {
+    font-size: 11px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    margin-top: 3px;
+    font-weight: 650;
+  }
+
+  .size.s {
+    color: #7fa86b;
+  }
+
+  .size.m {
+    color: var(--gold);
+  }
+
+  .size.l {
+    color: var(--accent);
+  }
+
+  .cost-card p {
+    margin: 7px 0 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--page-muted);
+  }
+
+  .screens {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+    gap: 34px;
+  }
+
+  .screen h2 {
+    margin: 0 0 3px;
+    font-size: 17px;
+    letter-spacing: -0.01em;
+  }
+
+  .screen .note {
+    margin: 0 0 14px;
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: var(--page-muted);
+  }
+
+  .screen .note code {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--page-text);
+  }
+
+  /* ---- phone frame ---- */
+  .phone {
+    width: 100%;
+    max-width: 340px;
+    aspect-ratio: 390 / 800;
+    background: var(--scaffold);
+    border: 1px solid var(--border);
+    border-radius: 34px;
+    overflow: hidden;
+    box-shadow: 0 24px 56px rgba(0, 0, 0, 0.42);
+    display: flex;
+    flex-direction: column;
+    font-size: 13px;
+    color: var(--text);
+  }
+
+  .status {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 20px 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--mono);
+    flex: none;
+  }
+
+  .nav {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 16px 10px;
+    flex: none;
+  }
+
+  .nav .back {
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--r-pill);
+    background: var(--fill);
+    flex: none;
+  }
+
+  .nav h3 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+
+  .nav .sub {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .body {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0 16px;
+  }
+
+  .tabs {
+    flex: none;
+    height: 54px;
+    border-top: 1px solid var(--hairline);
+    background: var(--lowest);
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    padding-bottom: 4px;
+  }
+
+  .tb {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    font-size: 9px;
+    color: var(--text-faint);
+  }
+
+  .tb.on {
+    color: var(--accent);
+  }
+
+  svg {
+    display: block;
+  }
+
+  /* ---- shared bits ---- */
+  .sec-label {
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin: 14px 0 7px;
+    font-weight: 650;
+  }
+
+  .cov {
+    border-radius: 7px;
+    background: linear-gradient(150deg, #3a3632, #2b2825);
+    border: 1px solid var(--hairline);
+    flex: none;
+  }
+
+  .c1 {
+    background: linear-gradient(150deg, #5a4038, #33262a);
+  }
+  .c2 {
+    background: linear-gradient(150deg, #3d4a44, #262f31);
+  }
+  .c3 {
+    background: linear-gradient(150deg, #4e4433, #2e2a24);
+  }
+  .c4 {
+    background: linear-gradient(150deg, #40384f, #262330);
+  }
+  .c5 {
+    background: linear-gradient(150deg, #4a3a46, #2b2430);
+  }
+  .c6 {
+    background: linear-gradient(150deg, #35443f, #232c2b);
+  }
+
+  /* ---- Collections: 2x2 cover stack ---- */
+  .coll-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  /* Two portrait covers per row, so the stack takes the 2:3 shape real book art
+     has - a square stack would stretch every cover in the app. */
+  .coll-card .stack {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 4px;
+    padding: 6px;
+    background: var(--high);
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-card);
+    position: relative;
+  }
+
+  .coll-card .stack .cov {
+    width: 100%;
+    aspect-ratio: 2 / 3;
+    height: auto;
+    border-radius: 4px;
+  }
+
+  .coll-card .more-n {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
+    background: rgba(0, 0, 0, 0.72);
+    border-radius: var(--r-pill);
+    font-size: 9.5px;
+    font-weight: 700;
+    padding: 2px 7px;
+    font-family: var(--mono);
+  }
+
+  .coll-card b {
+    display: block;
+    font-size: 12.5px;
+    margin-top: 7px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .coll-card span {
+    display: block;
+    font-size: 10.5px;
+    color: var(--text-faint);
+  }
+
+  /* ---- Playlists: ordered rows ---- */
+  .pl-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .pl-row .idx {
+    width: 15px;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    flex: none;
+  }
+
+  .pl-row .cov {
+    width: 30px;
+    aspect-ratio: 2 / 3;
+  }
+
+  .pl-row .meta {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .pl-row .meta b {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 550;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .pl-row .meta span {
+    font-size: 10.5px;
+    color: var(--text-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+  }
+
+  .pl-row .play {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--r-pill);
+    background: var(--fill);
+    display: grid;
+    place-items: center;
+    color: var(--text);
+    flex: none;
+  }
+
+  .pl-head {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 4px 0 12px;
+  }
+
+  .pl-head .stack2 {
+    width: 62px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 3px;
+    padding: 4px;
+    background: var(--high);
+    border-radius: 12px;
+    border: 1px solid var(--hairline);
+    flex: none;
+  }
+
+  .pl-head .stack2 .cov {
+    width: 100%;
+    aspect-ratio: 2 / 3;
+    height: auto;
+    border-radius: 3px;
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 7px;
+    margin-top: 8px;
+  }
+
+  .pbtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: var(--r-pill);
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+
+  .gbtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    padding: 6px 12px;
+    border-radius: var(--r-pill);
+    border: 1px solid var(--hairline);
+    color: var(--text-muted);
+  }
+
+  /* ---- History ---- */
+  .tiles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+    margin-bottom: 4px;
+  }
+
+  .tile-s {
+    background: var(--high);
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-row);
+    padding: 9px 11px;
+  }
+
+  .tile-s .n {
+    font-family: var(--mono);
+    font-size: 17px;
+    font-weight: 700;
+  }
+
+  .tile-s .l {
+    font-size: 10px;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 1px;
+  }
+
+  .h-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .h-row .cov {
+    width: 28px;
+    aspect-ratio: 2 / 3;
+  }
+
+  .h-row .meta {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .h-row .meta b {
+    display: block;
+    font-size: 12px;
+    font-weight: 550;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .h-row .meta span {
+    font-size: 10px;
+    color: var(--text-faint);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .h-row .dur {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--text-muted);
+    flex: none;
+  }
+
+  /* ---- QuestGiver ---- */
+  .steps {
+    display: flex;
+    gap: 5px;
+    margin: 2px 0 14px;
+  }
+
+  .steps i {
+    flex: 1;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--fill-strong);
+  }
+
+  .steps i.on {
+    background: var(--accent);
+  }
+
+  .q-title {
+    font-size: 16px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    margin-bottom: 3px;
+  }
+
+  .q-sub {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin-bottom: 13px;
+  }
+
+  .q-card {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 11px;
+    border-radius: var(--r-row);
+    border: 1px solid var(--hairline);
+    background: var(--high);
+    margin-bottom: 8px;
+  }
+
+  .q-card.sel {
+    border-color: var(--accent);
+    background: var(--accent-wash);
+  }
+
+  .q-card .radio {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid var(--text-faint);
+    flex: none;
+    margin-top: 1px;
+    display: grid;
+    place-items: center;
+  }
+
+  .q-card.sel .radio {
+    border-color: var(--accent);
+  }
+
+  .q-card.sel .radio::after {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .q-card b {
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .q-card .tag {
+    font-size: 8.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    background: var(--accent);
+    color: var(--on-accent);
+    border-radius: var(--r-pill);
+    padding: 2px 6px;
+    font-weight: 700;
+  }
+
+  .q-card p {
+    margin: 3px 0 0;
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.45;
+  }
+
+  .q-slider {
+    margin-bottom: 11px;
+  }
+
+  .q-slider .top {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11.5px;
+    margin-bottom: 5px;
+  }
+
+  .q-slider .top b {
+    font-weight: 550;
+  }
+
+  .q-slider .top .v {
+    font-family: var(--mono);
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  .track {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--fill-strong);
+    position: relative;
+  }
+
+  .track i {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+
+  .track .knob {
+    position: absolute;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--text);
+    transform: translate(-50%, -50%);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  }
+
+  .q-foot {
+    margin-top: 14px;
+    display: flex;
+    gap: 8px;
+  }
+
+  .q-next {
+    flex: 1;
+    text-align: center;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-weight: 650;
+    font-size: 13px;
+    padding: 10px;
+    border-radius: var(--r-pill);
+  }
+
+  .q-back {
+    padding: 10px 16px;
+    border-radius: var(--r-pill);
+    border: 1px solid var(--hairline);
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  /* ---- notes panel ---- */
+  .decisions {
+    margin-top: 46px;
+    background: var(--page-panel);
+    border: 1px solid var(--page-hairline);
+    border-radius: 14px;
+    padding: 22px 24px;
+  }
+
+  .decisions h2 {
+    margin: 0 0 14px;
+    font-size: 12px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--page-muted);
+  }
+
+  .decisions dl {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .decisions dt {
+    font-size: 14px;
+    font-weight: 620;
+    margin-bottom: 4px;
+  }
+
+  .decisions dd {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.62;
+    color: var(--page-muted);
+  }
+
+  .decisions code {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--page-text);
+  }
+
+  .flag {
+    border-left: 2px solid var(--accent);
+    padding-left: 14px;
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">HearthShelf Mobile</p>
+    <h1>The four screens behind the More menu</h1>
+    <p>
+      QuestGiver, History, Collections and Playlists exist on web but not on mobile. These are the
+      proposed mobile treatments. Tokens come from <code>src/ui/theme.ts</code>; every screen is
+      drawn at real proportions inside a phone frame.
+    </p>
+  </header>
+
+  <div class="cost">
+    <div class="cost-card">
+      <b>Collections</b>
+      <div class="size s">Small</div>
+      <p>Standard ABS endpoints. Mobile already reads them for the add-to-list sheet. New: a cover-stack tile.</p>
+    </div>
+    <div class="cost-card">
+      <b>Playlists</b>
+      <div class="size s">Small</div>
+      <p>Same shape as Collections, ordered rows instead of a grid. Shares the detail scaffolding.</p>
+    </div>
+    <div class="cost-card">
+      <b>History</b>
+      <div class="size s">Small</div>
+      <p>Endpoint and all formatting already exist. Needs paging added to one function, plus one screen.</p>
+    </div>
+    <div class="cost-card">
+      <b>QuestGiver</b>
+      <div class="size l">Large</div>
+      <p>Engine is 100% in core already. The work is a 6-step wizard - roughly the other three combined.</p>
+    </div>
+  </div>
+
+  <div class="screens">
+    <!-- ============ COLLECTIONS ============ -->
+    <div class="screen">
+      <h2>Collections</h2>
+      <p class="note">
+        A 2-column grid of cover stacks. The tile is the only genuinely new component - four covers
+        plus a <code>+N</code> badge. Tapping opens a detail grid that reuses <code>BookTile</code>.
+      </p>
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="nav">
+          <div class="back">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>
+          </div>
+          <div>
+            <h3>Collections</h3>
+            <div class="sub">6 collections</div>
+          </div>
+        </div>
+        <div class="body">
+          <div class="coll-grid">
+            <div class="coll-card">
+              <div class="stack">
+                <div class="cov c1"></div><div class="cov c2"></div>
+                <div class="cov c3"></div><div class="cov c4"></div>
+                <span class="more-n">+8</span>
+              </div>
+              <b>Cosmere</b><span>12 books</span>
+            </div>
+            <div class="coll-card">
+              <div class="stack">
+                <div class="cov c5"></div><div class="cov c6"></div>
+                <div class="cov c2"></div><div class="cov c1"></div>
+                <span class="more-n">+3</span>
+              </div>
+              <b>Comfort reads</b><span>7 books</span>
+            </div>
+            <div class="coll-card">
+              <div class="stack">
+                <div class="cov c3"></div><div class="cov c4"></div>
+                <div class="cov c5"></div><div class="cov c6"></div>
+              </div>
+              <b>Sci-fi classics</b><span>4 books</span>
+            </div>
+            <div class="coll-card">
+              <div class="stack">
+                <div class="cov c2"></div><div class="cov c1"></div>
+                <div class="cov c6"></div><div class="cov c3"></div>
+                <span class="more-n">+14</span>
+              </div>
+              <b>Long haul</b><span>18 books</span>
+            </div>
+          </div>
+        </div>
+        <div class="tabs">
+          <div class="tb"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3.2L3 10.4V21h6v-6h6v6h6V10.4z"/></svg>Home</div>
+          <div class="tb"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5.5h6.5v14H4zM13.5 5.5H20v14h-6.5z"/></svg>Library</div>
+          <div class="tb"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8.5"/><path d="M10.3 9.2l5 2.8-5 2.8z" fill="currentColor" stroke="none"/></svg>Now</div>
+          <div class="tb on"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="5.5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="18.5" cy="12" r="1.9"/></svg>More</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ PLAYLISTS ============ -->
+    <div class="screen">
+      <h2>Playlists — detail</h2>
+      <p class="note">
+        Ordered rows with a position number. Playlists can hold single podcast episodes, which
+        collections can't - so the row shows an item, not just a book. Reorder is deliberately
+        omitted: it's dead in both web apps.
+      </p>
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="nav">
+          <div class="back">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>
+          </div>
+          <div><h3>Playlists</h3></div>
+        </div>
+        <div class="body">
+          <div class="pl-head">
+            <div class="stack2">
+              <div class="cov c4"></div><div class="cov c1"></div>
+              <div class="cov c6"></div><div class="cov c2"></div>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:15px;font-weight:650">Bedtime</div>
+              <div style="font-size:11px;color:var(--text-faint)">5 items · 41h</div>
+              <div class="btn-row">
+                <span class="pbtn">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5l13 7.5-13 7.5z"/></svg>
+                  Play all
+                </span>
+                <span class="gbtn">Edit</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="pl-row">
+            <span class="idx">1</span><div class="cov c4"></div>
+            <div class="meta"><b>Piranesi</b><span>Susanna Clarke · 6h 58m</span></div>
+            <span class="play"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5l13 7.5-13 7.5z"/></svg></span>
+          </div>
+          <div class="pl-row">
+            <span class="idx">2</span><div class="cov c1"></div>
+            <div class="meta"><b>The Night Circus</b><span>Erin Morgenstern · 13h 40m</span></div>
+            <span class="play"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5l13 7.5-13 7.5z"/></svg></span>
+          </div>
+          <div class="pl-row">
+            <span class="idx">3</span><div class="cov c6"></div>
+            <div class="meta"><b>Ep. 214 — The Deep</b><span>Hardcore History · 4h 12m</span></div>
+            <span class="play"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5l13 7.5-13 7.5z"/></svg></span>
+          </div>
+          <div class="pl-row">
+            <span class="idx">4</span><div class="cov c2"></div>
+            <div class="meta"><b>Legends &amp; Lattes</b><span>Travis Baldree · 5h 40m</span></div>
+            <span class="play"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5l13 7.5-13 7.5z"/></svg></span>
+          </div>
+          <div class="pl-row">
+            <span class="idx">5</span><div class="cov c3"></div>
+            <div class="meta"><b>A Psalm for the Wild-Built</b><span>Becky Chambers · 4h 18m</span></div>
+            <span class="play"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5l13 7.5-13 7.5z"/></svg></span>
+          </div>
+        </div>
+        <div class="tabs">
+          <div class="tb"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3.2L3 10.4V21h6v-6h6v6h6V10.4z"/></svg>Home</div>
+          <div class="tb"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5.5h6.5v14H4zM13.5 5.5H20v14h-6.5z"/></svg>Library</div>
+          <div class="tb"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8.5"/><path d="M10.3 9.2l5 2.8-5 2.8z" fill="currentColor" stroke="none"/></svg>Now</div>
+          <div class="tb on"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="5.5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="18.5" cy="12" r="1.9"/></svg>More</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ HISTORY ============ -->
+    <div class="screen">
+      <h2>History</h2>
+      <p class="note">
+        Summary tiles, then sessions grouped by day. <code>fmtSessDate</code> and
+        <code>DeviceKindIcon</code> already exist on mobile. Swipe-to-delete is a mobile-only
+        addition - the endpoint exists but no web screen uses it.
+      </p>
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="nav">
+          <div class="back">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>
+          </div>
+          <div>
+            <h3>History</h3>
+            <div class="sub">1,204 sessions</div>
+          </div>
+        </div>
+        <div class="body">
+          <div class="tiles">
+            <div class="tile-s"><div class="n">1,204</div><div class="l">Sessions</div></div>
+            <div class="tile-s"><div class="n">38h</div><div class="l">This page</div></div>
+          </div>
+          <div class="tiles">
+            <div class="tile-s"><div class="n">17</div><div class="l">Books</div></div>
+            <div class="tile-s"><div class="n">2:14</div><div class="l">Longest</div></div>
+          </div>
+
+          <div class="sec-label">Today</div>
+          <div class="h-row">
+            <div class="cov c1"></div>
+            <div class="meta">
+              <b>The Way of Kings</b>
+              <span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2.5" width="10" height="19" rx="2"/></svg>
+                Phone · 7:42 PM
+              </span>
+            </div>
+            <span class="dur">1:12:04</span>
+          </div>
+          <div class="h-row">
+            <div class="cov c4"></div>
+            <div class="meta">
+              <b>Piranesi</b>
+              <span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v10H4z"/><path d="M8 20h8"/></svg>
+                Car · 8:05 AM
+              </span>
+            </div>
+            <span class="dur">46:20</span>
+          </div>
+
+          <div class="sec-label">Yesterday</div>
+          <div class="h-row">
+            <div class="cov c1"></div>
+            <div class="meta">
+              <b>The Way of Kings</b>
+              <span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2.5" width="10" height="19" rx="2"/></svg>
+                Phone · 10:30 PM
+              </span>
+            </div>
+            <span class="dur">2:14:51</span>
+          </div>
+          <div class="h-row">
+            <div class="cov c3"></div>
+            <div class="meta">
+              <b>Project Hail Mary</b>
+              <span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="12" rx="2"/></svg>
+                Web · 3:12 PM
+              </span>
+            </div>
+            <span class="dur">28:03</span>
+          </div>
+          <div class="h-row">
+            <div class="cov c5"></div>
+            <div class="meta">
+              <b>The Fifth Season</b>
+              <span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2.5" width="10" height="19" rx="2"/></svg>
+                Phone · 9:02 AM
+              </span>
+            </div>
+            <span class="dur">51:47</span>
+          </div>
+        </div>
+        <div class="tabs">
+          <div class="tb"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3.2L3 10.4V21h6v-6h6v6h6V10.4z"/></svg>Home</div>
+          <div class="tb"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5.5h6.5v14H4zM13.5 5.5H20v14h-6.5z"/></svg>Library</div>
+          <div class="tb"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8.5"/><path d="M10.3 9.2l5 2.8-5 2.8z" fill="currentColor" stroke="none"/></svg>Now</div>
+          <div class="tb on"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="5.5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="18.5" cy="12" r="1.9"/></svg>More</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ QUESTGIVER ============ -->
+    <div class="screen">
+      <h2>QuestGiver — step 1 of 4</h2>
+      <p class="note">
+        A 4-step wizard, one question per screen. Web fits all four steps in a column; on a phone
+        each step gets its own view with a progress bar. The engine is already in core, so the AI
+        backend is optional - the heuristic completes the flow unaided.
+      </p>
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="nav">
+          <div class="back">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>
+          </div>
+          <div>
+            <h3>QuestGiver</h3>
+            <div class="sub">Basis · step 1 of 4</div>
+          </div>
+        </div>
+        <div class="body">
+          <div class="steps"><i class="on"></i><i></i><i></i><i></i></div>
+          <div class="q-title">What should I base your match on?</div>
+          <div class="q-sub">I've analyzed 143 finished books across your library.</div>
+
+          <div class="q-card sel">
+            <span class="radio"></span>
+            <div>
+              <b>My listening history <span class="tag">Recommended</span></b>
+              <p>Weighted by what you actually finish, not what you own.</p>
+            </div>
+          </div>
+          <div class="q-card">
+            <span class="radio"></span>
+            <div>
+              <b>A list I pick</b>
+              <p>Choose a handful of books and I'll match against those.</p>
+            </div>
+          </div>
+
+          <div class="sec-label" style="margin-top:20px">Preview — step 3</div>
+          <div class="q-slider">
+            <div class="top"><b>Fantasy</b><span class="v">8</span></div>
+            <div class="track"><i style="width:80%"></i><span class="knob" style="left:80%"></span></div>
+          </div>
+          <div class="q-slider">
+            <div class="top"><b>Sci-Fi</b><span class="v">5</span></div>
+            <div class="track"><i style="width:50%"></i><span class="knob" style="left:50%"></span></div>
+          </div>
+          <div class="q-slider">
+            <div class="top"><b>Mystery</b><span class="v">2</span></div>
+            <div class="track"><i style="width:20%"></i><span class="knob" style="left:20%"></span></div>
+          </div>
+
+          <div class="q-foot">
+            <span class="q-back">Back</span>
+            <span class="q-next">Continue</span>
+          </div>
+        </div>
+        <div class="tabs">
+          <div class="tb"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3.2L3 10.4V21h6v-6h6v6h6V10.4z"/></svg>Home</div>
+          <div class="tb"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5.5h6.5v14H4zM13.5 5.5H20v14h-6.5z"/></svg>Library</div>
+          <div class="tb"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8.5"/><path d="M10.3 9.2l5 2.8-5 2.8z" fill="currentColor" stroke="none"/></svg>Now</div>
+          <div class="tb on"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="5.5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="18.5" cy="12" r="1.9"/></svg>More</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="decisions">
+    <h2>What the investigation turned up</h2>
+    <dl>
+      <div class="flag">
+        <dt>Three of these are small. One is not.</dt>
+        <dd>
+          Collections, Playlists and History are all standard Audiobookshelf reads against endpoints
+          mobile already talks to, with formatting helpers already in core. QuestGiver is roughly the
+          other three combined - an 800-line wizard on web, five bespoke components, plus a new API
+          client. Its recommendation engine, though, is 100% in <code>@hearthshelf/core</code>
+          already and needs no porting.
+        </dd>
+      </div>
+      <div>
+        <dt>QuestGiver works with no AI backend</dt>
+        <dd>
+          <code>qgHeuristic()</code> in core is a complete deterministic recommender, and every AI
+          path falls back to it on any failure - unconfigured provider, rate limit, network error.
+          Mobile can ship the whole flow before any AI is configured. The only thing the AI adds is
+          "buy/request" picks for books outside the library.
+        </dd>
+      </div>
+      <div>
+        <dt>Two web behaviours I would not port</dt>
+        <dd>
+          Playlist detail draws a drag handle that reorders nothing - there is no implementation in
+          either web app. And both "New collection" buttons are stubs (one fires a "coming soon"
+          toast, the other has no handler at all). Mobile already has real creation inside
+          <code>AddToListSheet</code>, so the browse screens can just link to it.
+        </dd>
+      </div>
+      <div>
+        <dt>A latent bug worth fixing in passing</dt>
+        <dd>
+          Mobile's <code>getLibraryCollections</code> / <code>getLibraryPlaylists</code> omit
+          <code>?limit=0</code>, so they silently truncate at the ABS default page size. It doesn't
+          show today because the add-to-list sheet only needs names, but a browse screen would drop
+          collections with no error. The hosted web app already passes <code>limit=0</code>.
+        </dd>
+      </div>
+      <div>
+        <dt>One thing mobile can do that web can't</dt>
+        <dd>
+          <code>deleteListeningSession</code> and <code>updateListeningSession</code> already exist
+          in <code>src/api/abs.ts</code> and no web screen uses them. Swipe-to-delete on a History
+          row is close to free, and it fixes the real case the code comments describe: falling asleep
+          and banking six hours you didn't listen to.
+        </dd>
+      </div>
+      <div>
+        <dt>Decisions I need from you</dt>
+        <dd>
+          <strong>1.</strong> The two web apps disagree on "Look beyond my library" - self-hosted
+          runs the external search whenever it's on, hosted also requires the request backend, which
+          makes its own help text misleading. Pick one.<br />
+          <strong>2.</strong> Collections detail has edit/delete on self-hosted but is read-only on
+          hosted. ABS supports writes in both cases, so this looks like a product choice - does
+          mobile get them?<br />
+          <strong>3.</strong> Build order. My suggestion: Collections, Playlists and History first
+          (they unlock three of the four dead menu rows for a fraction of the effort), then
+          QuestGiver on its own.
+        </dd>
+      </div>
+    </dl>
+  </div>
+</div>
