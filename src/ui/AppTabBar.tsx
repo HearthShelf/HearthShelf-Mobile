@@ -11,7 +11,8 @@
  * Classic reserves a layout footprint; floating modes overlay the scene. Screens
  * that need collision avoidance (notably the player) reserve their own clearance.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useRouter } from 'expo-router'
 import { Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
 import { useSyncExternalStore } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -99,6 +100,22 @@ const PILL_TABS: TabDef[] = [
 export function tabFromParam(from: string | undefined, fallback: string): string {
   const v = from ?? fallback
   return v === 'home' ? 'index' : v
+}
+
+/**
+ * `onPressTab` for a pushed route that renders its own AppTabBar. Pressing a tab
+ * from one of these leaves the pushed stack entirely rather than stacking a tab
+ * on top of it, so the drill-down is dropped before the tab is restored.
+ */
+export function useGoToTab(): (name: string) => void {
+  const router = useRouter()
+  return useCallback(
+    (name: string) => {
+      router.dismissAll?.()
+      router.replace(name === 'index' ? '/(tabs)' : `/(tabs)/${name}`)
+    },
+    [router],
+  )
 }
 
 export function AppTabBar({

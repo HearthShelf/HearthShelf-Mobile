@@ -27,10 +27,21 @@ export function miniPlayerHiddenOn(pathname: string): boolean {
   )
 }
 
-/** Screens whose bottom edge is a tab bar (their own copy or the tabs shell);
- *  the dock floats above it. Auth and admin have no bottom nav. */
+/**
+ * Screens whose bottom edge is a tab bar - either the tabs shell itself or a
+ * pushed route that mounts its own AppTabBar (item, series, search, player...).
+ * The dock floats above that bar, and useContentInset counts on the bar to stop
+ * the scroll.
+ *
+ * Routes listed here render NO bottom nav, so nothing reserves that band for
+ * them: the dock drops to the safe area and content has to clear it itself.
+ * A pushed route without an AppTabBar must be added here, or its last rows end
+ * up under the mini player.
+ */
+const NO_TAB_BAR = ['/settings/admin', '/sign-in']
+
 export function hasBottomTabBar(pathname: string): boolean {
-  return !(pathname.startsWith('/settings/admin') || pathname.startsWith('/sign-in'))
+  return !NO_TAB_BAR.some((p) => pathname === p || pathname.startsWith(p + '/'))
 }
 
 export function MiniPlayerDock() {
@@ -41,11 +52,11 @@ export function MiniPlayerDock() {
   const floatingNav = useSyncExternalStore(subscribeSettings, () => getSettingsState().floatingNav)
   const hideMiniPlayer = useSyncExternalStore(
     subscribeSettings,
-    () => getSettingsState().hideMiniPlayer
+    () => getSettingsState().hideMiniPlayer,
   )
   const orientation = useSyncExternalStore(
     subscribeSettings,
-    () => getSettingsState().floatingNavOrientation
+    () => getSettingsState().floatingNavOrientation,
   )
   if (!nowPlaying || immersive || hideMiniPlayer || miniPlayerHiddenOn(pathname)) return null
   const hasTabBar = hasBottomTabBar(pathname)
