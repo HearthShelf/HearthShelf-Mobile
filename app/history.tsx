@@ -55,6 +55,8 @@ import { EmptyState, ErrorState, SkeletonRow } from '@/ui/states'
 import { Icon } from '@/ui/icons'
 import { SessionDurationSheet } from '@/ui/SessionDurationSheet'
 import { usePagedList } from '@/ui/usePagedList'
+import { AppTabBar, useGoToTab } from '@/ui/AppTabBar'
+import { SwipeableRow, type SwipeAction } from '@/ui/SwipeActions'
 import { useContentInset } from '@/ui/useContentInset'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
@@ -67,9 +69,13 @@ type Segment = 'sessions' | 'books'
 
 export default function HistoryScreen() {
   const [segment, setSegment] = useState<Segment>('sessions')
+  const goToTab = useGoToTab()
 
+  // Reached from the More menu, so More reads as the active tab - same as the
+  // settings stack. Without a tab bar here nothing reserves the bottom band and
+  // the list runs under the mini player (see hasBottomTabBar).
   return (
-    <Screen>
+    <Screen tabBar={<AppTabBar activeName="more" onPressTab={goToTab} />}>
       <Header segment={segment} onSegment={setSegment} />
       {segment === 'sessions' ? <SessionsView /> : <BooksView />}
     </Screen>
@@ -274,8 +280,11 @@ function SessionsView() {
         renderItem={({ item }) => (
           <SessionRowView
             row={item}
+            canDelete={canDelete}
             onOpen={() => router.push(`/item/${item.itemId}`)}
             onActions={() => openActions(item)}
+            onEdit={() => openEdit(item)}
+            onDelete={() => confirmDelete(item)}
           />
         )}
         ListFooterComponent={
@@ -293,12 +302,18 @@ function SessionsView() {
 
 function SessionRowView({
   row,
+  canDelete,
   onOpen,
   onActions,
+  onEdit,
+  onDelete,
 }: {
   row: SessionRow
+  canDelete: boolean
   onOpen: () => void
   onActions: () => void
+  onEdit: () => void
+  onDelete: () => void
 }) {
   const colors = useColors()
   const s = makeStyles(colors)
@@ -307,45 +322,65 @@ function SessionRowView({
   // "iPhone"), which is what belongs next to the icon.
   const device = classifyDevice(row.device).label
 
+  // Swipe exposes the same corrections the long press offers. Delete is
+  // permission-gated the same way, so an account without it swipes to a single
+  // Edit button rather than one that would 403.
+  const actions: SwipeAction[] = [
+    { key: 'edit', label: 'Edit', icon: 'edit', onPress: onEdit },
+    ...(canDelete
+      ? [
+          {
+            key: 'delete',
+            label: 'Delete',
+            icon: 'delete' as const,
+            onPress: onDelete,
+            destructive: true,
+          },
+        ]
+      : []),
+  ]
+
   return (
-    <Touchable
-      onPress={onOpen}
-      onLongPress={onActions}
-      style={s.row}
-      accessibilityRole="button"
-      accessibilityLabel={`${row.title}, ${formatTimestamp(row.seconds)} at ${when.time}`}
-      accessibilityHint="Long press to correct or delete this session"
-    >
-      <Cover
-        uri={coverUrl(row.itemId)}
-        width={44}
-        aspectRatio={1}
-        fallback={{
-          hue: coverHue(row.itemId),
-          initial: coverInitial(row.title),
-          title: row.title,
-        }}
-      />
-      <View style={s.rowMeta}>
-        <AppText variant="label" numberOfLines={1}>
-          {row.title}
-        </AppText>
-        <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
-          {row.author}
-        </AppText>
-      </View>
-      <View style={s.rowRight}>
-        <AppText variant="mono" color={colors.text}>
-          {formatTimestamp(row.seconds)}
-        </AppText>
-        <View style={s.deviceRow}>
-          <DeviceKindIcon deviceInfo={row.device} size={13} color={colors.textFaint} />
-          <AppText variant="caption" color={colors.textFaint} numberOfLines={1}>
-            {`${device} · ${when.time}`}
+    <SwipeableRow actions={actions}>
+      <Touchable
+        onPress={onOpen}
+        onLongPress={onActions}
+        style={s.row}
+        accessibilityRole="button"
+        accessibilityLabel={`${row.title}, ${formatTimestamp(row.seconds)} at ${when.time}`}
+        accessibilityHint="Swipe left or long press to correct or delete this session"
+      >
+        <Cover
+          uri={coverUrl(row.itemId)}
+          width={44}
+          aspectRatio={1}
+          fallback={{
+            hue: coverHue(row.itemId),
+            initial: coverInitial(row.title),
+            title: row.title,
+          }}
+        />
+        <View style={s.rowMeta}>
+          <AppText variant="label" numberOfLines={1}>
+            {row.title}
+          </AppText>
+          <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
+            {row.author}
           </AppText>
         </View>
-      </View>
-    </Touchable>
+        <View style={s.rowRight}>
+          <AppText variant="mono" color={colors.text}>
+            {formatTimestamp(row.seconds)}
+          </AppText>
+          <View style={s.deviceRow}>
+            <DeviceKindIcon deviceInfo={row.device} size={13} color={colors.textFaint} />
+            <AppText variant="caption" color={colors.textFaint} numberOfLines={1}>
+              {`${device} · ${when.time}`}
+            </AppText>
+          </View>
+        </View>
+      </Touchable>
+    </SwipeableRow>
   )
 }
 

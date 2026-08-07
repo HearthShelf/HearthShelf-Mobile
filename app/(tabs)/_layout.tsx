@@ -10,13 +10,7 @@ import { StyleSheet, View } from 'react-native'
 import { useSyncExternalStore } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { AppTabBar, TAB_BAR_HEIGHT, useNavMode } from '@/ui/AppTabBar'
-import { MoreMenu } from '@/ui/MoreMenu'
-import {
-  getMoreMenuOpen,
-  setMoreMenuOpen,
-  subscribeMoreMenu,
-  toggleMoreMenu,
-} from '@/ui/moreMenuState'
+import { getMoreMenuOpen, subscribeMoreMenu, toggleMoreMenu } from '@/ui/moreMenuState'
 import { getImmersive, subscribeImmersive } from '@/player/immersive'
 import { LIFT, useReducedMotion } from '@/ui/motion'
 
@@ -131,11 +125,12 @@ function TabBar({
 
 export default function TabsLayout() {
   const reducedMotion = useReducedMotion()
-  // The bubble is rendered here, above the scenes, so it overlays every tab and
-  // survives tab switches. Opening it is not a navigation: the current screen
-  // stays mounted and the back stack is untouched. The open flag lives in a
-  // module store so pushed routes (which render their own tab bar) can request
-  // it too - see src/ui/moreMenuState.ts.
+  // The bubble itself is mounted at the app root (MoreMenuHost in
+  // app/_layout.tsx) so it draws over the mini player dock, which is also a root
+  // sibling. This only reads the flag, to render More as active while it's up.
+  // Opening it is not a navigation: the current screen stays mounted and the
+  // back stack is untouched. The flag lives in a module store so pushed routes
+  // (which render their own tab bar) can request it too.
   const menuOpen = useSyncExternalStore(subscribeMoreMenu, getMoreMenuOpen)
 
   return (
@@ -155,7 +150,6 @@ export default function TabsLayout() {
         <Tabs.Screen name="feedback" />
         <Tabs.Screen name="more" />
       </Tabs>
-      <MoreMenu open={menuOpen} onClose={() => setMoreMenuOpen(false)} />
     </View>
   )
 }

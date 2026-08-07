@@ -56,6 +56,7 @@ import { Icon } from '@/ui/icons'
 import { QgChoice, QgSteps, QgWeightRow } from '@/ui/questgiver/QuestGiverParts'
 import { QuestGiverPicker } from '@/ui/questgiver/QuestGiverPicker'
 import { QuestGiverResultCard, type QgRequestState } from '@/ui/questgiver/QuestGiverResultCard'
+import { AppTabBar, useGoToTab } from '@/ui/AppTabBar'
 import { useContentInset } from '@/ui/useContentInset'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
@@ -76,7 +77,12 @@ export default function QuestGiverScreen() {
   const colors = useColors()
   const s = makeStyles(colors)
   const inset = useContentInset()
+  const goToTab = useGoToTab()
   const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
+  // Reached from the More menu, so More reads as the active tab. Rendered on
+  // both the loading and loaded branches so the nav doesn't flicker away while
+  // the library loads.
+  const tabBar = <AppTabBar activeName="more" onPressTab={goToTab} />
 
   const [items, setItems] = useState<ABSLibraryItem[] | null>(null)
   const [config, setConfig] = useState<QgConfig | null>(null)
@@ -323,7 +329,7 @@ export default function QuestGiverScreen() {
 
   if (items === null) {
     return (
-      <Screen>
+      <Screen tabBar={tabBar}>
         <Centered>
           <Loading label="Reading your library" />
         </Centered>
@@ -351,7 +357,7 @@ export default function QuestGiverScreen() {
   )
 
   return (
-    <Screen>
+    <Screen tabBar={tabBar}>
       <View style={s.head}>
         <Touchable
           onPress={() => router.back()}

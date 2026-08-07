@@ -20,6 +20,7 @@ import { PlayerHost } from '@/player/PlayerHost'
 import { MiniPlayerDock } from '@/player/MiniPlayerDock'
 import { PopToast } from '@/social/PopToast'
 import { ToastHost } from '@/ui/Toast'
+import { MoreMenuHost } from '@/ui/MoreMenu'
 import { GoalCelebrationHost } from '@/ui/GoalCelebration'
 import { FinishDateHost } from '@/ui/FinishDatePrompt'
 import { checkGoalCelebration } from '@/lib/goalCelebration'
@@ -468,6 +469,10 @@ export default Sentry.wrap(function RootLayout() {
                       blur target, while sharing that target through this provider. */}
                   <MiniPlayerDock />
                 </AppBlurTargetProvider>
+                {/* The More bubble. Mounted after the dock so it covers the
+                    mini player, which is a root sibling and would otherwise
+                    paint over it. */}
+                <MoreMenuHost />
                 {/* Note-pop toasts fired by the club watcher (notePops.ts). */}
                 <PopToast />
                 {/* Single app-wide confirmation toast, positioned in the
