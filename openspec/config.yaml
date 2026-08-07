@@ -1,0 +1,46 @@
+schema: spec-driven
+
+context: |
+  HearthShelf Mobile - an Expo / React Native audiobook player for
+  Audiobookshelf servers, with Android Auto support via a native Media3
+  MediaLibraryService.
+
+  Tech stack: TypeScript, Expo Router (file-based routes under app/),
+  Reanimated for motion, module-level stores with useSyncExternalStore
+  (not Redux/Zustand).
+
+  Shared logic lives in @hearthshelf/core, a git submodule at packages/core,
+  consumed by this app and both web apps. Core changes are made in
+  C:\code\HearthShelf-Core and pulled in - never edited in the submodule
+  checkout.
+
+  Conventions:
+  - Design tokens come from src/ui/theme.ts; icons from src/ui/icons.ts
+    (MaterialIcons glyphs behind semantic names). No colour literals in
+    components.
+  - Commit summaries are user-facing via an automated changelog: prefix with
+    new:, improved: or fixes: and write the first line in plain language.
+  - Screens degrade rather than fail: backend calls swallow errors into
+    neutral values so a surface hides instead of breaking the app.
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing
