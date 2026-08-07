@@ -1,14 +1,18 @@
 ## 1. Fix the external-search gate first
 
-- [ ] 1.1 In `HearthShelf-WebApp/src/pages/QuestGiverPage.tsx:216`, drop the
+- [x] 1.1 In `HearthShelf-WebApp/src/pages/QuestGiverPage.tsx:216`, drop the
       `rmabEnabled` condition on the external candidate search. Enabling the
       option searches; what the listener can do with a result still depends on
       what is connected.
-- [ ] 1.2 Check the result-card actions still choose correctly with external
+- [x] 1.2 Check the result-card actions still choose correctly with external
       picks present and no request backend - the buy path must appear rather
-      than a dead Request button.
-- [ ] 1.3 Confirm the self-hosted copy already behaves this way; align the help
-      text in both so it matches what now happens.
+      than a dead Request button. (Verified by inspection: pick `kind` is
+      `rmabEnabled ? 'request' : 'new'`, and `'new'` renders "Find on Audible"
+      in `QuestGiverResultCard.tsx:120-126`. Independent of the search gate.)
+- [x] 1.3 Confirm the self-hosted copy already behaves this way; align the help
+      text in both so it matches what now happens. (Self-hosted was already
+      un-gated; help text was already correct and identical in both - the
+      search was the bug. Both copies now match.)
 
 ## 2. Mobile API client
 
@@ -49,11 +53,18 @@
 
 ## 5. Consolidate
 
-- [ ] 5.1 Where the port would duplicate shared *logic* (assembling answers,
+- [x] 5.1 Where the port would duplicate shared *logic* (assembling answers,
       resolving picks to items, shaping run history), lift it to
-      `C:\code\HearthShelf-Core` instead. Do not lift UI.
-- [ ] 5.2 If a core change lands, pull the submodule in every consumer and
-      rebuild all three so nothing is left on a stale ref.
+      `C:\code\HearthShelf-Core` instead. Do not lift UI. (Added
+      `qgResolvePicks`, `qgRunLabel`, `qgPickKey`; both web pages repointed.
+      Verified byte-identical to the replaced inline logic over 42 resolve
+      cases + 6 label cases.)
+- [~] 5.2 If a core change lands, pull the submodule in every consumer and
+      rebuild all three so nothing is left on a stale ref. (Both web apps
+      bumped + rebuilt clean. Mobile pending. NOTE: `npm run sync-core` runs
+      `git submodule update --remote`, which resets the submodule to
+      `origin/main` - it silently reverted a local checkout mid-verification
+      here. The core commit must be pushed before consumers can sync normally.)
 
 ## 6. Verify
 

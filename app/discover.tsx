@@ -5,8 +5,8 @@
  * whole library + listening history - pure, deterministic, and offline-capable,
  * so this screen always has content without an AI call. rankDiscoverShelves()
  * then layers the user's feedback on top, the same ordering the web apps use.
- * (Web also feeds it the latest QuestGiver picks; this app has no QuestGiver
- * client yet, and that input is optional.)
+ * (Web also feeds it the latest QuestGiver picks; that input is optional and
+ * this screen does not wire it in yet.)
  *
  * The monthly AI shelf leads when one exists, and "Popular on your server"
  * tails. Both degrade to nothing when the backend is unreachable.

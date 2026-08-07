@@ -63,9 +63,9 @@ interface MenuEntry {
 }
 
 /**
- * Every destination in display order. Four of these (QuestGiver, History,
- * Collections, Playlists) have no screen on mobile yet and are held back by
- * `available` until they land - adding one is a one-line change.
+ * Every destination in display order. Three of these (History, Collections,
+ * Playlists) have no screen on mobile yet and are held back by `available`
+ * until they land - adding one is a one-line change.
  */
 function buildEntries(isAdmin: boolean): MenuEntry[] {
   return [
@@ -83,7 +83,7 @@ function buildEntries(isAdmin: boolean): MenuEntry[] {
       icon: 'questGiver',
       href: '/questgiver',
       group: 1,
-      available: false,
+      available: true,
     },
     {
       id: 'downloads',
