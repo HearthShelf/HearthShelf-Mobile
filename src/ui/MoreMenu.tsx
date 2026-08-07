@@ -2,14 +2,15 @@
  * The More tab's popup menu: a bubble anchored to the tab that lists the app's
  * secondary destinations. Tapping More opens this instead of navigating, so
  * reaching Discover, Downloads or the admin surface costs one tap and leaves the
- * current screen mounted behind it (see app/(tabs)/_layout.tsx, which intercepts
- * the press and renders this outside the scene container).
+ * current screen mounted behind it. app/(tabs)/_layout.tsx intercepts the More
+ * press; MoreMenuHost mounts the bubble at the app root, above every screen and
+ * above the mini player dock.
  *
  * The bubble grows out of its bottom-right corner - the corner nearest the tab -
  * so it reads as unfolding from the thing that was tapped. Modelled on
  * docs/redesign/more-menu.html.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native'
 import { useRouter, type Href } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -25,6 +26,7 @@ import { useConnection } from '@/api/ConnectionProvider'
 import { AppText } from './primitives'
 import { Icon, icons } from './icons'
 import { useBackHandler } from './useBackHandler'
+import { getMoreMenuOpen, setMoreMenuOpen, subscribeMoreMenu } from './moreMenuState'
 import { haptics } from './haptics'
 import {
   BUBBLE_CLOSE_MS,
@@ -63,9 +65,8 @@ interface MenuEntry {
 }
 
 /**
- * Every destination in display order. Two of these (Collections and
- * Playlists) have no screen on mobile yet and are held back by `available`
- * until they land - adding one is a one-line change.
+ * Every destination in display order. `available` hides a row whose screen does
+ * not exist on this platform, or that the current role cannot use.
  */
 function buildEntries(isAdmin: boolean): MenuEntry[] {
   return [
@@ -107,7 +108,7 @@ function buildEntries(isAdmin: boolean): MenuEntry[] {
       icon: 'collections',
       href: '/collections',
       group: 2,
-      available: false,
+      available: true,
     },
     {
       id: 'playlists',
@@ -115,7 +116,7 @@ function buildEntries(isAdmin: boolean): MenuEntry[] {
       icon: 'playlists',
       href: '/playlists',
       group: 2,
-      available: false,
+      available: true,
     },
     {
       id: 'settings',
@@ -148,6 +149,17 @@ function anchorFor(mode: NavMode, bottomInset: number): ViewStyle {
   }
   const barHeight = mode === 'classic' ? TAB_BAR_HEIGHT : FLOATING_PILL_CLEARANCE
   return { right: spacing.md, bottom: bottomInset + barHeight + spacing.sm }
+}
+
+/**
+ * Mounts the bubble at the app root, after the mini player dock, so it draws
+ * over it. Rendering it inside the tabs layout put it earlier in the root's
+ * child order, and on Android the dock's floating card (elevation 12) also
+ * outranked it - either way the mini player showed through the menu.
+ */
+export function MoreMenuHost() {
+  const open = useSyncExternalStore(subscribeMoreMenu, getMoreMenuOpen)
+  return <MoreMenu open={open} onClose={() => setMoreMenuOpen(false)} />
 }
 
 export function MoreMenu({ open, onClose }: { open: boolean; onClose: () => void }) {

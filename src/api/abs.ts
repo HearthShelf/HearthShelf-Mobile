@@ -568,14 +568,115 @@ export async function updateListeningSession(session: {
 
 // ---- Collections / Playlists (Add to list) ----
 
+// `limit=0` is ABS's "return everything". It is also what you get by OMITTING
+// limit - both library controllers build `limit: req.query.limit || 0` and slice
+// only `if (payload.limit)` (LibraryController.js:823, 861), so zero is falsy
+// and nothing is truncated either way. Passing it is parity with hosted web plus
+// insurance against the `// TODO: Create paginated queries` sitting in both
+// controllers - not a fix for a bug.
 export async function getLibraryCollections(libraryId: string): Promise<ABSCollection[]> {
-  const data = await absRequest<ABSCollectionsResponse>(`/api/libraries/${libraryId}/collections`)
+  const data = await absRequest<ABSCollectionsResponse>(
+    `/api/libraries/${libraryId}/collections?limit=0`,
+  )
   return data.results ?? []
 }
 
 export async function getLibraryPlaylists(libraryId: string): Promise<ABSPlaylist[]> {
-  const data = await absRequest<ABSPlaylistsResponse>(`/api/libraries/${libraryId}/playlists`)
+  const data = await absRequest<ABSPlaylistsResponse>(
+    `/api/libraries/${libraryId}/playlists?limit=0`,
+  )
   return data.results ?? []
+}
+
+// ---- Collections / Playlists (browse + maintain) ----
+//
+// BODY-SHAPE ASYMMETRY, and an easy thing to mis-port. ABS is not consistent
+// between the two kinds or between their single and batch routes:
+//
+//   collection add single -> { id: libraryItemId }
+//   collection add batch  -> { books: [libraryItemId] }
+//   playlist   add single -> { libraryItemId }
+//   playlist   add batch  -> { items: [{ libraryItemId }] }
+//
+// Removal differs again, and is path-based rather than body-based:
+//
+//   collection remove -> DELETE /collections/:id/book/:libraryItemId
+//                        (:bookId in ABS's route, but it looks the LIBRARY ITEM
+//                        up and resolves mediaId itself - CollectionController
+//                        removeBook)
+//   playlist   remove -> DELETE /playlists/:id/item/:libraryItemId[/:episodeId]
+//
+// PERMISSIONS also differ. Collections are library-wide, so ABS gates them:
+// PATCH/POST need canUpdate and DELETE needs canDelete
+// (CollectionController.js:447-453). Playlists are private and gated only on
+// ownership (PlaylistController.js:581) - no permission flags at all.
+
+export async function getCollection(collectionId: string): Promise<ABSCollection> {
+  return absRequest<ABSCollection>(`/api/collections/${collectionId}`)
+}
+
+export async function updateCollection(
+  collectionId: string,
+  patch: { name?: string; description?: string },
+): Promise<ABSCollection> {
+  return absRequest<ABSCollection>(`/api/collections/${collectionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+}
+
+export async function deleteCollection(collectionId: string): Promise<void> {
+  await absRequest<void>(`/api/collections/${collectionId}`, { method: 'DELETE' })
+}
+
+/** Take a book out of a collection. The book itself stays in the library. */
+export async function removeBookFromCollection(
+  collectionId: string,
+  libraryItemId: string,
+): Promise<void> {
+  await absRequest<void>(`/api/collections/${collectionId}/book/${libraryItemId}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function getPlaylist(playlistId: string): Promise<ABSPlaylist> {
+  return absRequest<ABSPlaylist>(`/api/playlists/${playlistId}`)
+}
+
+export async function updatePlaylist(
+  playlistId: string,
+  patch: { name?: string; description?: string },
+): Promise<ABSPlaylist> {
+  return absRequest<ABSPlaylist>(`/api/playlists/${playlistId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+}
+
+export async function deletePlaylist(playlistId: string): Promise<void> {
+  await absRequest<void>(`/api/playlists/${playlistId}`, { method: 'DELETE' })
+}
+
+/**
+ * Take an item out of a playlist. `episodeId` addresses a specific episode; ABS
+ * matches on it directly when given and falls back to the library item
+ * otherwise, so a podcast contributing several episodes needs it to remove the
+ * right one.
+ *
+ * NOTE: ABS DELETES THE WHOLE PLAYLIST when its last item is removed
+ * (PlaylistController.removeItem - "has no more items - removing it"). The
+ * response is the removed playlist rather than an empty one, so callers must
+ * expect to leave the detail screen rather than render an empty list.
+ */
+export async function removeItemFromPlaylist(
+  playlistId: string,
+  libraryItemId: string,
+  episodeId?: string,
+): Promise<ABSPlaylist> {
+  const suffix = episodeId ? `/${episodeId}` : ''
+  return absRequest<ABSPlaylist>(`/api/playlists/${playlistId}/item/${libraryItemId}${suffix}`, {
+    method: 'DELETE',
+  })
 }
 
 export async function createCollection(
