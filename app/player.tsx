@@ -1149,6 +1149,19 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                   ) : null}
                   <View style={styles.playWrap}>
                     {buffering && <BufferingRing size={playSize + 12} />}
+                    {/* Absolute so the caption appearing/disappearing never reflows
+                the transport row - repeated skip taps must not move the buttons. */}
+                    {buffering && (
+                      <Animated.View
+                        entering={FadeIn.duration(DUR.base)}
+                        pointerEvents="none"
+                        style={[styles.bufferCaption, { top: playSize + 6 }]}
+                      >
+                        <AppText variant="caption" color={colors.textMuted}>
+                          Buffering...
+                        </AppText>
+                      </Animated.View>
+                    )}
                     <SpringPressable
                       onPress={togglePlay}
                       style={[
@@ -1189,14 +1202,6 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                     </>
                   ) : null}
                 </View>
-
-                {buffering && (
-                  <Animated.View entering={FadeIn.duration(DUR.base)} style={styles.bufferCaption}>
-                    <AppText variant="caption" color={colors.textMuted}>
-                      Buffering...
-                    </AppText>
-                  </Animated.View>
-                )}
 
                 {immersive && hasChapters && (
                   <Animated.View entering={FadeIn.duration(DUR.base)} style={styles.chapterSkipRow}>
@@ -2295,7 +2300,7 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       justifyContent: 'center',
     },
     playWrap: { alignItems: 'center', justifyContent: 'center' },
-    bufferCaption: { alignItems: 'center', marginTop: spacing.sm },
+    bufferCaption: { position: 'absolute', alignItems: 'center' },
     // Diameter comes inline from adaptivePlayerPlaySize (height-responsive).
     play: {
       backgroundColor: colors.accent,
