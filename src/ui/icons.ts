@@ -108,6 +108,12 @@ export const icons = {
   arrowUpward: 'arrow-upward',
   nothingQueued: 'do-not-disturb-on',
   sparkle: 'auto-awesome',
+  // Discover feedback: like / dislike / rate / stop suggesting this.
+  thumbUp: 'thumb-up',
+  thumbDown: 'thumb-down',
+  star: 'star',
+  starOutline: 'star-border',
+  notInterested: 'block',
   // Nav / actions
   search: 'search',
   back: 'arrow-back',
