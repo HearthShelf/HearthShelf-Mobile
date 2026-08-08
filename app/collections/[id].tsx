@@ -72,11 +72,14 @@ export default function CollectionDetailScreen() {
 
   useEffect(() => {
     void load()
+    // Trust the server's own flags - ABS gates these on `permissions.update` /
+    // `permissions.delete` with no admin bypass (CollectionController.middleware).
+    // Its defaults grant delete to root ONLY, so an `admin ||` bypass here would
+    // show admins a Delete the server then 403s.
     void getMe()
       .then((me) => {
-        const admin = me.type === 'admin' || me.type === 'root'
-        setCanUpdate(admin || me.permissions?.update === true)
-        setCanDelete(admin || me.permissions?.delete === true)
+        setCanUpdate(me.permissions?.update === true)
+        setCanDelete(me.permissions?.delete === true)
       })
       .catch(() => {
         setCanUpdate(false)

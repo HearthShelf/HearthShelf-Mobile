@@ -41,6 +41,7 @@ import {
   type HSCompletion,
 } from '@hearthshelf/core'
 import {
+  ABSRequestError,
   coverUrl,
   deleteListeningSession,
   getMe,
@@ -152,15 +153,14 @@ function SessionsView() {
   })
 
   useEffect(() => {
-    // Delete is permission-gated server-side; hide the affordance when the
-    // account lacks it rather than offering an action that always 403s. Admins
-    // bypass the flag, matching how the web apps gate this. A 403 is still
-    // handled below - a stale permission read must not corrupt the list.
+    // Mirror the server's own rule exactly. ABS gates DELETE /api/sessions/:id on
+    // `permissions.delete && isActive` with NO admin bypass, and its default
+    // permissions grant delete to root ONLY - every other action grants to
+    // root|admin, delete deliberately does not. So an `admin || ...` bypass here
+    // shows a Delete button to admins that the server then 403s every time.
+    // A 403 is still handled below: a stale read must not corrupt the list.
     void getMe()
-      .then((me) => {
-        const admin = me.type === 'admin' || me.type === 'root'
-        setCanDelete(admin || me.permissions?.delete === true)
-      })
+      .then((me) => setCanDelete(me.permissions?.delete === true))
       .catch(() => setCanDelete(false))
   }, [])
 
@@ -209,9 +209,17 @@ function SessionsView() {
     try {
       await deleteListeningSession(row.id)
       showToast('Session deleted')
-    } catch {
+    } catch (e) {
       restore()
-      showToast('Could not delete that session')
+      // A 403 is the server saying this account lacks delete, not a transient
+      // failure - retrying will never work, so say so instead of "could not".
+      // The affordance is gated on the same flag, so this should be unreachable;
+      // it still fires if the permission changed since the screen loaded.
+      const denied = e instanceof ABSRequestError && e.status === 403
+      showToast(
+        denied ? "Your account isn't allowed to delete sessions" : 'Could not delete that session',
+      )
+      if (denied) setCanDelete(false)
     }
   }
 
@@ -326,7 +334,7 @@ function SessionRowView({
   // permission-gated the same way, so an account without it swipes to a single
   // Edit button rather than one that would 403.
   const actions: SwipeAction[] = [
-    { key: 'edit', label: 'Edit', icon: 'edit', onPress: onEdit },
+    { key: 'edit', label: 'Edit', icon: 'edit', onPress: onEdit, tone: 'affirmative' },
     ...(canDelete
       ? [
           {
@@ -334,7 +342,7 @@ function SessionRowView({
             label: 'Delete',
             icon: 'delete' as const,
             onPress: onDelete,
-            destructive: true,
+            tone: 'destructive' as const,
           },
         ]
       : []),

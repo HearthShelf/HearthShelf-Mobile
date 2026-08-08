@@ -51,6 +51,10 @@ import {
 import { BookTile } from '@/ui/BookTile'
 import { DiscoverAiTile } from '@/ui/DiscoverAiTile'
 import {
+  DiscoverFeedbackSheet,
+  type DiscoverFeedbackHandle,
+} from '@/ui/DiscoverFeedbackSheet'
+import {
   BookActionsSheet,
   type BookActionsHandle,
   type BookActionsSource,
@@ -95,6 +99,7 @@ export default function DiscoverScreen() {
   const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
   const { message: toast, show: showToast } = useToast()
   const actionsRef = useRef<BookActionsHandle>(null)
+  const feedbackRef = useRef<DiscoverFeedbackHandle>(null)
 
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
@@ -373,19 +378,7 @@ export default function DiscoverScreen() {
                       progress={p?.progress}
                       finished={p?.isFinished === true}
                       feedback={feedback[pick.item.id]}
-                      onVote={(v) =>
-                        writeFeedback(pick.item.id, {
-                          vote: feedback[pick.item.id]?.vote === v ? null : v,
-                        })
-                      }
-                      onRate={(n) =>
-                        writeFeedback(pick.item.id, {
-                          rating: feedback[pick.item.id]?.rating === n ? null : n,
-                        })
-                      }
-                      onNotInterested={() =>
-                        writeFeedback(pick.item.id, { vote: 'not_interested' })
-                      }
+                      onOpenFeedback={() => feedbackRef.current?.present(pick.item)}
                       onQuickPlay={() => void quickPlay(pick.item)}
                       onLongPress={() => openActions(pick.item)}
                     />
@@ -409,6 +402,17 @@ export default function DiscoverScreen() {
       )}
 
       <BookActionsSheet ref={actionsRef} onToast={showToast} />
+      <DiscoverFeedbackSheet
+        ref={feedbackRef}
+        feedbackFor={(id) => feedback[id]}
+        onVote={(item, v) =>
+          writeFeedback(item.id, { vote: feedback[item.id]?.vote === v ? null : v })
+        }
+        onRate={(item, n) =>
+          writeFeedback(item.id, { rating: feedback[item.id]?.rating === n ? null : n })
+        }
+        onNotInterested={(item) => writeFeedback(item.id, { vote: 'not_interested' })}
+      />
       <Toast message={toast} />
     </Screen>
   )

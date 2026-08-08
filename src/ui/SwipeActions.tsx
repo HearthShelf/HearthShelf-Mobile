@@ -32,14 +32,21 @@ import { useColors } from './ThemeProvider'
  *  leaves most of the row readable while open. */
 const ACTION_WIDTH = 76
 
+/**
+ * Button tint. Presentation only - a `destructive` tone does not add a
+ * confirmation step, the caller still owns that.
+ *   neutral     - plain fill, for actions that need no signal
+ *   affirmative - muted green, for a safe/constructive action (edit, save)
+ *   destructive - red, for one that removes something
+ */
+export type SwipeActionTone = 'neutral' | 'affirmative' | 'destructive'
+
 export interface SwipeAction {
   key: string
   label: string
   icon: IconName
   onPress: () => void
-  /** Tints the button destructive. The action still runs through whatever
-   *  confirmation the caller applies - this is presentation only. */
-  destructive?: boolean
+  tone?: SwipeActionTone
 }
 
 export function SwipeableRow({
@@ -120,28 +127,26 @@ function ActionPanel({
 
   return (
     <Animated.View style={[styles.panel, { width: panelWidth }, style]}>
-      {actions.map((action) => (
-        <Touchable
-          key={action.key}
-          onPress={() => onRun(action.onPress)}
-          style={[styles.action, action.destructive && styles.actionDestructive]}
-          accessibilityRole="button"
-          accessibilityLabel={action.label}
-        >
-          <Icon
-            name={action.icon}
-            size={20}
-            color={action.destructive ? colors.onAccent : colors.text}
-          />
-          <AppText
-            variant="caption"
-            color={action.destructive ? colors.onAccent : colors.text}
-            numberOfLines={1}
+      {actions.map((action) => {
+        const tone = action.tone ?? 'neutral'
+        // Tinted buttons carry a solid fill, so their content flips to the
+        // on-accent ink; the neutral fill is subtle enough to keep body text.
+        const ink = tone === 'neutral' ? colors.text : colors.onAccent
+        return (
+          <Touchable
+            key={action.key}
+            onPress={() => onRun(action.onPress)}
+            style={[styles.action, styles[tone]]}
+            accessibilityRole="button"
+            accessibilityLabel={action.label}
           >
-            {action.label}
-          </AppText>
-        </Touchable>
-      ))}
+            <Icon name={action.icon} size={20} color={ink} />
+            <AppText variant="caption" color={ink} numberOfLines={1}>
+              {action.label}
+            </AppText>
+          </Touchable>
+        )
+      })}
     </Animated.View>
   )
 }
@@ -154,7 +159,8 @@ const makeStyles = (colors: Palette) =>
       alignItems: 'center',
       justifyContent: 'center',
       gap: spacing.xs,
-      backgroundColor: colors.fill,
     },
-    actionDestructive: { backgroundColor: colors.destructive },
+    neutral: { backgroundColor: colors.fill },
+    affirmative: { backgroundColor: colors.success },
+    destructive: { backgroundColor: colors.destructive },
   })
