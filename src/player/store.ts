@@ -281,20 +281,32 @@ export function currentChapter(): ChapterMark | null {
   return chapters.find((c) => pos >= c.start && pos < c.end) ?? chapters[chapters.length - 1]
 }
 
-/** Seek to the start of the next/previous chapter (no-op without chapters). */
-export function skipChapter(direction: 1 | -1): void {
+/**
+ * Seek to the start of the next/previous chapter (no-op without chapters).
+ *
+ * Returns 'finish' when next-chapter is used from inside the LAST chapter:
+ * there is nowhere further to skip, so the book is done. The store can't
+ * complete a book itself (that needs the progress store + queue advance, which
+ * both import from here), so the caller routes that verdict to finishBook().
+ * Clamping to the last chapter instead would seek BACKWARDS to its start - a
+ * rewind of the whole final chapter, which then gets pushed to the server as a
+ * real position via requestSeek's sync-dirty marking.
+ */
+export function skipChapter(direction: 1 | -1): 'seeked' | 'finish' | 'none' {
   const chapters = state.nowPlaying?.chapters
-  if (!chapters || chapters.length === 0) return
+  if (!chapters || chapters.length === 0) return 'none'
   haptics.transport()
   const idx = chapters.findIndex((c) => state.position >= c.start && state.position < c.end)
   const cur = idx >= 0 ? idx : chapters.length - 1
   // Going back near the start of a chapter (>3s in) restarts it instead of skipping.
   if (direction === -1 && state.position - chapters[cur].start > 3) {
     requestSeek(chapters[cur].start)
-    return
+    return 'seeked'
   }
+  if (direction === 1 && cur >= chapters.length - 1) return 'finish'
   const next = Math.min(Math.max(cur + direction, 0), chapters.length - 1)
   requestSeek(chapters[next].start)
+  return 'seeked'
 }
 
 export function seekToChapter(chapter: ChapterMark): void {
