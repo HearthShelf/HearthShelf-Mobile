@@ -34,6 +34,10 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import io.sentry.Sentry
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -642,11 +646,83 @@ class HearthShelfAutoService : MediaLibraryService() {
     }
   }
 
-  /** Next-chapter: jump to the next chapter's start. No-op past the last. */
+  /** Next-chapter: jump to the next chapter's start. From inside the LAST
+   *  chapter there is nowhere further to skip, so the book is finished instead
+   *  (matching the phone and CarPlay surfaces). */
   private fun nextChapter(player: Player) {
     val sec = absolutePositionMs(player) / 1000.0
     val idx = chapters.indexOfFirst { sec >= it.start && sec < it.end }
-    if (idx in 0 until chapters.size - 1) seekToAbsolute(player, (chapters[idx + 1].start * 1000).toLong())
+    val last = chapters.size - 1
+    if (idx in 0 until last) {
+      seekToAbsolute(player, (chapters[idx + 1].start * 1000).toLong())
+    } else if (chapters.isNotEmpty()) {
+      finishBook(player)
+    }
+  }
+
+  /**
+   * Finish the current book from the car: stop, bank the final position, mark it
+   * finished on the server, and let JS advance the shared up-next queue.
+   *
+   * Done natively rather than by seeking to the end and waiting for STATE_ENDED:
+   * a seek to exactly the duration is not a reliable way to reach ENDED (and
+   * reaches it not at all while paused). Marking finished here also means the
+   * car still works when JS isn't running - the emitter below is null whenever
+   * Android Auto is driving standalone, which is the common case.
+   */
+  private fun finishBook(player: Player) {
+    val id = currentItemId ?: return
+    player.pause()
+    val posMs = absolutePositionMs(player)
+    // Bank the listened time first so the finish PATCH can't race the position
+    // sync and leave the last stretch of listening uncredited.
+    syncProgress(posMs, force = true)
+    val base = serverUrl
+    val tok = token
+    // onCustomCommand runs on the MAIN thread - the PATCH must hop to io.
+    if (base != null && tok != null && !offlineMode()) {
+      io.execute { httpPatchFinished("$base/api/me/progress/$id", tok) }
+    } else {
+      // Offline: bank the finish onto the same per-listen ledger the position
+      // rides on, so it replays with everything else on reconnect rather than
+      // being lost. Ordered behind the syncProgress bank above (same executor),
+      // which is what created the entry this flags.
+      io.execute { markOfflineFinished() }
+    }
+    // Queue advance stays JS-owned (server owns the queue) - same contract as a
+    // natural end. No-op when JS isn't attached; the finish above still landed.
+    HearthShelfAutoModule.emitEnded()
+  }
+
+  /**
+   * Mark an item finished (ABS PATCH /api/me/progress/:id).
+   *
+   * Uses OkHttp (on the classpath via React Native) rather than the
+   * HttpURLConnection helper the other calls here use: its method whitelist has
+   * no PATCH, and setRequestMethod("PATCH") throws ProtocolException. An
+   * X-HTTP-Method-Override header is not a way around it either - ABS's Express
+   * app mounts no method-override middleware, so the request would land on the
+   * POST route and silently fail to finish the book.
+   */
+  private fun httpPatchFinished(urlStr: String, tok: String) {
+    try {
+      val client = OkHttpClient.Builder()
+        .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
+      val body = JSONObject().put("isFinished", true).toString()
+        .toRequestBody("application/json".toMediaType())
+      val req = Request.Builder()
+        .url(urlStr)
+        .patch(body)
+        .header("Authorization", "Bearer $tok")
+        .build()
+      client.newCall(req).execute().use { res ->
+        if (!res.isSuccessful) Log.w(TAG, "finish failed: HTTP ${res.code}")
+      }
+    } catch (e: Exception) {
+      Log.w(TAG, "finish failed: ${e.message}")
+    }
   }
 
   /** POST a bookmark at the given position (labelled with the chapter title), or
@@ -2388,6 +2464,24 @@ class HearthShelfAutoService : MediaLibraryService() {
       prefs.edit().putString("offlineProgress", all.toString()).apply()
     } catch (e: Exception) {
       Log.w(TAG, "offline progress record failed: ${e.message}")
+    }
+  }
+
+  /** Flag the current listen's banked entry as finished, so the drain on the
+   *  phone marks the book finished when it replays this listen. Runs on io,
+   *  ordered behind the recordOfflineProgress that created the entry. */
+  private fun markOfflineFinished() {
+    val itemId = currentItemId ?: return
+    try {
+      val raw = prefs.getString("offlineProgress", null) ?: return
+      val all = JSONObject(raw)
+      val key = "$itemId@$offlineSessionStartedAt"
+      val entry = all.optJSONObject(key) ?: return
+      entry.put("finished", true)
+      all.put(key, entry)
+      prefs.edit().putString("offlineProgress", all.toString()).apply()
+    } catch (e: Exception) {
+      Log.w(TAG, "offline finish record failed: ${e.message}")
     }
   }
 

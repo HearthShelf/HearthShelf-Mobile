@@ -31,7 +31,12 @@ import {
 } from './autoBridge'
 import { getDownloadsState, subscribeDownloads } from './downloads'
 import { getCatalogState, subscribeCatalog } from './offlineCatalog'
-import { getProgressState, subscribeProgress, recordLocalProgress } from '@/store/progress'
+import {
+  getProgressState,
+  subscribeProgress,
+  recordLocalProgress,
+  markFinished,
+} from '@/store/progress'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { getPendingSessionState, recordLocalSession, flushPendingProgress } from './pendingProgress'
 import { addBookmarkPending } from './pendingBookmarks'
@@ -173,6 +178,11 @@ export async function drainCarOfflineProgress(): Promise<void> {
       startedAt: e.startedAt,
       updatedAt: e.updatedAt,
     })
+
+    // The user finished the book in the car while offline. markFinished is
+    // optimistic with its own rollback and queues the server write, so this is
+    // safe to fire here whether or not we're back online yet.
+    if (e.finished) void markFinished(e.itemId, true, e.duration).catch(() => {})
   }
 
   clearAutoOfflineProgress(entries.map(([key]) => key))

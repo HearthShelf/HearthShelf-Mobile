@@ -43,9 +43,9 @@ import {
   togglePlay,
   jumpBy,
   requestSeek,
-  skipChapter,
   currentChapter,
 } from '@/player/store'
+import { skipChapterOrFinish } from '@/player/advance'
 import { getQueueState, subscribeQueue } from '@/player/queue'
 import { getProgressState, subscribeProgress } from '@/store/progress'
 import { BookActionsSheet, type BookActionsHandle } from '@/ui/BookActionsSheet'
@@ -1136,7 +1136,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                           icon={icons.skipPrev}
                           ghost
                           compact={playSize < 84}
-                          onPress={() => skipChapter(-1)}
+                          onPress={() => skipChapterOrFinish(-1)}
                         />
                       ) : null}
                       <SkipButton
@@ -1196,7 +1196,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                           icon={icons.skipNext}
                           ghost
                           compact={playSize < 84}
-                          onPress={() => skipChapter(1)}
+                          onPress={() => skipChapterOrFinish(1)}
                         />
                       ) : null}
                     </>
@@ -1205,7 +1205,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
 
                 {immersive && hasChapters && (
                   <Animated.View entering={FadeIn.duration(DUR.base)} style={styles.chapterSkipRow}>
-                    <TransportBtn icon={icons.skipPrev} onPress={() => skipChapter(-1)} />
+                    <TransportBtn icon={icons.skipPrev} onPress={() => skipChapterOrFinish(-1)} />
                     <SkipButton
                       dir={-1}
                       seconds={settings.skipBack}
@@ -1218,7 +1218,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                       color={colors.text}
                       onPress={() => skipBy(1, settings.skipForward)}
                     />
-                    <TransportBtn icon={icons.skipNext} onPress={() => skipChapter(1)} />
+                    <TransportBtn icon={icons.skipNext} onPress={() => skipChapterOrFinish(1)} />
                   </Animated.View>
                 )}
 

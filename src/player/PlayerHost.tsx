@@ -25,7 +25,6 @@ import {
   setCarActive,
   mirrorCarTrack,
   setRate,
-  skipChapter,
   currentChapter,
 } from './store'
 import { coverUrl } from '@/api/abs'
@@ -33,7 +32,7 @@ import { addBookmarkPending } from './pendingBookmarks'
 import { localCoverFor } from './downloads'
 import { handOffToCar, playItemById, syncProgress, ensureSessionForPlayback } from './playback'
 import { loadAutoCarBook } from './autoBridge'
-import { advanceQueueOnEnd } from './advance'
+import { advanceQueueOnEnd, skipChapterOrFinish } from './advance'
 import { useShakeToExtend } from './shakeToExtend'
 import { useSleepBeep } from './sleepBeep'
 import { Toast, useToast, showToast } from '@/ui/Toast'
@@ -231,7 +230,7 @@ export function PlayerHost() {
         setRate(next)
       }),
       emitter.addListener('onCarChapter', (e: { direction: number }) => {
-        skipChapter(e.direction >= 0 ? 1 : -1)
+        skipChapterOrFinish(e.direction >= 0 ? 1 : -1)
       }),
       emitter.addListener('onCarBookmark', () => {
         const s = getState()

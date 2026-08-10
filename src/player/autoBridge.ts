@@ -46,6 +46,10 @@ export interface AutoOfflineProgress {
   timeListening: number
   startedAt: number
   updatedAt: number
+  /** Set when the listen ended by the user finishing the book in the car (next
+   *  chapter from the last chapter) while offline, so the drain marks it
+   *  finished instead of only replaying the position. */
+  finished?: boolean
 }
 
 /** A bookmark the car couldn't POST because there was no server to take it. */
