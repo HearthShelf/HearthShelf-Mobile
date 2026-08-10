@@ -30,11 +30,17 @@ export const DiscoverFeedbackSheet = forwardRef<
     /** Current feedback for the open item, looked up by the parent so the tray
      *  reflects optimistic writes as they land. */
     feedbackFor: (itemId: string) => DiscoverFeedbackEntry | undefined
+    /** The user's own star rating for the open item. Separate from feedback:
+     *  a rating is about the BOOK, a vote is about the RECOMMENDATION. */
+    ratingFor: (itemId: string) => number | undefined
     onVote: (item: ABSLibraryItem, vote: DiscoverVote) => void
     onRate: (item: ABSLibraryItem, rating: number) => void
     onNotInterested: (item: ABSLibraryItem) => void
   }
->(function DiscoverFeedbackSheet({ feedbackFor, onVote, onRate, onNotInterested }, ref) {
+>(function DiscoverFeedbackSheet(
+  { feedbackFor, ratingFor, onVote, onRate, onNotInterested },
+  ref,
+) {
   const colors = useColors()
   const s = useMemo(() => makeStyles(colors), [colors])
   const sheetRef = useRef<SheetRef>(null)
@@ -48,7 +54,7 @@ export const DiscoverFeedbackSheet = forwardRef<
   }))
 
   const fb = (item ? feedbackFor(item.id) : undefined) ?? {}
-  const rating = fb.rating ?? 0
+  const rating = (item ? ratingFor(item.id) : undefined) ?? 0
 
   return (
     <Sheet

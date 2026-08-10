@@ -54,6 +54,7 @@ import {
   DiscoverFeedbackSheet,
   type DiscoverFeedbackHandle,
 } from '@/ui/DiscoverFeedbackSheet'
+import { getRatings, setRating, type RatingMap } from '@/api/ratings'
 import {
   BookActionsSheet,
   type BookActionsHandle,
@@ -109,6 +110,17 @@ export default function DiscoverScreen() {
   const [monthly, setMonthly] = useState<MonthlyShelf | null>(null)
   const [popular, setPopular] = useState<ABSLibraryItem[]>([])
   const [feedback, setFeedback] = useState<DiscoverFeedbackMap>({})
+  // Ratings are their own thing now (see src/api/ratings.ts): a rating is about
+  // a BOOK, a Discover vote is about a RECOMMENDATION. Separate state, separate
+  // endpoint, loaded together only because this screen shows both.
+  const [ratings, setRatings] = useState<RatingMap>({})
+  // Mirrors `ratings` so a write can snapshot the pre-write value without
+  // reading state inside an updater. Kept in step below.
+  const ratingsRef = useRef<RatingMap>({})
+
+  useEffect(() => {
+    ratingsRef.current = ratings
+  }, [ratings])
 
   const load = useCallback(async () => {
     try {
@@ -130,8 +142,9 @@ export default function DiscoverScreen() {
       // empty, which just leaves the deterministic base order. QuestGiver picks
       // are the other ranking input on web, but this app has no QuestGiver
       // client yet - rankDiscoverShelves treats them as optional.
-      const fb = await getDiscoverFeedback()
+      const [fb, rt] = await Promise.all([getDiscoverFeedback(), getRatings()])
       setFeedback(fb)
+      setRatings(rt)
 
       const { shelves: base } = buildDiscoverShelves(all, progressMap)
       const ranked = rankDiscoverShelves(base, byId, { feedback: fb })
@@ -211,7 +224,7 @@ export default function DiscoverScreen() {
   // Feedback writes optimistically so a tile reacts before the round-trip; the
   // server echoes the full map back and we adopt it when it's non-empty.
   const writeFeedback = useCallback(
-    (itemKey: string, fb: { vote?: DiscoverVote | null; rating?: number | null }) => {
+    (itemKey: string, fb: { vote?: DiscoverVote | null }) => {
       haptics.select()
       setFeedback((prev) => {
         const next = { ...prev }
@@ -219,10 +232,6 @@ export default function DiscoverScreen() {
         if (fb.vote !== undefined) {
           if (fb.vote === null) delete entry.vote
           else entry.vote = fb.vote
-        }
-        if (fb.rating !== undefined) {
-          if (fb.rating === null) delete entry.rating
-          else entry.rating = fb.rating
         }
         if (Object.keys(entry).length === 0) delete next[itemKey]
         else next[itemKey] = entry
@@ -234,6 +243,35 @@ export default function DiscoverScreen() {
     },
     [],
   )
+
+  // Ratings write to their own endpoint, and unlike feedback that write can
+  // FAIL loudly - so roll the optimistic value back rather than leaving a star
+  // on screen the server never stored.
+  const writeRating = useCallback((itemKey: string, value: number | null) => {
+    haptics.select()
+    // Snapshot for rollback from the REF, not from inside the state updater:
+    // an updater must be pure, and React invokes it twice in development, so
+    // the second pass would capture the value we just optimistically wrote and
+    // "roll back" to it. ratingsRef tracks the committed map (see the effect
+    // below), which is the value we actually want to restore.
+    const previous = ratingsRef.current[itemKey]
+    setRatings((prev) => {
+      const next = { ...prev }
+      if (value === null) delete next[itemKey]
+      else next[itemKey] = value
+      return next
+    })
+    void setRating(itemKey, value)
+      .then((map) => setRatings(map))
+      .catch(() => {
+        setRatings((prev) => {
+          const next = { ...prev }
+          if (previous === undefined) delete next[itemKey]
+          else next[itemKey] = previous
+          return next
+        })
+      })
+  }, [])
 
   const byId = new Map(items.map((it) => [it.id, it] as const))
   // AI picks resolved to owned items, with not-interested hidden.
@@ -378,6 +416,7 @@ export default function DiscoverScreen() {
                       progress={p?.progress}
                       finished={p?.isFinished === true}
                       feedback={feedback[pick.item.id]}
+                      rating={ratings[pick.item.id]}
                       onOpenFeedback={() => feedbackRef.current?.present(pick.item)}
                       onQuickPlay={() => void quickPlay(pick.item)}
                       onLongPress={() => openActions(pick.item)}
@@ -405,12 +444,11 @@ export default function DiscoverScreen() {
       <DiscoverFeedbackSheet
         ref={feedbackRef}
         feedbackFor={(id) => feedback[id]}
+        ratingFor={(id) => ratings[id]}
         onVote={(item, v) =>
           writeFeedback(item.id, { vote: feedback[item.id]?.vote === v ? null : v })
         }
-        onRate={(item, n) =>
-          writeFeedback(item.id, { rating: feedback[item.id]?.rating === n ? null : n })
-        }
+        onRate={(item, n) => writeRating(item.id, ratings[item.id] === n ? null : n)}
         onNotInterested={(item) => writeFeedback(item.id, { vote: 'not_interested' })}
       />
       <Toast message={toast} />

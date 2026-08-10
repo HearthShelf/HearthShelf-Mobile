@@ -32,6 +32,7 @@ export function DiscoverAiTile({
   progress,
   finished,
   feedback,
+  rating: ratingProp,
   onOpenFeedback,
   onQuickPlay,
   onLongPress,
@@ -43,6 +44,9 @@ export function DiscoverAiTile({
   progress?: number
   finished?: boolean
   feedback?: DiscoverFeedbackEntry
+  /** The user's own star rating. Separate from feedback: a rating is about the
+   *  BOOK, a Discover vote is about the RECOMMENDATION. */
+  rating?: number
   /** Opens the feedback tray for this pick. */
   onOpenFeedback: () => void
   onQuickPlay?: () => void
@@ -51,7 +55,7 @@ export function DiscoverAiTile({
   const colors = useColors()
   const styles = makeStyles(colors)
   const fb = feedback ?? {}
-  const rating = fb.rating ?? 0
+  const rating = ratingProp ?? 0
   const voted = fb.vote ? VOTE_ICON[fb.vote] : null
 
   return (
