@@ -38,6 +38,7 @@ import {
   refreshProgress,
   promptAndMarkItemsFinished,
 } from '@/store/progress'
+import { getDismissalsState, subscribeDismissals, hydrateDismissals } from '@/store/dismissals'
 import { requestSeek } from '@/player/store'
 import { playItemById } from '@/player/playback'
 import { upcomingBookPath } from '@/lib/upcomingBookRoute'
@@ -130,6 +131,15 @@ export default function SeriesDetailScreen() {
   // the series (and its owned books) are known. Best-effort: any failure leaves
   // the missing list empty, so an offline or slim server just shows owned books.
   const seriesName = series?.name
+  // Ignored books drop out of the missing list (and so out of the completion
+  // denominator and the progress track). Read live so ignoring one from the
+  // tray updates the list immediately.
+  const ignoredAsins = useSyncExternalStore(subscribeDismissals, getDismissalsState).rosterAsins
+  // This screen is reachable without passing through Home (deep link, search),
+  // which is where the store is otherwise hydrated.
+  useEffect(() => {
+    void hydrateDismissals().catch(() => {})
+  }, [])
   useEffect(() => {
     if (!seriesName || !series) return
     let cancelled = false
@@ -140,7 +150,8 @@ export default function SeriesDetailScreen() {
     // Paint immediately from the in-process cache so re-opening a series doesn't
     // flash owned-only before the missing rows arrive. The fetch below refreshes.
     const cached = peekAudibleSeries(seriesName)
-    if (cached?.seriesAsin) setMissing(missingSeriesBooks(cached.books, ownedBooks))
+    if (cached?.seriesAsin)
+      setMissing(missingSeriesBooks(cached.books, ownedBooks, ignoredAsins))
     void (async () => {
       const [audible, enabled] = await Promise.all([
         fetchAudibleSeries(seriesName),
@@ -148,12 +159,14 @@ export default function SeriesDetailScreen() {
       ])
       if (cancelled) return
       setRmabEnabled(enabled)
-      setMissing(audible.seriesAsin ? missingSeriesBooks(audible.books, ownedBooks) : [])
+      setMissing(
+        audible.seriesAsin ? missingSeriesBooks(audible.books, ownedBooks, ignoredAsins) : [],
+      )
     })()
     return () => {
       cancelled = true
     }
-  }, [seriesName, series])
+  }, [seriesName, series, ignoredAsins])
 
   if (error) {
     return (
@@ -597,6 +610,13 @@ function MissingBooks({
   const [selected, setSelected] = useState<HSAudibleSeriesBook | null>(null)
   const [expanded, setExpanded] = useState(false)
 
+  // Long-press is the tray, matching how an owned book behaves: it holds the
+  // per-book actions (follow, ignore, request/buy) rather than navigating.
+  const onLongPressRow = (b: HSAudibleSeriesBook) => {
+    setSelected(b)
+    sheetRef.current?.present()
+  }
+
   const onPressRow = (b: HSAudibleSeriesBook) => {
     // Upcoming (unreleased) book -> the follow/countdown page; already-released
     // but unowned -> the request/buy sheet as before.
@@ -630,6 +650,7 @@ function MissingBooks({
               index={startSeq + i}
               rmabEnabled={rmabEnabled}
               onPress={() => onPressRow(b)}
+              onLongPress={() => onLongPressRow(b)}
             />
           ))}
         </View>
@@ -649,11 +670,13 @@ function MissingBookRow({
   index,
   rmabEnabled,
   onPress,
+  onLongPress,
 }: {
   book: HSAudibleSeriesBook
   index: number
   rmabEnabled: boolean
   onPress: () => void
+  onLongPress: () => void
 }) {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
@@ -662,7 +685,7 @@ function MissingBookRow({
   const upcoming = (book.upcoming ?? isUpcoming(book, Date.now())) && !!book.asin
   const countdown = upcoming ? countdownLabel(book, Date.now()) : null
   return (
-    <Touchable onPress={onPress} style={[styles.row, styles.rowMissing]}>
+    <Touchable onPress={onPress} onLongPress={onLongPress} style={[styles.row, styles.rowMissing]}>
       <AppText variant="title" color={colors.textFaint} style={styles.num}>
         {index + 1}
       </AppText>

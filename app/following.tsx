@@ -26,6 +26,7 @@ import {
 } from '@hearthshelf/core'
 import { LinearGradient } from 'expo-linear-gradient'
 import { fetchAudibleSeriesByAsin, fetchAudibleSeries } from '@/api/absAudible'
+import { getDismissalsState, subscribeDismissals } from '@/store/dismissals'
 import {
   getSubscriptionsState,
   subscribeSubscriptions,
@@ -477,6 +478,12 @@ export default function FollowingScreen() {
     void refreshSubscriptions()
   }, [])
 
+  // Ignored books (an ebook-only side story, a print edition) never surface as
+  // something you're waiting on.
+  const ignoredAsins = useSyncExternalStore(subscribeDismissals, getDismissalsState).rosterAsins
+  const isIgnored = (asin?: string) =>
+    Boolean(asin && (ignoredAsins ?? []).some((a) => a.toLowerCase() === asin.toLowerCase()))
+
   const seriesSubs = useMemo(
     () => subscriptions.filter((sub) => sub.kind === 'series'),
     [subscriptions],
@@ -484,13 +491,13 @@ export default function FollowingScreen() {
   const seriesRosters = useSeriesRosters(seriesSubs)
 
   const { hero, sections } = useMemo(() => {
-    const books = subscriptions.filter((s) => s.kind === 'book')
+    const books = subscriptions.filter((s) => s.kind === 'book' && !isIgnored(s.asin))
     const resolvedSeries: ResolvedSeries[] = seriesSubs.map((sub) => {
       const roster = seriesRosters[sub.id]
       return {
         sub,
         roster,
-        next: roster ? nextSeriesBook(roster.books, Date.now()) : null,
+        next: roster ? nextSeriesBook(roster.books, Date.now(), ignoredAsins) : null,
         cover: sub.coverArtUrl ?? roster?.books.find((book) => book.coverArtUrl)?.coverArtUrl,
       }
     })

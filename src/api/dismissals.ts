@@ -25,13 +25,13 @@ export async function getDismissals(): Promise<Dismissals> {
 }
 
 /** Dismiss (hide) a series or book. Returns the fresh full list. */
-export async function addDismissal(kind: 'series' | 'item', entityId: string): Promise<Dismissals> {
+export async function addDismissal(kind: 'series' | 'item' | 'roster', entityId: string): Promise<Dismissals> {
   return writeDismissal('POST', kind, entityId)
 }
 
 /** Restore (un-hide) a series or book. Returns the fresh full list. */
 export async function removeDismissal(
-  kind: 'series' | 'item',
+  kind: 'series' | 'item' | 'roster',
   entityId: string,
 ): Promise<Dismissals> {
   return writeDismissal('DELETE', kind, entityId)
@@ -39,7 +39,7 @@ export async function removeDismissal(
 
 async function writeDismissal(
   method: 'POST' | 'DELETE',
-  kind: 'series' | 'item',
+  kind: 'series' | 'item' | 'roster',
   entityId: string,
 ): Promise<Dismissals> {
   const { serverUrl, token } = requireSession()

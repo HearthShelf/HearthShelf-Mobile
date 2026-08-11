@@ -11,7 +11,20 @@ import type { Dismissals } from '@hearthshelf/core'
 import * as api from '@/api/dismissals'
 import { requestQueueRecompute } from '@/player/queueSync'
 
-let state: Dismissals = { seriesIds: [], itemIds: [] }
+// 'series' and 'item' are ABS ids. 'roster' is an AUDIBLE ASIN: a series-roster
+// book the user never expects to own (an ebook-only side story, a print
+// edition), which has no ABS item id because it is not in the library. Ignoring
+// one drops it from the missing list, the series completion denominator,
+// Upcoming, and the Home countdown.
+export type DismissKind = 'series' | 'item' | 'roster'
+
+const BUCKET = {
+  series: 'seriesIds',
+  item: 'itemIds',
+  roster: 'rosterAsins',
+} as const
+
+let state: Dismissals = { seriesIds: [], itemIds: [], rosterAsins: [] }
 const listeners = new Set<() => void>()
 
 // Best-effort id -> display label cache so the Settings "Hidden from shelves"
@@ -42,6 +55,13 @@ export function isSeriesDismissed(seriesId: string): boolean {
   return state.seriesIds.includes(seriesId)
 }
 
+/** Is this Audible roster book ignored? ASIN casing varies across Audible
+ *  responses, so compare case-insensitively. */
+export function isRosterIgnored(asin: string): boolean {
+  const want = asin.toLowerCase()
+  return (state.rosterAsins ?? []).some((a) => a.toLowerCase() === want)
+}
+
 export function isItemDismissed(itemId: string): boolean {
   return state.itemIds.includes(itemId)
 }
@@ -57,7 +77,7 @@ export async function hydrateDismissals(): Promise<void> {
 
 /** Clear on sign-out. */
 export function resetDismissals(): void {
-  set({ seriesIds: [], itemIds: [] })
+  set({ seriesIds: [], itemIds: [], rosterAsins: [] })
 }
 
 /**
@@ -66,15 +86,15 @@ export function resetDismissals(): void {
  * (so the caller can re-pull the queue afterward).
  */
 export async function dismiss(
-  kind: 'series' | 'item',
+  kind: DismissKind,
   entityId: string,
   label?: string,
 ): Promise<void> {
-  const key = kind === 'series' ? 'seriesIds' : 'itemIds'
+  const key = BUCKET[kind]
   if (label) labels.set(entityId, label)
-  if (state[key].includes(entityId)) return
+  if ((state[key] ?? []).includes(entityId)) return
   const prev = state
-  set({ ...state, [key]: [...state[key], entityId] })
+  set({ ...state, [key]: [...(state[key] ?? []), entityId] })
   try {
     set(await api.addDismissal(kind, entityId))
     // Dismissing hides this series/book from every Auto rule, so rebuild the
@@ -87,11 +107,11 @@ export async function dismiss(
 }
 
 /** Restore a previously dismissed series/book (optimistic, with rollback). */
-export async function restore(kind: 'series' | 'item', entityId: string): Promise<void> {
-  const key = kind === 'series' ? 'seriesIds' : 'itemIds'
-  if (!state[key].includes(entityId)) return
+export async function restore(kind: DismissKind, entityId: string): Promise<void> {
+  const key = BUCKET[kind]
+  if (!(state[key] ?? []).includes(entityId)) return
   const prev = state
-  set({ ...state, [key]: state[key].filter((id) => id !== entityId) })
+  set({ ...state, [key]: (state[key] ?? []).filter((id) => id !== entityId) })
   try {
     set(await api.removeDismissal(kind, entityId))
     // Restoring makes the series/book eligible for Auto rules again - rebuild.

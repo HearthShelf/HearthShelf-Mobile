@@ -24,6 +24,12 @@ import {
 } from '@hearthshelf/core'
 import { fetchAudibleProduct, audibleStoreUrl } from '@/api/absAudible'
 import {
+  dismiss as dismissEntity,
+  restore as restoreEntity,
+  getDismissalsState,
+  subscribeDismissals,
+} from '@/store/dismissals'
+import {
   getSubscriptionsState,
   subscribeSubscriptions,
   findSubscription,
@@ -66,6 +72,7 @@ export default function UpcomingBookScreen() {
   )
 
   const { subscriptions } = useSyncExternalStore(subscribeSubscriptions, getSubscriptionsState)
+  const dismissals = useSyncExternalStore(subscribeDismissals, getDismissalsState)
   // The followed book (if any), converted to the page's book shape. A book sub
   // always has an asin, so it's safe to coalesce to the route asin.
   const existing = useMemo<UpcomingBook | null>(() => {
@@ -164,6 +171,27 @@ export default function UpcomingBookScreen() {
       ? `${book.seriesTitle}, Book ${book.sequence}`
       : (book.series ?? book.seriesTitle)
 
+  const ignored = (dismissals.rosterAsins ?? []).some(
+    (a) => a.toLowerCase() === book.asin.toLowerCase(),
+  )
+
+  // Some series entries are ebook-only side stories or print editions that will
+  // never be audiobooks. Ignoring one stops it counting against the series and
+  // keeps it out of Upcoming and the Home countdown.
+  const toggleIgnore = async () => {
+    if (busy) return
+    setBusy(true)
+    haptics.select()
+    try {
+      if (ignored) await restoreEntity('roster', book.asin)
+      else await dismissEntity('roster', book.asin, book.title)
+    } catch {
+      // Store rolls back optimistically; nothing else to do.
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const toggleFollow = async () => {
     if (busy) return
     setBusy(true)
@@ -261,7 +289,7 @@ export default function UpcomingBookScreen() {
           ) : null}
         </Animated.View>
 
-        {/* Follow (notify) + Buy on Audible */}
+        {/* Follow (notify) + Buy on Audible + Ignore */}
         <View style={styles.actions}>
           <Touchable
             style={[styles.followBtn, followed && styles.followBtnOn]}
@@ -301,6 +329,16 @@ export default function UpcomingBookScreen() {
               <Icon name={icons.search} size={18} color={colors.textMuted} />
             </Touchable>
           ) : null}
+          <Touchable style={styles.buyBtn} onPress={toggleIgnore} disabled={busy}>
+            <Icon
+              name={ignored ? icons.visible : icons.hidden}
+              size={18}
+              color={colors.textMuted}
+            />
+            <AppText variant="label" color={colors.textMuted}>
+              {ignored ? 'Stop ignoring this book' : "Ignore - it's not an audiobook"}
+            </AppText>
+          </Touchable>
         </View>
 
         {/* Series context: where this book sits in its series. Taps back to the

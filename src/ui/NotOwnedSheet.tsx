@@ -1,17 +1,36 @@
 /**
- * "You don't own this book" sheet, shared by the series screen's missing-books
+ * "You don't own this book" tray, shared by the series screen's missing-books
  * rows and the search screen's "Not in your library" results. Opens on an intro
- * step (Close / Open Audible / Request), and when the request backend is
- * connected advances to a request confirm + success. Mirrors the web app's
- * RequestConfirmModal flow.
+ * step and, when the request backend is connected, advances to a request
+ * confirm + success. Mirrors the web app's RequestConfirmModal flow.
+ *
+ * This is also where the per-book actions for an unowned book live, so they sit
+ * in one tray the way an owned book's actions do:
+ *   Follow  - tell me when it lands (an unreleased book can't be requested)
+ *   Ignore  - it will never be an audiobook (an ebook-only side story, a print
+ *             edition), so stop counting it against the series
  */
-import { forwardRef, useEffect, useMemo, useState } from 'react'
+import { forwardRef, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { Linking, StyleSheet, View } from 'react-native'
 import type { BottomSheetModal } from '@gorhom/bottom-sheet'
 import type { HSAudibleSearchResult } from '@hearthshelf/core'
 import { coverHue } from '@hearthshelf/core'
+import { isUpcoming } from '@hearthshelf/core'
 import { audibleStoreUrl } from '@/api/absAudible'
 import { submitRequest, type RmabRequestResult } from '@/api/absRmab'
+import {
+  findSubscription,
+  subscribe,
+  unsubscribe,
+  getSubscriptionsState,
+  subscribeSubscriptions,
+} from '@/player/subscriptions'
+import {
+  dismiss as dismissEntity,
+  restore as restoreEntity,
+  getDismissalsState,
+  subscribeDismissals,
+} from '@/store/dismissals'
 import { AppText, Cover, IconButton, PrimaryButton, Sheet, Touchable, icons } from '@/ui/primitives'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
@@ -23,6 +42,10 @@ export const NotOwnedSheet = forwardRef<
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const [phase, setPhase] = useState<'intro' | 'confirm'>('intro')
+  // Follow + ignore state, read live so the tray reflects a change made here or
+  // anywhere else in the app.
+  useSyncExternalStore(subscribeSubscriptions, getSubscriptionsState)
+  const dismissals = useSyncExternalStore(subscribeDismissals, getDismissalsState)
   const [pending, setPending] = useState(false)
   const [result, setResult] = useState<RmabRequestResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -47,6 +70,41 @@ export const NotOwnedSheet = forwardRef<
 
   const openAudible = () => {
     if (book) void Linking.openURL(audibleStoreUrl(book))
+  }
+
+  const sub = book ? findSubscription({ kind: 'book', asin: book.asin }) : undefined
+  const following = Boolean(sub)
+  const ignored = book
+    ? (dismissals.rosterAsins ?? []).some((a) => a.toLowerCase() === book.asin.toLowerCase())
+    : false
+
+  const toggleFollow = () => {
+    if (!book) return
+    if (sub) {
+      void unsubscribe(sub.id).catch(() => {})
+      return
+    }
+    void subscribe({
+      kind: 'book',
+      asin: book.asin,
+      seriesAsin: book.seriesAsin,
+      title: book.title,
+      author: book.author,
+      seriesTitle: book.series,
+      coverArtUrl: book.coverArtUrl,
+      narrator: book.narrator,
+      durationMinutes: book.durationMinutes,
+      releaseDate: book.releaseDate,
+      publicationDatetime: book.publicationDatetime,
+    }).catch(() => {})
+  }
+
+  const toggleIgnore = () => {
+    if (!book) return
+    const done = ignored
+      ? restoreEntity('roster', book.asin)
+      : dismissEntity('roster', book.asin, book.title)
+    void done.then(() => reset()).catch(() => {})
   }
 
   const confirm = async () => {
@@ -148,9 +206,29 @@ export const NotOwnedSheet = forwardRef<
                   onPress={() => setPhase('confirm')}
                 />
               ) : null}
+              <Touchable onPress={toggleFollow} style={styles.sheetSecondaryBtn}>
+                <IconButton
+                  name={following ? icons.bellActive : icons.bell}
+                  size={18}
+                  color={following ? colors.accent : colors.text}
+                />
+                <AppText variant="label" color={following ? colors.accent : colors.text}>
+                  {following ? 'Following' : 'Notify me when it lands'}
+                </AppText>
+              </Touchable>
               <Touchable onPress={openAudible} style={styles.sheetSecondaryBtn}>
                 <IconButton name={icons.openInNew} size={18} color={colors.text} />
                 <AppText variant="label">Open Audible</AppText>
+              </Touchable>
+              <Touchable onPress={toggleIgnore} style={styles.sheetSecondaryBtn}>
+                <IconButton
+                  name={ignored ? icons.visible : icons.hidden}
+                  size={18}
+                  color={colors.textMuted}
+                />
+                <AppText variant="label" color={colors.textMuted}>
+                  {ignored ? 'Stop ignoring' : "Ignore - it's not an audiobook"}
+                </AppText>
               </Touchable>
               <Touchable onPress={reset} style={styles.sheetGhostBtn}>
                 <AppText variant="label" color={colors.textMuted}>
