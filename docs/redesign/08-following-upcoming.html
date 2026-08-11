@@ -1,0 +1,1172 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HearthShelf Mobile — Following / Upcoming mockup</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Libre+Baskerville:wght@400;700&family=Geist+Mono:wght@400..700&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+    />
+    <link rel="stylesheet" href="hearth.css" />
+    <style>
+      @font-face {
+        font-family: 'Inter Local';
+        src: url('../../assets/fonts/Inter-Regular.ttf') format('truetype');
+        font-weight: 400;
+        font-display: swap;
+      }
+
+      @font-face {
+        font-family: 'Inter Local';
+        src: url('../../assets/fonts/Inter-Bold.ttf') format('truetype');
+        font-weight: 700;
+        font-display: swap;
+      }
+
+      @font-face {
+        font-family: 'Libre Local';
+        src: url('../../assets/fonts/LibreBaskerville-Regular.ttf') format('truetype');
+        font-weight: 400;
+        font-display: swap;
+      }
+
+      @font-face {
+        font-family: 'Geist Local';
+        src: url('../../assets/fonts/GeistMono-Regular.ttf') format('truetype');
+        font-weight: 400;
+        font-display: swap;
+      }
+
+      :root {
+        --font-sans: 'Inter Local', Inter, system-ui, sans-serif;
+        --font-brand: 'Libre Local', 'Libre Baskerville', Georgia, serif;
+        --font-mono: 'Geist Local', 'Geist Mono', monospace;
+        --release-blue: #4f8490;
+        --release-copper: #9a6a48;
+      }
+
+      body {
+        min-width: 320px;
+      }
+
+      .wrap {
+        max-width: 1180px;
+        padding-bottom: 90px;
+      }
+
+      .masthead {
+        margin-bottom: 30px;
+      }
+
+      .masthead .tagline {
+        max-width: 780px;
+        margin-right: auto;
+        margin-left: auto;
+      }
+
+      .source-blend {
+        display: grid;
+        max-width: 960px;
+        margin: 28px auto 42px;
+        grid-template-columns: repeat(3, 1fr);
+        overflow: hidden;
+        border: 1px solid var(--page-border);
+        border-radius: 18px;
+        background: var(--page-card);
+      }
+
+      .blend-part {
+        min-height: 106px;
+        padding: 18px 20px;
+        border-right: 1px solid var(--page-border);
+      }
+
+      .blend-part:last-child {
+        border-right: 0;
+      }
+
+      .blend-part .k {
+        margin-bottom: 8px;
+        color: var(--hearth);
+        font-family: var(--font-mono);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .blend-part .v {
+        color: #ccc5ba;
+        font-size: 12.5px;
+        line-height: 1.55;
+      }
+
+      .frames {
+        justify-content: center;
+        gap: 52px;
+      }
+
+      .framecap {
+        min-height: 74px;
+      }
+
+      .framecap .d {
+        max-width: 385px;
+      }
+
+      .screen {
+        background: var(--scaffold);
+      }
+
+      .following-body {
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-width: none;
+      }
+
+      .following-body::-webkit-scrollbar {
+        display: none;
+      }
+
+      .screen-glow {
+        position: absolute;
+        z-index: -1;
+        top: -85px;
+        left: -68px;
+        width: 430px;
+        height: 430px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(70, 119, 132, 0.31), transparent 67%);
+        filter: blur(18px);
+        pointer-events: none;
+      }
+
+      .screen-glow::after {
+        position: absolute;
+        right: -155px;
+        bottom: -125px;
+        width: 320px;
+        height: 320px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(151, 91, 55, 0.22), transparent 68%);
+        content: '';
+      }
+
+      .following-header {
+        position: sticky;
+        z-index: 12;
+        top: 0;
+        display: flex;
+        min-height: 63px;
+        align-items: center;
+        gap: 10px;
+        padding: 7px 16px 8px;
+        background: linear-gradient(var(--scaffold) 72%, rgba(27, 26, 24, 0));
+      }
+
+      .header-back {
+        display: grid;
+        width: 46px;
+        height: 46px;
+        flex: none;
+        place-items: center;
+        margin-left: -8px;
+        border-radius: 50%;
+        color: var(--text);
+      }
+
+      .header-back:active {
+        background: var(--fill);
+      }
+
+      .following-title {
+        font-size: 22px;
+        font-weight: 750;
+        letter-spacing: -0.03em;
+      }
+
+      .following-subtitle {
+        margin-top: 1px;
+        color: var(--text-muted, var(--muted));
+        font-size: 11px;
+      }
+
+      .hero-release {
+        position: relative;
+        display: grid;
+        min-height: 246px;
+        margin: 5px 16px 0;
+        grid-template-columns: 118px minmax(0, 1fr);
+        gap: 16px;
+        overflow: hidden;
+        padding: 18px;
+        border: 1px solid rgba(109, 160, 173, 0.25);
+        border-radius: 22px;
+        background:
+          radial-gradient(circle at 8% 4%, rgba(83, 143, 158, 0.23), transparent 47%),
+          radial-gradient(circle at 100% 100%, rgba(179, 112, 67, 0.14), transparent 52%),
+          rgba(38, 37, 34, 0.96);
+        box-shadow: 0 18px 44px rgba(0, 0, 0, 0.32);
+      }
+
+      .hero-art {
+        position: relative;
+        width: 118px;
+        height: 177px;
+        align-self: center;
+        overflow: hidden;
+        border-radius: 7px 10px 10px 7px;
+        background:
+          linear-gradient(140deg, transparent 43%, rgba(15, 22, 24, 0.55) 44% 58%, transparent 59%),
+          linear-gradient(156deg, #182731, #4e6d75 55%, #9c6844);
+        box-shadow:
+          -5px 0 rgba(0, 0, 0, 0.2) inset,
+          0 15px 34px rgba(0, 0, 0, 0.5);
+      }
+
+      .hero-art img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .hero-art::after {
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+        content: '';
+        pointer-events: none;
+      }
+
+      .hero-info {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        justify-content: center;
+      }
+
+      .hero-kicker-mobile {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        margin-bottom: 9px;
+        color: #df917d;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+      }
+
+      .hero-kicker-mobile .ms {
+        font-size: 14px;
+      }
+
+      .hero-release h2 {
+        margin: 0;
+        font-family: var(--font-brand);
+        font-size: 24px;
+        line-height: 1.03;
+        letter-spacing: -0.045em;
+      }
+
+      .hero-author {
+        margin-top: 7px;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.35;
+      }
+
+      .hero-author b {
+        color: #c8c1b7;
+        font-weight: 600;
+      }
+
+      .mobile-countdown {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin-top: 14px;
+      }
+
+      .date-tile {
+        display: grid;
+        width: 42px;
+        height: 47px;
+        flex: none;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.11);
+        border-radius: 9px;
+        background: var(--fill);
+        grid-template-rows: 15px 1fr;
+      }
+
+      .date-tile b {
+        display: grid;
+        place-items: center;
+        background: var(--accent);
+        color: var(--on-accent);
+        font-size: 7px;
+        letter-spacing: 0.1em;
+      }
+
+      .date-tile span {
+        display: grid;
+        place-items: center;
+        font-family: var(--font-brand);
+        font-size: 18px;
+      }
+
+      .count-number {
+        font-family: var(--font-brand);
+        font-size: 36px;
+        line-height: 0.8;
+        letter-spacing: -0.07em;
+      }
+
+      .count-unit {
+        color: var(--muted);
+        font-size: 9px;
+        font-weight: 750;
+        line-height: 1.25;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .follow-button {
+        display: flex;
+        min-height: 46px;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        margin-top: 14px;
+        border-radius: 13px;
+        background: var(--accent);
+        color: var(--on-accent);
+        font-size: 12px;
+        font-weight: 750;
+        box-shadow: 0 8px 18px rgba(224, 101, 74, 0.22);
+      }
+
+      .follow-button .ms {
+        font-size: 18px;
+      }
+
+      .section-heading-mobile {
+        display: flex;
+        min-height: 48px;
+        align-items: center;
+        gap: 7px;
+        padding: 17px 18px 7px;
+      }
+
+      .section-heading-mobile .ms {
+        color: var(--accent);
+        font-size: 18px;
+      }
+
+      .section-heading-mobile h3 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 720;
+        letter-spacing: -0.01em;
+      }
+
+      .section-count {
+        display: grid;
+        min-width: 23px;
+        height: 23px;
+        place-items: center;
+        margin-left: auto;
+        padding: 0 7px;
+        border-radius: 999px;
+        background: var(--fill);
+        color: var(--faint);
+        font-family: var(--font-mono);
+        font-size: 9px;
+      }
+
+      .release-list {
+        display: grid;
+        gap: 7px;
+        padding: 0 16px;
+      }
+
+      .release-card {
+        display: grid;
+        min-height: 88px;
+        grid-template-columns: 53px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 11px;
+        border: 1px solid var(--hairline);
+        border-radius: 15px;
+        background: rgba(42, 40, 37, 0.9);
+      }
+
+      .release-card:active,
+      .series-card:active {
+        opacity: 0.62;
+        transform: scale(0.992);
+      }
+
+      .release-cover {
+        position: relative;
+        width: 53px;
+        height: 69px;
+        overflow: hidden;
+        border-radius: 7px;
+        background: var(--highest);
+        box-shadow: 0 7px 16px rgba(0, 0, 0, 0.3);
+      }
+
+      .release-cover img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .release-cover.tide {
+        background:
+          radial-gradient(circle at 52% 27%, #dcd09e 0 4%, transparent 4.8%),
+          repeating-linear-gradient(
+            125deg,
+            transparent 0 12px,
+            rgba(255, 255, 255, 0.08) 13px 14px
+          ),
+          linear-gradient(150deg, #557e87, #17272d);
+      }
+
+      .release-cover.sage {
+        background:
+          linear-gradient(
+            40deg,
+            transparent 43%,
+            rgba(229, 214, 153, 0.16) 44% 47%,
+            transparent 48%
+          ),
+          linear-gradient(150deg, #536d4a, #18251a);
+      }
+
+      .release-cover.plum {
+        background:
+          radial-gradient(ellipse at 50% 110%, #171a27 0 48%, transparent 49%),
+          linear-gradient(155deg, #725a83, #292035);
+      }
+
+      .release-copy {
+        min-width: 0;
+      }
+
+      .release-copy h4 {
+        overflow: hidden;
+        margin: 0;
+        color: var(--text);
+        font-size: 13px;
+        line-height: 1.25;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .release-copy p {
+        overflow: hidden;
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 10.5px;
+        line-height: 1.35;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .release-status {
+        display: flex;
+        min-width: 59px;
+        min-height: 46px;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        padding-left: 10px;
+        border-left: 1px solid var(--hairline);
+        color: #d8927d;
+        font-family: var(--font-mono);
+        font-size: 9px;
+        font-weight: 700;
+        text-align: center;
+      }
+
+      .release-status .ms {
+        font-size: 15px;
+      }
+
+      .release-status.tba {
+        color: var(--faint);
+      }
+
+      .release-status.arrived {
+        min-width: 62px;
+        border-left: 0;
+        border-radius: 999px;
+        background: var(--accent-wash);
+        color: var(--accent);
+      }
+
+      .series-list {
+        display: grid;
+        gap: 8px;
+        padding: 0 16px 24px;
+      }
+
+      .series-card {
+        display: grid;
+        min-height: 101px;
+        grid-template-columns: 68px minmax(0, 1fr) 46px;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        border: 1px solid var(--hairline);
+        border-radius: 16px;
+        background: rgba(42, 40, 37, 0.9);
+      }
+
+      .cover-stack {
+        position: relative;
+        width: 68px;
+        height: 75px;
+      }
+
+      .stack-cover {
+        position: absolute;
+        top: 5px;
+        width: 42px;
+        height: 63px;
+        overflow: hidden;
+        border: 2px solid var(--high);
+        border-radius: 6px;
+        background: linear-gradient(155deg, #7a4536, #2b160f);
+        box-shadow: 0 7px 15px rgba(0, 0, 0, 0.3);
+      }
+
+      .stack-cover img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .stack-cover:nth-child(1) {
+        left: 0;
+        transform: rotate(-5deg);
+      }
+
+      .stack-cover:nth-child(2) {
+        z-index: 2;
+        left: 15px;
+      }
+
+      .stack-cover:nth-child(3) {
+        z-index: 3;
+        left: 29px;
+        transform: rotate(4deg);
+      }
+
+      .series-copy {
+        min-width: 0;
+      }
+
+      .series-copy h4 {
+        overflow: hidden;
+        margin: 0;
+        font-size: 13.5px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .series-copy .tracking {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 10px;
+      }
+
+      .series-copy .tracking .ms {
+        color: var(--hearth);
+        font-size: 13px;
+      }
+
+      .series-copy .next-book {
+        overflow: hidden;
+        margin-top: 7px;
+        color: #cbc3b8;
+        font-size: 10px;
+        line-height: 1.35;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .series-copy .next-book b {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .unfollow-target {
+        display: grid;
+        width: 46px;
+        height: 46px;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--fill);
+        color: var(--muted);
+      }
+
+      .unfollow-target .ms {
+        font-size: 19px;
+      }
+
+      .bottom-space {
+        height: 16px;
+      }
+
+      .tabbar.six .tab .pill {
+        width: 48px;
+      }
+
+      .tabbar.six .tab .lbl {
+        max-width: 58px;
+        overflow: hidden;
+        font-size: 9px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .phone-note {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 14px;
+        padding: 10px 13px;
+        border: 1px solid var(--page-border);
+        border-radius: 12px;
+        background: var(--page-card);
+        color: #8d867c;
+        font-family: var(--font-mono);
+        font-size: 10px;
+        line-height: 1.45;
+      }
+
+      .phone-note .ms {
+        color: var(--hearth);
+        font-size: 16px;
+      }
+
+      .interaction-strip {
+        display: grid;
+        max-width: 920px;
+        margin: 50px auto 0;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+
+      .interaction {
+        padding: 16px;
+        border: 1px solid var(--page-border);
+        border-radius: 14px;
+        background: var(--page-card);
+      }
+
+      .interaction .ms {
+        margin-bottom: 9px;
+        color: var(--accent);
+        font-size: 20px;
+      }
+
+      .interaction b,
+      .interaction span {
+        display: block;
+      }
+
+      .interaction b {
+        margin-bottom: 5px;
+        font-size: 12px;
+      }
+
+      .interaction span {
+        color: #8d867c;
+        font-size: 11px;
+        line-height: 1.5;
+      }
+
+      @media (max-width: 900px) {
+        .source-blend,
+        .interaction-strip {
+          grid-template-columns: 1fr;
+        }
+
+        .blend-part {
+          border-right: 0;
+          border-bottom: 1px solid var(--page-border);
+        }
+
+        .blend-part:last-child {
+          border-bottom: 0;
+        }
+      }
+
+      @media (max-width: 500px) {
+        body {
+          background: var(--scaffold);
+        }
+
+        .wrap {
+          padding: 0;
+        }
+
+        .masthead,
+        .source-blend,
+        .framecap,
+        .frames .frameunit:nth-child(2),
+        .phone-note,
+        .interaction-strip {
+          display: none;
+        }
+
+        .frames,
+        .frameunit {
+          display: block;
+          width: 100%;
+        }
+
+        .phone {
+          width: 100%;
+          padding: 0;
+          border-radius: 0;
+          background: transparent;
+          box-shadow: none;
+        }
+
+        .screen {
+          width: 100%;
+          height: 100dvh;
+          border-radius: 0;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="masthead">
+        <div class="wordmark">
+          <span class="lt">Hearth</span><span class="bd">Shelf</span
+          ><span class="sub"> · Mobile Following</span>
+        </div>
+        <div class="tagline">
+          One hybrid direction: the next release owns the first viewport, while the rest of the
+          waiting list stays immediately scannable below it.
+        </div>
+      </header>
+
+      <div class="source-blend" aria-label="Design sources">
+        <div class="blend-part">
+          <div class="k">Hero hierarchy</div>
+          <div class="v">
+            Portrait cover, editorial title, calendar tile, and large countdown adapted from the
+            newer desktop spotlight.
+          </div>
+        </div>
+        <div class="blend-part">
+          <div class="k">Release cards</div>
+          <div class="v">
+            Claude’s compact “Also coming” and “Arrived” rows become 88dp tactile cards with a clear
+            right-edge status.
+          </div>
+        </div>
+        <div class="blend-part">
+          <div class="k">Series context</div>
+          <div class="v">
+            Claude’s next-book status stays, paired with a cover stack and a full 46dp unfollow
+            target.
+          </div>
+        </div>
+      </div>
+
+      <div class="frames">
+        <div class="frameunit">
+          <div class="framecap">
+            <div class="t">Following — top <span class="chip">Next release first</span></div>
+            <div class="d">
+              The answer to “what’s next?” is visible without scrolling. Also coming starts in the
+              same viewport, so the hero does not bury the rest of the list.
+            </div>
+          </div>
+
+          <div class="phone">
+            <div class="screen">
+              <div class="statusbar">
+                <span>9:41</span><span class="dot"></span
+                ><span class="right"
+                  ><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span
+                  ><span class="ms">battery_5_bar</span></span
+                >
+              </div>
+
+              <div class="body following-body">
+                <div class="screen-glow"></div>
+
+                <header class="following-header">
+                  <div class="header-back" aria-label="Back">
+                    <span class="ms">arrow_back</span>
+                  </div>
+                  <div>
+                    <div class="following-title">Following</div>
+                    <div class="following-subtitle">Books and series you’re waiting on</div>
+                  </div>
+                </header>
+
+                <article class="hero-release">
+                  <div class="hero-art">
+                    <img
+                      src="https://m.media-amazon.com/images/I/51QqrkspisL._SL500_.jpg"
+                      alt="The Primal Hunter 15 cover"
+                    />
+                  </div>
+                  <div class="hero-info">
+                    <div class="hero-kicker-mobile">
+                      <span class="ms fill">new_releases</span>Next release
+                    </div>
+                    <h2>The Primal Hunter 15</h2>
+                    <div class="hero-author"><b>Zogarth</b><br />The Primal Hunter · Book 15</div>
+                    <div class="mobile-countdown">
+                      <div class="date-tile"><b>AUG</b><span>19</span></div>
+                      <div class="count-number">8</div>
+                      <div class="count-unit">days<br />away</div>
+                    </div>
+                    <div class="follow-button">
+                      <span class="ms fill">notifications_active</span>Following
+                    </div>
+                  </div>
+                </article>
+
+                <div class="section-heading-mobile">
+                  <span class="ms">event_upcoming</span>
+                  <h3>Also coming</h3>
+                  <span class="section-count">2</span>
+                </div>
+
+                <div class="release-list">
+                  <article class="release-card">
+                    <div class="release-cover">
+                      <img
+                        src="https://m.media-amazon.com/images/I/51HIZdnqASL._SL500_.jpg"
+                        alt="Dungeon Crawler Carl 8 cover"
+                      />
+                    </div>
+                    <div class="release-copy">
+                      <h4>Dungeon Crawler Carl 8</h4>
+                      <p>Matt Dinniman · Jeff Hays</p>
+                    </div>
+                    <div class="release-status"><span class="ms">schedule</span>47<br />days</div>
+                  </article>
+
+                  <article class="release-card">
+                    <div class="release-cover tide"></div>
+                    <div class="release-copy">
+                      <h4>He Who Fights With Monsters 13</h4>
+                      <p>Shirtaloon · Heath Miller</p>
+                    </div>
+                    <div class="release-status tba"><span class="ms">event</span>Date<br />TBA</div>
+                  </article>
+                </div>
+
+                <div class="section-heading-mobile">
+                  <span class="ms">check_circle</span>
+                  <h3>Arrived</h3>
+                  <span class="section-count">1</span>
+                </div>
+
+                <div class="release-list">
+                  <article class="release-card">
+                    <div class="release-cover sage"></div>
+                    <div class="release-copy">
+                      <h4>The Primal Hunter 14</h4>
+                      <p>Zogarth · In your library</p>
+                    </div>
+                    <div class="release-status arrived">
+                      <span class="ms fill">play_circle</span>Listen
+                    </div>
+                  </article>
+                </div>
+
+                <div class="section-heading-mobile">
+                  <span class="ms">auto_awesome_motion</span>
+                  <h3>Series you follow</h3>
+                  <span class="section-count">2</span>
+                </div>
+
+                <div class="series-list">
+                  <article class="series-card">
+                    <div class="cover-stack">
+                      <div class="stack-cover"></div>
+                      <div class="stack-cover tide"></div>
+                      <div class="stack-cover">
+                        <img
+                          src="https://m.media-amazon.com/images/I/51QqrkspisL._SL500_.jpg"
+                          alt=""
+                        />
+                      </div>
+                    </div>
+                    <div class="series-copy">
+                      <h4>The Primal Hunter</h4>
+                      <div class="tracking">
+                        <span class="ms">notifications_active</span>Every new book tracked
+                      </div>
+                      <div class="next-book"><b>Next:</b> Book 15 · shown above</div>
+                    </div>
+                    <div class="unfollow-target" aria-label="Unfollow The Primal Hunter">
+                      <span class="ms">notifications_off</span>
+                    </div>
+                  </article>
+
+                  <article class="series-card">
+                    <div class="cover-stack">
+                      <div class="stack-cover plum"></div>
+                      <div class="stack-cover sage"></div>
+                      <div class="stack-cover">
+                        <img
+                          src="https://m.media-amazon.com/images/I/51HF3TAyKBL._SL500_.jpg"
+                          alt=""
+                        />
+                      </div>
+                    </div>
+                    <div class="series-copy">
+                      <h4>Cradle</h4>
+                      <div class="tracking">
+                        <span class="ms">notifications_active</span>Every new book tracked
+                      </div>
+                      <div class="next-book"><b>Next:</b> Waybound · out now</div>
+                    </div>
+                    <div class="unfollow-target" aria-label="Unfollow Cradle">
+                      <span class="ms">notifications_off</span>
+                    </div>
+                  </article>
+                </div>
+              </div>
+
+              <nav class="tabbar six" aria-label="Main navigation">
+                <div class="tab">
+                  <span class="pill"><span class="ms">home</span></span
+                  ><span class="lbl">Home</span>
+                </div>
+                <div class="tab">
+                  <span class="pill"><span class="ms">auto_stories</span></span
+                  ><span class="lbl">Library</span>
+                </div>
+                <div class="tab">
+                  <span class="pill"><span class="ms">graphic_eq</span></span
+                  ><span class="lbl">Now Playing</span>
+                </div>
+                <div class="tab">
+                  <span class="pill"><span class="ms">insights</span></span
+                  ><span class="lbl">Stats</span>
+                </div>
+                <div class="tab">
+                  <span class="pill"><span class="ms">feedback</span></span
+                  ><span class="lbl">Feedback</span>
+                </div>
+                <div class="tab on">
+                  <span class="pill"><span class="ms fill">more_horiz</span></span
+                  ><span class="lbl">More</span>
+                </div>
+              </nav>
+            </div>
+          </div>
+
+          <div class="phone-note">
+            <span class="ms">swipe_up</span> The phone frame is internally scrollable; Arrived and
+            followed series continue below.
+          </div>
+        </div>
+
+        <div class="frameunit">
+          <div class="framecap">
+            <div class="t">Following — lower content <span class="chip">Same screen</span></div>
+            <div class="d">
+              The scrolled state shows the card grammar clearly. The compact sticky header preserves
+              context while the bottom tab bar remains stable.
+            </div>
+          </div>
+
+          <div class="phone">
+            <div class="screen">
+              <div class="statusbar">
+                <span>9:41</span><span class="dot"></span
+                ><span class="right"
+                  ><span class="ms">signal_cellular_alt</span><span class="ms">wifi</span
+                  ><span class="ms">battery_5_bar</span></span
+                >
+              </div>
+
+              <div class="body following-body">
+                <header class="following-header">
+                  <div class="header-back" aria-label="Back">
+                    <span class="ms">arrow_back</span>
+                  </div>
+                  <div>
+                    <div class="following-title">Following</div>
+                    <div class="following-subtitle">Books and series you’re waiting on</div>
+                  </div>
+                </header>
+
+                <div class="section-heading-mobile" style="padding-top: 8px">
+                  <span class="ms">check_circle</span>
+                  <h3>Arrived</h3>
+                  <span class="section-count">1</span>
+                </div>
+                <div class="release-list">
+                  <article class="release-card">
+                    <div class="release-cover sage"></div>
+                    <div class="release-copy">
+                      <h4>The Primal Hunter 14</h4>
+                      <p>Zogarth · In your library</p>
+                    </div>
+                    <div class="release-status arrived">
+                      <span class="ms fill">play_circle</span>Listen
+                    </div>
+                  </article>
+                </div>
+
+                <div class="section-heading-mobile">
+                  <span class="ms">auto_awesome_motion</span>
+                  <h3>Series you follow</h3>
+                  <span class="section-count">2</span>
+                </div>
+
+                <div class="series-list">
+                  <article class="series-card">
+                    <div class="cover-stack">
+                      <div class="stack-cover"></div>
+                      <div class="stack-cover tide"></div>
+                      <div class="stack-cover">
+                        <img
+                          src="https://m.media-amazon.com/images/I/51QqrkspisL._SL500_.jpg"
+                          alt=""
+                        />
+                      </div>
+                    </div>
+                    <div class="series-copy">
+                      <h4>The Primal Hunter</h4>
+                      <div class="tracking">
+                        <span class="ms">notifications_active</span>Every new book tracked
+                      </div>
+                      <div class="next-book"><b>Next:</b> Book 15 · shown above</div>
+                    </div>
+                    <div class="unfollow-target" aria-label="Unfollow The Primal Hunter">
+                      <span class="ms">notifications_off</span>
+                    </div>
+                  </article>
+
+                  <article class="series-card">
+                    <div class="cover-stack">
+                      <div class="stack-cover plum"></div>
+                      <div class="stack-cover sage"></div>
+                      <div class="stack-cover">
+                        <img
+                          src="https://m.media-amazon.com/images/I/51HF3TAyKBL._SL500_.jpg"
+                          alt=""
+                        />
+                      </div>
+                    </div>
+                    <div class="series-copy">
+                      <h4>Cradle</h4>
+                      <div class="tracking">
+                        <span class="ms">notifications_active</span>Every new book tracked
+                      </div>
+                      <div class="next-book"><b>Next:</b> Waybound · out now</div>
+                    </div>
+                    <div class="unfollow-target" aria-label="Unfollow Cradle">
+                      <span class="ms">notifications_off</span>
+                    </div>
+                  </article>
+                </div>
+
+                <div class="section-heading-mobile">
+                  <span class="ms">notifications</span>
+                  <h3>How following works</h3>
+                </div>
+                <div class="card" style="margin: 0 16px 24px; padding: 14px">
+                  <div class="meta-t" style="font-size: 12px; line-height: 1.55">
+                    Follow a series once and new books appear here automatically. You’ll be told
+                    when each one arrives.
+                  </div>
+                </div>
+              </div>
+
+              <nav class="tabbar six" aria-label="Main navigation">
+                <div class="tab">
+                  <span class="pill"><span class="ms">home</span></span
+                  ><span class="lbl">Home</span>
+                </div>
+                <div class="tab">
+                  <span class="pill"><span class="ms">auto_stories</span></span
+                  ><span class="lbl">Library</span>
+                </div>
+                <div class="tab">
+                  <span class="pill"><span class="ms">graphic_eq</span></span
+                  ><span class="lbl">Now Playing</span>
+                </div>
+                <div class="tab">
+                  <span class="pill"><span class="ms">insights</span></span
+                  ><span class="lbl">Stats</span>
+                </div>
+                <div class="tab">
+                  <span class="pill"><span class="ms">feedback</span></span
+                  ><span class="lbl">Feedback</span>
+                </div>
+                <div class="tab on">
+                  <span class="pill"><span class="ms fill">more_horiz</span></span
+                  ><span class="lbl">More</span>
+                </div>
+              </nav>
+            </div>
+          </div>
+
+          <div class="phone-note">
+            <span class="ms">touch_app</span> Cards open their book or series; the bell-off control
+            is an independent 46dp target.
+          </div>
+        </div>
+      </div>
+
+      <div class="interaction-strip">
+        <div class="interaction">
+          <span class="ms">touch_app</span><b>Hero and release cards</b
+          ><span>Tap opens the upcoming-book screen. Press feedback is immediate.</span>
+        </div>
+        <div class="interaction">
+          <span class="ms">notifications_active</span><b>Following toggle</b
+          ><span>Optimistic bell fill with a selection haptic; rollback shows an error toast.</span>
+        </div>
+        <div class="interaction">
+          <span class="ms">accessibility_new</span><b>Mobile floor</b
+          ><span
+            >Primary controls are 46dp+, status is never color-only, and labels remain 11sp+.</span
+          >
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -40,6 +40,7 @@ import {
 } from '@/store/progress'
 import { requestSeek } from '@/player/store'
 import { playItemById } from '@/player/playback'
+import { upcomingBookPath } from '@/lib/upcomingBookRoute'
 import {
   AppText,
   Centered,
@@ -380,7 +381,9 @@ export default function SeriesDetailScreen() {
               selecting={selection.selecting}
               selected={selection.isSelected(b.id)}
               onPress={() =>
-                selection.selecting ? selection.toggle(b.id) : router.push(`/item/${b.id}?from=${active}`)
+                selection.selecting
+                  ? selection.toggle(b.id)
+                  : router.push(`/item/${b.id}?from=${active}`)
               }
               onLongPress={() => selection.begin(b.id)}
               onToggle={() => selection.toggle(b.id)}
@@ -395,7 +398,6 @@ export default function SeriesDetailScreen() {
           <MissingBooks books={missing} startSeq={books.length} rmabEnabled={rmabEnabled} />
         ) : null}
       </ScrollView>
-
     </Screen>
   )
 }
@@ -599,7 +601,7 @@ function MissingBooks({
     // Upcoming (unreleased) book -> the follow/countdown page; already-released
     // but unowned -> the request/buy sheet as before.
     if ((b.upcoming ?? isUpcoming(b, Date.now())) && b.asin) {
-      router.push(`/upcoming/${encodeURIComponent(b.asin)}`)
+      router.push(upcomingBookPath(b))
       return
     }
     setSelected(b)

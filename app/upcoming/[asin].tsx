@@ -17,7 +17,9 @@ import {
   coverHue,
   countdownLabel,
   daysUntilRelease,
+  isUnscheduled,
   isUpcoming,
+  releaseMs,
   type HSAudibleSearchResult,
 } from '@hearthshelf/core'
 import { fetchAudibleProduct, audibleStoreUrl } from '@/api/absAudible'
@@ -46,16 +48,22 @@ import { haptics } from '@/ui/haptics'
 import { formatDuration } from '@hearthshelf/core'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useTheme } from '@/ui/ThemeProvider'
+import { parseUpcomingBookFallback } from '@/lib/upcomingBookRoute'
 
 // A book the page can render: the Audible result shape plus an optional series
 // sequence (present on subscriptions + series-roster books).
 type UpcomingBook = HSAudibleSearchResult & { sequence?: string | null; seriesTitle?: string }
 
 export default function UpcomingBookScreen() {
-  const { asin } = useLocalSearchParams<{ asin: string }>()
+  const { asin, fallback } = useLocalSearchParams<{ asin: string; fallback?: string | string[] }>()
   const router = useRouter()
   const styles = useStyles()
   const { colors } = useTheme()
+  const routeAsin = String(asin)
+  const routeFallback = useMemo(
+    () => parseUpcomingBookFallback(fallback, routeAsin),
+    [fallback, routeAsin],
+  )
 
   const { subscriptions } = useSyncExternalStore(subscribeSubscriptions, getSubscriptionsState)
   // The followed book (if any), converted to the page's book shape. A book sub
@@ -64,7 +72,7 @@ export default function UpcomingBookScreen() {
     const sub = subscriptions.find((s) => s.kind === 'book' && s.asin === asin)
     if (!sub) return null
     return {
-      asin: sub.asin ?? String(asin),
+      asin: sub.asin ?? routeAsin,
       title: sub.title,
       author: sub.author ?? '',
       seriesAsin: sub.seriesAsin,
@@ -76,33 +84,48 @@ export default function UpcomingBookScreen() {
       releaseDate: sub.releaseDate,
       publicationDatetime: sub.publicationDatetime,
     }
-  }, [subscriptions, asin])
+  }, [subscriptions, asin, routeAsin])
 
-  const [book, setBook] = useState<UpcomingBook | null>(existing)
-  const [loading, setLoading] = useState(!existing)
+  const [book, setBook] = useState<UpcomingBook | null>(existing ?? routeFallback)
+  const [loading, setLoading] = useState(!existing && !routeFallback)
+  const [productResolved, setProductResolved] = useState(false)
+  const [productChecked, setProductChecked] = useState(false)
   const [lightbox, setLightbox] = useState(false)
   const [busy, setBusy] = useState(false)
 
-  // Fetch when we don't already have the book from a subscription.
+  // A roster fallback renders immediately. We still try the product endpoint so
+  // a healthy listing can enrich it, but a removed ASIN no longer blanks the
+  // page or leaves an unhandled request behind.
   useEffect(() => {
     if (existing) {
       setBook(existing)
       setLoading(false)
+      setProductResolved(true)
+      setProductChecked(true)
       return
     }
     let cancelled = false
-    setLoading(true)
+    setBook(routeFallback)
+    setLoading(!routeFallback)
+    setProductResolved(false)
+    setProductChecked(false)
     void (async () => {
-      const p = await fetchAudibleProduct(String(asin))
+      const p = await fetchAudibleProduct(routeAsin)
       if (!cancelled) {
-        setBook(p)
+        setBook(p ? { ...routeFallback, ...p } : routeFallback)
+        setProductResolved(!!p)
+        setProductChecked(true)
         setLoading(false)
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [asin, existing])
+  }, [existing, routeAsin, routeFallback])
+
+  // Keep hooks unconditional: a fresh deep-link starts in loading state while
+  // a roster handoff does not, but both must use the same hook order.
+  const now = useTickingNow(book)
 
   if (loading) {
     return (
@@ -127,11 +150,14 @@ export default function UpcomingBookScreen() {
 
   // A live clock so the countdown actually ticks down instead of lying after
   // midnight: re-derive every 60s, or every 1s in the final hour before release.
-  const now = useTickingNow(book)
   const followed = !!findSubscription({ kind: 'book', asin: book.asin })
   const upcoming = isUpcoming(book, now)
   const days = daysUntilRelease(book, now)
   const countdown = countdownLabel(book, now)
+  const unscheduled = isUnscheduled(book)
+  // Audible's 2200 placeholder accompanies catalog-only announcements whose
+  // direct product page is not live. Never send the listener to that dead ASIN.
+  const hasDirectAudibleListing = productResolved && !unscheduled
   const hue = coverHue(book.asin)
   const seriesLine =
     book.seriesTitle && book.sequence
@@ -198,7 +224,11 @@ export default function UpcomingBookScreen() {
             <View style={styles.releasePill}>
               <Icon name={icons.newRelease} size={15} color={colors.onAccent} />
               <AppText variant="label" color={colors.onAccent}>
-                {countdown === 'Out today' ? 'Out today' : `${countdown} until release`}
+                {countdown === 'Date TBD'
+                  ? 'Release date TBD'
+                  : countdown === 'Out today'
+                    ? 'Out today'
+                    : `${countdown} until release`}
               </AppText>
             </View>
           ) : null}
@@ -219,11 +249,13 @@ export default function UpcomingBookScreen() {
               {metaParts.join(' · ')}
             </AppText>
           ) : null}
-          {book.releaseDate ? (
+          {unscheduled || book.publicationDatetime || book.releaseDate ? (
             <View style={styles.dateRow}>
               <Icon name={icons.calendar} size={15} color={colors.textMuted} />
               <AppText variant="meta" color={colors.textMuted}>
-                Releases {formatReleaseDate(book.publicationDatetime || book.releaseDate)}
+                {unscheduled
+                  ? 'Release date TBD'
+                  : `Releases ${formatReleaseDate(book.publicationDatetime || book.releaseDate!)}`}
               </AppText>
             </View>
           ) : null}
@@ -249,15 +281,26 @@ export default function UpcomingBookScreen() {
                 : 'Notify me when it’s out'}
             </AppText>
           </Touchable>
-          <Touchable
-            style={styles.buyBtn}
-            onPress={() => Linking.openURL(audibleStoreUrl(book))}
-          >
-            <AppText variant="label" color={colors.text}>
-              View on Audible
-            </AppText>
-            <Icon name={icons.chevronRight} size={18} color={colors.textMuted} />
-          </Touchable>
+          {hasDirectAudibleListing ? (
+            <Touchable style={styles.buyBtn} onPress={() => Linking.openURL(audibleStoreUrl(book))}>
+              <AppText variant="label" color={colors.text}>
+                View on Audible
+              </AppText>
+              <Icon name={icons.chevronRight} size={18} color={colors.textMuted} />
+            </Touchable>
+          ) : productChecked || unscheduled ? (
+            <Touchable
+              style={styles.buyBtn}
+              onPress={() =>
+                Linking.openURL(audibleStoreUrl({ title: book.title, author: book.author }))
+              }
+            >
+              <AppText variant="label" color={colors.text}>
+                Search Audible
+              </AppText>
+              <Icon name={icons.search} size={18} color={colors.textMuted} />
+            </Touchable>
+          ) : null}
         </View>
 
         {/* Series context: where this book sits in its series. Taps back to the
@@ -313,10 +356,7 @@ export default function UpcomingBookScreen() {
 function useTickingNow(book: UpcomingBook | null): number {
   const [now, setNow] = useState(() => Date.now())
   const releaseAt = useMemo(() => {
-    const raw = book?.publicationDatetime || book?.releaseDate
-    if (!raw) return null
-    const t = Date.parse(raw)
-    return Number.isNaN(t) ? null : t
+    return book ? releaseMs(book) : null
   }, [book?.publicationDatetime, book?.releaseDate])
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
 
