@@ -87,6 +87,14 @@ function buildEntries(isAdmin: boolean): MenuEntry[] {
       available: true,
     },
     {
+      id: 'following',
+      label: 'Following',
+      icon: 'newRelease',
+      href: '/following',
+      group: 2,
+      available: true,
+    },
+    {
       id: 'downloads',
       label: 'Downloads',
       icon: 'download',

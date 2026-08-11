@@ -61,6 +61,38 @@ export async function fetchAudibleSeries(name: string): Promise<HSAudibleSeriesR
 }
 
 /**
+ * Fetch a series' roster by its Audible series ASIN. What a series follow holds
+ * is the ASIN, not a name, so this is how the Following list learns which book
+ * is next in a series being tracked.
+ *
+ * Served from the precomputed roster only (no live Audible resolve), so an older
+ * server - or a series the nightly sweep hasn't reached - returns an unresolved
+ * result and the caller quietly shows the follow without a next-book line.
+ */
+export async function fetchAudibleSeriesByAsin(
+  seriesAsin: string,
+): Promise<HSAudibleSeriesResponse> {
+  const empty: HSAudibleSeriesResponse = { name: '', seriesAsin: null, books: [] }
+  const s = getSession()
+  if (!s || !seriesAsin) return empty
+  const key = `asin:${seriesAsin.toLowerCase()}`
+  const hit = cache.get(key)
+  if (hit && Date.now() - hit.at < TTL_MS) return hit.value
+  try {
+    const res = await fetch(
+      `${s.serverUrl}/hs/audible/series?seriesAsin=${encodeURIComponent(seriesAsin)}`,
+      { headers: { Accept: 'application/json', Authorization: `Bearer ${s.token}` } },
+    )
+    if (!res.ok) return empty
+    const value = (await res.json()) as HSAudibleSeriesResponse
+    if (value.seriesAsin) cache.set(key, { at: Date.now(), value })
+    return value
+  } catch {
+    return empty
+  }
+}
+
+/**
  * Search the Audible catalog by keyword through the connected server's
  * HearthShelf backend. Works whether or not the request backend is connected -
  * discovery is HearthShelf's own. Returns an empty result on any failure
