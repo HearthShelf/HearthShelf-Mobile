@@ -19,9 +19,10 @@ import {
   nextSeriesBook,
   releaseMs,
   type HSAudibleSeriesBook,
+  type HSAudibleSeriesResponse,
   type HSSubscription,
 } from '@hearthshelf/core'
-import { fetchAudibleSeriesByAsin } from '@/api/absAudible'
+import { fetchAudibleSeriesByAsin, fetchAudibleSeries } from '@/api/absAudible'
 import {
   getSubscriptionsState,
   subscribeSubscriptions,
@@ -42,28 +43,42 @@ function releaseDateLabel(item: { publicationDatetime?: string; releaseDate?: st
   })
 }
 
-/** The next book in a followed series, resolved from its roster. Null until it
- *  loads, on a server that can't answer, or when nothing is left. */
-function useNextInSeries(seriesAsin: string | undefined): HSAudibleSeriesBook | null {
-  const [next, setNext] = useState<HSAudibleSeriesBook | null>(null)
+/** The roster for a followed series, for both its artwork and what is next in
+ *  it. Null until it loads or when neither lookup resolves.
+ *
+ *  Two lookups, because ?seriesAsin= is new: a server that predates it ignores
+ *  the parameter and answers empty, which would leave every series row bare. So
+ *  we fall back to the by-name lookup every server has always supported, keeping
+ *  only a roster whose ASIN matches this follow (a name can match two series). */
+function useSeriesRoster(
+  seriesAsin: string | undefined,
+  seriesTitle: string,
+): HSAudibleSeriesResponse | null {
+  const [roster, setRoster] = useState<HSAudibleSeriesResponse | null>(null)
   useEffect(() => {
     let alive = true
     if (!seriesAsin) return
     void (async () => {
-      const roster = await fetchAudibleSeriesByAsin(seriesAsin)
-      if (!alive || !roster.seriesAsin) return
-      setNext(nextSeriesBook(roster.books, Date.now()))
+      let r = await fetchAudibleSeriesByAsin(seriesAsin)
+      if (!r.seriesAsin && seriesTitle) {
+        const byName = await fetchAudibleSeries(seriesTitle)
+        if (byName.seriesAsin === seriesAsin) r = byName
+      }
+      if (!alive || !r.seriesAsin) return
+      setRoster(r)
     })()
     return () => {
       alive = false
     }
-  }, [seriesAsin])
-  return next
+  }, [seriesAsin, seriesTitle])
+  return roster
 }
 
-function SeriesNextLine({ seriesAsin }: { seriesAsin: string }) {
+function SeriesNextLine({ roster }: { roster: HSAudibleSeriesResponse | null }) {
   const colors = useColors()
-  const next = useNextInSeries(seriesAsin)
+  const next: HSAudibleSeriesBook | null = roster
+    ? nextSeriesBook(roster.books, Date.now())
+    : null
   if (!next) return null
   // "Next" is the first gap in reading order, which may already be out (a book
   // you haven't picked up) or still unreleased - say which.
@@ -84,6 +99,13 @@ function FollowRow({ sub, onPress }: { sub: HSSubscription; onPress: () => void 
   const styles = useMemo(() => makeStyles(colors), [colors])
   const isSeries = sub.kind === 'series'
   const now = Date.now()
+  // A series has no cover of its own, and web-created follows may carry none -
+  // borrow the first roster book's artwork so the row isn't a bare tile.
+  const roster = useSeriesRoster(
+    isSeries ? sub.seriesAsin : undefined,
+    sub.seriesTitle ?? sub.title,
+  )
+  const cover = sub.coverArtUrl ?? roster?.books.find((b) => b.coverArtUrl)?.coverArtUrl
 
   let status: string
   if (isSeries) status = 'Every new book tracked'
@@ -97,7 +119,7 @@ function FollowRow({ sub, onPress }: { sub: HSSubscription; onPress: () => void 
   return (
     <Touchable onPress={onPress} style={styles.row}>
       <Cover
-        uri={sub.coverArtUrl}
+        uri={cover}
         size={52}
         radius={radius.tile}
         fallback={{
@@ -117,7 +139,7 @@ function FollowRow({ sub, onPress }: { sub: HSSubscription; onPress: () => void 
         >
           {status}
         </AppText>
-        {isSeries && sub.seriesAsin ? <SeriesNextLine seriesAsin={sub.seriesAsin} /> : null}
+        {isSeries ? <SeriesNextLine roster={roster} /> : null}
       </View>
       <IconButton
         name={isSeries ? icons.collections : sub.available ? icons.check : icons.newRelease}
