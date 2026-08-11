@@ -202,10 +202,15 @@ export default function SeriesDetailScreen() {
   // Completion measures against the whole series (owned + unowned), so owning 3
   // of 4 and finishing all 3 reads 75%. Degrades to owned-only when the Audible
   // roster is unresolved (missing empty).
+  //
+  // A book that isn't out yet is excluded: nobody could own it, so counting it
+  // would permanently cap a fully-caught-up series below 100% and mark a phantom
+  // segment on the track.
+  const missingReleased = missing.filter((b) => !(b.upcoming ?? isUpcoming(b, Date.now())))
   const completion = seriesCompletion({
     ownedProgressSum: sum,
     ownedCount: books.length,
-    missingCount: missing.length,
+    missingCount: missingReleased.length,
   })
   const pct = completion.pct
   // Listened hours are an owned-books figure; scale by owned progress, not the
@@ -311,7 +316,11 @@ export default function SeriesDetailScreen() {
               {completion.missingCount > 0 ? ` · ${completion.missingCount} not in library` : ''}
             </AppText>
           </View>
-          <SegmentTrack books={books} progressById={progressById} missingCount={missing.length} />
+          <SegmentTrack
+            books={books}
+            progressById={progressById}
+            missingCount={missingReleased.length}
+          />
           {/* Micro-legend so the segmented track is readable at a glance. */}
           <View style={styles.legend}>
             <View style={styles.legendItem}>
