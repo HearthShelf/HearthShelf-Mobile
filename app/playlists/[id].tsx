@@ -23,6 +23,8 @@ import { playItemById } from '@/player/playback'
 import { ListDetailHeader } from '@/ui/lists/ListDetailHeader'
 import { PlaylistRow, resolvePlaylistEntry } from '@/ui/lists/PlaylistRow'
 import { RenameListSheet } from '@/ui/lists/RenameListSheet'
+import { BookPickerSheet } from '@/ui/lists/BookPickerSheet'
+import { PLAYLIST_KIND } from '@/ui/lists/kind'
 import {
   confirmDeleteList,
   confirmRemoveFromList,
@@ -44,6 +46,7 @@ export default function PlaylistDetailScreen() {
   const contentInset = useContentInset()
   const { message: toast, show: showToast } = useToast()
   const renameSheet = useRef<BottomSheetModal>(null)
+  const pickerSheet = useRef<BottomSheetModal>(null)
 
   const [playlist, setPlaylist] = useState<ABSPlaylist | null>(null)
   const [error, setError] = useState(false)
@@ -167,6 +170,7 @@ export default function PlaylistDetailScreen() {
         totalSeconds={totalSeconds}
         onBack={() => router.back()}
         onPlayAll={firstBook ? () => void playItemById(firstBook.libraryItemId) : undefined}
+        onAddBooks={playlist ? () => pickerSheet.current?.present() : undefined}
         onRename={playlist ? () => renameSheet.current?.present() : undefined}
         onDelete={playlist ? doDelete : undefined}
       />
@@ -181,7 +185,9 @@ export default function PlaylistDetailScreen() {
         <EmptyState
           icon="queue-music"
           title="Nothing in here yet"
-          body="Add books to this playlist from the actions menu on any book."
+          body="Search your library and pick the books to line up here."
+          cta="Add books"
+          onCta={() => pickerSheet.current?.present()}
         />
       ) : (
         <FlatList
@@ -205,6 +211,22 @@ export default function PlaylistDetailScreen() {
         kind="playlist"
         currentName={playlist?.name ?? ''}
         onSave={rename}
+      />
+      <BookPickerSheet
+        ref={pickerSheet}
+        descriptor={PLAYLIST_KIND}
+        libraryId={playlist?.libraryId ?? null}
+        mode="add"
+        // Episode entries share their podcast's libraryItemId, so this only
+        // locks out books already here - which is what the picker offers.
+        existingIds={entries.filter((e) => !e.isEpisode).map((e) => e.libraryItemId)}
+        onSubmit={async (ids) => {
+          if (!playlist) return
+          await PLAYLIST_KIND.addBooks(playlist.id, ids)
+          pickerSheet.current?.dismiss()
+          await load()
+          showToast(`Added ${ids.length} ${ids.length === 1 ? 'book' : 'books'}`)
+        }}
       />
       <Toast message={toast} />
     </Screen>

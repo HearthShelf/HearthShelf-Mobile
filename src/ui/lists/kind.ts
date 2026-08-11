@@ -17,6 +17,10 @@
  */
 import type { ABSCollection, ABSLibraryItem, ABSPlaylist } from '@hearthshelf/core'
 import {
+  addBooksToCollection,
+  addItemsToPlaylist,
+  createCollection,
+  createPlaylist,
   deleteCollection,
   deletePlaylist,
   getLibraryCollections,
@@ -49,6 +53,14 @@ export interface ListKindDescriptor {
   list: (libraryId: string) => Promise<ListSummary[]>
   rename: (id: string, name: string) => Promise<unknown>
   remove: (id: string) => Promise<void>
+  /**
+   * Make a new list holding these books, returning its id so the caller can
+   * open it. ABS refuses a collection with no books, so both kinds take at
+   * least one here rather than creating an empty shell.
+   */
+  create: (libraryId: string, name: string, books: string[]) => Promise<{ id: string }>
+  /** Add books to an existing list, in one batch request. */
+  addBooks: (id: string, books: string[]) => Promise<void>
   /** Copy for the empty state - what this kind is, and how to make one. */
   emptyTitle: string
   emptyBody: string
@@ -89,9 +101,11 @@ export const COLLECTION_KIND: ListKindDescriptor = {
   list: async (libraryId) => (await getLibraryCollections(libraryId)).map(collectionSummary),
   rename: (id, name) => updateCollection(id, { name }),
   remove: deleteCollection,
+  create: createCollection,
+  addBooks: addBooksToCollection,
   emptyTitle: 'No collections yet',
   emptyBody:
-    'A collection groups books for everyone on this server. Add one from the actions menu on any book.',
+    'A collection groups books for everyone on this server. Start one with New collection.',
 }
 
 export const PLAYLIST_KIND: ListKindDescriptor = {
@@ -103,7 +117,14 @@ export const PLAYLIST_KIND: ListKindDescriptor = {
   list: async (libraryId) => (await getLibraryPlaylists(libraryId)).map(playlistSummary),
   rename: (id, name) => updatePlaylist(id, { name }),
   remove: deletePlaylist,
+  create: (libraryId, name, books) =>
+    createPlaylist(
+      libraryId,
+      name,
+      books.map((libraryItemId) => ({ libraryItemId })),
+    ),
+  addBooks: addItemsToPlaylist,
   emptyTitle: 'No playlists yet',
   emptyBody:
-    'A playlist is your own ordered queue and can hold single podcast episodes. Add one from the actions menu on any book.',
+    'A playlist is your own ordered queue and can hold single podcast episodes. Start one with New playlist.',
 }

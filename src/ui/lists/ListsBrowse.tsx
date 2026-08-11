@@ -10,15 +10,17 @@
  * library.tsx (adaptive columns + the `key` remount that FlatList requires when
  * numColumns changes).
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { FlatList, StyleSheet, View, useWindowDimensions } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
+import type { BottomSheetModal } from '@gorhom/bottom-sheet'
 import { getLibraries } from '@/api/abs'
 import { AppTabBar, tabFromParam } from '@/ui/AppTabBar'
 import { AppText, Screen, Touchable } from '@/ui/primitives'
 import { EmptyState, ErrorState, SkeletonTile } from '@/ui/states'
 import { Icon } from '@/ui/icons'
 import { ListCard } from '@/ui/lists/ListCard'
+import { BookPickerSheet } from '@/ui/lists/BookPickerSheet'
 import type { ListKindDescriptor, ListSummary } from '@/ui/lists/kind'
 import { adaptiveGridColumns, adaptiveGridTileWidth } from '@/ui/responsive'
 import { useContentInset } from '@/ui/useContentInset'
@@ -40,6 +42,9 @@ export function ListsBrowse({ descriptor }: { descriptor: ListKindDescriptor }) 
 
   const [lists, setLists] = useState<ListSummary[] | null>(null)
   const [error, setError] = useState(false)
+  // Held so the picker can create into the same library this screen is showing.
+  const [libraryId, setLibraryId] = useState<string | null>(null)
+  const pickerRef = useRef<BottomSheetModal>(null)
 
   const load = useCallback(async () => {
     setError(false)
@@ -50,6 +55,7 @@ export function ListsBrowse({ descriptor }: { descriptor: ListKindDescriptor }) 
         setLists([])
         return
       }
+      setLibraryId(lib.id)
       setLists(await descriptor.list(lib.id))
     } catch {
       setError(true)
@@ -85,7 +91,15 @@ export function ListsBrowse({ descriptor }: { descriptor: ListKindDescriptor }) 
           </AppText>
           <AppText variant="title">{descriptor.labelPlural}</AppText>
         </View>
-        <View style={s.iconBtn} />
+        <Touchable
+          onPress={() => pickerRef.current?.present()}
+          disabled={!libraryId}
+          style={s.iconBtn}
+          accessibilityRole="button"
+          accessibilityLabel={`New ${descriptor.label.toLowerCase()}`}
+        >
+          <Icon name="add" size={24} color={libraryId ? colors.text : colors.textFaint} />
+        </Touchable>
       </View>
 
       {lists === null ? (
@@ -126,6 +140,20 @@ export function ListsBrowse({ descriptor }: { descriptor: ListKindDescriptor }) 
           )}
         />
       )}
+
+      <BookPickerSheet
+        ref={pickerRef}
+        descriptor={descriptor}
+        libraryId={libraryId}
+        mode="create"
+        onSubmit={async (books, name) => {
+          const made = await descriptor.create(libraryId as string, name, books)
+          pickerRef.current?.dismiss()
+          // Reload so the new list is there if the user comes straight back.
+          void load()
+          if (made.id) router.push(descriptor.route(made.id))
+        }}
+      />
     </Screen>
   )
 }

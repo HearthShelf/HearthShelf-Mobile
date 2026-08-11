@@ -28,6 +28,7 @@ export function ListDetailHeader({
   totalSeconds,
   onBack,
   onPlayAll,
+  onAddBooks,
   onRename,
   onDelete,
 }: {
@@ -38,15 +39,18 @@ export function ListDetailHeader({
   totalSeconds: number
   onBack: () => void
   onPlayAll?: () => void
+  /** Opens the book picker. Absent when the caller may not edit this list. */
+  onAddBooks?: () => void
   onRename?: () => void
   onDelete?: () => void
 }) {
   const colors = useColors()
   const s = makeStyles(colors)
-  const hasMenu = Boolean(onRename || onDelete)
+  const hasMenu = Boolean(onAddBooks || onRename || onDelete)
 
   const openMenu = () => {
     const actions = []
+    if (onAddBooks) actions.push({ text: 'Add books', onPress: onAddBooks })
     if (onRename) actions.push({ text: 'Rename', onPress: onRename })
     if (onDelete)
       actions.push({
@@ -97,19 +101,32 @@ export function ListDetailHeader({
             totalSeconds > 0 ? ` · ${formatTimestamp(totalSeconds)}` : ''
           }`}
         </AppText>
-        {onPlayAll ? (
-          <Touchable
-            onPress={onPlayAll}
-            style={s.playAll}
-            accessibilityRole="button"
-            accessibilityLabel="Play all"
-          >
-            <Icon name="play-arrow" size={16} color={colors.onAccent} />
-            <AppText variant="label" color={colors.onAccent}>
-              Play all
-            </AppText>
-          </Touchable>
-        ) : null}
+        <View style={s.actions}>
+          {onAddBooks ? (
+            <Touchable
+              onPress={onAddBooks}
+              style={s.addBooks}
+              accessibilityRole="button"
+              accessibilityLabel="Add books"
+            >
+              <Icon name="library-add" size={16} color={colors.text} />
+              <AppText variant="label">Add books</AppText>
+            </Touchable>
+          ) : null}
+          {onPlayAll ? (
+            <Touchable
+              onPress={onPlayAll}
+              style={s.playAll}
+              accessibilityRole="button"
+              accessibilityLabel="Play all"
+            >
+              <Icon name="play-arrow" size={16} color={colors.onAccent} />
+              <AppText variant="label" color={colors.onAccent}>
+                Play all
+              </AppText>
+            </Touchable>
+          ) : null}
+        </View>
       </View>
     </View>
   )
@@ -132,6 +149,17 @@ function makeStyles(c: Palette) {
       justifyContent: 'space-between',
       gap: spacing.md,
       paddingHorizontal: spacing.lg,
+    },
+    actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    addBooks: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: c.border,
     },
     playAll: {
       flexDirection: 'row',

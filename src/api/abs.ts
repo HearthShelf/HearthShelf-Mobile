@@ -679,15 +679,18 @@ export async function removeItemFromPlaylist(
   })
 }
 
+/** Create a collection. ABS requires at least one book id, and returns the new
+ *  record so callers can navigate straight to it. */
 export async function createCollection(
   libraryId: string,
   name: string,
   books: string[],
-): Promise<void> {
-  await absRequest<void>('/api/collections', {
+): Promise<{ id: string }> {
+  const made = await absRequest<{ id: string }>('/api/collections', {
     method: 'POST',
     body: JSON.stringify({ libraryId, name, books }),
   })
+  return { id: made?.id ?? '' }
 }
 
 export async function addBookToCollection(
@@ -700,15 +703,17 @@ export async function addBookToCollection(
   })
 }
 
+/** Create a playlist, returning the new record so callers can navigate to it. */
 export async function createPlaylist(
   libraryId: string,
   name: string,
   items: { libraryItemId: string }[],
-): Promise<void> {
-  await absRequest<void>('/api/playlists', {
+): Promise<{ id: string }> {
+  const made = await absRequest<{ id: string }>('/api/playlists', {
     method: 'POST',
     body: JSON.stringify({ libraryId, name, items }),
   })
+  return { id: made?.id ?? '' }
 }
 
 export async function addItemToPlaylist(playlistId: string, libraryItemId: string): Promise<void> {

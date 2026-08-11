@@ -27,6 +27,8 @@ import { useSyncExternalStore } from 'react'
 import { BookTile } from '@/ui/BookTile'
 import { ListDetailHeader } from '@/ui/lists/ListDetailHeader'
 import { RenameListSheet } from '@/ui/lists/RenameListSheet'
+import { BookPickerSheet } from '@/ui/lists/BookPickerSheet'
+import { COLLECTION_KIND } from '@/ui/lists/kind'
 import { confirmDeleteList, confirmRemoveFromList } from '@/ui/lists/confirmations'
 import { AppText, Screen, Touchable } from '@/ui/primitives'
 import { EmptyState, ErrorState, SkeletonTile } from '@/ui/states'
@@ -54,6 +56,7 @@ export default function CollectionDetailScreen() {
   const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
   const { message: toast, show: showToast } = useToast()
   const renameSheet = useRef<BottomSheetModal>(null)
+  const pickerSheet = useRef<BottomSheetModal>(null)
 
   const [collection, setCollection] = useState<ABSCollection | null>(null)
   const [error, setError] = useState(false)
@@ -165,6 +168,7 @@ export default function CollectionDetailScreen() {
         totalSeconds={totalSeconds}
         onBack={() => router.back()}
         onPlayAll={books.length ? () => void playItemById(books[0].id) : undefined}
+        onAddBooks={canUpdate && collection ? () => pickerSheet.current?.present() : undefined}
         onRename={canUpdate && collection ? () => renameSheet.current?.present() : undefined}
         onDelete={canDelete && collection ? doDelete : undefined}
       />
@@ -179,7 +183,13 @@ export default function CollectionDetailScreen() {
         <EmptyState
           icon="collections-bookmark"
           title="Nothing in here yet"
-          body="Add books to this collection from the actions menu on any book."
+          body={
+            canUpdate
+              ? 'Search your library and pick the books that belong here.'
+              : 'Add books to this collection from the actions menu on any book.'
+          }
+          cta={canUpdate ? 'Add books' : undefined}
+          onCta={canUpdate ? () => pickerSheet.current?.present() : undefined}
         />
       ) : (
         <FlatList
@@ -222,6 +232,20 @@ export default function CollectionDetailScreen() {
         kind="collection"
         currentName={collection?.name ?? ''}
         onSave={rename}
+      />
+      <BookPickerSheet
+        ref={pickerSheet}
+        descriptor={COLLECTION_KIND}
+        libraryId={collection?.libraryId ?? null}
+        mode="add"
+        existingIds={books.map((b) => b.id)}
+        onSubmit={async (ids) => {
+          if (!collection) return
+          await COLLECTION_KIND.addBooks(collection.id, ids)
+          pickerSheet.current?.dismiss()
+          await load()
+          showToast(`Added ${ids.length} ${ids.length === 1 ? 'book' : 'books'}`)
+        }}
       />
       <Toast message={toast} />
     </Screen>
