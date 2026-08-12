@@ -554,21 +554,32 @@ class HearthShelfPlayerService : MediaSessionService() {
   }
 
   /**
-   * Does this service still hold a playable track?
+   * Play, or report that there is nothing to play.
    *
    * After the OS reclaims the service (low memory), `exo` is null or has been
-   * cleared of media items, and every transport command below silently no-ops on
-   * its `?.` - the "tapped play, nothing happens, no error" failure. JS keys its
-   * reload on a `loadedKey` that still claims the book is loaded, so nothing ever
-   * reloads it. This lets JS ask before assuming a play() landed.
+   * cleared of media items, and a plain `exo?.playWhenReady = true` silently
+   * no-ops - the "tapped play, nothing happens, no error" failure
+   * (HS-MOBILEAPP-Y). JS keys its reload on a `loadedKey` that still claims the
+   * book is loaded, so nothing ever reloads it.
    *
-   * Read directly rather than via runOnMain because the caller needs an answer
-   * now, and both fields are only mutated on the main thread in practice (the
-   * @Volatile instance handoff is what makes a stale read impossible here).
+   * The check and the play both happen HERE, inside runOnMain, rather than JS
+   * asking a separate hasLoadedTrack() question first. Two reasons:
+   *
+   *  1. ExoPlayer enforces thread affinity on EVERY accessor, including
+   *     getMediaItemCount(), via verifyApplicationThread() - not just on mutators.
+   *     A synchronous getter called from the RN bridge thread (mqt_v_native)
+   *     throws IllegalStateException and crashed the app (HS-MOBILEAPP-11). There
+   *     is no safe way to answer this question synchronously from another thread.
+   *  2. Even if there were, a separate check would race: the player could be
+   *     reclaimed between the answer and the play. Deciding and acting in one
+   *     main-thread hop cannot tear.
+   *
+   * `onLost` is invoked on the main thread when there was nothing to play.
    */
-  fun hasLoadedTrack(): Boolean {
-    val p = exo ?: return false
-    return p.mediaItemCount > 0
+  fun playOrReportLost(onLost: () -> Unit) = runOnMain {
+    val p = exo
+    if (p == null || p.mediaItemCount == 0) onLost()
+    else p.playWhenReady = true
   }
 
   fun playPlayer() = runOnMain { exo?.playWhenReady = true }

@@ -403,11 +403,17 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     // does nothing - silently, with no error event. JS still believes the book is
     // loaded, so it never reloads and the user taps a dead button forever. Tell
     // JS instead, so it can reload the track and start over.
-    if (svc == null || !svc.hasLoadedTrack()) {
+    //
+    // No instance at all: answer here, since there is nothing to hop onto.
+    if (svc == null) {
       emitPlaybackLost()
       return
     }
-    svc.playPlayer()
+    // Otherwise the service decides on the main thread and calls back - asking it
+    // synchronously from this (RN bridge) thread would throw, because ExoPlayer
+    // verifies thread affinity on reads as well as writes. See
+    // HearthShelfPlayerService.playOrReportLost.
+    svc.playOrReportLost { emitPlaybackLost() }
   }
   @ReactMethod fun pause() {
     val car = carPlayer
