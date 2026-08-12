@@ -35,6 +35,7 @@ import {
 } from '@/player/subscriptions'
 import { AppText, Cover, Loading, Screen, Touchable, icons, IconButton } from '@/ui/primitives'
 import { AppTabBar, useGoToTab, useNavActiveName } from '@/ui/AppTabBar'
+import { useMiniPlayerInset } from '@/ui/useContentInset'
 import { CoverGlow } from '@/ui/CoverGlow'
 import { haptics } from '@/ui/haptics'
 import { Icon } from '@/ui/icons'
@@ -542,6 +543,7 @@ export default function FollowingScreen() {
   const goToTab = useGoToTab()
   // Lights up its own bar icon when pinned there, otherwise More.
   const active = useNavActiveName('following')
+  const miniInset = useMiniPlayerInset()
 
   const openRelease = (release: UpcomingRelease) => {
     if (!release.asin) return
@@ -607,7 +609,11 @@ export default function FollowingScreen() {
           ListHeaderComponent={
             hero ? <NextReleaseHero release={hero} onPress={() => openRelease(hero)} /> : null
           }
-          contentContainerStyle={styles.listContent}
+          // The fixed padding here doesn't know about the docked mini player,
+          // which floats over the list and clipped the last card. Override it
+          // with the measured clearance (this screen renders its own tab bar,
+          // so useMiniPlayerInset is the right one).
+          contentContainerStyle={[styles.listContent, { paddingBottom: miniInset }]}
           showsVerticalScrollIndicator={false}
           stickySectionHeadersEnabled={false}
           renderSectionHeader={({ section }) => <FollowingSectionHeader section={section} />}

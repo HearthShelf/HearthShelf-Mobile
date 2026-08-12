@@ -47,6 +47,7 @@ import {
   icons,
 } from '@/ui/primitives'
 import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
+import { useMiniPlayerInset } from '@/ui/useContentInset'
 import { CoverLightbox } from '@/ui/CoverLightbox'
 import { CoverGlow } from '@/ui/CoverGlow'
 import { Icon } from '@/ui/icons'
@@ -75,6 +76,7 @@ export default function UpcomingBookScreen() {
   // common entry point - lives under More, and a deep-link has no origin tab.
   const active = tabFromParam(from, 'more')
   const tabBar = <AppTabBar activeName={active} onPressTab={goToTab} />
+  const miniInset = useMiniPlayerInset()
   const styles = useStyles()
   const { colors } = useTheme()
   const routeAsin = String(asin)
@@ -248,7 +250,9 @@ export default function UpcomingBookScreen() {
         <CoverGlow hue={hue} height={320} />
       </View>
       <Header onBack={() => router.back()} />
-      <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }}>
+      {/* Measured clearance, not a fixed pad: the docked mini player floats over
+          this list and would otherwise clip the last card. */}
+      <ScrollView contentContainerStyle={{ paddingBottom: miniInset }}>
         <Animated.View entering={FadeIn.duration(DUR.base)} style={styles.hero}>
           <Touchable onPress={() => setLightbox(true)}>
             <Cover
