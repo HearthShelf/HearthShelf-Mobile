@@ -72,6 +72,13 @@ export function PlayerHost() {
   // Timestamp (ms) until which onState events are treated as seek transients and
   // ignored, so a skip doesn't bounce the play/pause intent.
   const seekingUntil = useRef(0)
+  // The store->native reconciler, published so native event handlers (which live
+  // in an earlier effect) can re-run it without waiting for a store change.
+  const syncNative = useRef<(() => void) | null>(null)
+  // Which book loadedKey last referred to. Distinguishes "reloading the book that
+  // is already playing" (resume at the live playhead) from "switching books"
+  // (resume at the new track's own start position).
+  const loadedItem = useRef<string | null>(null)
 
   // Shake-to-extend the sleep timer. Mounted here (the one persistent host) so
   // it can fire a confirmation toast in component context.
@@ -144,6 +151,29 @@ export function PlayerHost() {
       // Book ended: advance to the head of the (server-owned) up-next queue.
       emitter.addListener('onEnded', () => {
         void advanceQueueOnEnd().catch(() => {})
+      }),
+      // We asked the native service to play, but it no longer holds the track -
+      // the OS reclaimed it under memory pressure while the app sat backgrounded.
+      //
+      // Nothing throws in that situation: the module's play() lands on a null
+      // instance (or an ExoPlayer with no media items) and returns silently. JS
+      // meanwhile still believes the book is loaded, because loadedKey is keyed on
+      // itemId:url and neither changed - so sync() never reloads and every
+      // subsequent tap is swallowed too. That is the "paused, then clicked play,
+      // doesn't play or load to play" report (HS-MOBILEAPP-Y).
+      //
+      // Recovery is to forget what we think is loaded and let sync() rebuild the
+      // track from the store, at the position the store already holds. Clearing
+      // lastPlaying too means the isPlaying we still have set will be re-pushed as
+      // a fresh play edge once the reload completes, so the user's tap is honored
+      // rather than needing a second one.
+      emitter.addListener('onPlaybackLost', () => {
+        breadcrumb('player', 'native lost the track; reloading from store')
+        loadedKey.current = null
+        lastPlaying.current = null
+        // Re-run the store->native effect now rather than waiting for the next
+        // store change; without a nudge, a stable store would leave it unloaded.
+        syncNative.current?.()
       }),
       // Native playback failed (expired stream token, network stall, unplayable
       // format). Drop the optimistic playing state so the UI stops showing
@@ -311,6 +341,7 @@ export function PlayerHost() {
         if (loadedKey.current !== null) {
           Native.stop()
           loadedKey.current = null
+          loadedItem.current = null
         }
         // Still forward transport intent - the module dispatches it to the car.
         if (s.seekTo !== null) {
@@ -333,6 +364,7 @@ export function PlayerHost() {
         if (loadedKey.current !== null) {
           Native.stop()
           loadedKey.current = null
+          loadedItem.current = null
         }
         return
       }
@@ -359,9 +391,25 @@ export function PlayerHost() {
         lastPlaying.current = null
         lastRate.current = null
         lastVolume.current = null
+        // Reload at the LIVE position, not the one the track was loaded at.
+        //
+        // np.startPosition is where this track was first resolved to; s.position is
+        // where the listener actually is (progress ticks keep it current). For a
+        // genuinely new track the two are equal, so this is a no-op there. They
+        // diverge only when we are REloading a book that has been playing - the
+        // reclaim recovery above - and there, using startPosition would throw away
+        // everything listened since load and rewind the audio, which is the same
+        // class of bug as HS-MOBILEAPP-Q. Guarded on itemId so a book switch (where
+        // s.position still holds the OUTGOING book's time until the store settles)
+        // always uses the incoming track's own start.
+        const resumeAt =
+          s.position > np.startPosition && loadedItem.current === np.itemId
+            ? s.position
+            : np.startPosition
+        loadedItem.current = np.itemId
         Native.load(
           np.url,
-          np.startPosition,
+          resumeAt,
           np.title,
           np.author,
           np.artworkUrl ?? '',
@@ -399,8 +447,13 @@ export function PlayerHost() {
       }
     }
 
+    syncNative.current = sync
     sync()
-    return subscribe(sync)
+    const unsubscribe = subscribe(sync)
+    return () => {
+      syncNative.current = null
+      unsubscribe()
+    }
   }, [])
 
   // The audio lives entirely in the native service; the only thing rendered is

@@ -394,7 +394,20 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
   // phone service as before.
   @ReactMethod fun play() {
     val car = carPlayer
-    if (car != null) car.play() else HearthShelfPlayerService.instance?.playPlayer()
+    if (car != null) {
+      car.play()
+      return
+    }
+    val svc = HearthShelfPlayerService.instance
+    // A reclaimed service (or one whose ExoPlayer was cleared) accepts play() and
+    // does nothing - silently, with no error event. JS still believes the book is
+    // loaded, so it never reloads and the user taps a dead button forever. Tell
+    // JS instead, so it can reload the track and start over.
+    if (svc == null || !svc.hasLoadedTrack()) {
+      emitPlaybackLost()
+      return
+    }
+    svc.playPlayer()
   }
   @ReactMethod fun pause() {
     val car = carPlayer
@@ -518,6 +531,19 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     // track, so the phone + car share one queue.
     fun emitEnded() {
       emitter?.invoke("onEnded", Arguments.createMap())
+    }
+
+    /**
+     * A transport command arrived for a service that no longer holds the track
+     * (OS-reclaimed under memory pressure, or its ExoPlayer was cleared).
+     *
+     * This is deliberately NOT onError: nothing failed loudly, and treating it as
+     * an error would just drop the playing state and leave the same dead button.
+     * JS responds by reloading the current book from the live store position, so
+     * the tap the user made turns into actual audio.
+     */
+    fun emitPlaybackLost() {
+      emitter?.invoke("onPlaybackLost", Arguments.createMap())
     }
   }
 }

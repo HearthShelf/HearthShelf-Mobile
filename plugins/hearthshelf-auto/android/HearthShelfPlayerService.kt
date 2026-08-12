@@ -553,6 +553,24 @@ class HearthShelfPlayerService : MediaSessionService() {
     p.replaceMediaItem(p.currentMediaItemIndex, cur.buildUpon().setMediaMetadata(buildMeta(idx)).build())
   }
 
+  /**
+   * Does this service still hold a playable track?
+   *
+   * After the OS reclaims the service (low memory), `exo` is null or has been
+   * cleared of media items, and every transport command below silently no-ops on
+   * its `?.` - the "tapped play, nothing happens, no error" failure. JS keys its
+   * reload on a `loadedKey` that still claims the book is loaded, so nothing ever
+   * reloads it. This lets JS ask before assuming a play() landed.
+   *
+   * Read directly rather than via runOnMain because the caller needs an answer
+   * now, and both fields are only mutated on the main thread in practice (the
+   * @Volatile instance handoff is what makes a stale read impossible here).
+   */
+  fun hasLoadedTrack(): Boolean {
+    val p = exo ?: return false
+    return p.mediaItemCount > 0
+  }
+
   fun playPlayer() = runOnMain { exo?.playWhenReady = true }
   fun pausePlayer() = runOnMain { exo?.playWhenReady = false }
   fun seekToSec(sec: Double) = runOnMain {
