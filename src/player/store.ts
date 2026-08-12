@@ -139,6 +139,9 @@ export function loadTrack(track: NowPlaying, autoPlay = true): void {
   // A new book resumes at its own saved spot - a pause left over from the
   // previous book must not rewind it.
   resetAutoRewind()
+  // Any seek we were waiting on belonged to the outgoing track; holding ticks
+  // against its target would suppress the new book's progress.
+  pendingSeek = null
   set({
     nowPlaying: track,
     isPlaying: autoPlay,
@@ -258,6 +261,9 @@ export function leaveCar(): { itemId: string; position: number } | null {
  * own ABS session; the phone player stays stood down (carActive).
  */
 export function mirrorCarTrack(track: NowPlaying): void {
+  // The car owns the playhead now; its mirrored positions must not be held
+  // against a phone-side seek target.
+  pendingSeek = null
   set({
     nowPlaying: track,
     position: track.startPosition,
@@ -297,6 +303,19 @@ export function setDeadTransportReporter(fn: (source: string, detail: string) =>
   onDeadTransport = fn
 }
 
+/**
+ * How close a native tick must be to the seek target before we accept that the
+ * seek landed. Generous enough to cover the engine reporting a moment of audio
+ * past the target, tight enough that a pre-seek tick never passes.
+ */
+const SEEK_SETTLE_TOLERANCE_SEC = 2
+/** Ceiling on how long ticks are held, so a seek that never lands can't freeze
+ *  the position readout. Matches PlayerHost's own 1.5s seek transient window,
+ *  plus headroom for an unbuffered region. */
+const SEEK_SETTLE_TIMEOUT_MS = 4000
+/** The seek we are waiting for the engine to land (see reportPosition). */
+let pendingSeek: { target: number; until: number } | null = null
+
 export function requestSeek(seconds: number): void {
   if (!state.nowPlaying) return
   const target = Math.max(0, seconds)
@@ -308,6 +327,10 @@ export function requestSeek(seconds: number): void {
   // updates instantly - even while paused, where the native progress callback
   // won't fire to confirm the seek for a while. The host still applies seekTo.
   set({ seekTo: target, position: target })
+  // Hold native progress ticks until the engine reports back near this target,
+  // so an in-flight seek can't be rolled back by a tick describing the old spot
+  // (and a rapid second skip measures from where the first one put us).
+  pendingSeek = { target, until: Date.now() + SEEK_SETTLE_TIMEOUT_MS }
   // A seek (esp. while paused) makes the server's position stale with no new
   // listened-time: mark sync dirty so the header icon goes orange and a tap can
   // push this spot. syncState is a leaf store (no deps back into here).
@@ -535,6 +558,33 @@ function fireStop(position: number): void {
 
 /** Called by the <Video> host on each progress tick. */
 export function reportPosition(position: number): void {
+  // Drop ticks that are still describing where we WERE while a seek is in
+  // flight.
+  //
+  // requestSeek optimistically moves `position` to the target so the UI responds
+  // instantly, but the native engine keeps emitting progress from the old spot
+  // until it actually lands the seek. Those ticks used to overwrite `position`
+  // straight back to the pre-seek value - and because jumpBy computes its target
+  // as `state.position + delta`, a second skip tap arriving in that window
+  // measured from the STALE position and landed almost where the first one did.
+  // That is the "skipping has a lag and seems like it loses a button push"
+  // report (HS-MOBILEAPP-Z): the tap was never lost, it was applied to a
+  // position that had been rolled back underneath it.
+  //
+  // Held only until the engine reports a position near the target (or the window
+  // lapses), so a genuine post-seek tick is never discarded.
+  if (pendingSeek !== null) {
+    if (Math.abs(position - pendingSeek.target) <= SEEK_SETTLE_TOLERANCE_SEC) {
+      pendingSeek = null
+    } else if (Date.now() < pendingSeek.until) {
+      return
+    } else {
+      // The seek never landed (engine rejected it, or the track reloaded under
+      // us). Let the engine's truth win rather than freezing the UI forever.
+      pendingSeek = null
+    }
+  }
+
   const prev = state.position
   if (prev === position) return
 
@@ -585,6 +635,7 @@ export function clearSeek(): void {
 
 export function clearTrack(): void {
   resetAutoRewind()
+  pendingSeek = null
   set({
     nowPlaying: null,
     isPlaying: false,

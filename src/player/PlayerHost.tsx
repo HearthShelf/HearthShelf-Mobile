@@ -121,7 +121,13 @@ export function PlayerHost() {
         // While the car owns playback it does its own ABS progress sync (with its
         // own session). Running JS sync too would double-post to two sessions, so
         // only drive the on-screen position here.
-        if (!getState().carActive) syncProgress(e.position)
+        //
+        // Sync the position the STORE settled on, not the raw tick: reportPosition
+        // drops ticks that still describe the pre-seek spot while a seek is in
+        // flight, and pushing the raw value here would send that stale position to
+        // ABS (and accrue listened-time for a stretch that was skipped past)
+        // exactly when the store had just refused it.
+        if (!getState().carActive) syncProgress(getState().position)
       }),
       emitter.addListener('onState', (e: { isPlaying: boolean }) => {
         // Ignore the brief play/pause ExoPlayer emits while it re-buffers a

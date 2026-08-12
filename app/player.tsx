@@ -152,6 +152,13 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const queue = useSyncExternalStore(subscribeQueue, getQueueState)
   const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
   const downloads = useSyncExternalStore(subscribeDownloads, getDownloadsState)
+  // Playing off local storage: a rebuffer there is a momentary disk read, not a
+  // network wait, so the "Buffering..." caption is just noise (the ring around
+  // the play button still shows the engine caught its breath). Derived from the
+  // track's own url because that IS the source of truth for where audio is
+  // coming from - the downloads store can say "downloaded" while a stream url is
+  // what actually got loaded (offline resolution failed, car handback, etc).
+  const isLocalSource = !!nowPlaying?.url?.startsWith('file://')
   const insets = useSafeAreaInsets()
   const { width, height } = useWindowDimensions()
   const toast = useToast()
@@ -1151,7 +1158,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                     {buffering && <BufferingRing size={playSize + 12} />}
                     {/* Absolute so the caption appearing/disappearing never reflows
                 the transport row - repeated skip taps must not move the buttons. */}
-                    {buffering && (
+                    {buffering && !isLocalSource && (
                       <Animated.View
                         entering={FadeIn.duration(DUR.base)}
                         pointerEvents="none"
