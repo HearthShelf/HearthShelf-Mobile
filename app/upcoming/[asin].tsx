@@ -23,6 +23,7 @@ import {
   type HSAudibleSearchResult,
 } from '@hearthshelf/core'
 import { fetchAudibleProduct, audibleStoreUrl } from '@/api/absAudible'
+import { getLibraries, getLibrarySeries } from '@/api/abs'
 import {
   dismiss as dismissEntity,
   restore as restoreEntity,
@@ -113,6 +114,14 @@ export default function UpcomingBookScreen() {
   const [productChecked, setProductChecked] = useState(false)
   const [lightbox, setLightbox] = useState(false)
   const [busy, setBusy] = useState(false)
+  // The owned series this upcoming book belongs to, once resolved. null = not
+  // resolved yet or not in the library.
+  //
+  // Declared here with the rest of the hooks, ABOVE the `if (loading)` /
+  // `if (!book)` early returns below - a hook placed next to its use further
+  // down would be conditional and blow up the screen (see the fixes in
+  // app/item/[id].tsx and app/series/[id].tsx).
+  const [ownedSeries, setOwnedSeries] = useState<{ id: string; libraryId: string } | null>(null)
 
   // A roster fallback renders immediately. We still try the product endpoint so
   // a healthy listing can enrich it, but a removed ASIN no longer blanks the
@@ -143,6 +152,42 @@ export default function UpcomingBookScreen() {
       cancelled = true
     }
   }, [existing, routeAsin, routeFallback])
+
+  // Resolve the SERIES PAGE this book belongs to, when the listener owns it.
+  //
+  // The route only carries an Audible ASIN, and the series screen is keyed by an
+  // ABS series id + libraryId - two different identifier spaces with nothing
+  // linking them but the series NAME. So match on name against the library's
+  // series list. A coming-soon book is frequently the next entry in a series the
+  // listener already owns, which is exactly the case worth linking.
+  //
+  // Best-effort by design: an unowned series (or an offline/failed lookup)
+  // leaves this null and the row falls back to its previous back() behaviour
+  // rather than offering a link that would dead-end.
+  const seriesName = book?.seriesTitle ?? book?.series ?? null
+  useEffect(() => {
+    if (!seriesName) {
+      setOwnedSeries(null)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const libs = await getLibraries()
+        const lib = libs.find((l) => l.mediaType === 'book') ?? libs[0]
+        if (!lib) return
+        const all = await getLibrarySeries(lib.id)
+        const wanted = seriesName.trim().toLowerCase()
+        const hit = all.find((s) => s.name.trim().toLowerCase() === wanted)
+        if (!cancelled && hit) setOwnedSeries({ id: hit.id, libraryId: lib.id })
+      } catch {
+        // Unowned, offline, or the lookup failed - stay on the back() fallback.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [seriesName])
 
   // Keep hooks unconditional: a fresh deep-link starts in loading state while
   // a roster handoff does not, but both must use the same hook order.
@@ -357,13 +402,28 @@ export default function UpcomingBookScreen() {
           </Touchable>
         </View>
 
-        {/* Series context: where this book sits in its series. Taps back to the
-            series screen when we arrived from it (the common path). */}
+        {/* Series context: where this book sits in its series.
+            Opens the SERIES PAGE when the listener owns that series - tapping
+            here used to call router.back(), which just returned you to whatever
+            screen you arrived from (Home, Following, ...) rather than the series.
+            Falls back to back() only when the series isn't in the library, so
+            the row never becomes a dead end. */}
         {seriesLine ? (
           <Touchable
             style={styles.seriesRow}
-            onPress={canGoBack ? () => router.back() : undefined}
-            disabled={!canGoBack}
+            onPress={
+              ownedSeries
+                ? () => {
+                    haptics.select()
+                    router.push(
+                      `/series/${encodeURIComponent(ownedSeries.id)}?libraryId=${encodeURIComponent(ownedSeries.libraryId)}&from=${active}`,
+                    )
+                  }
+                : canGoBack
+                  ? () => router.back()
+                  : undefined
+            }
+            disabled={!ownedSeries && !canGoBack}
           >
             <Icon name={icons.book} size={18} color={colors.textMuted} />
             <View style={{ flex: 1, minWidth: 0 }}>
@@ -374,7 +434,7 @@ export default function UpcomingBookScreen() {
                 {seriesLine}
               </AppText>
             </View>
-            {canGoBack ? (
+            {ownedSeries || canGoBack ? (
               <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />
             ) : null}
           </Touchable>
