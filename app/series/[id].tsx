@@ -101,6 +101,15 @@ export default function SeriesDetailScreen() {
   const miniInset = useMiniPlayerInset()
   // Shared per-item progress; mutations anywhere in the app update this page live.
   const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
+  // Pushed above the tabs navigator, so it renders its own copy of the bar
+  // (see player.tsx / item/[id].tsx) rather than inheriting the tabs layout's.
+  //
+  // MUST stay above the `if (error)` early return below. Declared next to its
+  // first use it was a CONDITIONAL hook - the error render skipped it, the
+  // normal render called it - which throws "Rendered more hooks than during the
+  // previous render" and unmounts the screen to blank. Same bug as
+  // app/item/[id].tsx.
+  const goToTab = useGoToTab()
 
   useEffect(() => {
     if (!id || !libraryId) return
@@ -259,10 +268,6 @@ export default function SeriesDetailScreen() {
       setMarking(false)
     }
   }
-
-  // Pushed above the tabs navigator, so it renders its own copy of the bar
-  // (see player.tsx / item/[id].tsx) rather than inheriting the tabs layout's.
-  const goToTab = useGoToTab()
 
   const play = async (bookId: string) => {
     const p = progressById.get(bookId)

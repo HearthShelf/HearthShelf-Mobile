@@ -508,6 +508,20 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   }, [bookProgress, bookBar])
   const bookBarStyle = useAnimatedStyle(() => ({ width: `${bookBar.value * 100}%` }))
 
+  // These two MUST stay above the `if (!nowPlaying)` early return below.
+  //
+  // Declared next to their first use (further down) they were CONDITIONAL hooks:
+  // the empty-player render returned early and never called them, the loaded
+  // render did. Going from nothing-playing to a loaded book therefore grew the
+  // hook count between renders, which throws "Rendered more hooks than during
+  // the previous render" and unmounts the screen. Same bug as app/item/[id].tsx
+  // and app/series/[id].tsx.
+  //
+  // Measured height of the cover area, and the tab-leave helper (this screen is
+  // pushed above the tabs navigator and renders its own bar).
+  const [coverAreaH, setCoverAreaH] = useState(0)
+  const leaveToTab = useGoToTab()
+
   if (!nowPlaying) {
     // In the tab, the Now Playing screen owns the empty state (hearth + resume).
     if (embedded) return null
@@ -596,7 +610,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // it's never taller than the space left after the header/controls and can't be
   // clipped by the area's overflow. Falls back to a fraction of screen height
   // for the first frame (before onLayout fires).
-  const [coverAreaH, setCoverAreaH] = useState(0)
+  // (State declared above the `if (!nowPlaying)` early return - see there.)
   // The controls' bottom margin (floating nav) already shrinks the measured area,
   // so no further subtraction here - only the first-frame fallback estimates it.
   const coverMaxH = Math.max(
@@ -624,7 +638,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
     Math.min(width, contentMaxWidth) - spacing.xl * 2 - spacing.lg * 2 - controlsRightInset
   const playSize = immersive ? 84 : adaptivePlayerPlaySize(transportRowWidth)
 
-  const leaveToTab = useGoToTab()
+  // (leaveToTab declared above the `if (!nowPlaying)` early return - see there.)
   const goToTab = (name: string) => {
     // The player already IS the now-playing surface; tapping that tab is a no-op.
     if (name === 'now') return
