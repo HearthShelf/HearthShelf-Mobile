@@ -34,7 +34,7 @@ import {
   unsubscribe,
 } from '@/player/subscriptions'
 import { AppText, Cover, Loading, Screen, Touchable, icons, IconButton } from '@/ui/primitives'
-import { AppTabBar, useGoToTab } from '@/ui/AppTabBar'
+import { AppTabBar, useGoToTab, useNavActiveName } from '@/ui/AppTabBar'
 import { CoverGlow } from '@/ui/CoverGlow'
 import { haptics } from '@/ui/haptics'
 import { Icon } from '@/ui/icons'
@@ -540,23 +540,28 @@ export default function FollowingScreen() {
   }, [seriesRosters, seriesSubs, subscriptions])
 
   const goToTab = useGoToTab()
+  // Lights up its own bar icon when pinned there, otherwise More.
+  const active = useNavActiveName('following')
 
   const openRelease = (release: UpcomingRelease) => {
     if (!release.asin) return
     router.push(
-      upcomingBookPath({
-        asin: release.asin,
-        title: release.title,
-        author: release.author ?? '',
-        narrator: release.narrator,
-        coverArtUrl: release.cover,
-        seriesTitle: release.seriesTitle,
-        seriesAsin: release.sub.seriesAsin,
-        sequence: release.sequence,
-        releaseDate: release.dates.releaseDate,
-        publicationDatetime: release.dates.publicationDatetime,
-        upcoming: true,
-      }, 'more'),
+      upcomingBookPath(
+        {
+          asin: release.asin,
+          title: release.title,
+          author: release.author ?? '',
+          narrator: release.narrator,
+          coverArtUrl: release.cover,
+          seriesTitle: release.seriesTitle,
+          seriesAsin: release.sub.seriesAsin,
+          sequence: release.sequence,
+          releaseDate: release.dates.releaseDate,
+          publicationDatetime: release.dates.publicationDatetime,
+          upcoming: true,
+        },
+        'more',
+      ),
     )
   }
 
@@ -567,7 +572,7 @@ export default function FollowingScreen() {
   if (!loaded) return <Loading label="Loading what you follow" />
 
   return (
-    <Screen tabBar={<AppTabBar activeName="more" onPressTab={goToTab} />}>
+    <Screen tabBar={<AppTabBar activeName={active} onPressTab={goToTab} />}>
       {hero ? <CoverGlow hue={coverHue(hero.asin ?? hero.key)} strength={38} height={310} /> : null}
       <View style={styles.header}>
         <IconButton name={icons.back} onPress={() => router.back()} />

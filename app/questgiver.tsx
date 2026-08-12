@@ -56,7 +56,7 @@ import { Icon } from '@/ui/icons'
 import { QgChoice, QgSteps, QgWeightRow } from '@/ui/questgiver/QuestGiverParts'
 import { QuestGiverPicker } from '@/ui/questgiver/QuestGiverPicker'
 import { QuestGiverResultCard, type QgRequestState } from '@/ui/questgiver/QuestGiverResultCard'
-import { AppTabBar, useGoToTab } from '@/ui/AppTabBar'
+import { AppTabBar, useGoToTab, useNavActiveName } from '@/ui/AppTabBar'
 import { useContentInset } from '@/ui/useContentInset'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
@@ -78,11 +78,13 @@ export default function QuestGiverScreen() {
   const s = makeStyles(colors)
   const inset = useContentInset()
   const goToTab = useGoToTab()
+  // Lights up its own bar icon when pinned there, otherwise More.
+  const active = useNavActiveName('questgiver')
   const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
   // Reached from the More menu, so More reads as the active tab. Rendered on
   // both the loading and loaded branches so the nav doesn't flicker away while
   // the library loads.
-  const tabBar = <AppTabBar activeName="more" onPressTab={goToTab} />
+  const tabBar = <AppTabBar activeName={active} onPressTab={goToTab} />
 
   const [items, setItems] = useState<ABSLibraryItem[] | null>(null)
   const [config, setConfig] = useState<QgConfig | null>(null)

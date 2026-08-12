@@ -8,11 +8,28 @@
 import { Stack } from 'expo-router'
 import { usePathname, useRouter } from 'expo-router'
 import { StyleSheet, View } from 'react-native'
+import Constants from 'expo-constants'
 import { AppTabBar, useGoToTab } from '@/ui/AppTabBar'
 import { BlurTargetView } from 'expo-blur'
 import { useScreenBlurTarget } from '@/ui/BlurTarget'
+import { AppText } from '@/ui/primitives'
 import { useTheme } from '@/ui/ThemeProvider'
-import { fonts } from '@/ui/theme'
+import { fonts, spacing } from '@/ui/theme'
+
+/** The running build, shown in the settings header so "what version am I on?"
+ *  is answerable without scrolling to the bottom of the list. */
+function VersionBadge() {
+  const { colors } = useTheme()
+  const version =
+    (Constants.expoConfig?.extra?.fullVersion as string | undefined) ??
+    Constants.expoConfig?.version ??
+    'DEV BUILD'
+  return (
+    <AppText variant="meta" color={colors.textFaint} style={{ marginRight: spacing.md }}>
+      {version}
+    </AppText>
+  )
+}
 
 export default function SettingsLayout() {
   const { colors } = useTheme()
@@ -37,7 +54,10 @@ export default function SettingsLayout() {
             animation: 'slide_from_right',
           }}
         >
-          <Stack.Screen name="index" options={{ title: 'Settings' }} />
+          <Stack.Screen
+            name="index"
+            options={{ title: 'Settings', headerRight: () => <VersionBadge /> }}
+          />
           <Stack.Screen name="appearance" options={{ title: 'Appearance & feel' }} />
           <Stack.Screen name="playback" options={{ title: 'Player' }} />
           <Stack.Screen name="sleep" options={{ title: 'Sleep timer' }} />
@@ -50,6 +70,7 @@ export default function SettingsLayout() {
           <Stack.Screen name="servers" options={{ title: 'My libraries' }} />
           <Stack.Screen name="admin" options={{ title: 'Server Admin' }} />
           <Stack.Screen name="player-buttons" options={{ title: 'Player buttons' }} />
+          <Stack.Screen name="navigation" options={{ title: 'Navigation' }} />
           <Stack.Screen name="queue" options={{ title: 'Queue' }} />
           {/* TEMP diagnostics dump - remove with app/settings/diagnostics.tsx */}
           <Stack.Screen name="diagnostics" options={{ title: 'Diagnostics' }} />

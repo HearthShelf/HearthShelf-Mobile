@@ -56,7 +56,7 @@ import { EmptyState, ErrorState, SkeletonRow } from '@/ui/states'
 import { Icon } from '@/ui/icons'
 import { SessionDurationSheet } from '@/ui/SessionDurationSheet'
 import { usePagedList } from '@/ui/usePagedList'
-import { AppTabBar, useGoToTab } from '@/ui/AppTabBar'
+import { AppTabBar, useGoToTab, useNavActiveName } from '@/ui/AppTabBar'
 import { SwipeableRow, type SwipeAction } from '@/ui/SwipeActions'
 import { useContentInset } from '@/ui/useContentInset'
 import { radius, spacing, type Palette } from '@/ui/theme'
@@ -71,12 +71,14 @@ type Segment = 'sessions' | 'books'
 export default function HistoryScreen() {
   const [segment, setSegment] = useState<Segment>('sessions')
   const goToTab = useGoToTab()
+  // Lights up its own bar icon when pinned there, otherwise More.
+  const active = useNavActiveName('history')
 
   // Reached from the More menu, so More reads as the active tab - same as the
   // settings stack. Without a tab bar here nothing reserves the bottom band and
   // the list runs under the mini player (see hasBottomTabBar).
   return (
-    <Screen tabBar={<AppTabBar activeName="more" onPressTab={goToTab} />}>
+    <Screen tabBar={<AppTabBar activeName={active} onPressTab={goToTab} />}>
       <Header segment={segment} onSegment={setSegment} />
       {segment === 'sessions' ? <SessionsView /> : <BooksView />}
     </Screen>

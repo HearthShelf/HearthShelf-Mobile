@@ -11,7 +11,7 @@
  * Classic reserves a layout footprint; floating modes overlay the scene. Screens
  * that need collision avoidance (notably the player) reserve their own clearance.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'expo-router'
 import { Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
 import { useSyncExternalStore } from 'react'
@@ -24,6 +24,8 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
+import { useConnection } from '@/api/ConnectionProvider'
+import { barLabel, resolveNav, MAX_BAR_ITEMS, NAV_ITEMS, type NavItemKey } from './navItems'
 import { Icon, iconFor, icons } from './icons'
 import { emitTabReselect } from './tabReselect'
 import { getMoreMenuOpen, subscribeMoreMenu, toggleMoreMenu } from './moreMenuState'
@@ -72,25 +74,32 @@ export interface TabDef {
   icon: keyof typeof icons
 }
 
-export const TABS: TabDef[] = [
-  { name: 'index', label: 'Home', icon: 'home' },
-  { name: 'library', label: 'Library', icon: 'library' },
-  { name: 'now', label: 'Now Playing', icon: 'nowPlaying' },
-  { name: 'stats', label: 'Stats', icon: 'stats' },
-  // Beta-only pinned slot. Moves under More once the beta settles (the screen
-  // itself says so at the top).
-  { name: 'feedback', label: 'Feedback', icon: 'feedback' },
-  { name: 'more', label: 'More', icon: 'more' },
-]
+/** The fixed trailing slot. More is never part of the user's arrangement: it
+ *  opens the menu, so removing it could strand every unpinned destination. */
+const MORE_TAB: TabDef = { name: 'more', label: 'More', icon: 'more' }
 
-/** The four destinations pinned to the floating pill, in display order. Stats is
- *  intentionally absent - it lives under More (reachable in one more tap). */
-const PILL_TABS: TabDef[] = [
-  { name: 'index', label: 'Home', icon: 'home' },
-  { name: 'now', label: 'Now', icon: 'nowPlaying' },
-  { name: 'library', label: 'Library', icon: 'library' },
-  { name: 'more', label: 'More', icon: 'more' },
-]
+/**
+ * The bar's destinations for the current arrangement: whatever the user pinned,
+ * then the fixed More button. The floating pill is tighter than the classic bar,
+ * so it shows fewer pinned items - the rest stay one tap away under More.
+ */
+function useTabs(limit: number): TabDef[] {
+  const navItems = useSyncExternalStore(subscribeSettings, () => getSettingsState().navItems)
+  const { activeRole } = useConnection()
+  return useMemo(() => {
+    const { bar } = resolveNav(navItems, activeRole === 'admin')
+    const pinned = bar.slice(0, limit).map((m) => ({
+      name: m.key,
+      label: barLabel(m),
+      icon: m.icon,
+    }))
+    return [...pinned, MORE_TAB]
+  }, [navItems, activeRole, limit])
+}
+
+/** How many pinned items each treatment shows before More. The floating pill is
+ *  a compact icon slab, so it stays at three plus More. */
+const PILL_LIMIT = 3
 
 /**
  * Resolve a pushed screen's `from` route param to the tab route name that should
@@ -121,11 +130,31 @@ export function useGoToTab(): (name: string) => void {
         toggleMoreMenu()
         return
       }
+      // A pinned destination that isn't a tab screen (Downloads, History...) is
+      // an ordinary push - it has no slot in the tabs navigator to switch to.
+      const meta = NAV_ITEMS[name as NavItemKey]
+      if (meta && !meta.route && meta.href) {
+        router.push(meta.href)
+        return
+      }
       router.dismissAll?.()
       router.replace(name === 'index' ? '/(tabs)' : `/(tabs)/${name}`)
     },
     [router],
   )
+}
+
+/**
+ * Resolve the name a pushed screen should light up, given the nav key of the
+ * destination it represents. A destination the user pinned to the bar lights up
+ * its own icon; one still under More keeps lighting up More, as before. Screens
+ * that aren't nav destinations at all (item detail, search) pass `activeName`
+ * directly instead.
+ */
+export function useNavActiveName(key: NavItemKey): string {
+  // Just name the destination: each renderer falls back to More on its own when
+  // the key isn't among the tabs it actually draws (see activeWithin).
+  return key
 }
 
 export function AppTabBar({
@@ -158,6 +187,17 @@ export function AppTabBar({
   )
 }
 
+/**
+ * The name a renderer should actually light up. A destination the user pinned
+ * beyond what this treatment draws (the floating pill shows fewer than the
+ * classic bar) isn't on screen, so it falls back to More - which is where its
+ * row lives in that case. Without this the pill would show nothing active.
+ */
+function activeWithin(tabs: TabDef[], activeName: string | null): string | null {
+  if (!activeName) return null
+  return tabs.some((t) => t.name === activeName) ? activeName : 'more'
+}
+
 /** Shared shape of the three nav renderers. */
 interface NavProps {
   activeName: string | null
@@ -186,9 +226,11 @@ function handleTabPress(name: string, focused: boolean, onPressTab: (name: strin
 
 // ---- Classic full-width bar ----
 
-function ClassicTabBar({ activeName, expandedName, onPressTab }: NavProps) {
+function ClassicTabBar({ activeName: rawActive, expandedName, onPressTab }: NavProps) {
   const insets = useSafeAreaInsets()
   const colors = useColors()
+  const tabs = useTabs(MAX_BAR_ITEMS)
+  const activeName = activeWithin(tabs, rawActive)
   return (
     <View
       style={[
@@ -201,7 +243,7 @@ function ClassicTabBar({ activeName, expandedName, onPressTab }: NavProps) {
         },
       ]}
     >
-      {TABS.map((meta) => {
+      {tabs.map((meta) => {
         const focused = meta.name === activeName
         const tint = focused ? colors.accent : colors.textMuted
         return (
@@ -239,10 +281,12 @@ function ClassicTabBar({ activeName, expandedName, onPressTab }: NavProps) {
  * container is transparent to touches (content shows beneath the pill), so only
  * the pill's own buttons are tappable.
  */
-function FloatingPillNav({ activeName, expandedName, onPressTab }: NavProps) {
+function FloatingPillNav({ activeName: rawActive, expandedName, onPressTab }: NavProps) {
   const insets = useSafeAreaInsets()
   const colors = useColors()
   const styles = makePillStyles(colors)
+  const tabs = useTabs(PILL_LIMIT)
+  const activeName = activeWithin(tabs, rawActive)
 
   // Per-item measured rects (x within the pill row + width), keyed by tab name.
   // The active lozenge glides to the focused item's rect - the liquid-glass move.
@@ -297,7 +341,7 @@ function FloatingPillNav({ activeName, expandedName, onPressTab }: NavProps) {
         <GlassBackdrop tintColor={withAlpha(colors.elevated, 0.16)} />
         {/* The gliding active lozenge, drawn beneath the items. */}
         <Animated.View pointerEvents="none" style={[styles.indicator, indicator]} />
-        {PILL_TABS.map((meta) => {
+        {tabs.map((meta) => {
           const focused = meta.name === activeName
           return (
             <PillItem
@@ -325,10 +369,12 @@ function FloatingPillNav({ activeName, expandedName, onPressTab }: NavProps) {
  * reserves VNAV_WIDTH along the right edge; the mini player insets to sit beside
  * it and drops to the bottom, so nothing overlaps.
  */
-function VerticalPillNav({ activeName, expandedName, onPressTab }: NavProps) {
+function VerticalPillNav({ activeName: rawActive, expandedName, onPressTab }: NavProps) {
   const insets = useSafeAreaInsets()
   const colors = useColors()
   const styles = makePillStyles(colors)
+  const tabs = useTabs(PILL_LIMIT)
+  const activeName = activeWithin(tabs, rawActive)
 
   // Per-item measured rects (y within the column + height), keyed by tab name.
   const [rects, setRects] = useState<Record<string, { y: number; h: number }>>({})
@@ -372,7 +418,7 @@ function VerticalPillNav({ activeName, expandedName, onPressTab }: NavProps) {
       <View style={[styles.vcolumn, { bottom: insets.bottom }]}>
         <GlassBackdrop tintColor={withAlpha(colors.elevated, 0.16)} />
         <Animated.View pointerEvents="none" style={[styles.vindicator, indicator]} />
-        {PILL_TABS.map((meta) => {
+        {tabs.map((meta) => {
           const focused = meta.name === activeName
           return (
             <VerticalPillItem

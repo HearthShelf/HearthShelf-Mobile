@@ -6,10 +6,12 @@
  * nav stays visible there unless the player goes immersive.
  */
 import { Tabs, type BottomTabBarProps, type BottomTabNavigationOptions } from 'expo-router/js-tabs'
+import { useRouter } from 'expo-router'
 import { StyleSheet, View } from 'react-native'
 import { useSyncExternalStore } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { AppTabBar, TAB_BAR_HEIGHT, useNavMode } from '@/ui/AppTabBar'
+import { NAV_ITEMS, type NavItemKey } from '@/ui/navItems'
 import { getMoreMenuOpen, subscribeMoreMenu, toggleMoreMenu } from '@/ui/moreMenuState'
 import { getImmersive, subscribeImmersive } from '@/player/immersive'
 import { LIFT, useReducedMotion } from '@/ui/motion'
@@ -78,6 +80,7 @@ function TabBar({
   const activeName = state.routes[state.index]?.name
   const navMode = useNavMode()
   const insets = useSafeAreaInsets()
+  const router = useRouter()
 
   // The player's immersive (Car Mode) hides all app chrome, including this nav.
   if (immersive) return null
@@ -106,6 +109,13 @@ function TabBar({
           // More never navigates - it opens (or toggles) the bubble instead.
           if (name === 'more') {
             onToggleMenu()
+            return
+          }
+          // A pinned destination that isn't a tab screen (Downloads, History...)
+          // pushes onto the stack: there's no tab to switch to.
+          const meta = NAV_ITEMS[name as NavItemKey]
+          if (meta && !meta.route && meta.href) {
+            router.push(meta.href)
             return
           }
           const route = state.routes.find((r) => r.name === name)
@@ -143,6 +153,10 @@ export default function TabsLayout() {
           transitionSpec: reducedMotion ? fadeTransitionSpec : liftTransitionSpec,
         }}
       >
+        {/* Every tab route stays declared whatever the user's nav arrangement
+            is: unpinning a destination moves its icon into the More menu, not
+            its screen out of the navigator. Dropping one here would make the
+            menu entry navigate to a route that no longer exists. */}
         <Tabs.Screen name="index" />
         <Tabs.Screen name="library" />
         <Tabs.Screen name="now" />

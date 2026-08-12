@@ -12,7 +12,6 @@ import { useUser } from '@clerk/expo'
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native'
 import { useFocusEffect, useRouter, type Href } from 'expo-router'
-import Constants from 'expo-constants'
 import { useConnection } from '@/api/ConnectionProvider'
 import { getClubs } from '@/api/clubs'
 import { getSettingsState, setSetting, subscribeSettings } from '@/store/settings'
@@ -37,7 +36,7 @@ interface MenuItemEx extends MenuItem {
 
 const GROUPS: { label: string; items: MenuItemEx[] }[] = [
   {
-    label: 'You',
+    label: 'Personal',
     items: [
       {
         icon: 'palette',
@@ -54,6 +53,22 @@ const GROUPS: { label: string; items: MenuItemEx[] }[] = [
           'vibration',
           'haptics',
           'feedback',
+        ],
+      },
+      {
+        icon: 'space-dashboard',
+        title: 'Navigation',
+        desc: 'Choose the shortcuts on the bottom bar and More menu.',
+        href: '/settings/navigation',
+        keywords: [
+          'nav',
+          'tabs',
+          'bottom bar',
+          'more menu',
+          'shortcuts',
+          'reorder',
+          'hide',
+          'menu',
         ],
       },
       {
@@ -211,7 +226,10 @@ export default function MoreScreen() {
   }, [needle])
 
   return (
-    <Screen>
+    // No top edge: this screen sits under the settings stack's native header,
+    // which already clears the status bar. Insetting again left a status-bar
+    // sized gap above the search pill.
+    <Screen edges={[]}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
@@ -368,17 +386,6 @@ export default function MoreScreen() {
                 />
               </SettingsGroup>
             </View>
-
-            <View style={styles.aboutRow}>
-              <AppText variant="meta" color={colors.textMuted}>
-                HearthShelf Mobile
-              </AppText>
-              <AppText variant="meta" color={colors.textFaint}>
-                {(Constants.expoConfig?.extra?.fullVersion as string | undefined) ??
-                  Constants.expoConfig?.version ??
-                  'DEV BUILD'}
-              </AppText>
-            </View>
           </>
         )}
       </ScrollView>
@@ -422,13 +429,5 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.accentTile,
       alignItems: 'center',
       justifyContent: 'center',
-    },
-    aboutRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: spacing.lg,
-      paddingVertical: spacing.md,
-      marginTop: spacing.xs,
     },
   })

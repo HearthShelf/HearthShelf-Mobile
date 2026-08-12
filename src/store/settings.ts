@@ -28,6 +28,7 @@
 import { AppState } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Crypto from 'expo-crypto'
+import { NAV_ITEMS, MAX_BAR_ITEMS, type NavItemKey, type NavItemPref } from '@/ui/navItems'
 import type {
   QueueMode,
   AutoRulePref,
@@ -129,6 +130,31 @@ export const DEFAULT_PLAYER_ACTIONS: PlayerActionPref[] = [
   { key: 'carMode', placement: 'tray' },
 ]
 
+/**
+ * The bottom navigation's arrangement: which destinations are pinned to the bar,
+ * which live under More, and which are hidden. Every destination's icon, label
+ * and route lives in NAV_ITEMS (src/ui/navItems.ts); this stores only placement
+ * and order. Edited at Settings > Navigation.
+ */
+export const DEFAULT_NAV_ITEMS: NavItemPref[] = [
+  { key: 'index', placement: 'bar' },
+  { key: 'library', placement: 'bar' },
+  { key: 'now', placement: 'bar' },
+  { key: 'stats', placement: 'bar' },
+  // Beta-only pinned slot. Now that the bar is user-arranged, anyone who doesn't
+  // want it can drag it into the menu.
+  { key: 'feedback', placement: 'bar' },
+  { key: 'discover', placement: 'menu' },
+  { key: 'questgiver', placement: 'menu' },
+  { key: 'following', placement: 'menu' },
+  { key: 'downloads', placement: 'menu' },
+  { key: 'history', placement: 'menu' },
+  { key: 'collections', placement: 'menu' },
+  { key: 'playlists', placement: 'menu' },
+  { key: 'settings', placement: 'menu' },
+  { key: 'server-settings', placement: 'menu' },
+]
+
 export interface SettingsState {
   queueMode: QueueMode
   queueAutoRules: AutoRulePref[]
@@ -218,6 +244,9 @@ export interface SettingsState {
   // on-screen buttons drop their labels to fit more per row.
   playerActions: PlayerActionPref[]
   playerActionsIconOnly: boolean
+
+  // Bottom navigation arrangement (bar / More menu / hidden), see NAV_ITEMS.
+  navItems: NavItemPref[]
 
   // Social / community (account). Tri-state presence sharing: null = never chose
   // (follow the server's community default, which ships OFF for presence).
@@ -328,6 +357,7 @@ let state: SettingsState = {
 
   playerActions: DEFAULT_PLAYER_ACTIONS,
   playerActionsIconOnly: false,
+  navItems: DEFAULT_NAV_ITEMS,
 
   useGravatar: false,
   shareReadBooks: null,
@@ -444,6 +474,45 @@ export function normalizePlayerActions(saved: PlayerActionPref[] | undefined): P
 }
 
 /**
+ * Reconcile a possibly-partial/stale nav arrangement against the known
+ * destination set: keep valid entries in their saved order, drop unknown keys,
+ * and append any destinations the saved list is missing (added in an app update)
+ * at their default placement. Guarantees every destination appears exactly once.
+ *
+ * Also enforces the bar cap, so a list saved by a future build with a bigger cap
+ * can't overfill this build's bar - the overflow lands in the menu, where it's
+ * still reachable.
+ */
+export function normalizeNavItems(saved: NavItemPref[] | undefined): NavItemPref[] {
+  const seen = new Set<NavItemKey>()
+  const kept: NavItemPref[] = []
+  let barCount = 0
+  const push = (item: NavItemPref) => {
+    let placement = item.placement
+    if (placement === 'bar') {
+      if (barCount >= MAX_BAR_ITEMS) placement = 'menu'
+      else barCount++
+    }
+    kept.push({ key: item.key, placement })
+  }
+  for (const a of saved ?? []) {
+    if (a && a.key in NAV_ITEMS && !seen.has(a.key)) {
+      seen.add(a.key)
+      push(a)
+    }
+  }
+  for (const d of DEFAULT_NAV_ITEMS) {
+    if (!seen.has(d.key)) push(d)
+  }
+  return kept
+}
+
+/** Replace the bottom-nav arrangement (from the Navigation editor). */
+export function setNavItems(navItems: NavItemPref[]): void {
+  set({ navItems: normalizeNavItems(navItems) })
+}
+
+/**
  * Adopt per-key values pulled from the server, resolving each against the local
  * value via last-writer-wins (server's updatedAt >= local wins). Only catalogued
  * keys apply; unknown keys are ignored. Does NOT re-stamp meta as a local change -
@@ -473,6 +542,7 @@ export function applyServerKeys(
     if (remote.updatedAt >= localAt) {
       let value: unknown = remote.value
       if (key === 'playerActions') value = normalizePlayerActions(value as PlayerActionPref[])
+      if (key === 'navItems') value = normalizeNavItems(value as NavItemPref[])
       if (key === 'queueAutoRules') value = normalizeAutoRules(value)
       if (key === 'homeSections') value = normalizeHomeSections(value)
       patch[key] = value
@@ -657,6 +727,7 @@ export function hydrateSettings(): Promise<void> {
             if (!check.ok) continue
             let next: unknown = check.value
             if (key === 'playerActions') next = normalizePlayerActions(next as PlayerActionPref[])
+            if (key === 'navItems') next = normalizeNavItems(next as NavItemPref[])
             if (key === 'queueAutoRules') next = normalizeAutoRules(next)
             if (key === 'homeSections') next = normalizeHomeSections(next)
             patch[key] = next

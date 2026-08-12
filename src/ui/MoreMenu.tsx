@@ -23,6 +23,8 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated'
 import { useConnection } from '@/api/ConnectionProvider'
+import { getSettingsState, subscribeSettings } from '@/store/settings'
+import { resolveNav } from './navItems'
 import { AppText } from './primitives'
 import { Icon, icons } from './icons'
 import { useBackHandler } from './useBackHandler'
@@ -40,6 +42,7 @@ import {
   FLOATING_PILL_CLEARANCE,
   TAB_BAR_HEIGHT,
   VNAV_WIDTH,
+  useGoToTab,
   useNavMode,
   type NavMode,
 } from './AppTabBar'
@@ -51,98 +54,18 @@ const BUBBLE_WIDTH = 256
  *  already-visible rectangle (design.md). */
 const START_SCALE = 0.04
 
+/**
+ * One menu row. Built from the shared NAV_ITEMS registry and the user's
+ * arrangement, so a destination promoted to the bar leaves the menu (and one
+ * demoted from the bar joins it) without either list being edited by hand.
+ */
 interface MenuEntry {
   id: string
   label: string
   icon: keyof typeof icons
-  href: Href
-  /** Dividers are derived from group changes, so omitting an entry can never
-   *  leave a stray divider behind. */
-  group: 1 | 2 | 3
-  /** False for destinations whose screens don't exist on this platform yet, and
-   *  for entries the current role can't use. Those rows are omitted entirely. */
-  available: boolean
-}
-
-/**
- * Every destination in display order. `available` hides a row whose screen does
- * not exist on this platform, or that the current role cannot use.
- */
-function buildEntries(isAdmin: boolean): MenuEntry[] {
-  return [
-    {
-      id: 'discover',
-      label: 'Discover',
-      icon: 'sparkle',
-      href: '/discover?from=more',
-      group: 1,
-      available: true,
-    },
-    {
-      id: 'questgiver',
-      label: 'QuestGiver',
-      icon: 'questGiver',
-      href: '/questgiver',
-      group: 1,
-      available: true,
-    },
-    {
-      id: 'following',
-      label: 'Following',
-      icon: 'newRelease',
-      href: '/following',
-      group: 2,
-      available: true,
-    },
-    {
-      id: 'downloads',
-      label: 'Downloads',
-      icon: 'download',
-      href: '/settings/storage',
-      group: 2,
-      available: true,
-    },
-    {
-      id: 'history',
-      label: 'History',
-      icon: 'history',
-      href: '/history',
-      group: 2,
-      available: true,
-    },
-    {
-      id: 'collections',
-      label: 'Collections',
-      icon: 'collections',
-      href: '/collections',
-      group: 2,
-      available: true,
-    },
-    {
-      id: 'playlists',
-      label: 'Playlists',
-      icon: 'playlists',
-      href: '/playlists',
-      group: 2,
-      available: true,
-    },
-    {
-      id: 'settings',
-      label: 'Settings',
-      icon: 'settings',
-      href: '/settings',
-      group: 3,
-      available: true,
-    },
-    {
-      id: 'server-settings',
-      label: 'Server Settings',
-      icon: 'serverSettings',
-      href: '/settings/admin',
-      group: 3,
-      available: isAdmin,
-    },
-  ]
+  /** Tab destinations demoted into the menu switch tabs; the rest are pushes. */
+  route?: string
+  href?: Href
 }
 
 /**
@@ -178,13 +101,21 @@ export function MoreMenu({ open, onClose }: { open: boolean; onClose: () => void
   const navMode = useNavMode()
   const reducedMotion = useReducedMotion()
   const { activeRole } = useConnection()
+  const goToTab = useGoToTab()
 
-  // Rebuilt per render, so a role or server change is reflected the next time
-  // the menu opens without needing a restart.
-  const entries = useMemo(
-    () => buildEntries(activeRole === 'admin').filter((e) => e.available),
-    [activeRole],
-  )
+  // Rebuilt per render, so a role change, or a fresh arrangement from the
+  // Navigation editor, is reflected the next time the menu opens.
+  const navItems = useSyncExternalStore(subscribeSettings, () => getSettingsState().navItems)
+  const entries = useMemo<MenuEntry[]>(() => {
+    const { menu } = resolveNav(navItems, activeRole === 'admin')
+    return menu.map((m) => ({
+      id: m.key,
+      label: m.label,
+      icon: m.icon,
+      route: m.route,
+      href: m.href,
+    }))
+  }, [navItems, activeRole])
 
   // The bubble has to outlive `open` going false so the close animation can run;
   // `mounted` drops it once that finishes.
@@ -227,10 +158,17 @@ export function MoreMenu({ open, onClose }: { open: boolean; onClose: () => void
 
   if (!mounted) return null
 
-  const select = (href: Href) => {
+  const select = (entry: MenuEntry) => {
     haptics.select()
     onClose()
-    router.push(href)
+    // A tab screen that the user demoted into the menu still lives in the tabs
+    // navigator, so it's a tab switch - pushing it would stack a second copy of
+    // a tab root on top of the one that's already mounted.
+    if (entry.route) {
+      goToTab(entry.route)
+      return
+    }
+    if (entry.href) router.push(entry.href)
   }
 
   return (
@@ -246,24 +184,21 @@ export function MoreMenu({ open, onClose }: { open: boolean; onClose: () => void
         accessibilityLabel="More"
       >
         {entries.map((entry, i) => {
-          const prev = entries[i - 1]
           // Rows nearest the growth corner (the last ones) reveal first, so the
           // stagger travels outward with the box's edge.
           const rank = entries.length - 1 - i
           return (
-            <View key={entry.id}>
-              {prev && prev.group !== entry.group ? <View style={styles.divider} /> : null}
-              <MenuRow
-                entry={entry}
-                rank={rank}
-                hero={i === 0}
-                open={open}
-                reducedMotion={reducedMotion}
-                styles={styles}
-                colors={colors}
-                onPress={() => select(entry.href)}
-              />
-            </View>
+            <MenuRow
+              key={entry.id}
+              entry={entry}
+              rank={rank}
+              hero={i === 0}
+              open={open}
+              reducedMotion={reducedMotion}
+              styles={styles}
+              colors={colors}
+              onPress={() => select(entry)}
+            />
           )
         })}
       </Animated.View>
@@ -370,10 +305,4 @@ const makeStyles = (colors: Palette) =>
       justifyContent: 'center',
     },
     rowLabel: { flex: 1, minWidth: 0 },
-    divider: {
-      height: StyleSheet.hairlineWidth,
-      backgroundColor: colors.hairline,
-      marginVertical: spacing.xs + 1,
-      marginHorizontal: spacing.sm,
-    },
   })
