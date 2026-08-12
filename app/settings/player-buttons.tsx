@@ -17,7 +17,7 @@
  * sheet ("Edit buttons"). The arrangement lives in the settings store, so it
  * syncs across devices like every other preference.
  */
-import { useMemo, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
@@ -88,13 +88,51 @@ function fromListItems(items: ListItem[]): PlayerActionPref[] {
   return result
 }
 
+/** True if two arrangements are the same keys, in the same order, in the same
+ *  places - used to tell an outside change from our own write coming back. */
+function sameArrangement(a: PlayerActionPref[], b: PlayerActionPref[]): boolean {
+  if (a.length !== b.length) return false
+  return a.every((x, i) => x.key === b[i].key && x.placement === b[i].placement)
+}
+
+/** How many rows currently sit under a given section header. */
+function countInPlacement(list: ListItem[], placement: ActionPlacement): number {
+  let current: ActionPlacement | null = null
+  let n = 0
+  for (const it of list) {
+    if (it.type === 'header') current = it.placement
+    else if (current === placement) n++
+  }
+  return n
+}
+
 export default function PlayerButtonsScreen() {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const s = useSyncExternalStore(subscribeSettings, getSettingsState)
 
-  const listItems = toListItems(s.playerActions)
-  const onScreenCount = s.playerActions.filter((a) => a.placement === 'onscreen').length
+  // Local list state, not the store directly. Feeding the store back in during a
+  // drop swapped `data` out from under the list mid-settle, which could strand
+  // the gesture (rows stop responding until you leave the screen) and leave a
+  // re-ordered header blank until the next touch. See app/settings/navigation.tsx.
+  const [listItems, setListItems] = useState<ListItem[]>(() => toListItems(s.playerActions))
+  const savedRef = useRef<PlayerActionPref[]>(s.playerActions)
+  useEffect(() => {
+    if (sameArrangement(savedRef.current, s.playerActions)) return
+    savedRef.current = s.playerActions
+    setListItems(toListItems(s.playerActions))
+  }, [s.playerActions])
+
+  // Counted off the rendered list so the badge and the section a row lands in
+  // always agree, rather than lagging the store by a frame.
+  const onScreenCount = countInPlacement(listItems, 'onscreen')
+
+  const commit = (data: ListItem[]) => {
+    const next = fromListItems(data)
+    savedRef.current = next
+    setListItems(toListItems(next))
+    setPlayerActions(next)
+  }
 
   return (
     <GestureHandlerRootView style={styles.screen}>
@@ -116,7 +154,7 @@ export default function PlayerButtonsScreen() {
         data={listItems}
         keyExtractor={ITEM_KEY}
         contentContainerStyle={styles.listContent}
-        onDragEnd={({ data }) => setPlayerActions(fromListItems(data))}
+        onDragEnd={({ data }) => commit(data)}
         renderItem={(params: RenderItemParams<ListItem>) =>
           params.item.type === 'header' ? (
             <SectionHeader placement={params.item.placement} onScreenCount={onScreenCount} />
@@ -201,42 +239,42 @@ function toggleHidden(key: PlayerActionKey): void {
 
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
-  screen: { flex: 1 },
-  iconOnlyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-    padding: spacing.lg,
-    backgroundColor: colors.card,
-    borderRadius: radius.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-  },
-  dragHint: { paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
-  listContent: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
-  sectionHeader: {
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.sm,
-  },
-  sectionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.card,
-    borderRadius: radius.row,
-    marginBottom: spacing.xs,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-  },
-  rowDragging: { backgroundColor: colors.high, borderColor: colors.accent },
-  hideBtn: { padding: spacing.xs },
+    screen: { flex: 1 },
+    iconOnlyRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      marginHorizontal: spacing.lg,
+      marginBottom: spacing.md,
+      padding: spacing.lg,
+      backgroundColor: colors.card,
+      borderRadius: radius.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    dragHint: { paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
+    listContent: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
+    sectionHeader: {
+      paddingTop: spacing.lg,
+      paddingBottom: spacing.sm,
+    },
+    sectionTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.md,
+      backgroundColor: colors.card,
+      borderRadius: radius.row,
+      marginBottom: spacing.xs,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    rowDragging: { backgroundColor: colors.high, borderColor: colors.accent },
+    hideBtn: { padding: spacing.xs },
   })

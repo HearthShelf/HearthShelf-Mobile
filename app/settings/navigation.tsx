@@ -17,7 +17,7 @@
  * Reached from My Settings > Navigation. Device-scoped, like the other nav
  * preferences: the arrangement belongs to the screen it's laid out on.
  */
-import { useMemo, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
@@ -83,6 +83,24 @@ function fromListItems(list: ListItem[]): NavItemPref[] {
   return result
 }
 
+/** True if two arrangements are the same keys, in the same order, in the same
+ *  places - used to tell an outside change from our own write coming back. */
+function sameArrangement(a: NavItemPref[], b: NavItemPref[]): boolean {
+  if (a.length !== b.length) return false
+  return a.every((x, i) => x.key === b[i].key && x.placement === b[i].placement)
+}
+
+/** How many rows currently sit under a given section header. */
+function countInPlacement(list: ListItem[], placement: NavPlacement): number {
+  let current: NavPlacement | null = null
+  let n = 0
+  for (const it of list) {
+    if (it.type === 'header') current = it.placement
+    else if (current === placement) n++
+  }
+  return n
+}
+
 export default function NavigationScreen() {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
@@ -100,8 +118,34 @@ export default function NavigationScreen() {
     [s.navItems, activeRole],
   )
 
-  const listItems = toListItems(visible)
-  const barCount = visible.filter((it) => it.placement === 'bar').length
+  // The list is driven from local state, not straight off the store. Feeding the
+  // store back in during a drop swapped `data` out from under the list while it
+  // was still settling: the gesture could be stranded (rows stop responding
+  // until you navigate away) and a re-ordered header could blank until the next
+  // touch forced a repaint. Now the drop result renders immediately and the
+  // store is written alongside it; the store only re-seeds this state when it
+  // changes from elsewhere (sync, or the Quick Hide button).
+  const [listItems, setListItems] = useState<ListItem[]>(() => toListItems(visible))
+  const savedRef = useRef<NavItemPref[]>(visible)
+  useEffect(() => {
+    if (sameArrangement(savedRef.current, visible)) return
+    savedRef.current = visible
+    setListItems(toListItems(visible))
+  }, [visible])
+
+  // Counted off the list being rendered, so the "n/5" badge and the section a
+  // row lands in always agree - reading it off the store lagged by a frame.
+  const barCount = countInPlacement(listItems, 'bar')
+
+  const commit = (data: ListItem[]) => {
+    const next = fromListItems(data)
+    // Re-derive the list from the normalized result so a drop past the bar cap
+    // shows where the row actually went, in the same frame as the drop.
+    const normalized = toListItems(next)
+    savedRef.current = next
+    setListItems(normalized)
+    setNavItems([...next, ...hiddenByRole])
+  }
 
   return (
     <GestureHandlerRootView style={styles.screen}>
@@ -114,7 +158,7 @@ export default function NavigationScreen() {
         data={listItems}
         keyExtractor={ITEM_KEY}
         contentContainerStyle={styles.listContent}
-        onDragEnd={({ data }) => setNavItems([...fromListItems(data), ...hiddenByRole])}
+        onDragEnd={({ data }) => commit(data)}
         renderItem={(params: RenderItemParams<ListItem>) =>
           params.item.type === 'header' ? (
             <SectionHeader placement={params.item.placement} barCount={barCount} />
