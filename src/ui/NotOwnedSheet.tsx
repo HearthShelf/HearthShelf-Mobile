@@ -227,7 +227,7 @@ export const NotOwnedSheet = forwardRef<
                   color={colors.textMuted}
                 />
                 <AppText variant="label" color={colors.textMuted}>
-                  {ignored ? 'Stop ignoring' : "Ignore - it's not an audiobook"}
+                  {ignored ? 'Stop ignoring' : 'Ignore'}
                 </AppText>
               </Touchable>
               <Touchable onPress={reset} style={styles.sheetGhostBtn}>

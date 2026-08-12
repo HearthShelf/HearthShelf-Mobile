@@ -348,7 +348,7 @@ export default function UpcomingBookScreen() {
               color={colors.textMuted}
             />
             <AppText variant="label" color={colors.textMuted}>
-              {ignored ? 'Stop ignoring this book' : "Ignore - it's not an audiobook"}
+              {ignored ? 'Stop ignoring this book' : 'Ignore'}
             </AppText>
           </Touchable>
         </View>
