@@ -46,6 +46,7 @@ import {
   Touchable,
   icons,
 } from '@/ui/primitives'
+import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { CoverLightbox } from '@/ui/CoverLightbox'
 import { CoverGlow } from '@/ui/CoverGlow'
 import { Icon } from '@/ui/icons'
@@ -61,8 +62,19 @@ import { parseUpcomingBookFallback } from '@/lib/upcomingBookRoute'
 type UpcomingBook = HSAudibleSearchResult & { sequence?: string | null; seriesTitle?: string }
 
 export default function UpcomingBookScreen() {
-  const { asin, fallback } = useLocalSearchParams<{ asin: string; fallback?: string | string[] }>()
+  const { asin, fallback, from } = useLocalSearchParams<{
+    asin: string
+    fallback?: string | string[]
+    from?: string
+  }>()
   const router = useRouter()
+  const goToTab = useGoToTab()
+  // Pushed above the tabs navigator, so it renders its own copy of the bar (see
+  // item/[id].tsx). Reached from Following, a series page, the Home countdown
+  // banner, or a push deep-link; 'more' is the fallback because Following - the
+  // common entry point - lives under More, and a deep-link has no origin tab.
+  const active = tabFromParam(from, 'more')
+  const tabBar = <AppTabBar activeName={active} onPressTab={goToTab} />
   const styles = useStyles()
   const { colors } = useTheme()
   const routeAsin = String(asin)
@@ -136,7 +148,7 @@ export default function UpcomingBookScreen() {
 
   if (loading) {
     return (
-      <Screen>
+      <Screen tabBar={tabBar}>
         <Header onBack={() => router.back()} />
         <Loading />
       </Screen>
@@ -144,7 +156,7 @@ export default function UpcomingBookScreen() {
   }
   if (!book) {
     return (
-      <Screen>
+      <Screen tabBar={tabBar}>
         <Header onBack={() => router.back()} />
         <Centered>
           <AppText variant="meta" color={colors.textMuted}>
@@ -231,7 +243,7 @@ export default function UpcomingBookScreen() {
   const canGoBack = router.canGoBack()
 
   return (
-    <Screen>
+    <Screen tabBar={tabBar}>
       <View style={StyleSheet.absoluteFill}>
         <CoverGlow hue={hue} height={320} />
       </View>

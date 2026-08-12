@@ -34,7 +34,7 @@ import {
   unsubscribe,
 } from '@/player/subscriptions'
 import { AppText, Cover, Loading, Screen, Touchable, icons, IconButton } from '@/ui/primitives'
-import { AppTabBar } from '@/ui/AppTabBar'
+import { AppTabBar, useGoToTab } from '@/ui/AppTabBar'
 import { CoverGlow } from '@/ui/CoverGlow'
 import { haptics } from '@/ui/haptics'
 import { Icon } from '@/ui/icons'
@@ -593,10 +593,7 @@ export default function FollowingScreen() {
     return { hero: next, sections: out.filter((section) => section.data.length > 0) }
   }, [seriesRosters, seriesSubs, subscriptions])
 
-  const goToTab = (tabName: string) => {
-    router.dismissAll?.()
-    router.replace(tabName === 'index' ? '/(tabs)' : `/(tabs)/${tabName}`)
-  }
+  const goToTab = useGoToTab()
 
   const openRelease = (release: UpcomingRelease) => {
     if (!release.asin) return
@@ -613,12 +610,12 @@ export default function FollowingScreen() {
         releaseDate: release.dates.releaseDate,
         publicationDatetime: release.dates.publicationDatetime,
         upcoming: true,
-      }),
+      }, 'more'),
     )
   }
 
   const openFollowedBook = (sub: HSSubscription) => {
-    if (sub.asin) router.push(`/upcoming/${encodeURIComponent(sub.asin)}`)
+    if (sub.asin) router.push(`/upcoming/${encodeURIComponent(sub.asin)}?from=more`)
   }
 
   if (!loaded) return <Loading label="Loading what you follow" />

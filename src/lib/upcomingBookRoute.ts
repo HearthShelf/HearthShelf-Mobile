@@ -9,8 +9,12 @@ export type UpcomingRouteBook = HSAudibleSearchResult & {
  * Carry a series-roster result into the upcoming screen. Some announced books
  * have already disappeared from Audible's product endpoint, so the destination
  * must not throw away the metadata the series roster already supplied.
+ *
+ * `from` is the tab that should stay lit on the destination (it renders its own
+ * tab bar, being pushed above the tabs navigator). Omit it for a deep-link,
+ * where there is no origin tab to preserve.
  */
-export function upcomingBookPath(book: UpcomingRouteBook): string {
+export function upcomingBookPath(book: UpcomingRouteBook, from?: string): string {
   // Keep this deliberately compact: product descriptions can be several KB and
   // are not needed to make the fallback detail screen useful.
   const fallback = encodeURIComponent(
@@ -30,7 +34,8 @@ export function upcomingBookPath(book: UpcomingRouteBook): string {
       upcoming: book.upcoming,
     }),
   )
-  return `/upcoming/${encodeURIComponent(book.asin)}?fallback=${fallback}`
+  const origin = from ? `&from=${encodeURIComponent(from)}` : ''
+  return `/upcoming/${encodeURIComponent(book.asin)}?fallback=${fallback}${origin}`
 }
 
 export function parseUpcomingBookFallback(

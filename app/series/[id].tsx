@@ -57,7 +57,7 @@ import {
   icons,
 } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
-import { AppTabBar, tabFromParam } from '@/ui/AppTabBar'
+import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { NotOwnedSheet } from '@/ui/NotOwnedSheet'
 import { CoverGlow } from '@/ui/CoverGlow'
 import { BookSelectionToolbar } from '@/ui/BookSelectionToolbar'
@@ -262,10 +262,7 @@ export default function SeriesDetailScreen() {
 
   // Pushed above the tabs navigator, so it renders its own copy of the bar
   // (see player.tsx / item/[id].tsx) rather than inheriting the tabs layout's.
-  const goToTab = (name: string) => {
-    router.dismissAll?.()
-    router.replace(name === 'index' ? '/(tabs)' : `/(tabs)/${name}`)
-  }
+  const goToTab = useGoToTab()
 
   const play = async (bookId: string) => {
     const p = progressById.get(bookId)
@@ -609,6 +606,9 @@ function MissingBooks({
   const sheetRef = useRef<BottomSheetModal>(null)
   const [selected, setSelected] = useState<HSAudibleSeriesBook | null>(null)
   const [expanded, setExpanded] = useState(false)
+  // This subsection renders inside the series screen but is its own component,
+  // so it reads the origin tab from the route rather than through props.
+  const { from } = useLocalSearchParams<{ from?: string }>()
 
   // Long-press is the tray, matching how an owned book behaves: it holds the
   // per-book actions (follow, ignore, request/buy) rather than navigating.
@@ -621,7 +621,9 @@ function MissingBooks({
     // Upcoming (unreleased) book -> the follow/countdown page; already-released
     // but unowned -> the request/buy sheet as before.
     if ((b.upcoming ?? isUpcoming(b, Date.now())) && b.asin) {
-      router.push(upcomingBookPath(b))
+      // Forward this screen's own active tab so the bar does not change under
+      // the listener on the way into the upcoming page.
+      router.push(upcomingBookPath(b, from ?? 'library'))
       return
     }
     setSelected(b)
