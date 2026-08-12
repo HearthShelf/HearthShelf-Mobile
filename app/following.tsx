@@ -25,7 +25,7 @@ import {
   type HSSubscription,
 } from '@hearthshelf/core'
 import { LinearGradient } from 'expo-linear-gradient'
-import { fetchAudibleSeriesByAsin, fetchAudibleSeries } from '@/api/absAudible'
+import { useSeriesRosters } from '@/player/seriesRosters'
 import { getDismissalsState, subscribeDismissals } from '@/store/dismissals'
 import {
   getSubscriptionsState,
@@ -54,60 +54,6 @@ function releaseDateLabel(item: {
     day: 'numeric',
     year: 'numeric',
   })
-}
-
-/** Resolve one followed series. Two lookups are deliberate: an older server
- *  ignores ?seriesAsin= and answers empty, so fall back to the by-name endpoint
- *  but only keep a roster whose ASIN really matches this follow. */
-async function fetchSeriesRoster(sub: HSSubscription): Promise<HSAudibleSeriesResponse | null> {
-  if (!sub.seriesAsin) return null
-  let roster = await fetchAudibleSeriesByAsin(sub.seriesAsin)
-  const title = sub.seriesTitle ?? sub.title
-  if (!roster.seriesAsin && title) {
-    const byName = await fetchAudibleSeries(title)
-    if (byName.seriesAsin === sub.seriesAsin) roster = byName
-  }
-  return roster.seriesAsin ? roster : null
-}
-
-/** Resolve every followed series in one stable effect so the screen can build
- *  ONE upcoming-release list from direct book follows plus series follows. A
- *  roster stays undefined while loading and becomes null only when resolution
- *  really failed, which keeps the series card's status truthful. */
-function useSeriesRosters(
-  series: HSSubscription[],
-): Record<string, HSAudibleSeriesResponse | null | undefined> {
-  const [rosters, setRosters] = useState<
-    Record<string, HSAudibleSeriesResponse | null | undefined>
-  >({})
-
-  useEffect(() => {
-    let alive = true
-    if (series.length === 0) {
-      setRosters({})
-      return () => {
-        alive = false
-      }
-    }
-
-    void Promise.all(
-      series.map(async (sub) => {
-        try {
-          return [sub.id, await fetchSeriesRoster(sub)] as const
-        } catch {
-          return [sub.id, null] as const
-        }
-      }),
-    ).then((entries) => {
-      if (alive) setRosters(Object.fromEntries(entries))
-    })
-
-    return () => {
-      alive = false
-    }
-  }, [series])
-
-  return rosters
 }
 
 type FollowingSectionKind = 'upcoming' | 'arrived' | 'series'
