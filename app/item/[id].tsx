@@ -38,6 +38,7 @@ import {
   updateListeningSession,
 } from '@/api/abs'
 import { recentSessionsFor } from '@/player/sessionCache'
+import { breadcrumb } from '@/lib/crashLog'
 import { getFinishedBy, getListeningNow } from '@/api/social'
 import { getNotes } from '@/api/notes'
 import { NotesSheet } from '@/social/NotesSheet'
@@ -1397,6 +1398,9 @@ const SessionEditSheet = ({
       // A 403 is the server saying this account lacks delete - retrying will
       // never work, so say so rather than implying a transient failure.
       const denied = e instanceof ABSRequestError && e.status === 403
+      // Shown-then-refused means our gate and ABS's canDelete rule disagree - see
+      // HS-MOBILEAPP-V. Leave a trail entry rather than only a toast.
+      if (denied) breadcrumb('item', 'delete 403 despite permissions.delete:true')
       if (denied) setCanDelete(false)
       showToast(
         denied ? "Your account isn't allowed to delete sessions" : 'Could not delete session',

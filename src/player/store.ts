@@ -19,6 +19,9 @@ import { getSettingsState } from '@/store/settings'
 import { parseHHMM } from '@/lib/timeFormat'
 import { haptics } from '@/ui/haptics'
 import { syncStateSeeked } from './syncState'
+// crashLog imports only expo-file-system, so this stays a leaf dependency and
+// cannot cycle back into the player.
+import { breadcrumb } from '@/lib/crashLog'
 import {
   notePaused,
   suppressNextRewind,
@@ -581,6 +584,18 @@ export function reportPosition(position: number): void {
     } else {
       // The seek never landed (engine rejected it, or the track reloaded under
       // us). Let the engine's truth win rather than freezing the UI forever.
+      //
+      // Breadcrumbed because this branch is the fingerprint of the tolerance
+      // being wrong rather than of a one-off engine hiccup. If skips are reported
+      // as dropping taps again, a trail full of these says the hold is releasing
+      // early (widen SEEK_SETTLE_TOLERANCE_SEC); a trail without them says the
+      // rollback is coming from somewhere else entirely and the hold is fine.
+      // Cheap: the ring collapses consecutive identical crumbs, so even a stuck
+      // seek storm costs one line.
+      breadcrumb(
+        'player',
+        `seek to ${Math.round(pendingSeek.target)}s never landed (engine at ${Math.round(position)}s)`,
+      )
       pendingSeek = null
     }
   }

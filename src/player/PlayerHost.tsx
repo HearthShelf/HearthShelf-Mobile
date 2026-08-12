@@ -31,7 +31,11 @@ import {
   setDeadTransportReporter,
 } from './store'
 import { breadcrumb } from '@/lib/crashLog'
-import { reportCarHandbackFailure, reportDeadTransport } from './carHandbackReport'
+import {
+  reportCarHandbackFailure,
+  reportDeadTransport,
+  reportPlaybackLost,
+} from './carHandbackReport'
 import { coverUrl } from '@/api/abs'
 import { addBookmarkPending } from './pendingBookmarks'
 import { localCoverFor } from './downloads'
@@ -63,6 +67,12 @@ interface HSPlayer {
 }
 const Native = NativeModules.HearthShelfAuto as HSPlayer | undefined
 
+/** How long to wait after a reclaim recovery before judging whether audio
+ *  actually resumed. A reclaimed service has to be recreated and the track
+ *  re-buffered from scratch, so this is deliberately generous - a false "did not
+ *  recover" would be worse than a late report. */
+const RECLAIM_CONFIRM_MS = 6000
+
 export function PlayerHost() {
   // Track what we last pushed so store ticks don't re-issue identical commands.
   const loadedKey = useRef<string | null>(null)
@@ -79,6 +89,8 @@ export function PlayerHost() {
   // is already playing" (resume at the live playhead) from "switching books"
   // (resume at the new track's own start position).
   const loadedItem = useRef<string | null>(null)
+  // Pending "did the reclaim recovery actually produce audio" check.
+  const reclaimProbe = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Shake-to-extend the sleep timer. Mounted here (the one persistent host) so
   // it can fire a confirmation toast in component context.
@@ -175,11 +187,45 @@ export function PlayerHost() {
       // rather than needing a second one.
       emitter.addListener('onPlaybackLost', () => {
         breadcrumb('player', 'native lost the track; reloading from store')
+        const s = getState()
         loadedKey.current = null
         lastPlaying.current = null
         // Re-run the store->native effect now rather than waiting for the next
         // store change; without a nudge, a stable store would leave it unloaded.
         syncNative.current?.()
+
+        // Report the outcome, not just the event.
+        //
+        // The reclaim is expected; what we cannot see from in here is whether the
+        // reload actually produced audio. A memory-pressure reclaim is not
+        // reproducible in Metro, so the field is the only place this fix gets
+        // tested - and a user staring at a still-dead play button generates no
+        // event of any kind unless we make one.
+        //
+        // Confirmation is "did a real playing state arrive after the reload":
+        // onState fires from the engine, so receiving isPlaying=true means audio
+        // genuinely started, not merely that we re-issued the command. The window
+        // is generous because a reclaimed service must be recreated and the track
+        // re-buffered from scratch.
+        if (reclaimProbe.current) clearTimeout(reclaimProbe.current)
+        const wantedPlaying = s.isPlaying
+        reclaimProbe.current = setTimeout(() => {
+          reclaimProbe.current = null
+          const after = getState()
+          // Only judge it a failure when the user actually wanted audio. If they
+          // hit play and we are still not playing, the reload did not take.
+          const recovered = !wantedPlaying || after.isPlaying
+          reportPlaybackLost(recovered, {
+            itemId: s.nowPlaying?.itemId ?? null,
+            wantedPlaying,
+            playingAfter: after.isPlaying,
+            positionAtLoss: Math.round(s.position),
+            positionAfter: Math.round(after.position),
+            // A file:// source rules out an expired stream token as the cause of
+            // a failed reload, which is the first thing to suspect otherwise.
+            localSource: !!s.nowPlaying?.url?.startsWith('file://'),
+          })
+        }, RECLAIM_CONFIRM_MS)
       }),
       // Native playback failed (expired stream token, network stall, unplayable
       // format). Drop the optimistic playing state so the UI stops showing
@@ -328,7 +374,15 @@ export function PlayerHost() {
         )
       }),
     ]
-    return () => subs.forEach((s) => s.remove())
+    return () => {
+      subs.forEach((s) => s.remove())
+      // Drop a pending reclaim check: firing it after teardown would read a store
+      // that no host is driving and report a false "did not recover".
+      if (reclaimProbe.current) {
+        clearTimeout(reclaimProbe.current)
+        reclaimProbe.current = null
+      }
+    }
   }, [])
 
   // ---- store -> native: load / play / pause / seek / rate / volume ----

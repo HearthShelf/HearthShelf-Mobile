@@ -57,3 +57,44 @@ export function reportDeadTransport(source: string, detail: string): void {
     // ignore
   }
 }
+
+/**
+ * The native media service was asked to play but no longer held the track - the
+ * OS reclaimed it under memory pressure (HS-MOBILEAPP-Y).
+ *
+ * Reported rather than merely breadcrumbed for the same reason the handback
+ * events are: this failure is SILENT by nature. Nothing throws, so without a
+ * deliberate event the only signal is a user noticing and writing it up - which
+ * is how Y reached us, after an unknown number of listeners who just force-closed
+ * the app instead. A breadcrumb alone is invisible until someone files feedback.
+ *
+ * `recovered` is the whole point of the event. The reclaim itself is expected
+ * (the OS is allowed to do this); what we cannot see from here is whether our
+ * reload actually produced audio. Sending both outcomes means the ratio answers
+ * "is the fix working in the field", which no amount of local testing can - a
+ * memory-pressure reclaim is not reproducible in Metro.
+ *
+ * Level is deliberately asymmetric: a recovered reclaim is info (working as
+ * designed, useful only in aggregate), a failed one is an error (a user is
+ * sitting in front of a dead play button right now).
+ */
+export function reportPlaybackLost(recovered: boolean, detail: Record<string, unknown>): void {
+  breadcrumb('player', `playback lost; recovered=${recovered}`)
+  try {
+    Sentry.captureMessage(
+      recovered
+        ? 'native player was reclaimed; reloaded from store'
+        : 'native player was reclaimed and reload did not take',
+      {
+        level: recovered ? 'info' : 'error',
+        tags: {
+          area: 'playback_reclaim',
+          playback_reclaim_recovered: String(recovered),
+        },
+        extra: detail,
+      },
+    )
+  } catch {
+    // ignore
+  }
+}

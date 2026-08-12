@@ -63,6 +63,7 @@ import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { haptics } from '@/ui/haptics'
 import { Toast, useToast } from '@/ui/Toast'
+import { breadcrumb } from '@/lib/crashLog'
 
 const PAGE_SIZE = 25
 
@@ -218,6 +219,12 @@ function SessionsView() {
       // The affordance is gated on the same flag, so this should be unreachable;
       // it still fires if the permission changed since the screen loaded.
       const denied = e instanceof ABSRequestError && e.status === 403
+      // Reaching a 403 here means the button was SHOWN and then refused, i.e.
+      // getMe() reported permissions.delete:true but the server disagreed. That
+      // is a real divergence between our gate and ABS's `canDelete` rule (see
+      // HS-MOBILEAPP-V), not ordinary "you can't delete" - worth a trail entry so
+      // a repeat report carries the evidence instead of needing another dig.
+      if (denied) breadcrumb('history', 'delete 403 despite permissions.delete:true')
       showToast(
         denied ? "Your account isn't allowed to delete sessions" : 'Could not delete that session',
       )
