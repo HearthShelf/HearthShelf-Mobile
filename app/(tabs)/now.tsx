@@ -12,6 +12,7 @@ import type { ABSLibraryItem } from '@hearthshelf/core'
 import { getItemsInProgress, getLibraries, getPersonalized } from '@/api/abs'
 import { playItemById } from '@/player/playback'
 import { getState, subscribe } from '@/player/store'
+import { breadcrumb } from '@/lib/crashLog'
 import { getProgressState, subscribeProgress, refreshProgress } from '@/store/progress'
 import { AppText, Screen, PrimaryButton, icons } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
@@ -79,7 +80,14 @@ function IdleResolver() {
         // playItemById resolves the resume position itself (play session, else
         // the saved media-progress spot now guaranteed to be loaded).
         await playItemById(last.id, false)
-      } catch {
+      } catch (e) {
+        // "Nothing on the hearth" is a real state, but it is ALSO what this
+        // screen showed for any failure at all - a network blip, an expired
+        // token, a throw inside playItemById - so a listener with a book in
+        // progress was told they had nothing. Silently. Leave a trail so the
+        // difference between "genuinely empty" and "we failed to resolve it" is
+        // visible in the next report instead of indistinguishable.
+        breadcrumb('player', `now-tab resume failed: ${e instanceof Error ? e.message : String(e)}`)
         if (!cancelled) setPhase('empty')
       }
     })()

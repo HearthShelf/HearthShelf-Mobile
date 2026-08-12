@@ -152,6 +152,17 @@ export default function ItemDetailScreen() {
   // Increments each time the book is marked finished, firing the ember burst.
   const [finishBurst, setFinishBurst] = useState(0)
 
+  // This screen is pushed above the tab navigator, so it renders its own copy
+  // of the tab bar (see player.tsx) rather than inheriting the tabs layout's.
+  //
+  // MUST stay above the `if (error)` / `if (!detail)` early returns below. It
+  // used to sit further down, next to its first use, which made it a CONDITIONAL
+  // hook: the skeleton render returned early and never called it, then the
+  // loaded render did - so the hook count grew between renders and React threw
+  // "Rendered more hooks than during the previous render", unmounting the screen.
+  // Every book open goes skeleton -> loaded, so this fired every single time.
+  const goToTab = useGoToTab()
+
   const chaptersSheetRef = useRef<SheetRef>(null)
   const overflowSheetRef = useRef<SheetRef>(null)
   const bookmarksSheetRef = useRef<SheetRef>(null)
@@ -298,10 +309,6 @@ export default function ItemDetailScreen() {
   // disagree with the chapter's own title, and the pinned chapter row right
   // below already names where you are.
   const ctaLabel = isFinished ? 'Listen again' : isInProgress ? 'Resume' : 'Start listening'
-
-  // This screen is pushed above the tab navigator, so it renders its own copy
-  // of the tab bar (see player.tsx) rather than inheriting the tabs layout's.
-  const goToTab = useGoToTab()
 
   const play = async () => {
     haptics.transport()

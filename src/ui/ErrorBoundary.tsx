@@ -20,6 +20,7 @@
  */
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { StyleSheet, View } from 'react-native'
+import { router } from 'expo-router'
 import * as Sentry from '@sentry/react-native'
 import { AppText, PrimaryButton } from '@/ui/primitives'
 import { breadcrumb } from '@/lib/crashLog'
@@ -60,7 +61,24 @@ export class ErrorBoundary extends Component<Props, State> {
     }
   }
 
+  /**
+   * Clearing the error alone re-renders the SAME screen that just threw, which
+   * usually throws again immediately - the user taps "Try again" and lands right
+   * back here, or worse on a half-dead route with a back button that does
+   * nothing (observed: book -> error -> Try again -> stuck).
+   *
+   * So leave the failing route first, THEN clear. Home is a known-good
+   * destination that does not depend on whatever param or data broke the last
+   * screen. Navigation is attempted before the state change so a throw here
+   * still leaves the fallback on screen rather than a blank tree.
+   */
   private reset = () => {
+    try {
+      router.replace('/(tabs)')
+    } catch {
+      // Router unavailable (the failure was above the navigator): fall through
+      // and just clear - re-rendering children is the only option left.
+    }
     this.setState({ error: null })
   }
 
@@ -78,7 +96,7 @@ export class ErrorBoundary extends Component<Props, State> {
           That screen ran into a problem. Your listening is safe - the report has
           been sent.
         </AppText>
-        <PrimaryButton label="Try again" onPress={this.reset} />
+        <PrimaryButton label="Back to Home" onPress={this.reset} />
       </View>
     )
   }
