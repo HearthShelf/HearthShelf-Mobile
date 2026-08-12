@@ -28,11 +28,13 @@ import type {
 import type { HSFinishedByUser, HSListeningNowUser } from '@hearthshelf/core'
 import { coverHue, formatDuration, formatTimestamp, stripHtml } from '@hearthshelf/core'
 import {
+  ABSRequestError,
   avatarUrl,
   coverUrl,
   deleteListeningSession,
   getItemDetail,
   getLibrarySeries,
+  getMe,
   updateListeningSession,
 } from '@/api/abs'
 import { recentSessionsFor } from '@/player/sessionCache'
@@ -1329,6 +1331,18 @@ const SessionEditSheet = ({
   const [minutes, setMinutes] = useState(0)
   const [dayShift, setDayShift] = useState(0)
   const [saving, setSaving] = useState(false)
+  const [canDelete, setCanDelete] = useState(false)
+
+  // Same gate the History screen applies. ABS gates DELETE /api/sessions/:id on
+  // `permissions.delete && isActive` with NO admin bypass, and its defaults grant
+  // delete to root ONLY - so without this the Delete button shows for everyone
+  // else and the server 403s every single tap. (HS-MOBILEAPP-V: "keep getting
+  // told I can't delete the session".)
+  useEffect(() => {
+    void getMe()
+      .then((me) => setCanDelete(me.permissions?.delete === true))
+      .catch(() => setCanDelete(false))
+  }, [])
 
   // Re-seed the draft whenever a different session is opened.
   useEffect(() => {
@@ -1379,8 +1393,14 @@ const SessionEditSheet = ({
       showToast('Session deleted')
       onChanged()
       ref.current?.dismiss()
-    } catch {
-      showToast('Could not delete session')
+    } catch (e) {
+      // A 403 is the server saying this account lacks delete - retrying will
+      // never work, so say so rather than implying a transient failure.
+      const denied = e instanceof ABSRequestError && e.status === 403
+      if (denied) setCanDelete(false)
+      showToast(
+        denied ? "Your account isn't allowed to delete sessions" : 'Could not delete session',
+      )
     } finally {
       setSaving(false)
     }
@@ -1432,7 +1452,9 @@ const SessionEditSheet = ({
           label={saving ? 'Saving…' : 'Save'}
           onPress={saving || !changed ? undefined : save}
         />
-        <SheetRow icon={icons.delete} label="Delete this listen" destructive onPress={remove} />
+        {canDelete && (
+          <SheetRow icon={icons.delete} label="Delete this listen" destructive onPress={remove} />
+        )}
       </View>
     </Sheet>
   )
