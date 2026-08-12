@@ -62,7 +62,7 @@ import {
   icons,
 } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
-import { AppTabBar, tabFromParam } from '@/ui/AppTabBar'
+import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { Toast, useToast } from '@/ui/Toast'
 import { haptics } from '@/ui/haptics'
 import { confirm } from '@/ui/confirm'
@@ -209,10 +209,7 @@ export default function ClubRoomScreen() {
   // watcher's stubs stay fresh even if the playing book isn't this club's book.
   useEffect(() => holdClubPolling(), [])
 
-  const goToTab = (name: string) => {
-    router.dismissAll?.()
-    router.replace(name === 'index' ? '/(tabs)' : `/(tabs)/${name}`)
-  }
+  const goToTab = useGoToTab()
 
   const isOwner = detail?.members.some((m) => m.userId === meId && m.role === 'owner') ?? false
   const isMember = detail?.members.some((m) => m.userId === meId) ?? false

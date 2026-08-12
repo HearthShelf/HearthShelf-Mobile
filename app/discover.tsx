@@ -60,7 +60,7 @@ import {
   type BookActionsHandle,
   type BookActionsSource,
 } from '@/ui/BookActionsSheet'
-import { AppTabBar, tabFromParam } from '@/ui/AppTabBar'
+import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { Icon, type IconName } from '@/ui/icons'
 import { Toast, useToast } from '@/ui/Toast'
 import { EmptyState, Skeleton, SkeletonRow } from '@/ui/states'
@@ -207,10 +207,7 @@ export default function DiscoverScreen() {
     }
   }, [load])
 
-  const goToTab = (tabName: string) => {
-    router.dismissAll?.()
-    router.replace(tabName === 'index' ? '/(tabs)' : `/(tabs)/${tabName}`)
-  }
+  const goToTab = useGoToTab()
 
   const openActions = useCallback((item: ABSLibraryItem) => {
     haptics.longPress()

@@ -47,7 +47,7 @@ import {
 } from '@/ui/BookActionsSheet'
 import { NotOwnedSheet } from '@/ui/NotOwnedSheet'
 import { useSheetBackHandler } from '@/ui/useBackHandler'
-import { AppTabBar, tabFromParam } from '@/ui/AppTabBar'
+import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { Icon } from '@/ui/icons'
 import { DUR } from '@/ui/motion'
 import { haptics } from '@/ui/haptics'
@@ -111,10 +111,7 @@ export default function SearchScreen() {
   const inputRef = useRef<TextInput>(null)
   const [selected, setSelected] = useState<HSAudibleSearchResult | null>(null)
 
-  const goToTab = (name: string) => {
-    router.dismissAll?.()
-    router.replace(name === 'index' ? '/(tabs)' : `/(tabs)/${name}`)
-  }
+  const goToTab = useGoToTab()
 
   // ---- recents (persisted, last 8) ----
   useEffect(() => {

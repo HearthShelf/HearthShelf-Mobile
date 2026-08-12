@@ -8,7 +8,7 @@
 import { Stack } from 'expo-router'
 import { usePathname, useRouter } from 'expo-router'
 import { StyleSheet, View } from 'react-native'
-import { AppTabBar } from '@/ui/AppTabBar'
+import { AppTabBar, useGoToTab } from '@/ui/AppTabBar'
 import { BlurTargetView } from 'expo-blur'
 import { useScreenBlurTarget } from '@/ui/BlurTarget'
 import { useTheme } from '@/ui/ThemeProvider'
@@ -21,10 +21,7 @@ export default function SettingsLayout() {
   const hideTabs = pathname.startsWith('/settings/admin')
   const blurTarget = useScreenBlurTarget()
 
-  const goToTab = (name: string) => {
-    router.dismissAll?.()
-    router.replace(name === 'index' ? '/(tabs)' : `/(tabs)/${name}`)
-  }
+  const goToTab = useGoToTab()
 
   return (
     <View style={styles.root}>

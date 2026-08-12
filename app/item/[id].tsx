@@ -89,7 +89,7 @@ import { Skeleton, SkeletonRow } from '@/ui/states'
 import { Icon } from '@/ui/icons'
 import { DeviceKindIcon } from '@/ui/DeviceKindIcon'
 import { useSheetBackHandler } from '@/ui/useBackHandler'
-import { AppTabBar, tabFromParam } from '@/ui/AppTabBar'
+import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { CoverGlow } from '@/ui/CoverGlow'
 import { CoverLightbox } from '@/ui/CoverLightbox'
 import { EmberBurst } from '@/ui/EmberBurst'
@@ -300,10 +300,7 @@ export default function ItemDetailScreen() {
 
   // This screen is pushed above the tab navigator, so it renders its own copy
   // of the tab bar (see player.tsx) rather than inheriting the tabs layout's.
-  const goToTab = (name: string) => {
-    router.dismissAll?.()
-    router.replace(name === 'index' ? '/(tabs)' : `/(tabs)/${name}`)
-  }
+  const goToTab = useGoToTab()
 
   const play = async () => {
     haptics.transport()

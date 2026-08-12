@@ -37,7 +37,7 @@ import {
 import { BookTile } from '@/ui/BookTile'
 import { EmptyState, Skeleton, SkeletonTile } from '@/ui/states'
 import { Icon } from '@/ui/icons'
-import { AppTabBar, tabFromParam } from '@/ui/AppTabBar'
+import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { haptics } from '@/ui/haptics'
 import { spacing } from '@/ui/theme'
 import { useContentInset } from '@/ui/useContentInset'
@@ -91,10 +91,7 @@ export default function GroupDrilldown() {
   const [seriesIds, setSeriesIds] = useState<Record<string, string>>({})
   const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
 
-  const goToTab = (tabName: string) => {
-    router.dismissAll?.()
-    router.replace(tabName === 'index' ? '/(tabs)' : `/(tabs)/${tabName}`)
-  }
+  const goToTab = useGoToTab()
 
   useEffect(() => {
     let cancelled = false

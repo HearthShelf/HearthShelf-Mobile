@@ -18,7 +18,7 @@ import {
   type BookActionsHandle,
   type BookActionsSource,
 } from '@/ui/BookActionsSheet'
-import { AppTabBar, tabFromParam } from '@/ui/AppTabBar'
+import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { Toast, useToast } from '@/ui/Toast'
 import { haptics } from '@/ui/haptics'
 import { spacing } from '@/ui/theme'
@@ -42,10 +42,7 @@ export default function ShelfScreen() {
   const { message: toast, show: showToast } = useToast()
   const actionsRef = useRef<BookActionsHandle>(null)
 
-  const goToTab = (tabName: string) => {
-    router.dismissAll?.()
-    router.replace(tabName === 'index' ? '/(tabs)' : `/(tabs)/${tabName}`)
-  }
+  const goToTab = useGoToTab()
 
   const openActions = useCallback(
     (item: ABSLibraryItem, source: BookActionsSource, series?: { id: string; name: string }) => {

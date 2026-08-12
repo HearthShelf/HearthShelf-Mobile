@@ -15,7 +15,7 @@ import { FlatList, StyleSheet, View, useWindowDimensions } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type { BottomSheetModal } from '@gorhom/bottom-sheet'
 import { getLibraries } from '@/api/abs'
-import { AppTabBar, tabFromParam } from '@/ui/AppTabBar'
+import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { AppText, Screen, Touchable } from '@/ui/primitives'
 import { EmptyState, ErrorState, SkeletonTile } from '@/ui/states'
 import { Icon } from '@/ui/icons'
@@ -67,10 +67,7 @@ export function ListsBrowse({ descriptor }: { descriptor: ListKindDescriptor }) 
     void load()
   }, [load])
 
-  const goToTab = (tabName: string) => {
-    router.dismissAll?.()
-    router.replace(tabName === 'index' ? '/(tabs)' : `/(tabs)/${tabName}`)
-  }
+  const goToTab = useGoToTab()
 
   const itemNoun = descriptor.kind === 'collection' ? 'book' : 'item'
 

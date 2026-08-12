@@ -87,7 +87,7 @@ import { DeviceKindIcon } from '@/ui/DeviceKindIcon'
 import { CoverGlow } from '@/ui/CoverGlow'
 import { CoverLightbox } from '@/ui/CoverLightbox'
 import { useBackHandler, useSheetBackHandler } from '@/ui/useBackHandler'
-import { AppTabBar, TAB_BAR_HEIGHT, VNAV_WIDTH, useNavMode } from '@/ui/AppTabBar'
+import { AppTabBar, TAB_BAR_HEIGHT, VNAV_WIDTH, useGoToTab, useNavMode } from '@/ui/AppTabBar'
 import { MiniPlayer } from '@/player/MiniPlayer'
 import { haptics } from '@/ui/haptics'
 import {
@@ -617,11 +617,11 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
     Math.min(width, contentMaxWidth) - spacing.xl * 2 - spacing.lg * 2 - controlsRightInset
   const playSize = immersive ? 84 : adaptivePlayerPlaySize(transportRowWidth)
 
+  const leaveToTab = useGoToTab()
   const goToTab = (name: string) => {
     // The player already IS the now-playing surface; tapping that tab is a no-op.
     if (name === 'now') return
-    router.dismissAll?.()
-    router.replace(name === 'index' ? '/(tabs)' : `/(tabs)/${name}`)
+    leaveToTab(name)
   }
 
   // Resolve each configurable action to its live icon/label/handler. `present`

@@ -26,6 +26,7 @@ import Animated, {
 import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { Icon, iconFor, icons } from './icons'
 import { emitTabReselect } from './tabReselect'
+import { getMoreMenuOpen, subscribeMoreMenu, toggleMoreMenu } from './moreMenuState'
 import { haptics } from './haptics'
 import { POP_SPRING } from './motion'
 import { fonts, MAX_FONT_SCALE, radius, spacing, withAlpha, type Palette } from './theme'
@@ -106,11 +107,20 @@ export function tabFromParam(from: string | undefined, fallback: string): string
  * `onPressTab` for a pushed route that renders its own AppTabBar. Pressing a tab
  * from one of these leaves the pushed stack entirely rather than stacking a tab
  * on top of it, so the drill-down is dropped before the tab is restored.
+ *
+ * More is not a destination: it opens the bubble over whatever is on screen,
+ * exactly as it does inside the tabs shell. The bubble is mounted at the app
+ * root (MoreMenuHost in app/_layout.tsx), so it draws above a pushed route
+ * without navigating - opening it must not tear down the player you came from.
  */
 export function useGoToTab(): (name: string) => void {
   const router = useRouter()
   return useCallback(
     (name: string) => {
+      if (name === 'more') {
+        toggleMoreMenu()
+        return
+      }
       router.dismissAll?.()
       router.replace(name === 'index' ? '/(tabs)' : `/(tabs)/${name}`)
     },
@@ -126,12 +136,20 @@ export function AppTabBar({
   /** Route name of the active tab, or null when none should read as active. */
   activeName: string | null
   /** Route name of a tab that currently owns an open popup (the More menu), so
-   *  it can expose an expanded state to accessibility services. */
+   *  it can expose an expanded state to accessibility services. Omit it to track
+   *  the More menu store, which is what pushed routes want. */
   expandedName?: string | null
   onPressTab: (name: string) => void
 }) {
   const mode = useNavMode()
-  const props = { activeName, expandedName: expandedName ?? null, onPressTab }
+  // Pushed routes pass a static activeName and no expandedName, so without this
+  // the bar would keep reading as (say) "now" while the More bubble is open over
+  // the player. The tabs shell resolves both itself and passes them explicitly.
+  const menuOpen = useSyncExternalStore(subscribeMoreMenu, getMoreMenuOpen)
+  const trackStore = expandedName === undefined
+  const resolvedActive = trackStore && menuOpen ? 'more' : activeName
+  const resolvedExpanded = trackStore ? (menuOpen ? 'more' : null) : (expandedName ?? null)
+  const props = { activeName: resolvedActive, expandedName: resolvedExpanded, onPressTab }
   if (mode === 'classic') return <ClassicTabBar {...props} />
   return mode === 'floating-vertical' ? (
     <VerticalPillNav {...props} />

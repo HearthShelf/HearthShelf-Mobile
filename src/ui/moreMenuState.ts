@@ -2,10 +2,10 @@
  * Open state for the More menu bubble, kept outside React so any surface can
  * request it - not just the tabs layout that renders it.
  *
- * The tabs shell intercepts its own More press directly. Pushed routes (player,
- * search, item detail...) render their own AppTabBar and navigate by route name,
- * so their More press lands on app/(tabs)/more.tsx, which asks to open the menu
- * and bounces into the tabs shell. Both paths end at the same store.
+ * The tabs shell intercepts its own More press directly; pushed routes (player,
+ * search, item detail...) do the same through useGoToTab. Neither navigates -
+ * the bubble is mounted at the app root (MoreMenuHost in app/_layout.tsx) so it
+ * draws above whatever is on screen. Both paths end at the same store.
  */
 type Listener = () => void
 

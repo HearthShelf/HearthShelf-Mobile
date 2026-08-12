@@ -5,9 +5,11 @@
  * both tab bars iterate route names, and 'more' must be a registered
  * Tabs.Screen to appear among them.
  *
- * Pushed routes (player, search, item detail...) render their own AppTabBar and
- * navigate by route name, so their More press DOES land here. Those arrivals ask
- * for the menu and bounce to Home, which is where the bubble actually renders.
+ * Pushed routes (player, search, item detail...) intercept More the same way via
+ * useGoToTab, so they no longer land here either - the bubble opens over the
+ * screen you are on instead of bouncing you to Home first. What still reaches
+ * this stub is a direct navigation to /(tabs)/more (deep link, restored state),
+ * which opens the menu and sends you somewhere renderable.
  *
  * The settings list this tab used to show now lives at app/settings/index.tsx as
  * a pushed route, reached from the menu's Settings entry.

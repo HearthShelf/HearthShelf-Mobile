@@ -32,7 +32,7 @@ import {
 } from '@/ui/primitives'
 import { BottomSheetTextInput } from '@gorhom/bottom-sheet'
 import { Icon, icons } from '@/ui/icons'
-import { AppTabBar, tabFromParam } from '@/ui/AppTabBar'
+import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { EmptyState, Skeleton, SkeletonRow } from '@/ui/states'
 import { showToast } from '@/ui/Toast'
 import { haptics } from '@/ui/haptics'
@@ -80,10 +80,7 @@ export default function MyClubsScreen() {
     }, []),
   )
 
-  const goToTab = (name: string) => {
-    router.dismissAll?.()
-    router.replace(name === 'index' ? '/(tabs)' : `/(tabs)/${name}`)
-  }
+  const goToTab = useGoToTab()
 
   const createNewClub = async (name: string) => {
     const trimmed = name.trim()
