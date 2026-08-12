@@ -74,6 +74,8 @@
   "devDependencies": {
     "@types/react": "~19.2.17",
     "babel-preset-expo": "^57.0.1",
+    "eslint": "^10.8.1",
+    "eslint-config-expo": "^57.0.1",
     "prettier": "^3.9.4",
     "typescript": "~6.0.3"
   },
@@ -88,6 +90,7 @@
     "live": "powershell -ExecutionPolicy Bypass -File scripts/dev-server.ps1",
     "sync-core": "git submodule update --remote packages/core",
     "eas-build-pre-install": "bash scripts/eas-init-submodules.sh",
+    "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

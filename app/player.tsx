@@ -522,6 +522,73 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   const [coverAreaH, setCoverAreaH] = useState(0)
   const leaveToTab = useGoToTab()
 
+  // Chapter the browsed book was left on. Chapters aren't in the progress store,
+  // so fetch them lazily - only when the deck SETTLES on a started book (a short
+  // debounce, so a fling doesn't fire a fetch per page), cached per item.
+  //
+  // Also hoisted above the early return. `browsedItemId` / `browsedRec` are
+  // computed further down, so the effect guards on them being falsy and simply
+  // does nothing until the deck has something to report - which is also the
+  // correct behaviour for the empty-player render.
+  const [browsedChapter, setBrowsedChapter] = useState<{
+    id: string
+    title: string
+    num: number
+    total: number
+  } | null>(null)
+  const chapterCache = useRef<Map<string, { title: string; start: number; end: number }[]>>(
+    new Map(),
+  )
+  // Recomputed here rather than reusing the browsedItemId/browsedRec further
+  // down, which are declared after the early return. Same expressions, and every
+  // input (settings, deck, progressById, immersive) is already available above.
+  const browsedIdForChapter =
+    !immersive && settings.carouselPlayer && deck.index > 0 && deck.active && !deck.active.isLive
+      ? (deck.active.itemId ?? null)
+      : null
+  const browsedRecForChapter = browsedIdForChapter
+    ? progressById.get(browsedIdForChapter)
+    : undefined
+  useEffect(() => {
+    if (
+      !browsedIdForChapter ||
+      !browsedRecForChapter ||
+      browsedRecForChapter.isFinished ||
+      (browsedRecForChapter.currentTime ?? 0) <= 0
+    ) {
+      setBrowsedChapter(null)
+      return
+    }
+    const id = browsedIdForChapter
+    const at = browsedRecForChapter.currentTime
+    const pick = (chs: { title: string; start: number; end: number }[]) => {
+      let i = chs.findIndex((ch) => at >= ch.start && at < ch.end)
+      if (i < 0) i = chs.length - 1
+      const c = chs[i]
+      setBrowsedChapter(c ? { id, title: c.title, num: i + 1, total: chs.length } : null)
+    }
+    const cached = chapterCache.current.get(id)
+    if (cached) {
+      pick(cached)
+      return
+    }
+    let cancelled = false
+    const t = setTimeout(() => {
+      getItemDetail(id)
+        .then((d) => {
+          if (cancelled) return
+          const chs = d.media.chapters ?? []
+          chapterCache.current.set(id, chs)
+          pick(chs)
+        })
+        .catch(() => {})
+    }, 350)
+    return () => {
+      cancelled = true
+      clearTimeout(t)
+    }
+  }, [browsedIdForChapter, browsedRecForChapter])
+
   if (!nowPlaying) {
     // In the tab, the Now Playing screen owns the empty state (hearth + resume).
     if (embedded) return null
@@ -726,58 +793,6 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
     browsedRec && browsedRec.duration > 0
       ? Math.max(0, browsedRec.duration - browsedRec.currentTime)
       : null
-
-  // Chapter the browsed book was left on. Chapters aren't in the progress store,
-  // so fetch them lazily - only when the deck SETTLES on a started book (a short
-  // debounce, so a fling doesn't fire a fetch per page), cached per item.
-  const [browsedChapter, setBrowsedChapter] = useState<{
-    id: string
-    title: string
-    num: number
-    total: number
-  } | null>(null)
-  const chapterCache = useRef<Map<string, { title: string; start: number; end: number }[]>>(
-    new Map(),
-  )
-  useEffect(() => {
-    if (
-      !browsedItemId ||
-      !browsedRec ||
-      browsedRec.isFinished ||
-      (browsedRec.currentTime ?? 0) <= 0
-    ) {
-      setBrowsedChapter(null)
-      return
-    }
-    const id = browsedItemId
-    const at = browsedRec.currentTime
-    const pick = (chs: { title: string; start: number; end: number }[]) => {
-      let i = chs.findIndex((ch) => at >= ch.start && at < ch.end)
-      if (i < 0) i = chs.length - 1
-      const c = chs[i]
-      setBrowsedChapter(c ? { id, title: c.title, num: i + 1, total: chs.length } : null)
-    }
-    const cached = chapterCache.current.get(id)
-    if (cached) {
-      pick(cached)
-      return
-    }
-    let cancelled = false
-    const t = setTimeout(() => {
-      getItemDetail(id)
-        .then((d) => {
-          if (cancelled) return
-          const chs = d.media.chapters ?? []
-          chapterCache.current.set(id, chs)
-          pick(chs)
-        })
-        .catch(() => {})
-    }, 350)
-    return () => {
-      cancelled = true
-      clearTimeout(t)
-    }
-  }, [browsedItemId, browsedRec])
 
   return (
     // The rejection pan wraps the whole surface (both the pushed /player route

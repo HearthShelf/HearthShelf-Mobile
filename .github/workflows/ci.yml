@@ -23,5 +23,12 @@ jobs:
       - name: TypeScript
         run: npx tsc --noEmit
 
+      # Narrow by design - currently only react-hooks/rules-of-hooks. A
+      # conditional hook unmounts the screen at runtime and (without an error
+      # boundary) reports nothing, so it must not reach a release. See
+      # eslint.config.js for why the rest of the preset is off.
+      - name: Lint
+        run: npm run lint
+
       - name: Expo config resolves
         run: npx expo config --type public > /dev/null
