@@ -8,16 +8,17 @@
  *
  * Deliberately UNAUTHENTICATED and NOT tied to a user. The endpoint
  * (POST /telemetry/report) takes no auth, and we send no Clerk token, user id,
- * server id, book, or listening data - only the random per-install `deviceId`
- * (already minted for device-scoped settings) as the opaque `telemetry_id`, plus
- * the hardware/version facts. On by default; the user can turn it off under
- * Settings (shareInstallStats), and offline / a failed POST is a silent no-op.
+ * server id, book, or listening data - only an anonymous OS-vendor install id as
+ * the opaque `telemetry_id` (see stableTelemetryId), plus the hardware/version
+ * facts. On by default; the user can turn it off under Settings
+ * (shareInstallStats), and offline / a failed POST is a silent no-op.
  *
  * Cadence matches the server telemetry: report once per launch, then at most
  * weekly, so a long-lived background session doesn't spam the endpoint.
  */
 import { AppState, type AppStateStatus, Platform } from 'react-native'
 import * as Device from 'expo-device'
+import * as Application from 'expo-application'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { HSInstallReport, HSInstallDeviceType, HSInstallPlatform } from '@hearthshelf/core'
 import { CONTROL_PLANE_URL, FULL_VERSION } from '@/lib/config'
@@ -28,6 +29,37 @@ import { getSettingsState } from '@/store/settings'
 /** Least time between reports. One report per launch, then weekly at most. */
 const REPORT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000
 const LAST_REPORT_KEY = 'hs.lastHeartbeatAt'
+
+/**
+ * The telemetry handle, which must survive a REINSTALL.
+ *
+ * This used to be `deviceId` from AsyncStorage. That is correct for
+ * device-scoped settings but wrong here: a sideload or a rebuilt simulator wipes
+ * AsyncStorage, so every reinstall minted a fresh id and the control plane
+ * counted a brand new install - inflating the device chart and stranding the old
+ * row at whatever version it last reported, which then never aged out.
+ *
+ * The OS-vendor ids are stable across reinstalls of the same app on the same
+ * device, and are already anonymous: iOS's identifierForVendor is scoped to our
+ * vendor and resets when all our apps are removed; Android's SSAID is scoped to
+ * the app+device+user. Neither identifies a person, and we still send nothing
+ * else that could. AsyncStorage remains the fallback when the OS id is
+ * unavailable, which is no worse than the previous behavior.
+ */
+async function stableTelemetryId(): Promise<string | null> {
+  try {
+    if (Platform.OS === 'ios') {
+      const id = await Application.getIosIdForVendorAsync()
+      if (id) return `ios-${id}`
+    } else if (Platform.OS === 'android') {
+      const id = Application.getAndroidId()
+      if (id) return `and-${id}`
+    }
+  } catch {
+    // Fall through to the per-install id below.
+  }
+  return ensureDeviceId()
+}
 
 /** Map expo-device's DeviceType enum to the shared HSInstallDeviceType. */
 function deviceType(): HSInstallDeviceType | undefined {
@@ -81,7 +113,7 @@ export async function sendHeartbeat(force = false): Promise<void> {
       }
     }
 
-    const telemetryId = await ensureDeviceId()
+    const telemetryId = await stableTelemetryId()
     if (!telemetryId) return
 
     const res = await fetchWithTimeout(`${CONTROL_PLANE_URL}/telemetry/report`, {

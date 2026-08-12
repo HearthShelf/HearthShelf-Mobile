@@ -214,9 +214,41 @@ export function setBuffering(buffering: boolean): void {
 
 /** Enter/leave car-owned playback. On enter, the phone player stands down (the
  *  PlayerHost sync stops issuing load/play to the phone service); on leave, the
- *  phone player resumes ownership of whatever's loaded. */
+ *  phone player resumes ownership of whatever's loaded.
+ *
+ *  NOTE: leaving the car is NOT just this flag - a car-mirrored track has no
+ *  stream URL, so the phone player cannot resume it as-is. Use leaveCar() for
+ *  the disconnect edge; this stays for the enter edge and for tests. */
 export function setCarActive(active: boolean): void {
   if (state.carActive !== active) set({ carActive: active })
+}
+
+/**
+ * The car handed playback back (USB unplugged / Auto closed).
+ *
+ * The car mirrors its book into the store with `url: ''` (mirrorCarTrack) - the
+ * phone player can't play that, so PlayerHost's sync bails on the empty url and
+ * the phone player stays stood down. If we ALSO left `isPlaying: true` (which
+ * mirrorCarTrack sets, and which nothing clears when the car vanishes mid-play),
+ * the UI showed a pause button over silence and every transport tap just flipped
+ * a boolean that sync() never acted on - dead buttons until you reconnected.
+ *
+ * So on the way out we drop the optimistic playing state and report whether the
+ * mirrored track needs re-resolving. The caller (PlayerHost) re-opens a real
+ * session via playItemById, which is the single place that owns url/session/
+ * resume resolution - we deliberately don't duplicate any of that here.
+ *
+ * Returns the item that needs re-resolving, or null when the loaded track is
+ * already a real phone track (nothing to do - sync() resumes it normally).
+ */
+export function leaveCar(): { itemId: string; position: number } | null {
+  const np = state.nowPlaying
+  const needsResolve = !!np && !np.url
+  // Always drop the mirrored "playing" intent: audio stopped when the car went
+  // away, so anything else leaves the UI lying. Resuming is an explicit act.
+  set({ carActive: false, isPlaying: false })
+  if (!needsResolve || !np) return null
+  return { itemId: np.itemId, position: state.position }
 }
 
 /**
@@ -237,6 +269,15 @@ export function mirrorCarTrack(track: NowPlaying): void {
 
 export function togglePlay(): void {
   if (state.nowPlaying) {
+    // A track with no url is a car mirror, not something the phone can play.
+    // Toggling here would flip the button glyph while the host's sync() bails on
+    // the empty url - the "play button doesn't reflect what's happening" bug.
+    // Report it instead of silently lying: the handback should have re-resolved
+    // this track, so reaching here means the re-arm did not take.
+    if (!state.nowPlaying.url && !state.carActive) {
+      onDeadTransport?.('togglePlay', `no url for ${state.nowPlaying.itemId}`)
+      return
+    }
     haptics.transport()
     const nowPlaying = !state.isPlaying
     if (!nowPlaying) notePaused()
@@ -246,6 +287,14 @@ export function togglePlay(): void {
       maybeAutoArmSleep()
     }
   }
+}
+
+/** Reporter for transport commands that can't be acted on. Injected (rather than
+ *  imported) to keep this leaf store free of a dependency back into the player
+ *  bridge; PlayerHost wires it on mount. */
+let onDeadTransport: ((source: string, detail: string) => void) | null = null
+export function setDeadTransportReporter(fn: (source: string, detail: string) => void): void {
+  onDeadTransport = fn
 }
 
 export function requestSeek(seconds: number): void {

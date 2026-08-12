@@ -23,10 +23,15 @@ import {
   jumpBy,
   togglePlay,
   setCarActive,
+  leaveCar,
   mirrorCarTrack,
   setRate,
+  requestSeek,
   currentChapter,
+  setDeadTransportReporter,
 } from './store'
+import { breadcrumb } from '@/lib/crashLog'
+import { reportCarHandbackFailure, reportDeadTransport } from './carHandbackReport'
 import { coverUrl } from '@/api/abs'
 import { addBookmarkPending } from './pendingBookmarks'
 import { localCoverFor } from './downloads'
@@ -94,6 +99,11 @@ export function PlayerHost() {
     )
   }, [])
 
+  // Let the store report transport taps it can't act on (see setDeadTransportReporter).
+  useEffect(() => {
+    setDeadTransportReporter(reportDeadTransport)
+  }, [])
+
   // ---- native -> store: progress / state / ended ----
   useEffect(() => {
     if (!Native) return
@@ -148,10 +158,47 @@ export function PlayerHost() {
       // player stands down and transport routes to the car (native side); the
       // store still mirrors car position/state so the phone UI stays in sync.
       emitter.addListener('onCarActive', (e: { active: boolean }) => {
+        if (!e.active) {
+          // ---- The car handed playback back (USB unplug / Auto closed). ----
+          //
+          // This edge used to be flag-only, which stranded playback: the car
+          // mirrors its book with url:'' and isPlaying:true, so after the car
+          // vanished the phone player stayed stood down (sync() bails on the
+          // empty url) while the UI still showed PLAYING. Transport taps only
+          // flipped the store boolean, so pause/play did nothing and the only
+          // recovery was plugging back in.
+          //
+          // leaveCar() drops the stale playing intent and tells us whether the
+          // loaded track is a car mirror that needs a real url/session. If it
+          // is, re-resolve through playItemById - the one place that owns
+          // session, resume position and offline/downloaded resolution - at the
+          // live mirrored position, loaded PAUSED. Paused is deliberate: the
+          // audio already stopped when the car went away, so resuming on its own
+          // would start a book playing at someone who just unplugged and walked
+          // off. The play button now maps to a real loaded player.
+          const resume = leaveCar()
+          breadcrumb(
+            'car',
+            `handback${resume ? ` re-resolve ${resume.itemId} @${Math.round(resume.position)}s` : ' (phone track already loaded)'}`,
+          )
+          // The mirrored track's position is the only record of where the car
+          // got to; seed it so the reload resumes there rather than at the
+          // server's last synced spot.
+          if (resume && Platform.OS === 'android') {
+            void playItemById(resume.itemId, false)
+              .then(() => requestSeek(resume.position))
+              .catch((err) => {
+                breadcrumb('car', `handback re-resolve failed: ${err?.message ?? 'unknown'}`)
+                reportCarHandbackFailure(resume.itemId, err)
+                showToast('Tap play to resume on your phone')
+              })
+          }
+          return
+        }
         // Set the flag FIRST so the phone player stands down (stops issuing
         // load/play below) before we touch the car.
         setCarActive(e.active)
-        if (!e.active || Platform.OS !== 'android') return
+        if (Platform.OS !== 'android') return
 
         // The car connects with an EMPTY player - without a book loaded, Android
         // Auto auto-plays the browse tree's first item (the up-next queue head)
