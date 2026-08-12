@@ -30,6 +30,7 @@ import { getProgressState } from '@/store/progress'
 import { isDownloaded } from '@/player/downloads'
 import {
   readBreadcrumbs,
+  readPriorRunBreadcrumbs,
   didPriorRunEndUncleanly,
   priorRunStart,
   currentRunAgeSeconds,
@@ -178,6 +179,30 @@ function attachLaunchContext(): void {
  */
 function attachBreadcrumbs(): void {
   try {
+    // The PRIOR run's trail first, when that run died.
+    //
+    // The reports that matter most are written seconds after a crash ("tapped
+    // back a few times, forward a few times, crashed" - HS-MOBILEAPP-12), and
+    // those are sent from a fresh run whose own ring holds only post-relaunch
+    // noise. The evidence lives in the run that died. Prefixed and emitted first
+    // so the two runs are never read as one continuous trail.
+    const prior = readPriorRunBreadcrumbs()
+    if (prior.length) {
+      for (const c of prior.slice(-MAX_ATTACHED_CRUMBS)) {
+        Sentry.addBreadcrumb({
+          category: `hs.prior.${c.tag}`,
+          message: c.repeats && c.repeats > 1 ? `${c.msg} (x${c.repeats})` : c.msg,
+          level: c.tag === 'fatal' || c.tag === 'error' ? 'error' : 'info',
+          timestamp: c.t / 1000,
+        })
+      }
+      Sentry.addBreadcrumb({
+        category: 'hs.prior',
+        message: '--- end of previous (crashed) run ---',
+        level: 'warning',
+      })
+    }
+
     const crumbs = readBreadcrumbs()
     if (!crumbs.length) return
     for (const c of crumbs.slice(-MAX_ATTACHED_CRUMBS)) {

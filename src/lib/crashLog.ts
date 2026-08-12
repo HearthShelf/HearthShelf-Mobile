@@ -59,6 +59,12 @@ let flushTimer: ReturnType<typeof setTimeout> | null = null
 /** Prior-run crash report, captured by initCrashLog() at boot and retrieved
  *  later by the UI once a Clerk token is available to authenticate the upload. */
 let priorReport: PriorCrashReport | null = null
+/** The dead run's breadcrumbs, kept separately from `priorReport` because that
+ *  one is CONSUMED by takePriorCrashReport(). A feedback report written seconds
+ *  after a crash needs this trail, and would otherwise lose the race to the boot
+ *  crash reporter. Read-only for the life of the run; see
+ *  readPriorRunBreadcrumbs(). */
+let priorRunCrumbs: Crumb[] | null = null
 /** Resolves when initCrashLog() has finished reading the prior state, so a
  *  consumer (takePriorCrashReport) can await it rather than race the async read. */
 let initResolve: (() => void) | null = null
@@ -139,6 +145,9 @@ export async function initCrashLog(): Promise<PriorCrashReport | null> {
       crumbs: trimmed,
       lastCrumb: trimmed.length ? trimmed[trimmed.length - 1] : null,
     }
+    // Kept beyond the consuming takePriorCrashReport() so a feedback report sent
+    // right after the crash can still carry the trail that explains it.
+    priorRunCrumbs = trimmed
   }
 
   // Arm a fresh sentinel for THIS run. Reading the prior state above already
@@ -212,6 +221,27 @@ export async function takePriorCrashReport(): Promise<PriorCrashReport | null> {
  */
 export function readBreadcrumbs(): Crumb[] {
   return state ? [...state.crumbs] : []
+}
+
+/**
+ * The PRIOR run's breadcrumb trail, when that run died without shutting down
+ * cleanly. Oldest first; empty when the last run exited normally.
+ *
+ * Why this exists: the most valuable feedback report is the one sent immediately
+ * after a crash ("tapped back a few times, forward a few times, crashed"), and
+ * that report is written from a FRESH run whose own ring is nearly empty. The
+ * trail that actually explains the crash belongs to the run that died. Without
+ * this, such a report ships ~3 seconds of post-relaunch noise and none of the
+ * evidence - which is exactly what happened to HS-MOBILEAPP-12.
+ *
+ * Deliberately does NOT consume, unlike takePriorCrashReport(): the boot-time
+ * crash reporter takes that one to send its own event, and it usually wins the
+ * race, so a consuming read here would return null on precisely the reports that
+ * need it most. Both surfaces describing the same dead run is the point - they
+ * are different events and each is read on its own.
+ */
+export function readPriorRunBreadcrumbs(): Crumb[] {
+  return priorRunCrumbs ? [...priorRunCrumbs] : []
 }
 
 /** Keep the breadcrumb blob under the upstream detail cap, newest-first priority. */
