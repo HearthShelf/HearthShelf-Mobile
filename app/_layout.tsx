@@ -40,6 +40,7 @@ import { ensureNotificationChannels } from '@/lib/notifications'
 import { mountNoteForegroundHandler } from '@/social/noteEvents'
 import { mountPushHandlers } from '@/player/pushHandlers'
 import { ThemeProvider, useColors, useTheme } from '@/ui/ThemeProvider'
+import { ErrorBoundary } from '@/ui/ErrorBoundary'
 import { useReducedMotion } from '@/ui/motion'
 import { AppBlurTargetProvider } from '@/ui/BlurTarget'
 import { flushPriorCrash, mountCrashLifecycle } from '@/lib/crashReporter'
@@ -462,6 +463,14 @@ export default Sentry.wrap(function RootLayout() {
           <ThemeProvider>
             <BottomSheetModalProvider>
               <ThemedStatusBar />
+              {/* Catches render errors from any screen. Without it, a throw
+                  during render unmounts the tree to a blank white screen and can
+                  reach Sentry as NOTHING - React catches it, so the global
+                  handler never sees it (HS-MOBILEAPP-13, which took an adb
+                  logcat session to find). Inside ThemeProvider so the fallback
+                  can use app primitives; outside AuthGate so a failure in the
+                  auth/connection tree is caught too. */}
+              <ErrorBoundary label="root">
               <AuthGate>
                 <AppBlurTargetProvider>
                   <ThemedStack />
@@ -482,7 +491,11 @@ export default Sentry.wrap(function RootLayout() {
                     open after the yearly goal is reached. */}
                 <GoalCelebrationHost />
               </AuthGate>
-              {/* Persistent audio engine - mounted once, never unmounted. */}
+              </ErrorBoundary>
+              {/* Persistent audio engine - mounted once, never unmounted.
+                  Deliberately OUTSIDE the error boundary: a UI render error must
+                  not tear down in-flight playback, and this renders no visible
+                  tree of its own to fail. */}
               <PlayerHost />
               {/* "When did you finish this?" prompt raised by mark-finished
                   actions app-wide, so backdated completions land in the right

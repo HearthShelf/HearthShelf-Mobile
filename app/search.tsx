@@ -11,7 +11,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { ScrollView, StyleSheet, TextInput, View } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { BottomSheetModal } from '@gorhom/bottom-sheet'
-import Animated, { FadeIn } from 'react-native-reanimated'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type {
   ABSLibraryItem,
@@ -49,7 +48,6 @@ import { NotOwnedSheet } from '@/ui/NotOwnedSheet'
 import { useSheetBackHandler } from '@/ui/useBackHandler'
 import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { Icon } from '@/ui/icons'
-import { DUR } from '@/ui/motion'
 import { haptics } from '@/ui/haptics'
 import { showToast } from '@/ui/Toast'
 import { radius, spacing, type Palette } from '@/ui/theme'
@@ -464,8 +462,10 @@ export default function SearchScreen() {
         />
       ) : (
         // ---- results, sectioned under scope Everything ----
-        <Animated.ScrollView
-          entering={FadeIn.duration(DUR.base)}
+        // Screen root deliberately un-animated - see the note in app/discover.tsx.
+        // A Reanimated `entering` on a screen ROOT races the navigator's
+        // fade_from_bottom transition and can leave a blank white screen.
+        <ScrollView
           contentContainerStyle={{ paddingBottom: contentInset }}
           keyboardShouldPersistTaps="handled"
         >
@@ -600,7 +600,7 @@ export default function SearchScreen() {
               ))}
             </>
           ) : null}
-        </Animated.ScrollView>
+        </ScrollView>
       )}
 
       {/* Gear: inline search settings (the relocated beyond-library toggle). */}

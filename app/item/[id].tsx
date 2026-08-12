@@ -13,7 +13,6 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Pressable, ScrollView, Share, StyleSheet, View } from 'react-native'
-import Animated, { FadeIn } from 'react-native-reanimated'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type {
@@ -96,7 +95,6 @@ import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { CoverGlow } from '@/ui/CoverGlow'
 import { CoverLightbox } from '@/ui/CoverLightbox'
 import { EmberBurst } from '@/ui/EmberBurst'
-import { DUR } from '@/ui/motion'
 import { Toast, useToast } from '@/ui/Toast'
 import { haptics } from '@/ui/haptics'
 import { radius, spacing, type Palette } from '@/ui/theme'
@@ -577,8 +575,27 @@ export default function ItemDetailScreen() {
         onOverflow={() => overflowSheetRef.current?.present()}
       />
 
-      <Animated.ScrollView
-        entering={FadeIn.duration(DUR.base)}
+      {/* Deliberately NOT an entering animation.
+       *
+       * This screen is pushed with the navigator's own `fade_from_bottom`
+       * transition (app/_layout.tsx). Running a Reanimated `entering` on the
+       * screen's own root at the same time makes Reanimated drive props through
+       * NodesManager while react-native-screens is mid-transition, and if the
+       * push is interrupted (a fast back, or re-tapping a book) the Fabric
+       * surface is torn down under it:
+       *   ScreensAnimation.applyTransformation
+       *     -> ScreenFragment.dispatchTransitionProgressEvent
+       *     -> NodesManager.performNonLayoutOperations
+       *     -> RetryableMountingLayerException: Unable to find
+       *        SurfaceMountingManager for tag [N]
+       * The screen then renders as a blank white page with no JS error - the
+       * "crashes without actually crashing" report (HS-MOBILEAPP-13).
+       *
+       * The screen transition already provides the fade, so this was redundant
+       * as well as harmful. Related: the entering-animation frame-snapshot trap
+       * that clipped Home shelf authors - per-item entrances on this screen are
+       * fine, it is the SCREEN ROOT that must not animate itself. */}
+      <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: miniInset }}
         showsVerticalScrollIndicator={false}
@@ -602,7 +619,7 @@ export default function ItemDetailScreen() {
           onAuthor={meta.authors?.[0] ? openAuthor : undefined}
         />
         {sectionOrder.map((k) => sections[k])}
-      </Animated.ScrollView>
+      </ScrollView>
 
       {/* Pushed above the tabs navigator, so it renders its own copy of the bar
           (see player.tsx) rather than inheriting the tabs layout's. */}

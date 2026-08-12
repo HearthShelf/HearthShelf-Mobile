@@ -16,8 +16,14 @@
  * refetching - the same handoff Home uses.
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { FlatList, RefreshControl, StyleSheet, View, useWindowDimensions } from 'react-native'
-import Animated, { FadeIn } from 'react-native-reanimated'
+import {
+  FlatList,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type { ABSLibraryItem, DiscoverShelf } from '@hearthshelf/core'
 import {
@@ -66,7 +72,6 @@ import { Toast, useToast } from '@/ui/Toast'
 import { EmptyState, Skeleton, SkeletonRow } from '@/ui/states'
 import { haptics } from '@/ui/haptics'
 import { spacing } from '@/ui/theme'
-import { DUR } from '@/ui/motion'
 import { useContentInset } from '@/ui/useContentInset'
 import { useColors } from '@/ui/ThemeProvider'
 import { adaptiveShelfTileWidth } from '@/ui/responsive'
@@ -377,8 +382,13 @@ export default function DiscoverScreen() {
           />
         </Centered>
       ) : (
-        <Animated.ScrollView
-          entering={FadeIn.duration(DUR.base)}
+        /* Screen root deliberately un-animated: the navigator's own
+           fade_from_bottom already fades this in, and a Reanimated `entering` on
+           a screen ROOT races react-native-screens' transition - an interrupted
+           push tears down the Fabric surface under it and the screen renders
+           blank white with no JS error (HS-MOBILEAPP-13, diagnosed on the book
+           screen; this is the same shape). */
+        <ScrollView
           contentContainerStyle={{ paddingBottom: contentInset }}
           showsVerticalScrollIndicator={false}
           refreshControl={
@@ -434,7 +444,7 @@ export default function DiscoverScreen() {
                 items: popular,
               })
             : null}
-        </Animated.ScrollView>
+        </ScrollView>
       )}
 
       <BookActionsSheet ref={actionsRef} onToast={showToast} />
