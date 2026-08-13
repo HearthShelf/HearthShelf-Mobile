@@ -180,7 +180,7 @@ export default function PlaybackPanel() {
         />
         <SettingsRow
           title="Tap artwork to play"
-          desc="Tap the cover on the full-screen player to play or pause."
+          desc="Tap the cover on the full-screen player to play or pause. Holding the cover always fast-forwards."
           control={
             <SettingsToggle
               on={s.tapArtworkTogglesPlay}

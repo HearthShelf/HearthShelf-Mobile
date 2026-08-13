@@ -400,6 +400,35 @@ export function setRate(rate: number): void {
   }
 }
 
+// Speed the hold-to-fast-forward gesture returns to. Held here rather than in the
+// player screen so an unmount mid-hold (rotation, navigation, a car handback that
+// swaps the surface) can't strand playback at the boosted speed.
+let rateBeforeBoost: number | null = null
+
+/** Bump the speed by `by` for as long as the artwork is held. Idempotent: a
+ *  second call while already boosted does nothing, so repeated gesture events
+ *  can't stack the boost or lose the original speed. */
+export function beginRateBoost(by = 1): void {
+  if (rateBeforeBoost !== null) return
+  rateBeforeBoost = state.rate
+  haptics.transport()
+  set({ rate: Math.max(0.5, Math.min(3, state.rate + by)) })
+}
+
+/** Restore the speed captured by `beginRateBoost`. Safe to call when no boost is
+ *  active, so gesture cancel and end paths can both call it unconditionally. */
+export function endRateBoost(): void {
+  if (rateBeforeBoost === null) return
+  const restore = rateBeforeBoost
+  rateBeforeBoost = null
+  if (state.rate !== restore) set({ rate: restore })
+}
+
+/** True while the hold-to-fast-forward boost is applied (for the player's badge). */
+export function isRateBoosted(): boolean {
+  return rateBeforeBoost !== null
+}
+
 // ---- sleep timer ----
 
 /** True when `now` falls inside the [start, end) quiet-hours window. Handles the

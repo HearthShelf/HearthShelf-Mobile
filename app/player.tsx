@@ -2,8 +2,8 @@
  * Full-screen now-playing view. The cover fills the space between the header and
  * the controls (which are pinned to the bottom); the bottom tab bar stays visible
  * so you can move around the app while listening, and swiping up on the artwork
- * drops into an immersive mode that hides the chrome. Double-tapping the artwork
- * opens a full, pinch-zoomable lightbox.
+ * drops into an immersive mode that hides the chrome. The cover's Zoom button
+ * opens a full, pinch-zoomable lightbox, and holding the artwork fast-forwards.
  */
 import {
   forwardRef,
@@ -44,6 +44,8 @@ import {
   jumpBy,
   requestSeek,
   currentChapter,
+  beginRateBoost,
+  endRateBoost,
 } from '@/player/store'
 import { skipChapterOrFinish } from '@/player/advance'
 import { getQueueState, subscribeQueue } from '@/player/queue'
@@ -127,7 +129,13 @@ import { useTimelineMarkers } from '@/social/useTimelineMarkers'
 import type { PlayerActionKey } from '@/store/settings'
 
 const HEARTH_BG = require('../assets/images/hearth-centered.webp')
-const INSPECT_HINT_KEY = 'hs.playerInspectHint'
+// Bumped from `hs.playerInspectHint`: the chip used to teach tap-to-zoom, which
+// is now a button. The new key re-shows it once so the hold gesture is found.
+const INSPECT_HINT_KEY = 'hs.playerHoldHint'
+// Minimum width of a skip hotspot. The gutter beside the artwork collapses to
+// near-zero whenever the cover fills the available width, which used to leave the
+// strips unhittable; below this they overlay the cover's own edge instead.
+const HOTSPOT_MIN_WIDTH = 44
 
 /** "Ch 23 · Career Moves" - unless the title already encodes its number (e.g.
  *  "Chapter 23"), in which case the title alone is enough. */
@@ -299,8 +307,8 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // Live per-item progress, so the browsed book's deck progress bar updates.
   const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
 
-  // One-time tutorial hint on the cover (device-local), so the
-  // zoom-by-default gesture is discoverable. Shows once, then fades out on its
+  // One-time tutorial hint on the cover (device-local), so the hold-to-fast-
+  // forward gesture is discoverable. Shows once, then fades out on its
   // own after a few seconds (or on first cover tap) and never comes back.
   const [showInspectHint, setShowInspectHint] = useState(false)
   useEffect(() => {
@@ -318,47 +326,31 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
     return () => clearTimeout(t)
   }, [showInspectHint, dismissInspectHint])
 
-  // Cover taps. Default (FINAL): a single tap INSPECTS - opens the lightbox -
-  // since the cover is the largest target and shouldn't be a play/pause
-  // hair-trigger. When the user opts into "Tap artwork to play", a single tap
-  // toggles play/pause and a double-tap opens the lightbox instead.
+  // Cover taps. Zooming moved off the tap and onto the corner button below, so
+  // the tap is free: it plays/pauses when the user opts into "Tap artwork to
+  // play", and otherwise does nothing (the cover is the biggest target on the
+  // screen and shouldn't be a hair-trigger).
   const [lightbox, setLightbox] = useState(false)
-  const lastTap = useRef(0)
-  const singleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const tapTogglesPlay = settings.tapArtworkTogglesPlay
-  useEffect(
-    () => () => {
-      if (singleTapTimer.current) clearTimeout(singleTapTimer.current)
-    },
-    [],
-  )
   const onCoverTap = useCallback(() => {
     if (showInspectHint) dismissInspectHint()
-    if (!tapTogglesPlay) {
-      // Inspect-by-default: single tap opens the lightbox immediately.
-      setLightbox(true)
-      return
-    }
-    // Play-on-cover opted in: single tap plays/pauses, double-tap inspects.
-    const now = Date.now()
-    if (now - lastTap.current < 320) {
-      lastTap.current = 0
-      if (singleTapTimer.current) {
-        clearTimeout(singleTapTimer.current)
-        singleTapTimer.current = null
-      }
-      setLightbox(true)
-    } else {
-      lastTap.current = now
-      // Wait out the double-tap window so a double-tap opens the lightbox
-      // without also flipping play/pause.
-      if (singleTapTimer.current) clearTimeout(singleTapTimer.current)
-      singleTapTimer.current = setTimeout(() => {
-        singleTapTimer.current = null
-        togglePlay()
-      }, 320)
-    }
-  }, [tapTogglesPlay])
+    if (tapTogglesPlay) togglePlay()
+  }, [tapTogglesPlay, showInspectHint, dismissInspectHint])
+
+  // Press-and-hold the artwork to fast-forward: speed goes up by 1x for as long
+  // as the finger is down (1.5x becomes 2.5x), then snaps back. The store owns
+  // the pre-boost speed so an unmount mid-hold can't strand it (see
+  // beginRateBoost), and this effect is the unmount half of that guarantee.
+  const [boosting, setBoosting] = useState(false)
+  const onCoverHoldStart = useCallback(() => {
+    beginRateBoost(1)
+    setBoosting(true)
+  }, [])
+  const onCoverHoldEnd = useCallback(() => {
+    endRateBoost()
+    setBoosting(false)
+  }, [])
+  useEffect(() => () => endRateBoost(), [])
 
   // Skip hotspots: double-tap the margin beside the artwork to jump by the
   // configured skip amount (like Audible's edge taps). On by default.
@@ -971,9 +963,8 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
           )}
 
           {/* Cover fills the space between header and the pinned controls. The
-          cover-tap overlays (bookmark/club) are shared between the plain cover
-          and the carousel; skip-hotspots are suppressed in carousel mode since
-          the horizontal swipe owns that gesture. */}
+          cover-tap overlays (zoom/bookmark/club) and the skip hotspots are shared
+          between the plain cover and the carousel. */}
           {(() => {
             const coverOverlays = (
               <>
@@ -997,7 +988,39 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                     style={styles.clubBtn}
                   />
                 )}
-                {!immersive && showInspectHint && !tapTogglesPlay && (
+                {/* Zoom lives in the cover's top-left corner now that a tap no
+                    longer opens the lightbox. */}
+                {!immersive && (
+                  <IconButton
+                    name={icons.search}
+                    size={19}
+                    color="#fff"
+                    onPress={() => {
+                      if (showInspectHint) dismissInspectHint()
+                      setLightbox(true)
+                    }}
+                    style={styles.zoomBtn}
+                    accessibilityLabel="Zoom the cover"
+                  />
+                )}
+                {/* While the artwork is held, say what the speed jumped to - the
+                    gesture is invisible otherwise. */}
+                {boosting && (
+                  <Animated.View
+                    entering={FadeIn.duration(DUR.fast)}
+                    exiting={FadeOut.duration(DUR.fast)}
+                    style={styles.boostBadge}
+                    pointerEvents="none"
+                  >
+                    <View style={styles.boostChip}>
+                      <Icon name={icons.speed} size={13} color="#fff" />
+                      <AppText variant="caption" color="#fff" style={{ fontWeight: '700' }}>
+                        {`${rate.toFixed(2).replace(/\.?0+$/, '')}×`}
+                      </AppText>
+                    </View>
+                  </Animated.View>
+                )}
+                {!immersive && showInspectHint && (
                   <Animated.View
                     entering={FadeIn.duration(DUR.base)}
                     exiting={FadeOut.duration(DUR.fast)}
@@ -1005,9 +1028,9 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                     pointerEvents="none"
                   >
                     <View style={styles.inspectHintChip}>
-                      <Icon name={icons.search} size={13} color="rgba(255,255,255,0.85)" />
+                      <Icon name={icons.speed} size={13} color="rgba(255,255,255,0.85)" />
                       <AppText variant="caption" color="rgba(255,255,255,0.85)">
-                        tap cover to zoom in
+                        hold cover to fast-forward
                       </AppText>
                     </View>
                   </Animated.View>
@@ -1015,6 +1038,27 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
               </>
             )
             const carouselOn = !immersive && settings.carouselPlayer
+            // Double-tap the margin beside the artwork to skip. Shown in BOTH the
+            // carousel and plain-cover layouts; in the carousel only on the live
+            // page, so paging and skipping never fight. The gutter beside a
+            // width-filling cover can be nearly zero, so the strips claim a usable
+            // minimum and overlay the cover's edge when the margin is thin.
+            const hotspotWidth = Math.max(HOTSPOT_MIN_WIDTH, carouselHotspotWidth)
+            const hotspots =
+              settings.skipHotspots && (!carouselOn || deck.index === 0) ? (
+                <>
+                  <Pressable
+                    onPress={() => onHotspotTap(-1)}
+                    style={[styles.hotspotLeft, { width: hotspotWidth }]}
+                    accessibilityLabel={`Skip back ${settings.skipBack} seconds`}
+                  />
+                  <Pressable
+                    onPress={() => onHotspotTap(1)}
+                    style={[styles.hotspotRight, { width: hotspotWidth }]}
+                    accessibilityLabel={`Skip forward ${settings.skipForward} seconds`}
+                  />
+                </>
+              ) : null
             return (
               <GestureDetector gesture={swipe}>
                 <View
@@ -1036,48 +1080,45 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                       pageWidth={width}
                       overlay={coverOverlays}
                       skipFeedback={<SkipFeedbackOverlay ref={skipFeedbackRef} />}
-                      hotspots={
-                        // Only on the live page: once you've paged into the deck,
-                        // hotspots hide so paging and skipping never fight.
-                        settings.skipHotspots && deck.index === 0 && carouselHotspotWidth > 24 ? (
-                          <>
-                            <Pressable
-                              onPress={() => onHotspotTap(-1)}
-                              style={[styles.hotspotLeft, { width: carouselHotspotWidth }]}
-                              accessibilityLabel={`Skip back ${settings.skipBack} seconds`}
-                            />
-                            <Pressable
-                              onPress={() => onHotspotTap(1)}
-                              style={[styles.hotspotRight, { width: carouselHotspotWidth }]}
-                              accessibilityLabel={`Skip forward ${settings.skipForward} seconds`}
-                            />
-                          </>
-                        ) : null
-                      }
+                      hotspots={hotspots}
                       onLivePress={onCoverTap}
                       onLongPressPage={onCoverLongPress}
+                      onLiveHoldStart={onCoverHoldStart}
+                      onLiveHoldEnd={onCoverHoldEnd}
                       onDeckChange={onDeckChange}
                       onScrollFraction={onScrollFraction}
                     />
                   ) : (
-                    // Focus view (immersive): a single large cover, no carousel.
-                    <Pressable onPress={onCoverTap} style={styles.coverTap}>
-                      <Cover
-                        uri={nowPlaying.artworkUrl}
-                        itemId={nowPlaying.itemId}
-                        width={coverWidth}
-                        aspectRatio={coverAspect}
-                        radius={radius.card}
-                        fallback={{
-                          hue,
-                          initial: nowPlaying.title.charAt(0).toUpperCase(),
-                          title: nowPlaying.title,
-                        }}
-                        style={styles.cover}
-                      />
-                      <SkipFeedbackOverlay ref={skipFeedbackRef} />
-                      {coverOverlays}
-                    </Pressable>
+                    // Plain cover: one card, no carousel (focus view, or the
+                    // carousel turned off). The hotspots are SIBLINGS of the
+                    // cover press target and drawn after it, so margin taps reach
+                    // them instead of being swallowed by the cover.
+                    <>
+                      <Pressable
+                        onPress={onCoverTap}
+                        onLongPress={onCoverHoldStart}
+                        onPressOut={onCoverHoldEnd}
+                        delayLongPress={300}
+                        style={styles.coverTap}
+                      >
+                        <Cover
+                          uri={nowPlaying.artworkUrl}
+                          itemId={nowPlaying.itemId}
+                          width={coverWidth}
+                          aspectRatio={coverAspect}
+                          radius={radius.card}
+                          fallback={{
+                            hue,
+                            initial: nowPlaying.title.charAt(0).toUpperCase(),
+                            title: nowPlaying.title,
+                          }}
+                          style={styles.cover}
+                        />
+                        <SkipFeedbackOverlay ref={skipFeedbackRef} />
+                        {coverOverlays}
+                      </Pressable>
+                      {hotspots}
+                    </>
                   )}
                 </View>
               </GestureDetector>
@@ -2235,7 +2276,20 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
+    // The club shortcut sits under the bookmark on the right edge; the cover's
+    // top-left corner belongs to Zoom.
     clubBtn: {
+      position: 'absolute',
+      top: 54,
+      right: 10,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: 'rgba(20,17,15,0.5)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    zoomBtn: {
       position: 'absolute',
       top: 10,
       left: 10,
@@ -2246,7 +2300,25 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-    // One-time "tap cover to zoom in" hint chip, bottom-center of the cover. The
+    // Speed readout while the artwork is held down (hold-to-fast-forward).
+    boostBadge: {
+      position: 'absolute',
+      top: 10,
+      left: 0,
+      right: 0,
+      flexDirection: 'row',
+      justifyContent: 'center',
+    },
+    boostChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 5,
+      borderRadius: radius.pill,
+      backgroundColor: withAlpha(colors.accent, 0.92),
+    },
+    // One-time gesture hint chip, bottom-center of the cover. The
     // absolute wrapper spans the cover width so the chip centers within it.
     inspectHint: {
       position: 'absolute',

@@ -61,6 +61,8 @@ export function PlayerCoverCarousel({
   /** Tap the live cover (play/pause or lightbox, per the player's own logic). */
   onLivePress,
   onLongPressPage,
+  onLiveHoldStart,
+  onLiveHoldEnd,
   /** Reports the deck (page count, active index, the active page's book, and a
    *  jump fn) so the player can draw the dots and the browsed book's header +
    *  transport. */
@@ -79,9 +81,13 @@ export function PlayerCoverCarousel({
   skipFeedback?: React.ReactNode
   hotspots?: React.ReactNode
   onLivePress: () => void
-  /** Long-press any cover to open the book actions sheet (same menu as the
-   *  home shelves). Fires with the pressed page's book id/title/author. */
+  /** Long-press an UP-NEXT cover to open the book actions sheet (same menu as
+   *  the home shelves). Not wired on the live page - holding that one is the
+   *  fast-forward gesture below. */
   onLongPressPage?: (page: { itemId: string; title: string; author: string; isLive: boolean }) => void
+  /** Press-and-hold the live cover: fast-forward while held, normal on release. */
+  onLiveHoldStart?: () => void
+  onLiveHoldEnd?: () => void
   onDeckChange?: (info: {
     count: number
     index: number
@@ -211,7 +217,18 @@ export function PlayerCoverCarousel({
                     animated: true,
                   })
           }
-          onLongPress={onLongPressPage ? () => onLongPressPage(item) : undefined}
+          // Holding the LIVE cover fast-forwards (boost on long-press, restore on
+          // release); holding an up-next cover opens the book actions sheet.
+          // onPressOut also fires when the press is cancelled (the touch turns
+          // into a horizontal page swipe), so the boost can't outlive the finger.
+          onLongPress={
+            item.isLive
+              ? onLiveHoldStart
+              : onLongPressPage
+                ? () => onLongPressPage(item)
+                : undefined
+          }
+          onPressOut={item.isLive ? onLiveHoldEnd : undefined}
           delayLongPress={300}
           style={[styles.card, { width: coverWidth }]}
         >

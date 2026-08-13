@@ -249,6 +249,7 @@ export function IconButton({
   color,
   hitSlop = 10,
   style,
+  accessibilityLabel,
 }: {
   name: IconName
   onPress?: () => void
@@ -256,6 +257,8 @@ export function IconButton({
   color?: string
   hitSlop?: number
   style?: StyleProp<ViewStyle>
+  /** Spoken name for the button - an icon alone announces as "button". */
+  accessibilityLabel?: string
 }) {
   const colors = useColors()
   const styles = useStyles()
@@ -263,6 +266,8 @@ export function IconButton({
     <Pressable
       onPress={onPress}
       hitSlop={hitSlop}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       style={({ pressed }) => [pressed && styles.pressed, style]}
     >
       <Icon name={name} size={size} color={color ?? colors.text} />
