@@ -38,7 +38,13 @@ import {
   refreshProgress,
   promptAndMarkItemsFinished,
 } from '@/store/progress'
-import { getDismissalsState, subscribeDismissals, hydrateDismissals } from '@/store/dismissals'
+import {
+  getDismissalsState,
+  subscribeDismissals,
+  hydrateDismissals,
+  dismiss,
+  restore,
+} from '@/store/dismissals'
 import { requestSeek } from '@/player/store'
 import { playItemById } from '@/player/playback'
 import { upcomingBookPath } from '@/lib/upcomingBookRoute'
@@ -143,7 +149,12 @@ export default function SeriesDetailScreen() {
   // Ignored books drop out of the missing list (and so out of the completion
   // denominator and the progress track). Read live so ignoring one from the
   // tray updates the list immediately.
-  const ignoredAsins = useSyncExternalStore(subscribeDismissals, getDismissalsState).rosterAsins
+  const dismissals = useSyncExternalStore(subscribeDismissals, getDismissalsState)
+  const ignoredAsins = dismissals.rosterAsins
+  // Ignoring the series itself is a different axis: "no interest". It stops
+  // being suggested (Auto queue, Continue Series, Discover, QuestGiver) but
+  // stays in the library and in search, and on this page.
+  const seriesIgnored = id ? dismissals.seriesIds.includes(id) : false
   // This screen is reachable without passing through Home (deep link, search),
   // which is where the store is otherwise hydrated.
   useEffect(() => {
@@ -269,6 +280,16 @@ export default function SeriesDetailScreen() {
     }
   }
 
+  const toggleIgnoreSeries = async () => {
+    if (!id) return
+    try {
+      if (seriesIgnored) await restore('series', id)
+      else await dismiss('series', id, series?.name)
+    } catch {
+      // Store rolled the optimistic write back.
+    }
+  }
+
   const play = async (bookId: string) => {
     const p = progressById.get(bookId)
     await playItemById(bookId)
@@ -288,6 +309,8 @@ export default function SeriesDetailScreen() {
         allFinished={allSeriesFinished}
         marking={marking}
         onMarkSeries={() => void markSeries()}
+        ignored={seriesIgnored}
+        onToggleIgnore={() => void toggleIgnoreSeries()}
       />
       <ScrollView
         style={{ flex: 1 }}
@@ -754,11 +777,15 @@ function Header({
   allFinished,
   marking,
   onMarkSeries,
+  ignored,
+  onToggleIgnore,
 }: {
   onBack: () => void
   allFinished?: boolean
   marking?: boolean
   onMarkSeries?: () => void
+  ignored?: boolean
+  onToggleIgnore?: () => void
 }) {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
@@ -792,6 +819,31 @@ function Header({
                 {allFinished ? 'Mark series unfinished' : 'Mark series finished'}
               </AppText>
             </Touchable>
+            {/* Ignore is not hide: the series stays in the library and in
+                search, it just stops being suggested. */}
+            {onToggleIgnore ? (
+              <Touchable
+                style={styles.overflowRow}
+                onPress={() => {
+                  overflowRef.current?.dismiss()
+                  onToggleIgnore()
+                }}
+              >
+                <Icon
+                  name={ignored ? icons.hidden : icons.visible}
+                  size={22}
+                  color={colors.text}
+                />
+                <View style={{ flex: 1 }}>
+                  <AppText variant="body">{ignored ? 'Stop ignoring' : 'Ignore series'}</AppText>
+                  <AppText variant="caption" color={colors.textMuted}>
+                    {ignored
+                      ? 'Suggest this series again'
+                      : 'Stop suggesting it. Stays in your library'}
+                  </AppText>
+                </View>
+              </Touchable>
+            ) : null}
           </Sheet>
         </>
       ) : null}

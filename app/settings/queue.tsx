@@ -94,10 +94,10 @@ function HiddenFromShelves() {
 
   return (
     <View style={styles.section}>
-      <AppText variant="label">Hidden from shelves</AppText>
+      <AppText variant="label">Ignored</AppText>
       <AppText variant="caption" color={colors.textMuted} style={styles.hint}>
-        Series and books you hid from your Auto queue and Continue shelves. Restore to bring them
-        back.
+        Series you ignored and books you set aside. They stay in your library - they just stop being
+        suggested. Restore to have them recommended again.
       </AppText>
       {rows.map((r) => (
         <View key={`${r.kind}:${r.id}`} style={styles.hiddenRow}>
@@ -107,7 +107,7 @@ function HiddenFromShelves() {
             color={colors.textMuted}
           />
           <AppText variant="body" style={{ flex: 1 }} numberOfLines={1}>
-            {labelFor(r.id) ?? (r.kind === 'series' ? 'Hidden series' : 'Hidden book')}
+            {labelFor(r.id) ?? (r.kind === 'series' ? 'Ignored series' : 'Book set aside')}
           </AppText>
           <Touchable
             style={styles.restoreBtn}

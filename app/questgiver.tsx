@@ -23,6 +23,7 @@ import {
   qgExternalSearchTerms,
   qgLibraryCandidates,
   qgResolvePicks,
+  ignoredItemIds,
   qgRunLabel,
   type QgAnswers,
   type QgCandidate,
@@ -30,7 +31,8 @@ import {
   type QgRenderedPick,
 } from '@hearthshelf/core'
 import type { ABSLibraryItem } from '@hearthshelf/core'
-import { getAllLibraryItems, getLibraries } from '@/api/abs'
+import { getAllLibraryItems, getLibraries, getLibrarySeries } from '@/api/abs'
+import { getDismissalsState } from '@/store/dismissals'
 import { searchAudible } from '@/api/absAudible'
 import { getRmabEnabled, submitRequest } from '@/api/absRmab'
 import {
@@ -87,6 +89,7 @@ export default function QuestGiverScreen() {
   const tabBar = <AppTabBar activeName={active} onPressTab={goToTab} />
 
   const [items, setItems] = useState<ABSLibraryItem[] | null>(null)
+  const [ignoredIds, setIgnoredIds] = useState<ReadonlySet<string>>(() => new Set())
   const [config, setConfig] = useState<QgConfig | null>(null)
   const [rmabEnabled, setRmabEnabled] = useState(false)
 
@@ -139,6 +142,16 @@ export default function QuestGiverScreen() {
       const all = lib ? await getAllLibraryItems(lib.id).catch(() => []) : []
       if (cancelled) return
       setItems(all)
+
+      // Books in series the listener ignored. QuestGiver never suggests from a
+      // series they said they have no interest in - the engine sees no series
+      // ids, so resolve the set off /series. Best-effort: on failure nothing is
+      // filtered rather than the run failing.
+      if (lib && getDismissalsState().seriesIds.length) {
+        const allSeries = await getLibrarySeries(lib.id).catch(() => [])
+        if (cancelled) return
+        setIgnoredIds(ignoredItemIds(allSeries, { ...getDismissalsState(), itemIds: [] }))
+      }
 
       const serverRuns = await fetchServerRuns()
       if (!cancelled) setRuns(serverRuns)
@@ -270,7 +283,7 @@ export default function QuestGiverScreen() {
     // Library pool always; external pool when looking beyond. Not gated on a
     // request backend - enabling the option searches, and what you can DO with
     // an external pick is decided later by `kind`.
-    let candidates: QgCandidate[] = qgLibraryCandidates(books)
+    let candidates: QgCandidate[] = qgLibraryCandidates(books, ignoredIds)
     const externalById = new Map<string, QgCandidate>()
     if (lookBeyond) {
       const terms = qgExternalSearchTerms(profile, books, weights ?? {})
@@ -289,6 +302,7 @@ export default function QuestGiverScreen() {
       priorPicks: runs.flatMap((r) => r.picks),
       canRequest: rmabEnabled,
       count: answers.count ?? 4,
+      ignoredIds,
     })
 
     const now = new Date()

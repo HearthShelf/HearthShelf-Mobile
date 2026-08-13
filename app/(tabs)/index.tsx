@@ -27,6 +27,7 @@ import {
   buildDiscoverShelves,
   rankDiscoverShelves,
   continueSeriesShelf,
+  ignoredItemIds,
   GENERAL_REC_SECTIONS,
   isGeneratedRecShelf,
 } from '@hearthshelf/core'
@@ -169,6 +170,10 @@ export default function HomeScreen() {
   const [libraryName, setLibraryName] = useState<string | null>(null)
   // Shared per-item progress; mark-finished anywhere updates tiles here live.
   const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
+  // Dismissals gate the hero and Continue Listening the same way they gate the
+  // shelf rows below. Subscribed here so hiding a book (including via "Reset
+  // progress") drops it from the hero immediately, without a relaunch.
+  useSyncExternalStore(subscribeDismissals, getDismissalsState)
   // The user's Home arrangement drives which bands render and in what order.
   const { homeSections } = useSyncExternalStore(subscribeSettings, getSettingsState)
   // Edit mode replaces the shelves with draggable section headers (covers off).
@@ -259,6 +264,11 @@ export default function HomeScreen() {
 
   const loadHome = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true)
+    // Dismissals gate both the in-progress filter below and the Continue-*
+    // shelves, so they have to land before anything is derived from them - on a
+    // cold load the cache is empty and a hidden book would flash into the hero.
+    // Best-effort: a failure keeps whatever cache we already have.
+    await hydrateDismissals().catch(() => {})
     const progress = await getItemsInProgress()
     // Drop books we just finished locally if the server hasn't caught up yet; once
     // items-in-progress stops returning them, they're gone from this set too.
@@ -270,9 +280,15 @@ export default function HomeScreen() {
     // with "Resume". The shared progress store is the source of truth for
     // finished state; the render-time derivation below re-applies this against
     // live progress so a book finishing while Home is open falls off too.
+    // Dismissed books are also dropped: "Reset progress" from a Continue tile
+    // hides the book but leaves it at position 0, which ABS still reports as
+    // in-progress - without this the silent reload puts it straight back.
     const finished = getProgressState().byId
     const visibleProgress = progress.filter(
-      (it) => !justFinishedRef.current.has(it.id) && finished.get(it.id)?.isFinished !== true,
+      (it) =>
+        !justFinishedRef.current.has(it.id) &&
+        finished.get(it.id)?.isFinished !== true &&
+        !isItemDismissed(it.id),
     )
     setInProgress(visibleProgress)
     setAutoDownloadContinueListening(
@@ -287,10 +303,6 @@ export default function HomeScreen() {
     // shared progress store; refresh it alongside the rest of Home. Awaited here
     // so the taste engine below sees fresh finished/started state.
     await refreshProgress().catch(() => {})
-
-    // Dismissals drive which series/books are hidden from the Continue-* shelves;
-    // pull them so the filter below is current. Best-effort.
-    await hydrateDismissals().catch(() => {})
 
     // Stats strip is best-effort - a stats failure shouldn't block the rest of
     // Home from loading. Same getHSStats() the Stats tab reads, so the two never
@@ -313,12 +325,27 @@ export default function HomeScreen() {
       // genres/narrator survive). Best-effort: a fetch failure just skips them.
       let recShelves: HomeShelf[] = []
       let carShelves: { id: string; label: string; items: ABSLibraryItem[] }[] = []
+      // Books in series the listener ignored. The taste engine sees only the
+      // minified item shape (a seriesName string, no series id), so resolve the
+      // set here off /series and hand it down. Best-effort: if the series call
+      // fails, nothing is filtered rather than the shelves failing to build.
+      let ignoredIds: ReadonlySet<string> = new Set()
+      try {
+        if (getDismissalsState().seriesIds.length) {
+          ignoredIds = ignoredItemIds(await getLibrarySeries(firstBookLib.id), {
+            ...getDismissalsState(),
+            itemIds: [],
+          })
+        }
+      } catch {
+        // Leave the set empty - suggestions are unfiltered, not broken.
+      }
       try {
         const items = await getAllLibraryItems(firstBookLib.id)
         const progressMap = new Map(getProgressState().byId)
-        const { shelves: baseShelves } = buildDiscoverShelves(items, progressMap)
+        const { shelves: baseShelves } = buildDiscoverShelves(items, progressMap, ignoredIds)
         const byId = new Map(items.map((it) => [it.id, it] as const))
-        const ranked = rankDiscoverShelves(baseShelves, byId)
+        const ranked = rankDiscoverShelves(baseShelves, byId, { ignoredIds })
         // Fixed-id rec shelves ('recommended', 'series-next', 'recent',
         // 'questgiver') each map to their own arrangeable section. The rest are
         // taste-derived (genre/author/narrator/cold): they share the
@@ -388,9 +415,10 @@ export default function HomeScreen() {
       // Build Continue-Series from core (series id per tile).
       try {
         const allSeries = await getLibrarySeries(firstBookLib.id)
+        const d = getDismissalsState()
         const csEntries = continueSeriesShelf(allSeries, getProgressState().byId, {
-          seriesIds: [],
-          itemIds: [],
+          seriesIds: d.seriesIds,
+          itemIds: d.itemIds,
         })
         if (csEntries.length) {
           const seriesByItemId: Record<string, { id: string; name: string }> = {}
@@ -571,9 +599,9 @@ export default function HomeScreen() {
     [progressById],
   )
 
-  // After a dismiss/reset: confirm, re-pull the server queue (the dismissed
-  // series/book changes what Auto computes), and reload Home so the tile drops.
-  // Undo lives in Settings > Hidden from shelves (the toast just confirms).
+  // After an ignore/reset: confirm, re-pull the server queue (the change moves
+  // what Auto computes), and reload Home so the tile drops. Undo lives in
+  // Settings > Ignored (the toast just confirms).
   const handleDismissed = useCallback(
     (label: string) => {
       showToast(`${label} - restore in Settings`)
@@ -638,10 +666,13 @@ export default function HomeScreen() {
     )
   }
 
-  // Re-apply the finished filter at render against the live progress store so a
-  // book that reaches 100% while Home is open drops out of the hero/Continue
-  // immediately, without waiting for the next items-in-progress fetch.
-  const visibleInProgress = inProgress.filter((it) => progressById.get(it.id)?.isFinished !== true)
+  // Re-apply the finished + dismissed filters at render against the live stores
+  // so a book that reaches 100% - or that gets hidden/reset - while Home is open
+  // drops out of the hero/Continue immediately, without waiting for the next
+  // items-in-progress fetch.
+  const visibleInProgress = inProgress.filter(
+    (it) => progressById.get(it.id)?.isFinished !== true && !isItemDismissed(it.id),
+  )
   const hero = visibleInProgress[0]
   const allSectionsHidden = homeSections.every((s) => !s.on)
 

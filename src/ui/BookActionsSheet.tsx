@@ -223,23 +223,26 @@ export const BookActionsSheet = forwardRef<
     )
   }
 
-  // Hide a series (Continue-Series) or a book (Continue-Listening) from Auto
-  // sources. Optimistic via the dismissals store; reversible from the Undo toast.
+  // Ignore a series (Continue-Series) or set a book aside (Continue-Listening).
+  // An ignored series stops being suggested but stays in the library and in
+  // search. Optimistic via the dismissals store; reversible from the Undo toast.
   const dismissTarget = async () => {
     if (!item || busy) return
     close()
-    const kind: 'series' | 'item' = source === 'series' ? 'series' : 'item'
-    const entityId = source === 'series' ? seriesRef?.id : item.id
+    const isSeries = source === 'series'
+    const kind: 'series' | 'item' = isSeries ? 'series' : 'item'
+    const entityId = isSeries ? seriesRef?.id : item.id
     if (!entityId) return
-    const label = source === 'series' ? seriesRef?.name || 'series' : itemTitle(item)
+    const label = isSeries ? seriesRef?.name || 'series' : itemTitle(item)
+    const done = isSeries ? `Ignoring "${label}"` : `Set "${label}" aside`
     try {
       await dismissEntity(kind, entityId, label)
-      onDismissed?.(`Hid "${label}"`)
-      showToast(`Hid "${label}"`, {
+      onDismissed?.(done)
+      showToast(done, {
         action: { label: 'Undo', onPress: () => void restoreEntity(kind, entityId) },
       })
     } catch {
-      toast('Could not hide that')
+      toast(isSeries ? 'Could not ignore that' : 'Could not set that aside')
     }
   }
 
@@ -370,7 +373,7 @@ export const BookActionsSheet = forwardRef<
         {canDismiss && (
           <ActionRow
             icon={icons.hidden}
-            label={source === 'series' ? 'Not right now (hide series)' : 'Not right now'}
+            label={source === 'series' ? 'Ignore series' : 'Not right now'}
             destructive
             onPress={() => void dismissTarget()}
           />

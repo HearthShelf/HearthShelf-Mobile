@@ -31,8 +31,10 @@ import {
   buildDiscoverSummary,
   discoverCandidates,
   rankDiscoverShelves,
+  ignoredItemIds,
 } from '@hearthshelf/core'
-import { getAllLibraryItems, getLibraries } from '@/api/abs'
+import { getAllLibraryItems, getLibraries, getLibrarySeries } from '@/api/abs'
+import { getDismissalsState } from '@/store/dismissals'
 import {
   getDiscoverFeedback,
   getMonthlyShelf,
@@ -151,8 +153,23 @@ export default function DiscoverScreen() {
       setFeedback(fb)
       setRatings(rt)
 
-      const { shelves: base } = buildDiscoverShelves(all, progressMap)
-      const ranked = rankDiscoverShelves(base, byId, { feedback: fb })
+      // Books in series the listener ignored - "no interest", so they drop out
+      // of every row here while staying in the library and in search. The
+      // engine sees no series ids, so resolve the set off /series first.
+      let ignoredIds: ReadonlySet<string> = new Set()
+      try {
+        if (getDismissalsState().seriesIds.length) {
+          ignoredIds = ignoredItemIds(await getLibrarySeries(lib.id), {
+            ...getDismissalsState(),
+            itemIds: [],
+          })
+        }
+      } catch {
+        // Leave the set empty - suggestions are unfiltered, not broken.
+      }
+
+      const { shelves: base } = buildDiscoverShelves(all, progressMap, ignoredIds)
+      const ranked = rankDiscoverShelves(base, byId, { feedback: fb, ignoredIds })
       setShelves(ranked)
 
       // Publish for the See-all screen, which reads the shared shelves store.
@@ -169,7 +186,7 @@ export default function DiscoverScreen() {
       // The AI shelf and popular row are best-effort garnish on top.
       void getMonthlyShelf(
         buildDiscoverSummary(all, progressMap),
-        discoverCandidates(all, progressMap),
+        discoverCandidates(all, progressMap, ignoredIds),
       ).then(setMonthly)
       void getPopular().then((rows) => {
         const resolved = rows
