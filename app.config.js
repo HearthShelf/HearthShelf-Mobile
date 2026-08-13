@@ -225,6 +225,17 @@ module.exports = {
     '@clerk/expo',
     '@react-native-community/datetimepicker',
     [
+      // Screenshot attachments on the feedback form. The plugin's job here is
+      // the iOS usage string - the default copy is generic ("access your
+      // photos"), and this states the actual, narrow reason. On Android 13+ the
+      // system Photo Picker handles selection with no runtime permission at all.
+      'expo-image-picker',
+      {
+        photosPermission:
+          'HearthShelf uses this only to attach a screenshot you pick to a feedback report.',
+      },
+    ],
+    [
       // Embed static font faces at build time with weight/style metadata so
       // fontWeight resolves natively on iOS and Android. Variable fonts crash
       // iOS CoreText at registration (expo-font FontUtils), so we ship static
