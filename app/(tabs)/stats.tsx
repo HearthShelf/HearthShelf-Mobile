@@ -15,6 +15,7 @@
  */
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -2024,6 +2025,7 @@ function Leaderboard({
   styles: Styles
   colors: Palette
 }) {
+  const router = useRouter()
   const [window, setWindow] = useState<LeaderboardWindow>('month')
   const [status, setStatus] = useState<LeaderboardStatus>({ phase: 'loading' })
 
@@ -2079,7 +2081,15 @@ function Leaderboard({
       ) : (
         <View style={{ gap: spacing.sm }}>
           {status.entries.slice(0, 20).map((entry) => (
-            <View key={entry.userId} style={[styles.lbRow, entry.isMe && styles.lbRowMe]}>
+            <Pressable
+              key={entry.userId}
+              style={({ pressed }) => [
+                styles.lbRow,
+                entry.isMe && styles.lbRowMe,
+                pressed && { opacity: 0.6 },
+              ]}
+              onPress={() => router.push(`/user/${entry.userId}?from=stats`)}
+            >
               <AppText
                 variant="mono"
                 color={entry.isMe ? colors.accent : colors.textMuted}
@@ -2105,7 +2115,8 @@ function Leaderboard({
               <AppText variant="mono" color={colors.textMuted}>
                 {formatDuration(entry.secondsListened)}
               </AppText>
-            </View>
+              <Icon name={icons.chevronRight} size={18} color={colors.textFaint} />
+            </Pressable>
           ))}
         </View>
       )}

@@ -12,6 +12,7 @@ import type {
   HSListeningNowResponse,
   HSListeningNowBulkResponse,
   HSCompareResponse,
+  HSProfileResponse,
   LeaderboardWindow,
 } from '@hearthshelf/core'
 import { getSession } from './session'
@@ -92,6 +93,46 @@ export async function getCompare(opts: { userId?: string } = {}): Promise<HSComp
     return data
   } catch {
     return UNAVAILABLE_COMPARE
+  }
+}
+
+/**
+ * Why this returns a three-way result instead of the usual
+ * degrade-to-`available:false` constant: the profile screen has to tell
+ * "they keep this private" apart from "the feature is unavailable".
+ *   - 'ok'          - render the profile.
+ *   - 'not-shared'  - the server 403'd; this user isn't on the visibility
+ *                     roster. A real answer, not a failure.
+ *   - 'unavailable' - ABS's db isn't mapped / older server / network failure.
+ * Collapsing the 403 into 'unavailable' (as every other helper here does)
+ * would make a deliberate privacy choice look like a broken screen.
+ */
+export type ProfileResult =
+  | { status: 'ok'; profile: HSProfileResponse }
+  | { status: 'not-shared' }
+  | { status: 'unavailable' }
+
+export async function getProfile(userId: string): Promise<ProfileResult> {
+  const session = getSession()
+  if (!session || !userId) return { status: 'unavailable' }
+  const { serverUrl, token } = session
+  const params = new URLSearchParams()
+  // Negated, so it's the offset FROM UTC: getTimezoneOffset() returns the
+  // inverse (UTC-4 -> +240). The backend buckets the caller-local year start
+  // from this, so the sign matters.
+  params.set('tz', String(-new Date().getTimezoneOffset()))
+  params.set('userId', userId)
+  try {
+    const res = await fetch(`${serverUrl}/hs/social/profile?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (res.status === 403) return { status: 'not-shared' }
+    if (!res.ok) return { status: 'unavailable' }
+    const data = (await res.json()) as HSProfileResponse
+    if (!data || data.available !== true) return { status: 'unavailable' }
+    return { status: 'ok', profile: data }
+  } catch {
+    return { status: 'unavailable' }
   }
 }
 
