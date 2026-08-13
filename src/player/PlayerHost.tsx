@@ -207,6 +207,9 @@ export function PlayerHost() {
         // genuinely started, not merely that we re-issued the command. The window
         // is generous because a reclaimed service must be recreated and the track
         // re-buffered from scratch.
+        //
+        // Both outcomes are breadcrumbed; only a FAILED recovery raises a Sentry
+        // event (see reportPlaybackLost).
         if (reclaimProbe.current) clearTimeout(reclaimProbe.current)
         const wantedPlaying = s.isPlaying
         reclaimProbe.current = setTimeout(() => {

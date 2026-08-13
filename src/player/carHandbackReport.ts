@@ -68,32 +68,36 @@ export function reportDeadTransport(source: string, detail: string): void {
  * is how Y reached us, after an unknown number of listeners who just force-closed
  * the app instead. A breadcrumb alone is invisible until someone files feedback.
  *
- * `recovered` is the whole point of the event. The reclaim itself is expected
- * (the OS is allowed to do this); what we cannot see from here is whether our
- * reload actually produced audio. Sending both outcomes means the ratio answers
- * "is the fix working in the field", which no amount of local testing can - a
- * memory-pressure reclaim is not reproducible in Metro.
+ * ONLY THE FAILURE IS AN EVENT. A recovered reclaim is expected behaviour - the
+ * OS is allowed to reclaim the service and we put it back - so it goes to the
+ * breadcrumb ring, which already ships with crash and feedback reports. It was
+ * briefly sent as a level:info captureMessage, which files an ISSUE: a permanent
+ * unresolved row in the stream describing a success. That is the same mistake as
+ * the archived traceEvent markers (HS-MOBILEAPP-D/E/F/G) - temporary "we got
+ * here" telemetry routed through the issue stream, where it outlives its purpose
+ * and trains everyone to ignore the queue.
  *
- * Level is deliberately asymmetric: a recovered reclaim is info (working as
- * designed, useful only in aggregate), a failed one is an error (a user is
- * sitting in front of a dead play button right now).
+ * The failure IS an event, because a user is sitting in front of a dead play
+ * button right now and nothing else will ever tell us.
+ *
+ * The recovered detail is not lost: the breadcrumb carries the same fields, and
+ * any report filed after a reclaim (crash or feedback) replays the trail.
  */
 export function reportPlaybackLost(recovered: boolean, detail: Record<string, unknown>): void {
-  breadcrumb('player', `playback lost; recovered=${recovered}`)
+  breadcrumb(
+    'player',
+    `playback lost; recovered=${recovered} ${JSON.stringify(detail)}`.slice(0, 300),
+  )
+  if (recovered) return
   try {
-    Sentry.captureMessage(
-      recovered
-        ? 'native player was reclaimed; reloaded from store'
-        : 'native player was reclaimed and reload did not take',
-      {
-        level: recovered ? 'info' : 'error',
-        tags: {
-          area: 'playback_reclaim',
-          playback_reclaim_recovered: String(recovered),
-        },
-        extra: detail,
+    Sentry.captureMessage('native player was reclaimed and reload did not take', {
+      level: 'error',
+      tags: {
+        area: 'playback_reclaim',
+        playback_reclaim_recovered: 'false',
       },
-    )
+      extra: detail,
+    })
   } catch {
     // ignore
   }
