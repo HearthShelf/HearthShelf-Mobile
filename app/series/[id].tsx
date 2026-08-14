@@ -795,7 +795,6 @@ function Header({
       <IconButton name={icons.back} onPress={onBack} style={styles.headerBtn} />
       {onMarkSeries ? (
         <>
-          <View style={{ flex: 1 }} />
           <IconButton
             name={icons.more}
             onPress={() => overflowRef.current?.present()}
@@ -853,7 +852,13 @@ function Header({
 
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
-    header: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm,
+    },
     headerBtn: {
       width: 42,
       height: 42,
