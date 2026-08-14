@@ -4,7 +4,7 @@
  * control) rather than the WebApp's dense two-column layout - mobile rows
  * stack label+description on the left, control on the right, full-width.
  */
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   Pressable,
   ScrollView,
@@ -300,18 +300,33 @@ export function SettingsSlider({
   ticks?: number[]
 }) {
   const colors = useColors()
+  // Settings sliders write to the settings store, whose notify re-renders the
+  // whole panel. Keep a local value for the readout during the drag and only
+  // commit to the store on release, so a fast drag never waits on React.
+  const [dragValue, setDragValue] = useState<number | null>(null)
+  const shown = dragValue ?? value
+  const handleChange = useCallback((v: number) => setDragValue(v), [])
+  const handleComplete = useCallback(
+    (v: number) => {
+      setDragValue(null)
+      onChange(v)
+    },
+    [onChange],
+  )
+
   if (ticks) {
     return (
       <View style={{ gap: spacing.xs }}>
         <AppText variant="mono" color={colors.accent} style={{ alignSelf: 'flex-end' }}>
-          {formatLabel(value)}
+          {formatLabel(shown)}
         </AppText>
         <AppSlider
           min={min}
           max={max}
           step={step}
-          value={value}
-          onChange={onChange}
+          value={shown}
+          onChange={handleChange}
+          onComplete={handleComplete}
           ticks={ticks}
           formatTick={formatLabel}
         />
@@ -325,13 +340,20 @@ export function SettingsSlider({
           {formatLabel(min)}
         </AppText>
         <AppText variant="mono" color={colors.accent}>
-          {formatLabel(value)}
+          {formatLabel(shown)}
         </AppText>
         <AppText variant="mono" color={colors.textMuted}>
           {formatLabel(max)}
         </AppText>
       </View>
-      <AppSlider min={min} max={max} step={step} value={value} onChange={onChange} />
+      <AppSlider
+        min={min}
+        max={max}
+        step={step}
+        value={shown}
+        onChange={handleChange}
+        onComplete={handleComplete}
+      />
     </View>
   )
 }

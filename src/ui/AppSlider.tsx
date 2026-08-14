@@ -9,11 +9,25 @@
  * sheet's pan. The whole 44px strip is the hitbox. Optional ticks render
  * markers on the track with labels anchored to the real track positions, so
  * labels always line up with where the thumb actually lands.
+ *
+ * The thumb is driven by a shared value on the UI thread, never React state.
+ * Consumers wire onChange to a store write, and that store notifies every
+ * subscriber synchronously - so a React-state thumb meant each notch waited on
+ * a full settings-panel re-render, which is what made fast drags stutter and
+ * lag behind the finger. The gesture now only hops to JS when the snapped value
+ * actually changes, and `commitMode` lets a consumer defer the write to
+ * release.
  */
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
-import { runOnJS } from 'react-native-reanimated'
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useDerivedValue,
+  useSharedValue,
+  type SharedValue,
+} from 'react-native-reanimated'
 import { haptics } from '@/ui/haptics'
 import { AppText } from '@/ui/primitives'
 import { radius, spacing, type Palette } from '@/ui/theme'
@@ -24,6 +38,7 @@ const THUMB_R = 10
 const HIT_H = 44
 
 function snap(v: number, min: number, max: number, step: number): number {
+  'worklet'
   const clamped = Math.max(min, Math.min(max, v))
   const stepped = min + Math.round((clamped - min) / step) * step
   // Trim float drift (0.30000000000000004) so consumers can compare/display raw.
@@ -38,6 +53,7 @@ export function AppSlider({
   step = 1,
   onChange,
   onComplete,
+  commitMode = 'live',
   ticks,
   formatTick,
   haptic = true,
@@ -51,6 +67,10 @@ export function AppSlider({
   onChange: (v: number) => void
   /** Fires once with the final value when the drag/tap ends. */
   onComplete?: (v: number) => void
+  /** 'live' (default) reports every snapped step. 'release' reports only when
+   *  the finger lifts - use it when onChange writes to a store whose notify
+   *  re-renders a whole screen. The thumb tracks the finger either way. */
+  commitMode?: 'live' | 'release'
   /** Values to mark on the track, with labels beneath (e.g. [0.5, 1, 2, 3]). */
   ticks?: number[]
   formatTick?: (v: number) => string
@@ -62,85 +82,110 @@ export function AppSlider({
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const [trackW, setTrackW] = useState(0)
-  const [dragValue, setDragValue] = useState<number | null>(null)
-  const lastSent = useRef(value)
 
-  // Read live geometry/value through refs so the gesture callbacks (and the
-  // gesture object itself) never need to be rebuilt when `value` or `trackW`
-  // change. Rebuilding them mid-drag re-attached the GestureDetector every frame
-  // and, together with the onChange->store->re-render feedback, spun React into
-  // a "maximum update depth exceeded" loop and made dragging crawl.
-  const trackWRef = useRef(trackW)
-  trackWRef.current = trackW
-  const valueRef = useRef(value)
-  valueRef.current = value
+  // Live drag state lives on the UI thread. `dragging` (not a sentinel value)
+  // decides whether the thumb follows the finger or the `value` prop, so
+  // sliders with negative or zero minimums are handled the same as any other.
+  const trackWSV = useSharedValue(0)
+  const valueSV = useSharedValue(value)
+  const dragValue = useSharedValue(value)
+  const dragging = useSharedValue(false)
+  const lastSent = useSharedValue(value)
+  useEffect(() => {
+    valueSV.value = value
+    // Resync the change-dedupe baseline too, so an external change (a reset,
+    // a synced setting) doesn't swallow a later drag back to that same value.
+    if (!dragging.value) lastSent.value = value
+  }, [value, valueSV, dragging, lastSent])
+
   // Consumers often pass inline arrows for onChange/onComplete; route them
   // through refs so our gesture callbacks stay stable regardless.
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const onCompleteRef = useRef(onComplete)
   onCompleteRef.current = onComplete
-  const hapticRef = useRef(haptic)
-  hapticRef.current = haptic
 
-  const onLayout = (e: LayoutChangeEvent) => setTrackW(e.nativeEvent.layout.width)
+  const onLayout = (e: LayoutChangeEvent) => {
+    const w = e.nativeEvent.layout.width
+    trackWSV.value = w
+    setTrackW(w)
+  }
 
-  const valueFromX = useCallback(
-    (x: number) => {
-      const usable = trackWRef.current - THUMB_R * 2
-      if (usable <= 0) return valueRef.current
-      const ratio = Math.max(0, Math.min(1, (x - THUMB_R) / usable))
-      return snap(min + ratio * (max - min), min, max, step)
-    },
-    [min, max, step],
-  )
+  // Only these three ever cross to JS, and only on an actual snapped change -
+  // not per frame.
+  const emitChange = useCallback((v: number) => onChangeRef.current(v), [])
+  const emitComplete = useCallback((v: number) => onCompleteRef.current?.(v), [])
+  const tapHaptic = useCallback(() => haptics.select(), [])
 
-  const update = useCallback(
-    (x: number) => {
-      const v = valueFromX(x)
-      setDragValue(v)
-      if (v !== lastSent.current) {
-        lastSent.current = v
-        if (hapticRef.current) haptics.select()
-        onChangeRef.current(v)
-      }
-    },
-    [valueFromX],
-  )
-  const finish = useCallback(
-    (x: number) => {
-      const v = valueFromX(x)
-      setDragValue(null)
-      if (v !== lastSent.current) {
-        lastSent.current = v
-        onChangeRef.current(v)
-      }
-      onCompleteRef.current?.(v)
-    },
-    [valueFromX],
-  )
-  const cancel = useCallback(() => setDragValue(null), [])
-
-  // Zero min distance: activates on touch-down, so taps seat the thumb and the
-  // parent sheet never steals the drag. Memoized so GestureDetector isn't handed
-  // a fresh gesture object on every render (which re-attaches mid-drag).
   const pan = useMemo(
-    () =>
-      Gesture.Pan()
+    () => {
+      const valueFromX = (x: number) => {
+        'worklet'
+        const usable = trackWSV.value - THUMB_R * 2
+        if (usable <= 0) return valueSV.value
+        const ratio = Math.max(0, Math.min(1, (x - THUMB_R) / usable))
+        return snap(min + ratio * (max - min), min, max, step)
+      }
+      const move = (x: number) => {
+        'worklet'
+        const v = valueFromX(x)
+        dragging.value = true
+        dragValue.value = v
+        if (v !== lastSent.value) {
+          lastSent.value = v
+          if (haptic) runOnJS(tapHaptic)()
+          if (commitMode === 'live') runOnJS(emitChange)(v)
+        }
+      }
+      // Zero min distance: activates on touch-down, so taps seat the thumb and
+      // the parent sheet never steals the drag.
+      return Gesture.Pan()
         .minDistance(0)
-        .onBegin((e) => runOnJS(update)(e.x))
-        .onUpdate((e) => runOnJS(update)(e.x))
-        .onEnd((e) => runOnJS(finish)(e.x))
+        .onBegin((e) => move(e.x))
+        .onUpdate((e) => move(e.x))
+        .onEnd((e) => {
+          const v = valueFromX(e.x)
+          dragging.value = false
+          if (commitMode === 'release' || v !== lastSent.value) {
+            lastSent.value = v
+            runOnJS(emitChange)(v)
+          }
+          runOnJS(emitComplete)(v)
+        })
         .onFinalize((_e, success) => {
-          if (!success) runOnJS(cancel)()
-        }),
-    [update, finish, cancel],
+          if (!success) dragging.value = false
+        })
+    },
+    [
+      min,
+      max,
+      step,
+      haptic,
+      commitMode,
+      emitChange,
+      emitComplete,
+      tapHaptic,
+      trackWSV,
+      valueSV,
+      dragValue,
+      dragging,
+      lastSent,
+    ],
   )
 
-  const shown = dragValue ?? value
-  const ratio = max > min ? (Math.max(min, Math.min(max, shown)) - min) / (max - min) : 0
   const usable = Math.max(0, trackW - THUMB_R * 2)
-  const thumbX = ratio * usable
+
+  // Position follows the drag on the UI thread; when idle it tracks the prop.
+  const thumbX = useDerivedValue(() => {
+    const shown = dragging.value ? dragValue.value : valueSV.value
+    const r = max > min ? (Math.max(min, Math.min(max, shown)) - min) / (max - min) : 0
+    return r * Math.max(0, trackWSV.value - THUMB_R * 2)
+  })
+  const thumbStyle = useAnimatedStyle(() => ({
+    left: thumbX.value,
+    transform: [{ scale: dragging.value ? 1.15 : 1 }],
+  }))
+  const fillStyle = useAnimatedStyle(() => ({ width: THUMB_R + thumbX.value }))
 
   const tickX = (t: number) =>
     THUMB_R + (max > min ? ((t - min) / (max - min)) * usable : 0)
@@ -150,19 +195,12 @@ export function AppSlider({
       <GestureDetector gesture={pan}>
         <View style={styles.hitStrip} onLayout={onLayout} hitSlop={{ top: 6, bottom: 6 }}>
           <View style={styles.track}>
-            <View style={[styles.fill, { width: THUMB_R + thumbX }]} />
+            <Animated.View style={[styles.fill, fillStyle]} />
             {ticks?.map((t) => (
-              <View
-                key={t}
-                style={[
-                  styles.tickMark,
-                  { left: tickX(t) - 1 },
-                  shown >= t && styles.tickMarkPassed,
-                ]}
-              />
+              <TickMark key={t} x={tickX(t) - 1} thumbX={thumbX} styles={styles} />
             ))}
           </View>
-          <View style={[styles.thumb, { left: thumbX }, dragValue !== null && styles.thumbActive]} />
+          <Animated.View style={[styles.thumb, thumbStyle]} />
         </View>
       </GestureDetector>
       {ticks && formatTick ? (
@@ -177,6 +215,26 @@ export function AppSlider({
         </View>
       ) : null}
     </View>
+  )
+}
+
+/** A tick on the track that fills in as the thumb passes it. Compares against
+ *  the thumb's live position so it recolors on the UI thread mid-drag. */
+function TickMark({
+  x,
+  thumbX,
+  styles,
+}: {
+  x: number
+  thumbX: SharedValue<number>
+  styles: ReturnType<typeof makeStyles>
+}) {
+  const passed = useAnimatedStyle(() => ({ opacity: thumbX.value >= x ? 1 : 0 }))
+  return (
+    <>
+      <View style={[styles.tickMark, { left: x }]} />
+      <Animated.View style={[styles.tickMark, styles.tickMarkPassed, { left: x }, passed]} />
+    </>
   )
 }
 
@@ -220,9 +278,6 @@ const makeStyles = (colors: Palette) =>
       borderColor: colors.brandCream,
       // Vertically centered in the hit strip.
       top: HIT_H / 2 - THUMB_R,
-    },
-    thumbActive: {
-      transform: [{ scale: 1.15 }],
     },
     // Zero-width anchors: each label centers itself on the exact track x of its
     // tick, so labels can't drift from where the thumb lands.
