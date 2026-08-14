@@ -28,8 +28,9 @@ import { EmptyState, ErrorState } from '@/ui/states'
 import { Icon, icons } from '@/ui/icons'
 import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { useMiniPlayerInset } from '@/ui/useContentInset'
-import { radius, spacing, type Palette } from '@/ui/theme'
-import { useColors } from '@/ui/ThemeProvider'
+import { LinearGradient } from 'expo-linear-gradient'
+import { radius, spacing, withAlpha, type Palette } from '@/ui/theme'
+import { useColors, useTheme } from '@/ui/ThemeProvider'
 import { StyleSheet } from 'react-native'
 
 type Status =
@@ -53,6 +54,22 @@ function agoLabel(ms: number): string {
 
 function yearOf(ms: number | null): string {
   return ms ? String(new Date(ms).getFullYear()) : ''
+}
+
+/** How many finished tiles to mount per page. */
+const FINISHED_PAGE = 60
+
+/** Bucket an already newest-first list into year runs, order preserved. Books
+ *  with no finish date land in a trailing "Earlier" group rather than a "" one. */
+function groupByYear(books: HSProfileBook[]): { year: string; books: HSProfileBook[] }[] {
+  const out: { year: string; books: HSProfileBook[] }[] = []
+  for (const b of books) {
+    const year = yearOf(b.finishedAt) || 'Earlier'
+    const last = out[out.length - 1]
+    if (last && last.year === year) last.books.push(b)
+    else out.push({ year, books: [b] })
+  }
+  return out
 }
 
 type Styles = ReturnType<typeof makeStyles>
@@ -242,6 +259,7 @@ function ListeningHero({
   colors: Palette
   onOpen: (itemId: string) => void
 }) {
+  const { shadow } = useTheme()
   const pct = Math.round(Math.min(Math.max(listen.progress || 0, 0), 1) * 100)
   const remaining = Math.max(listen.durationSec - listen.currentTimeSec, 0)
   const label = listen.isLive
@@ -251,7 +269,22 @@ function ListeningHero({
       : 'Last listened to'
 
   return (
-    <Pressable style={styles.card} onPress={() => onOpen(listen.libraryItemId)}>
+    <Pressable
+      style={[styles.heroCard, shadow.card]}
+      onPress={() => onOpen(listen.libraryItemId)}
+    >
+      <LinearGradient
+        pointerEvents="none"
+        colors={[
+          withAlpha(coverHue(listen.libraryItemId), 0.34),
+          withAlpha(colors.accent, 0.07),
+          colors.card,
+        ]}
+        locations={[0, 0.56, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
       <View style={styles.heroRow}>
         <Cover
           uri={coverUrl(listen.libraryItemId)}
@@ -452,6 +485,19 @@ function FinishedSection({
     [profile.finished, sharedOnly],
   )
 
+  // A heavy listener's list runs to the server's 500-book cap, and mounting
+  // every tile at once locks the device up. The list is already newest-first,
+  // so walk backwards through the calendar a page at a time.
+  const [shownCount, setShownCount] = useState(FINISHED_PAGE)
+  useEffect(() => {
+    setShownCount(FINISHED_PAGE)
+  }, [sharedOnly])
+  const visible = useMemo(() => books.slice(0, shownCount), [books, shownCount])
+  const remaining = books.length - visible.length
+  // Grouped by the year they were finished in, so scrolling back reads as
+  // moving back through the calendar rather than one undifferentiated wall.
+  const years = useMemo(() => groupByYear(visible), [visible])
+
   if (!profile.readShared) {
     return (
       <View style={styles.section}>
@@ -507,32 +553,59 @@ function FinishedSection({
           style={styles.blockEmpty}
         />
       ) : (
-        <View style={styles.grid}>
-          {books.map((b: HSProfileBook) => (
+        <>
+          {years.map((group) => (
+            <View key={group.year} style={styles.yearBlock}>
+              <View style={styles.yearHead}>
+                <AppText variant="label" color={colors.textMuted}>
+                  {group.year}
+                </AppText>
+                <AppText variant="meta" color={colors.textFaint}>
+                  {group.books.length} book{group.books.length === 1 ? '' : 's'}
+                </AppText>
+              </View>
+              <View style={styles.grid}>
+                {group.books.map((b: HSProfileBook) => (
+                  <Pressable
+                    key={b.libraryItemId}
+                    style={styles.tile}
+                    onPress={() => onOpen(b.libraryItemId)}
+                  >
+                    <Cover
+                      uri={coverUrl(b.libraryItemId)}
+                      itemId={b.libraryItemId}
+                      width={TILE_W}
+                      radius={radius.tile}
+                      fallback={{
+                        hue: coverHue(b.libraryItemId),
+                        initial: (b.title || '?').charAt(0).toUpperCase(),
+                      }}
+                    />
+                    <AppText variant="meta" numberOfLines={2} style={styles.tileTitle}>
+                      {b.title || 'Untitled'}
+                    </AppText>
+                    {b.alsoMine ? (
+                      <AppText variant="meta" color={colors.accent}>
+                        Both read
+                      </AppText>
+                    ) : null}
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          ))}
+          {remaining > 0 ? (
             <Pressable
-              key={b.libraryItemId}
-              style={styles.tile}
-              onPress={() => onOpen(b.libraryItemId)}
+              style={styles.moreBtn}
+              onPress={() => setShownCount((n) => n + FINISHED_PAGE)}
             >
-              <Cover
-                uri={coverUrl(b.libraryItemId)}
-                itemId={b.libraryItemId}
-                width={TILE_W}
-                radius={radius.tile}
-                fallback={{
-                  hue: coverHue(b.libraryItemId),
-                  initial: (b.title || '?').charAt(0).toUpperCase(),
-                }}
-              />
-              <AppText variant="meta" numberOfLines={2} style={styles.tileTitle}>
-                {b.title || 'Untitled'}
-              </AppText>
-              <AppText variant="meta" color={b.alsoMine ? colors.accent : colors.textMuted}>
-                {b.alsoMine ? 'Both read' : yearOf(b.finishedAt)}
+              <AppText variant="meta" color={colors.accent}>
+                Show {Math.min(remaining, FINISHED_PAGE)} more
+                {remaining > FINISHED_PAGE ? ` of ${remaining}` : ''}
               </AppText>
             </Pressable>
-          ))}
-        </View>
+          ) : null}
+        </>
       )}
     </View>
   )
@@ -564,6 +637,20 @@ function makeStyles(colors: Palette) {
       gap: spacing.md,
     },
 
+    // The hero is the one card on this screen that should catch the eye, so it
+    // gets the accent edge and cover-hue wash the Following hero uses. Plain
+    // `card` left it identical to the stats card sitting right below it.
+    heroCard: {
+      position: 'relative',
+      overflow: 'hidden',
+      backgroundColor: colors.card,
+      borderRadius: radius.card + 6,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: withAlpha(colors.accent, 0.28),
+      padding: spacing.md,
+      gap: spacing.md,
+      marginBottom: spacing.xs,
+    },
     heroRow: { flexDirection: 'row', gap: spacing.md },
     heroMeta: { flex: 1, minWidth: 0, gap: 3 },
     eyebrowRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -583,7 +670,7 @@ function makeStyles(colors: Palette) {
     },
     barFill: { height: '100%', borderRadius: 999 },
 
-    section: { gap: spacing.sm },
+    section: { gap: spacing.md },
     sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     blockEmpty: { paddingVertical: spacing.lg },
 
@@ -604,6 +691,19 @@ function makeStyles(colors: Palette) {
     segOn: { backgroundColor: colors.fillStrong },
     segDisabled: { opacity: 0.45 },
 
+    yearBlock: { gap: spacing.sm },
+    yearHead: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      justifyContent: 'space-between',
+    },
+    moreBtn: {
+      alignItems: 'center',
+      paddingVertical: spacing.sm,
+      borderRadius: radius.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
     grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
     tile: { width: TILE_W, gap: 3 },
     tileTitle: { marginTop: 4 },
