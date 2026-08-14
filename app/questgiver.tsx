@@ -66,6 +66,9 @@ import { haptics } from '@/ui/haptics'
 
 type Direction = 'more' | 'switch' | 'new'
 type Length = 'any' | 'short' | 'standard' | 'epic'
+/** Which pool to draw suggestions from. 'external' skips the library entirely,
+ *  so it is exclusive rather than a superset of 'library'. */
+type QgScope = 'library' | 'both' | 'external'
 type Basis = 'history' | 'list'
 
 const STEP_LABELS = ['Basis', 'Direction', 'Weights', 'Fine-tune']
@@ -104,7 +107,9 @@ export default function QuestGiverScreen() {
   const [length, setLength] = useState<Length>('any')
   const [familiarity, setFamiliarity] = useState(4)
   const [narratorAffinity, setNarratorAffinity] = useState(true)
-  const [lookBeyond, setLookBeyond] = useState(false)
+  // 'library' = only what you own, 'both' = yours plus outside, 'external' =
+  // only what you don't own yet.
+  const [scope, setScope] = useState<QgScope>('library')
 
   // Step 4 IS the running state - it renders the spinner unconditionally - so
   // there is no separate loading flag.
@@ -269,6 +274,7 @@ export default function QuestGiverScreen() {
     setStep(4)
     setView('flow')
 
+    const usesExternal = scope !== 'library'
     const answers: QgAnswers = {
       direction,
       mood: mood.trim(),
@@ -276,21 +282,36 @@ export default function QuestGiverScreen() {
       length,
       familiarity,
       narratorAffinity,
-      includeRequest: lookBeyond,
-      count: lookBeyond ? 5 : 4,
+      includeRequest: usesExternal,
+      count: usesExternal ? 5 : 4,
     }
 
-    // Library pool always; external pool when looking beyond. Not gated on a
-    // request backend - enabling the option searches, and what you can DO with
-    // an external pick is decided later by `kind`.
-    let candidates: QgCandidate[] = qgLibraryCandidates(books, ignoredIds)
+    // The library pool is skipped entirely in 'external' scope - that is what
+    // makes it exclusive rather than a superset. Not gated on a request
+    // backend: enabling the option searches, and what you can DO with an
+    // external pick is decided later by `kind`.
+    let candidates: QgCandidate[] = scope === 'external' ? [] : qgLibraryCandidates(books, ignoredIds)
     const externalById = new Map<string, QgCandidate>()
-    if (lookBeyond) {
+    if (usesExternal) {
       const terms = qgExternalSearchTerms(profile, books, weights ?? {})
       const hits = await fetchExternalHits(terms)
       const ext = qgExternalCandidates(hits, books)
       ext.forEach((c) => externalById.set(c.id, c))
       candidates = [...candidates, ...ext]
+    }
+
+    // Exclusive mode has no library pool to fall back on, so an external search
+    // that comes back empty would otherwise hand the engine nothing to pick
+    // from and land on a blank result with no explanation.
+    if (candidates.length === 0) {
+      setResult({
+        intro:
+          "I couldn't find anything outside your library to suggest right now. Try a different mood, or search your library too.",
+        engine: 'heuristic',
+        picks: [],
+      })
+      setStep(5)
+      return
     }
 
     const out = await qgRecommend(profile, answers, candidates)
@@ -708,26 +729,31 @@ export default function QuestGiverScreen() {
                   />
                 </Touchable>
 
-                <Touchable
-                  onPress={() => setLookBeyond((v) => !v)}
-                  style={s.toggleRow}
-                  accessibilityRole="switch"
-                  accessibilityLabel="Look beyond my library"
-                >
-                  <View style={s.grow}>
-                    <AppText variant="label">Look beyond my library</AppText>
-                    <AppText variant="caption" color={colors.textFaint}>
-                      {rmabEnabled
-                        ? 'Suggest titles you can request, or buy on Audible.'
-                        : 'Suggest great titles to buy on Audible, not just what you own.'}
-                    </AppText>
+                <View style={s.field}>
+                  <AppText variant="label">Where to look</AppText>
+                  <View style={s.chipRow}>
+                    {(
+                      [
+                        ['library', 'Only my library'],
+                        ['both', 'My library and beyond'],
+                        ['external', "Only what I don't own"],
+                      ] as [QgScope, string][]
+                    ).map(([v, l]) => (
+                      <Chip key={v} label={l} active={scope === v} onPress={() => setScope(v)} />
+                    ))}
                   </View>
-                  <Icon
-                    name={lookBeyond ? 'toggle-on' : 'toggle-off'}
-                    size={30}
-                    color={lookBeyond ? colors.accent : colors.textFaint}
-                  />
-                </Touchable>
+                  <AppText variant="caption" color={colors.textFaint}>
+                    {scope === 'library'
+                      ? 'Only books you already own.'
+                      : scope === 'external'
+                        ? rmabEnabled
+                          ? "Skips your library entirely - only titles you can request, or buy on Audible."
+                          : "Skips your library entirely - only titles to buy on Audible."
+                        : rmabEnabled
+                          ? 'Your books, plus titles you can request or buy on Audible.'
+                          : 'Your books, plus great titles to buy on Audible.'}
+                  </AppText>
+                </View>
 
                 {exhausted ? (
                   <View style={s.limitNote}>
