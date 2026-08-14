@@ -232,6 +232,8 @@ export default function UserProfileScreen() {
 
         {!profile.isMe && <CompareSection profile={profile} styles={styles} colors={colors} />}
 
+        <YearInReviewSection profile={profile} styles={styles} colors={colors} />
+
         <FinishedSection
           profile={profile}
           styles={styles}
@@ -465,6 +467,112 @@ function CompareSection({
 }
 
 // Their finished books, with the ones you've both read called out. Defaults to
+// A year at a time, newest first, with the year picker only when there is more
+// than one to pick from. Every highlight is nullable server-side (a year can
+// lack the data to compute it), so each row renders only when it has a value -
+// a year with nothing but a count still shows the count rather than a shell of
+// empty labels.
+function YearInReviewSection({
+  profile,
+  styles,
+  colors,
+}: {
+  profile: HSProfileResponse
+  styles: Styles
+  colors: Palette
+}) {
+  const years = profile.yearsInReview ?? []
+  const [pick, setPick] = useState(0)
+  const year = years[Math.min(pick, years.length - 1)]
+
+  // Absent on older servers, and empty when the reading list is private - the
+  // FinishedSection below already explains that case, so stay quiet here.
+  if (!year) return null
+
+  const rows: { label: string; value: string }[] = []
+  rows.push({ label: 'Books finished', value: String(year.books) })
+  if (year.seconds > 0) rows.push({ label: 'Time listened', value: formatDuration(year.seconds) })
+  if (year.longest) {
+    rows.push({
+      label: 'Longest book',
+      value: `${year.longest.title} (${formatDuration(year.longest.durationSec)})`,
+    })
+  }
+  if (year.shortest) {
+    rows.push({
+      label: 'Shortest book',
+      value: `${year.shortest.title} (${formatDuration(year.shortest.durationSec)})`,
+    })
+  }
+  if (year.topAuthor) {
+    rows.push({
+      label: 'Most read author',
+      value: `${year.topAuthor.name} · ${year.topAuthor.count} book${year.topAuthor.count === 1 ? '' : 's'}`,
+    })
+  }
+  if (year.topNarrator) {
+    rows.push({
+      label: 'Most heard narrator',
+      value: `${year.topNarrator.name} · ${year.topNarrator.count} book${year.topNarrator.count === 1 ? '' : 's'}`,
+    })
+  }
+  if (year.topSeriesByTime) {
+    rows.push({
+      label: 'Most time in a series',
+      value: `${year.topSeriesByTime.name} · ${formatDuration(year.topSeriesByTime.seconds)}`,
+    })
+  }
+  if (year.topSeriesByBooks) {
+    rows.push({
+      label: 'Most books in a series',
+      value: `${year.topSeriesByBooks.name} · ${year.topSeriesByBooks.count}`,
+    })
+  }
+  if (year.seriesStarted > 0) {
+    rows.push({ label: 'New series started', value: String(year.seriesStarted) })
+  }
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHead}>
+        <Icon name={icons.stats} size={18} color={colors.textMuted} />
+        <AppText variant="label">Year in review</AppText>
+      </View>
+
+      {years.length > 1 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={styles.yearRow}>
+            {years.map((y, i) => (
+              <Pressable
+                key={y.year}
+                onPress={() => setPick(i)}
+                style={[styles.seg, i === pick && styles.segOn]}
+              >
+                <AppText variant="meta" color={i === pick ? colors.text : colors.textMuted}>
+                  {y.year}
+                </AppText>
+              </Pressable>
+            ))}
+          </View>
+        </ScrollView>
+      ) : null}
+
+      <View style={styles.card}>
+        {rows.map((r, i) => (
+          <View key={r.label} style={[styles.yirRow, i > 0 && styles.yirRowDivided]}>
+            <AppText variant="meta" color={colors.textMuted}>
+              {r.label}
+            </AppText>
+            <AppText variant="meta" numberOfLines={2} style={styles.yirValue}>
+              {r.value}
+            </AppText>
+          </View>
+        ))}
+      </View>
+    </View>
+  )
+}
+
 // the overlap when there is any - the interesting view when you've arrived from
 // the leaderboard.
 function FinishedSection({
@@ -682,6 +790,20 @@ function makeStyles(colors: Palette) {
     cmpVal: { minWidth: 42, textAlign: 'right' },
 
     segRow: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
+    // Year picker: no wrap, since it scrolls horizontally instead.
+    yearRow: { flexDirection: 'row', gap: spacing.sm },
+    yirRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: spacing.md,
+      paddingVertical: spacing.sm,
+    },
+    yirRowDivided: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.hairline,
+    },
+    yirValue: { flex: 1, textAlign: 'right' },
     seg: {
       paddingHorizontal: spacing.md,
       paddingVertical: 7,
