@@ -12,7 +12,13 @@
  * player-UI screen changes.
  */
 import { useEffect, useRef, type MutableRefObject } from 'react'
-import { NativeEventEmitter, NativeModules, PermissionsAndroid, Platform } from 'react-native'
+import {
+  AppState,
+  NativeEventEmitter,
+  NativeModules,
+  PermissionsAndroid,
+  Platform,
+} from 'react-native'
 import {
   getState,
   subscribe,
@@ -342,6 +348,15 @@ export function PlayerHost() {
       // with the book the store holds (see handBookToCar / emitCarNeedsBook).
       emitter.addListener('onCarNeedsBook', () => {
         breadcrumb('car', 'car player is empty; handing it the loaded book')
+        // This event is native telling us the car's player is EMPTY, so whatever
+        // we believed it was holding is wrong. Clearing first matters: handoff
+        // sets `carBook` optimistically, and a load that never completed (a
+        // second push arriving mid-load is dropped by the service's own guard,
+        // with no failure event) would otherwise leave the belief stuck on a
+        // book the car doesn't have - and handBookToCar would then no-op
+        // forever, leaving a permanently dead play button that only tapping the
+        // book on the car screen could clear.
+        carBook.current = null
         handBookToCar(carBook)
       }),
       // The handover didn't take (couldn't resolve the book - no session, no
@@ -442,8 +457,21 @@ export function PlayerHost() {
     // attached. Registered listeners first, or the reply has nowhere to land.
     syncAutoCarState()
 
+    // One probe at mount loses a race the user can actually hit: the car service
+    // runs in its own process, and on a cold launch into an already-connected
+    // car it may not have bound (so `carPlayer` is still null) by the time this
+    // host mounts. The connect edge that would have told us fired while there
+    // was no JS runtime to receive it, so nothing else ever corrects it - the
+    // phone drives its own player behind the car's back for the whole session.
+    // Re-ask whenever the app comes forward, which is exactly when the user is
+    // about to press play. Silent when no car is attached, so this is free.
+    const appState = AppState.addEventListener('change', (next) => {
+      if (next === 'active') syncAutoCarState()
+    })
+
     return () => {
       subs.forEach((s) => s.remove())
+      appState.remove()
       // Drop a pending reclaim check: firing it after teardown would read a store
       // that no host is driving and report a false "did not recover".
       if (reclaimProbe.current) {
