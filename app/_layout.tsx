@@ -81,6 +81,34 @@ if (SENTRY_DSN) {
     // intermittent startup hang across the beta cohort without a full-volume
     // cost. Raise toward 1.0 for a focused debugging window, or 0 to disable.
     tracesSampleRate: 0.1,
+    // Overwrite the player/launch contexts with a LIVE sample as each event
+    // leaves. The feedback screen writes those onto the global scope and nothing
+    // clears them, so without this a crash inherits the snapshot from whenever
+    // the listener last sent a report - which is how HS-MOBILEAPP-1A and -1C
+    // came to carry an identical player block despite firing 87 minutes apart,
+    // and made an unrelated error look like part of the crashing session.
+    // Feedback events set their own contexts immediately before capture, so a
+    // live re-sample there is the same values.
+    beforeSend(event) {
+      // Required lazily, not imported: this init runs first among the module-load
+      // side effects so early-startup throws are covered, and a static import
+      // would drag the whole player/store/downloads graph in ahead of it.
+      let live: ReturnType<typeof import('@/lib/feedbackDiagnostics').livePlayerContext> = null
+      try {
+        live = (require('@/lib/feedbackDiagnostics') as typeof import('@/lib/feedbackDiagnostics'))
+          .livePlayerContext()
+      } catch {
+        // A crash during startup can precede those modules; send it as-is.
+      }
+      if (live) {
+        event.contexts = {
+          ...event.contexts,
+          player: live.player,
+          launch: { ...event.contexts?.launch, ...live.launch },
+        }
+      }
+      return event
+    },
   })
   // Open the startup transaction + arm the hang watchdog immediately after init,
   // so the whole launch (Clerk load, cached-session check, connect) is spanned.

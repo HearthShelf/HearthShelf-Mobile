@@ -91,6 +91,36 @@ export interface PlayerSnapshot {
   downloaded: boolean
 }
 
+/**
+ * The same snapshot, for a crash/error event rather than a feedback report.
+ *
+ * attachFeedbackDiagnostics writes `player`/`launch` onto the GLOBAL Sentry
+ * scope, and nothing ever clears them - so once a listener sends one report,
+ * every later crash in that run inherits that frozen snapshot and reads as
+ * though it happened at the moment of the report. Two events 87 minutes apart
+ * (HS-MOBILEAPP-1A and -1C) arrived carrying a byte-identical player block and
+ * the same currentRunAgeSeconds, which made an unrelated error look like part
+ * of the crashing session. Sampling live in beforeSend keeps a crash honest.
+ *
+ * Never throws - a diagnostic must not be able to drop a crash report.
+ */
+export function livePlayerContext(): {
+  player: Record<string, unknown>
+  launch: Record<string, unknown>
+} | null {
+  try {
+    return {
+      player: playerSnapshot() as unknown as Record<string, unknown>,
+      launch: {
+        priorRunEndedUncleanly: didPriorRunEndUncleanly(),
+        currentRunAgeSeconds: currentRunAgeSeconds(),
+      },
+    }
+  } catch {
+    return null
+  }
+}
+
 function playerSnapshot(): PlayerSnapshot {
   const s = getState()
   const np = s.nowPlaying
