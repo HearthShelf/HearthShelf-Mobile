@@ -83,6 +83,7 @@ interface HearthShelfAutoNative {
     remainingSec: number,
   ): void
   loadCarBook(itemId: string, positionSec: number): void
+  syncCarState(): void
   clearSession(): void
 }
 
@@ -245,6 +246,17 @@ export function setAutoSleepBeep(
  */
 export function loadAutoCarBook(itemId: string, positionSec: number): void {
   if (Platform.OS === 'android') native?.loadCarBook(itemId, positionSec)
+}
+
+/**
+ * Ask native to re-announce whether the car owns playback (and re-mirror the book
+ * it holds). Called when the JS runtime comes up, because carActive is otherwise
+ * set only by the onCarActive event - which fires on the car's connect edge, and
+ * so is missed entirely by an app launched into an already-connected car. Android
+ * only: iOS CarPlay shares one player, so there is no ownership to reconcile.
+ */
+export function syncAutoCarState(): void {
+  if (Platform.OS === 'android') native?.syncCarState()
 }
 
 export function clearAutoSession(): void {

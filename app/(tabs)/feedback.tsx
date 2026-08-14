@@ -125,11 +125,27 @@ export default function FeedbackScreen() {
     }
     setSending(true)
     try {
-      // Attach player state + the breadcrumb trail BEFORE capturing, so the
-      // report carries what the app was actually doing. A description alone
-      // ("progress reset when I unlocked my phone") can't distinguish a sync
-      // failure from a process kill from a bad resume - the snapshot can.
-      attachFeedbackDiagnostics()
+      // Attach player state BEFORE capturing, so the report carries what the app
+      // was actually doing. A description alone ("progress reset when I unlocked
+      // my phone") can't distinguish a sync failure from a process kill from a bad
+      // resume - the snapshot can. The log trail comes back to be attached as a
+      // file: feedback events drop scope breadcrumbs, so that is the one way it
+      // reaches Sentry (see feedbackDiagnostics).
+      const log = attachFeedbackDiagnostics()
+      const attachments = [
+        ...(shot
+          ? [
+              {
+                filename: 'screenshot.jpg',
+                // Decoded from base64 to bytes rather than sent as a string, so
+                // Sentry stores a real image file instead of a text blob.
+                data: base64ToBytes(shot.base64),
+                contentType: 'image/jpeg',
+              },
+            ]
+          : []),
+        ...(log ? [{ filename: 'hearthshelf-log.txt', data: log, contentType: 'text/plain' }] : []),
+      ]
       Sentry.captureFeedback(
         {
           message: message.trim(),
@@ -141,22 +157,11 @@ export default function FeedbackScreen() {
             app_version: FULL_VERSION || 'unknown',
             platform: Platform.OS,
             has_screenshot: String(!!shot),
+            has_log: String(!!log),
           },
         },
         // Second arg is an EventHint; `attachments` rides along with the event.
-        // Decoded from base64 to bytes rather than sent as a string, so Sentry
-        // stores a real image file instead of a text blob.
-        shot
-          ? {
-              attachments: [
-                {
-                  filename: 'screenshot.jpg',
-                  data: base64ToBytes(shot.base64),
-                  contentType: 'image/jpeg',
-                },
-              ],
-            }
-          : undefined,
+        attachments.length ? { attachments } : undefined,
       )
       haptics.success()
       setMessage('')

@@ -11,7 +11,7 @@
  * setPlaying) - the exact same store calls the old <Video> onProgress made, so no
  * player-UI screen changes.
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type MutableRefObject } from 'react'
 import { NativeEventEmitter, NativeModules, PermissionsAndroid, Platform } from 'react-native'
 import {
   getState,
@@ -40,7 +40,7 @@ import { coverUrl } from '@/api/abs'
 import { addBookmarkPending } from './pendingBookmarks'
 import { localCoverFor } from './downloads'
 import { handOffToCar, playItemById, syncProgress, ensureSessionForPlayback } from './playback'
-import { loadAutoCarBook } from './autoBridge'
+import { loadAutoCarBook, syncAutoCarState } from './autoBridge'
 import { advanceQueueOnEnd, skipChapterOrFinish } from './advance'
 import { useShakeToExtend } from './shakeToExtend'
 import { useSleepBeep } from './sleepBeep'
@@ -64,6 +64,8 @@ interface HSPlayer {
   setRate(rate: number): void
   setVolume(volume: number): void
   stop(): void
+  /** Stops the phone player specifically - stop() follows car ownership. */
+  stopPhonePlayer(): void
 }
 const Native = NativeModules.HearthShelfAuto as HSPlayer | undefined
 
@@ -72,6 +74,28 @@ const Native = NativeModules.HearthShelfAuto as HSPlayer | undefined
  *  re-buffered from scratch, so this is deliberately generous - a false "did not
  *  recover" would be worse than a late report. */
 const RECLAIM_CONFIRM_MS = 6000
+
+/**
+ * Hand the store's current book to the car player.
+ *
+ * The car connects with an EMPTY player and only JS knows which book the listener
+ * is on and where they are in it, so every route that discovers the car has
+ * nothing to play funnels here: the takeover edge, a play/load that native
+ * bounced back as onCarNeedsBook, and a book switched on the phone mid-drive.
+ *
+ * `held` is what we believe the car holds, so a book already there isn't pushed
+ * again. It is set from onCarLoaded (the car's own answer) and optimistically
+ * here, since the load is asynchronous and several of these routes can fire
+ * within a few hundred ms of each other.
+ */
+function handBookToCar(held: MutableRefObject<string | null>): void {
+  const s = getState()
+  const np = s.nowPlaying
+  if (!np?.itemId || held.current === np.itemId) return
+  held.current = np.itemId
+  breadcrumb('car', `hand ${np.itemId} to the car @${Math.round(s.position)}s`)
+  loadAutoCarBook(np.itemId, s.position)
+}
 
 export function PlayerHost() {
   // Track what we last pushed so store ticks don't re-issue identical commands.
@@ -91,6 +115,9 @@ export function PlayerHost() {
   const loadedItem = useRef<string | null>(null)
   // Pending "did the reclaim recovery actually produce audio" check.
   const reclaimProbe = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // The book we believe the CAR player holds (see handBookToCar). null means the
+  // car has nothing loaded, which is how it always connects.
+  const carBook = useRef<string | null>(null)
 
   // Shake-to-extend the sleep timer. Mounted here (the one persistent host) so
   // it can fire a confirmation toast in component context.
@@ -262,6 +289,9 @@ export function PlayerHost() {
           // would start a book playing at someone who just unplugged and walked
           // off. The play button now maps to a real loaded player.
           const resume = leaveCar()
+          // Whatever the car held went away with it; the next takeover starts from
+          // an empty player and has to be handed a book again.
+          carBook.current = null
           breadcrumb(
             'car',
             `handback${resume ? ` re-resolve ${resume.itemId} @${Math.round(resume.position)}s` : ' (phone track already loaded)'}`,
@@ -294,14 +324,33 @@ export function PlayerHost() {
         //      resumes exactly where the phone was (not the server's last sync).
         // handOffToCar() awaits a network close; carActive is already true, so the
         // now-gated progress ticks won't re-open a session or move `position`
-        // across the await.
-        const np = getState().nowPlaying
-        const pos = getState().position
+        // across the await - the book and spot handed over after it are the same
+        // ones we would have captured before.
+        //
+        // Nothing loaded at this instant is NOT the end of it: on a launch into an
+        // already-connected car there is no book yet, and the old edge-only handoff
+        // simply gave up, leaving the car empty for the rest of the drive (every
+        // later tap then hit an empty player - HS-MOBILEAPP-19). handBookToCar is
+        // re-run from onCarNeedsBook and from the sync below, so the book still
+        // reaches the car whenever the listener picks one.
         void handOffToCar()
           .catch(() => {})
-          .finally(() => {
-            if (np?.itemId) loadAutoCarBook(np.itemId, pos)
-          })
+          .finally(() => handBookToCar(carBook))
+      }),
+      // Native bounced a transport command back: the car owns playback but its
+      // player is empty, so there was nothing for that command to act on. Answer
+      // with the book the store holds (see handBookToCar / emitCarNeedsBook).
+      emitter.addListener('onCarNeedsBook', () => {
+        breadcrumb('car', 'car player is empty; handing it the loaded book')
+        handBookToCar(carBook)
+      }),
+      // The handover didn't take (couldn't resolve the book - no session, no
+      // network, not downloaded). Forget that we handed it over so the next tap
+      // tries again, and say so rather than leaving a dead play button.
+      emitter.addListener('onCarLoadFailed', () => {
+        breadcrumb('car', `car could not load ${carBook.current ?? 'the book'}`)
+        carBook.current = null
+        showToast("Couldn't start that book in the car")
       }),
       // The car loaded a book: mirror it into the store so the phone UI shows the
       // same cover/title/chapters and its scrubber tracks the car.
@@ -322,6 +371,9 @@ export function PlayerHost() {
           } catch {
             chapters = []
           }
+          // The car's own answer to "what are you holding", so the pushes below
+          // stop once it has the book.
+          carBook.current = e.itemId
           mirrorCarTrack({
             itemId: e.itemId,
             sessionId: '',
@@ -377,6 +429,19 @@ export function PlayerHost() {
         )
       }),
     ]
+
+    // Ask native who owns playback right now.
+    //
+    // Every listener above is edge-driven, and this runtime may have started
+    // AFTER the edges fired: the car service outlives the JS runtime, so an app
+    // launched (or relaunched after a kill) into a connected car would otherwise
+    // never learn the car is there, and would drive the phone player behind its
+    // back - audio the car knew nothing about, with the phone UI showing an empty
+    // player over it (HS-MOBILEAPP-18). Answered through onCarActive/onCarLoaded,
+    // so it lands in the same handling as a live connect; a no-op when no car is
+    // attached. Registered listeners first, or the reply has nowhere to land.
+    syncAutoCarState()
+
     return () => {
       subs.forEach((s) => s.remove())
       // Drop a pending reclaim check: firing it after teardown would read a store
@@ -402,9 +467,22 @@ export function PlayerHost() {
       // (re)loads the phone player from the current store on the next tick.
       if (s.carActive) {
         if (loadedKey.current !== null) {
-          Native.stop()
+          // Specifically the phone player: a plain stop() follows car ownership
+          // and would pause the car we are handing over TO.
+          Native.stopPhonePlayer()
           loadedKey.current = null
           loadedItem.current = null
+        }
+        // A book the car isn't holding can't be played by forwarding transport at
+        // it - the commands land on an empty player and nothing happens. Hand it
+        // over instead, which loads AND starts it (loadBookIntoCar prepares with
+        // playWhenReady). Gated on isPlaying so merely opening Now Playing while
+        // driving can't swap the book out from under the car; only an actual
+        // intent to play does.
+        if (s.isPlaying && np?.itemId && carBook.current !== np.itemId) {
+          lastPlaying.current = true
+          handBookToCar(carBook)
+          return
         }
         // Still forward transport intent - the module dispatches it to the car.
         if (s.seekTo !== null) {

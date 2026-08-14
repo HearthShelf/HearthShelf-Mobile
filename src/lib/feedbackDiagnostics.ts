@@ -15,6 +15,15 @@
  *   - the BREADCRUMB TRAIL from crashLog's ring buffer, which is already being
  *     written continuously for crash reporting and costs nothing extra to read.
  *
+ * The trail rides as a FILE ATTACHMENT, not as Sentry breadcrumbs. It was sent
+ * with Sentry.addBreadcrumb first, and those never arrived: every feedback event
+ * we have landed with its contexts and tags intact and zero breadcrumbs, including
+ * one sent expressly to carry a crash trail. Feedback events are their own item
+ * type and the scope's breadcrumbs do not ride along with them. Attachments do
+ * (that is how the screenshot gets there), so the trail goes that way, with a
+ * short tail duplicated into a context so the Sentry UI shows something useful
+ * without downloading the file.
+ *
  * Everything here is best-effort: a diagnostic that throws must never stop a
  * report from sending, so every accessor is individually guarded and the whole
  * thing degrades to a partial snapshot rather than failing.
@@ -36,10 +45,15 @@ import {
   currentRunAgeSeconds,
 } from '@/lib/crashLog'
 
-/** Cap on breadcrumbs attached to one report. The ring holds ~120; Sentry's own
- *  breadcrumb list is capped around 100, so sending the whole ring is fine and
- *  this is only a backstop against a future larger ring. */
+/** Cap on crumbs written into the attached log, per run. The ring holds ~120, so
+ *  this sends all of it and is only a backstop against a future larger ring. */
 const MAX_ATTACHED_CRUMBS = 100
+
+/** How many of the most recent crumbs are duplicated into the `recent_log`
+ *  context, so
+ *  the Sentry UI shows the tail inline. Small on purpose - the full trail is in
+ *  the attachment, and a context is not the place for kilobytes of log. */
+const CONTEXT_TAIL_CRUMBS = 20
 
 /** Rounded to whole seconds throughout: sub-second precision says nothing about a
  *  playback bug and makes the report harder to read. */
@@ -102,8 +116,9 @@ function playerSnapshot(): PlayerSnapshot {
 }
 
 /**
- * Attach diagnostics to the current Sentry scope, then return a one-line summary
- * for the report body.
+ * Attach diagnostics to the current Sentry scope, and return the breadcrumb trail
+ * as text for the caller to send as an attachment (see the note at the top of this
+ * file about why it can't ride as breadcrumbs). Null when there is no trail.
  *
  * Called immediately before captureFeedback so the scope carries this context on
  * the event. Uses a synchronous scope mutation rather than withScope so the
@@ -111,7 +126,7 @@ function playerSnapshot(): PlayerSnapshot {
  *
  * Never throws.
  */
-export function attachFeedbackDiagnostics(): void {
+export function attachFeedbackDiagnostics(): string | null {
   try {
     const snap = playerSnapshot()
     Sentry.setContext('player', snap as unknown as Record<string, unknown>)
@@ -133,9 +148,10 @@ export function attachFeedbackDiagnostics(): void {
     }
 
     attachLaunchContext()
-    attachBreadcrumbs()
+    return attachTrail()
   } catch {
     // Diagnostics must never block a report.
+    return null
   }
 }
 
@@ -169,51 +185,54 @@ function attachLaunchContext(): void {
   })
 }
 
+/** One crumb as a log line: "00:36:21.412 play  b58... online @68789s (x3)". */
+function crumbLine(c: { t: number; tag: string; msg: string; repeats?: number }): string {
+  const clock = new Date(c.t).toISOString().slice(11, 23)
+  const repeats = c.repeats && c.repeats > 1 ? ` (x${c.repeats})` : ''
+  return `${clock} ${c.tag.padEnd(8)} ${c.msg}${repeats}`
+}
+
 /**
- * Replay the on-disk breadcrumb ring onto the Sentry scope.
+ * Build the on-disk breadcrumb ring into the attachable log, and put its tail in
+ * a context.
  *
  * crashLog already writes these continuously for native-abort reporting, so the
  * trail leading up to whatever the listener is describing is usually already on
  * disk - including breadcrumbs from BEFORE the current JS runtime if the last run
  * died (which is exactly the case in a relaunch-after-kill report).
+ *
+ * The PRIOR run's trail comes first, when that run died. The reports that matter
+ * most are written seconds after a crash ("tapped back a few times, forward a few
+ * times, crashed" - HS-MOBILEAPP-12), and those are sent from a fresh run whose
+ * own ring holds only post-relaunch noise; the evidence lives in the run that
+ * died. Kept under its own heading so the two runs are never read as one
+ * continuous trail.
  */
-function attachBreadcrumbs(): void {
+function attachTrail(): string | null {
   try {
-    // The PRIOR run's trail first, when that run died.
-    //
-    // The reports that matter most are written seconds after a crash ("tapped
-    // back a few times, forward a few times, crashed" - HS-MOBILEAPP-12), and
-    // those are sent from a fresh run whose own ring holds only post-relaunch
-    // noise. The evidence lives in the run that died. Prefixed and emitted first
-    // so the two runs are never read as one continuous trail.
+    const lines: string[] = []
     const prior = readPriorRunBreadcrumbs()
     if (prior.length) {
-      for (const c of prior.slice(-MAX_ATTACHED_CRUMBS)) {
-        Sentry.addBreadcrumb({
-          category: `hs.prior.${c.tag}`,
-          message: c.repeats && c.repeats > 1 ? `${c.msg} (x${c.repeats})` : c.msg,
-          level: c.tag === 'fatal' || c.tag === 'error' ? 'error' : 'info',
-          timestamp: c.t / 1000,
-        })
-      }
-      Sentry.addBreadcrumb({
-        category: 'hs.prior',
-        message: '--- end of previous (crashed) run ---',
-        level: 'warning',
-      })
+      lines.push('--- previous run (ended uncleanly) ---')
+      for (const c of prior.slice(-MAX_ATTACHED_CRUMBS)) lines.push(crumbLine(c))
+      lines.push('--- end of previous run ---', '')
     }
 
     const crumbs = readBreadcrumbs()
-    if (!crumbs.length) return
-    for (const c of crumbs.slice(-MAX_ATTACHED_CRUMBS)) {
-      Sentry.addBreadcrumb({
-        category: `hs.${c.tag}`,
-        message: c.repeats && c.repeats > 1 ? `${c.msg} (x${c.repeats})` : c.msg,
-        level: c.tag === 'fatal' || c.tag === 'error' ? 'error' : 'info',
-        timestamp: c.t / 1000,
-      })
+    if (crumbs.length) {
+      lines.push('--- current run ---')
+      for (const c of crumbs.slice(-MAX_ATTACHED_CRUMBS)) lines.push(crumbLine(c))
     }
+    if (!lines.length) return null
+
+    // The tail inline, so triage can read the last few moves straight off the
+    // event without opening the attachment.
+    Sentry.setContext('recent_log', {
+      tail: lines.slice(-CONTEXT_TAIL_CRUMBS).join('\n'),
+      totalLines: lines.length,
+    })
+    return lines.join('\n')
   } catch {
-    // ignore
+    return null
   }
 }

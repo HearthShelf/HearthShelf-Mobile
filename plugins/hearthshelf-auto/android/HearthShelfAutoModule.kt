@@ -371,6 +371,20 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     chaptersJson: String,
     autoPlay: Boolean
   ) {
+    // The car owns playback: this book belongs in the CAR player, not the phone
+    // service. Loading it here anyway is what produced audio the car knew nothing
+    // about - Android Auto is bound to the car session, so it showed "tap to open
+    // HearthShelf" over a book that was already playing, and every later transport
+    // command (which DOES route to the car, below) hit a different player than the
+    // one making sound. JS holds the item id the car needs, so ask it for one
+    // rather than guessing from a token-bearing url. See HS-MOBILEAPP-18.
+    //
+    // Ahead of the stash below on purpose: parking this in pendingLoad would just
+    // defer the same wrong outcome to whenever the phone service next starts.
+    if (carPlayer != null) {
+      emitCarNeedsBook()
+      return
+    }
     // Under the same lock the service's onCreate/onDestroy use, so we either hand
     // the load to a live service or stash it for onCreate to drain - never both,
     // never a lost/stale load.
@@ -387,6 +401,28 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     else ensureService()
   }
 
+  /**
+   * Re-announce car ownership to a JS runtime that missed the connect edge.
+   *
+   * carActive is set in JS by onCarActive, which is emitted once, from onConnect.
+   * A runtime that STARTS while Android Auto is already connected therefore never
+   * learns the car is there and drives the phone player instead - the split that
+   * HS-MOBILEAPP-18/19 were reported from. PlayerHost calls this on mount, so the
+   * answer comes from the one place that actually knows (carPlayer), not from an
+   * event that may have fired hours ago.
+   *
+   * Silent when no car is attached, rather than emitting active=false. JS already
+   * defaults to "no car" and treats false as a HANDBACK, which drops the playing
+   * state - so announcing it here would pause a phone that is happily playing if
+   * the host ever remounts. The false edge has its own emitters (onDisconnected /
+   * onDestroy); this one exists only to report a car JS doesn't know about.
+   */
+  @ReactMethod fun syncCarState() {
+    val car = carPlayer ?: return
+    emitCarActive(true)
+    if (car.loadedItemId() != null) car.republishLoaded()
+  }
+
   // When Android Auto owns playback (carPlayer != null), transport commands from
   // JS (phone UI or lock screen) drive the CAR player, and load is suppressed -
   // so the phone and car never both produce audio and the phone UI's controls
@@ -395,7 +431,13 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
   @ReactMethod fun play() {
     val car = carPlayer
     if (car != null) {
-      car.play()
+      // The car connects with an EMPTY player, and the handoff that fills it runs
+      // on the takeover edge - which is too early when the app was launched (or
+      // relaunched) into an already-connected car, because nothing was loaded yet
+      // for that edge to hand over. play() then set playWhenReady on a player with
+      // no media: silence, a frozen scrubber, and no way forward except tapping the
+      // book on the car screen. Ask JS for the book instead. See HS-MOBILEAPP-19.
+      if (car.loadedItemId() == null) emitCarNeedsBook() else car.play()
       return
     }
     val svc = HearthShelfPlayerService.instance
@@ -438,6 +480,19 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
   }
 
   /**
+   * Stand the PHONE player down, whoever owns playback.
+   *
+   * stop() routes by carPlayer, which is right for a transport tap but wrong for
+   * the takeover handoff: there the intent is specifically "the phone stops now",
+   * and routing it to the car pauses the CAR while the phone service plays on.
+   * Both players then hold a book, and only the audio-focus fight between them
+   * kept that from being heard twice.
+   */
+  @ReactMethod fun stopPhonePlayer() {
+    HearthShelfPlayerService.instance?.stopPlayer()
+  }
+
+  /**
    * Load the book the phone was playing into the car player, at the phone's live
    * position. Called by JS on the car-takeover edge: the car connects with an
    * empty player, and without this Android Auto auto-plays the browse tree's
@@ -463,6 +518,12 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     /** Load a book into the car player at the given absolute position, so the car
      *  resumes what the phone was playing instead of the browse tree's first item. */
     fun loadBook(itemId: String, positionSec: Double)
+    /** The book the car has resolved, or null while its player is empty. Drives
+     *  the "does a transport command have anything to act on" checks above. */
+    fun loadedItemId(): String?
+    /** Re-emit onCarLoaded for the loaded book, so a JS runtime that started after
+     *  the car did can mirror what is already playing. */
+    fun republishLoaded()
   }
 
   companion object {
@@ -550,6 +611,26 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
      */
     fun emitPlaybackLost() {
       emitter?.invoke("onPlaybackLost", Arguments.createMap())
+    }
+
+    /**
+     * The car owns playback but has no book to act on, and something (a load, a
+     * play) just asked it to. Only JS knows which book the listener is on and
+     * where they are in it, so it answers with loadCarBook.
+     *
+     * Sibling of emitPlaybackLost, and deliberately shaped the same way: neither
+     * is an error, both are "the player you are talking to is empty - rebuild it
+     * from the store" so the tap the listener made turns into audio.
+     */
+    fun emitCarNeedsBook() {
+      emitter?.invoke("onCarNeedsBook", Arguments.createMap())
+    }
+
+    /** The book JS handed over could not be resolved (no session, dead network,
+     *  not downloaded), so the car player is still empty and JS's "the car has
+     *  this" marker is wrong. */
+    fun emitCarLoadFailed() {
+      emitter?.invoke("onCarLoadFailed", Arguments.createMap())
     }
   }
 }

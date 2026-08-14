@@ -125,6 +125,42 @@ class HearthShelfAutoService : MediaLibraryService() {
     }
     override fun stop() = runOnMain { rawPlayer?.pause() }
     override fun loadBook(itemId: String, positionSec: Double) = loadBookIntoCar(itemId, positionSec)
+    override fun loadedItemId(): String? = currentItemId
+    override fun republishLoaded() = republishCarLoaded()
+  }
+
+  /**
+   * Re-emit the loaded book to JS.
+   *
+   * The car outlives the JS runtime: this service keeps a book loaded and playing
+   * while the app process is killed and relaunched, and a fresh runtime has no way
+   * to learn what is in the car - onCarLoaded fired once, to a JS that no longer
+   * exists. So a relaunch mid-drive showed an empty phone player over live car
+   * audio. Called from the module's syncCarState (see HearthShelfAutoModule).
+   *
+   * Position is read on the main thread (ExoPlayer verifies thread affinity on
+   * reads too), so this hops even though everything else here is a @Volatile read.
+   */
+  private fun republishCarLoaded() {
+    val itemId = currentItemId ?: return
+    runOnMain {
+      val player = rawPlayer ?: return@runOnMain
+      val chaptersJson = JSONArray().apply {
+        for (ch in chapters) {
+          put(JSONObject().put("title", ch.title).put("start", ch.start).put("end", ch.end))
+        }
+      }.toString()
+      HearthShelfAutoModule.emitCarLoaded(
+        itemId,
+        bookTitle,
+        bookAuthor,
+        artUri,
+        absDurationSec,
+        absolutePositionMs(player) / 1000.0,
+        chaptersJson,
+      )
+      HearthShelfAutoModule.emitState(player.isPlaying)
+    }
   }
 
   /**
@@ -151,6 +187,10 @@ class HearthShelfAutoService : MediaLibraryService() {
         Log.e(TAG, "loadBookIntoCar: resolve failed for $itemId")
         // Release the guard so a retry (or a different book) can still load.
         synchronized(carControllers) { if (loadingItemId == itemId) loadingItemId = null }
+        // JS marks the book as handed over the moment it pushes it, so tell it the
+        // handover did not take - otherwise its marker sticks and no later tap ever
+        // retries, which is a worse failure than the one that just happened.
+        HearthShelfAutoModule.emitCarLoadFailed()
         return@execute
       }
       // The start position rides setMediaItems below, so clear the READY-seek
