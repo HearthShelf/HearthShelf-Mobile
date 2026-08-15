@@ -32,6 +32,8 @@ import {
   isGeneratedRecShelf,
 } from '@hearthshelf/core'
 import { setSessionExpiredHandler } from '@/api/controlPlane'
+import { registerLaunch } from '@/lib/whatsNew'
+import { WhatsNew } from '@/ui/WhatsNew'
 import { clearSession } from '@/api/session'
 import { clearAudibleCache } from '@/api/absAudible'
 import { clearSubscriptions } from '@/player/subscriptions'
@@ -181,6 +183,18 @@ export default function HomeScreen() {
   const enterEdit = useCallback(() => {
     haptics.longPress()
     setEditing(true)
+  }, [])
+  // "What's new" chip: armed for two cold launches after the app version
+  // changes (src/lib/whatsNew.ts). Counted once on mount, not per render.
+  const [showWhatsNew, setShowWhatsNew] = useState(false)
+  useEffect(() => {
+    let alive = true
+    void registerLaunch().then((show) => {
+      if (alive && show) setShowWhatsNew(true)
+    })
+    return () => {
+      alive = false
+    }
   }, [])
   // Book shelves keyed by the section they belong to, so the arrangement walk
   // can render a whole section's rows at its chosen position in one step.
@@ -707,7 +721,12 @@ export default function HomeScreen() {
             </Touchable>
           </View>
         ) : null}
-        <HomeHeader firstName={firstName} libraryName={libraryName} onEdit={enterEdit} />
+        <HomeHeader
+          firstName={firstName}
+          libraryName={libraryName}
+          onEdit={enterEdit}
+          whatsNew={showWhatsNew}
+        />
         {nowPlaying ? (
           <PlayerHero
             nowPlaying={nowPlaying}
@@ -854,10 +873,12 @@ function HomeHeader({
   firstName,
   libraryName,
   onEdit,
+  whatsNew,
 }: {
   firstName: string | null
   libraryName: string | null
   onEdit: () => void
+  whatsNew: boolean
 }) {
   const colors = useColors()
   const styles = useStyles()
@@ -889,6 +910,7 @@ function HomeHeader({
         ) : null}
       </Touchable>
       <View style={styles.headerBtns}>
+        <WhatsNew chipVisible={whatsNew} />
         <Touchable
           onPress={onEdit}
           style={styles.headerBtn}

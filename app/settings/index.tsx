@@ -14,6 +14,8 @@ import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native
 import { useFocusEffect, useRouter, type Href } from 'expo-router'
 import { useConnection } from '@/api/ConnectionProvider'
 import { getClubs } from '@/api/clubs'
+import { FULL_VERSION } from '@/lib/config'
+import { WhatsNewModal } from '@/ui/WhatsNew'
 import { getSettingsState, setSetting, subscribeSettings } from '@/store/settings'
 import { AppText, Screen } from '@/ui/primitives'
 import { radius, spacing, type Palette } from '@/ui/theme'
@@ -205,6 +207,8 @@ export default function MoreScreen() {
     }, [s.clubsEnabled]),
   )
 
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false)
+
   const displayName = user?.fullName || user?.username || 'You'
   const email = user?.primaryEmailAddress?.emailAddress ?? ''
   const initial = displayName.charAt(0).toUpperCase()
@@ -386,9 +390,25 @@ export default function MoreScreen() {
                 />
               </SettingsGroup>
             </View>
+
+            <View key="About">
+              <SettingsLabel>About</SettingsLabel>
+              <SettingsGroup>
+                {/* The Home chip only advertises an update for two launches;
+                    this is the permanent way back to the notes. */}
+                <SettingsRow
+                  icon="new-releases"
+                  title="What's new"
+                  desc={`Release notes for ${FULL_VERSION || 'this build'}.`}
+                  onPress={() => setWhatsNewOpen(true)}
+                  last
+                />
+              </SettingsGroup>
+            </View>
           </>
         )}
       </ScrollView>
+      <WhatsNewModal visible={whatsNewOpen} onClose={() => setWhatsNewOpen(false)} />
     </Screen>
   )
 }
