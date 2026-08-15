@@ -586,7 +586,10 @@ function FinishedSection({
   colors: Palette
   onOpen: (itemId: string) => void
 }) {
-  const hasShared = profile.sharedCount > 0
+  // On your own profile every finished book is trivially "also mine", so the
+  // shared/overlap framing is meaningless there - the filter would read "All 200
+  // / You both finished 200" and every tile would claim "Both read".
+  const hasShared = !profile.isMe && profile.sharedCount > 0
   const [sharedOnly, setSharedOnly] = useState(hasShared)
   const books = useMemo(
     () => (sharedOnly ? profile.finished.filter((b) => b.alsoMine) : profile.finished),
@@ -630,24 +633,26 @@ function FinishedSection({
         <AppText variant="label">Finished books</AppText>
       </View>
 
-      <View style={styles.segRow}>
-        <Pressable
-          onPress={() => setSharedOnly(false)}
-          style={[styles.seg, !sharedOnly && styles.segOn]}
-        >
-          <AppText variant="meta" color={!sharedOnly ? colors.text : colors.textMuted}>
-            All {profile.finished.length}
-          </AppText>
-        </Pressable>
-        <Pressable
-          onPress={() => hasShared && setSharedOnly(true)}
-          style={[styles.seg, sharedOnly && styles.segOn, !hasShared && styles.segDisabled]}
-        >
-          <AppText variant="meta" color={sharedOnly ? colors.text : colors.textMuted}>
-            You both finished {profile.sharedCount}
-          </AppText>
-        </Pressable>
-      </View>
+      {profile.isMe ? null : (
+        <View style={styles.segRow}>
+          <Pressable
+            onPress={() => setSharedOnly(false)}
+            style={[styles.seg, !sharedOnly && styles.segOn]}
+          >
+            <AppText variant="meta" color={!sharedOnly ? colors.text : colors.textMuted}>
+              All {profile.finished.length}
+            </AppText>
+          </Pressable>
+          <Pressable
+            onPress={() => hasShared && setSharedOnly(true)}
+            style={[styles.seg, sharedOnly && styles.segOn, !hasShared && styles.segDisabled]}
+          >
+            <AppText variant="meta" color={sharedOnly ? colors.text : colors.textMuted}>
+              You both finished {profile.sharedCount}
+            </AppText>
+          </Pressable>
+        </View>
+      )}
 
       {books.length === 0 ? (
         <EmptyState
@@ -656,7 +661,9 @@ function FinishedSection({
           body={
             sharedOnly
               ? "You haven't finished any of the same books."
-              : `${profile.username || 'This listener'} hasn't finished a book yet.`
+              : profile.isMe
+                ? "You haven't finished a book yet."
+                : `${profile.username || 'This listener'} hasn't finished a book yet.`
           }
           style={styles.blockEmpty}
         />
@@ -692,7 +699,7 @@ function FinishedSection({
                     <AppText variant="meta" numberOfLines={2} style={styles.tileTitle}>
                       {b.title || 'Untitled'}
                     </AppText>
-                    {b.alsoMine ? (
+                    {b.alsoMine && !profile.isMe ? (
                       <AppText variant="meta" color={colors.accent}>
                         Both read
                       </AppText>
