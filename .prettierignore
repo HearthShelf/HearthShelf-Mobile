@@ -4,7 +4,7 @@ ios
 packages/core
 *.md
 
-# Design mockups: hand-written HTML that is read, not built. Several files have
-# unclosed tags that prettier refuses to parse, which would keep format:check
-# permanently red.
-docs/redesign
+# Docs are written and read by hand, not built. The design mockups in here are
+# also hand-written HTML, several with unclosed tags that prettier refuses to
+# parse - which would keep format:check permanently red.
+docs
