@@ -11,7 +11,8 @@
 # dependencies (on a tree that already needs --legacy-peer-deps) to run three
 # lines of shell.
 #
-# Enable with:  git config core.hooksPath .githooks
+# Wired up by the `prepare` script on npm install. To enable by hand:
+#   git config core.hooksPath .githooks
 # Skip once with: git commit --no-verify
 
 set -e
