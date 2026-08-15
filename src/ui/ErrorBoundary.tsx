@@ -93,8 +93,7 @@ export class ErrorBoundary extends Component<Props, State> {
       <View style={styles.wrap}>
         <AppText variant="title">Something went wrong</AppText>
         <AppText variant="body" style={styles.body}>
-          That screen ran into a problem. Your listening is safe - the report has
-          been sent.
+          That screen ran into a problem. Your listening is safe - the report has been sent.
         </AppText>
         <PrimaryButton label="Back to Home" onPress={this.reset} />
       </View>

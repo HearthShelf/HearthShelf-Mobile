@@ -121,7 +121,12 @@ export default function StorageScreen() {
             />
           }
         />
-        <SettingsRow title="Next in queue" desc="Download this many upcoming books ahead of you." stacked last>
+        <SettingsRow
+          title="Next in queue"
+          desc="Download this many upcoming books ahead of you."
+          stacked
+          last
+        >
           <ChipRow
             value={auto.queueAhead}
             options={[0, 1, 3, 5]}
@@ -167,9 +172,7 @@ export default function StorageScreen() {
             max={CAP_MAX_GB}
             step={1}
             onChange={(v) => setMaxBytes(v === CAP_MAX_GB ? UNLIMITED_BYTES : v * GB)}
-            formatLabel={(v) =>
-              v === 0 ? 'Off' : v === CAP_MAX_GB ? 'Any Available' : `${v} GB`
-            }
+            formatLabel={(v) => (v === 0 ? 'Off' : v === CAP_MAX_GB ? 'Any Available' : `${v} GB`)}
           />
         </SettingsRow>
         <SettingsRow
@@ -202,7 +205,12 @@ export default function StorageScreen() {
                     </AppText>
                   </View>
                 </View>
-                <IconButton name={icons.close} size={20} color={colors.textMuted} onPress={() => void cancelDownload(e.itemId)} />
+                <IconButton
+                  name={icons.close}
+                  size={20}
+                  color={colors.textMuted}
+                  onPress={() => void cancelDownload(e.itemId)}
+                />
               </View>
             ))}
           </SettingsGroup>
@@ -223,11 +231,7 @@ export default function StorageScreen() {
                     {failReason(e)}
                   </AppText>
                 </View>
-                <Pressable
-                  style={styles.retryBtn}
-                  onPress={() => retryDownload(e)}
-                  hitSlop={6}
-                >
+                <Pressable style={styles.retryBtn} onPress={() => retryDownload(e)} hitSlop={6}>
                   <Icon name={icons.retry} size={14} color={colors.accent} />
                   <AppText variant="caption" color={colors.accent}>
                     Retry
@@ -262,7 +266,12 @@ export default function StorageScreen() {
                   {e.author} · {formatBytes(e.bytes)}
                 </AppText>
               </View>
-              <IconButton name={icons.close} size={20} color={colors.textMuted} onPress={() => removeDownload(e)} />
+              <IconButton
+                name={icons.close}
+                size={20}
+                color={colors.textMuted}
+                onPress={() => removeDownload(e)}
+              />
             </View>
           ))
         )}
@@ -312,15 +321,22 @@ function StorageMeter({
   return (
     <View style={styles.meter}>
       <View style={styles.meterBar}>
-        {other > 0 ? <View style={[styles.seg, { width: pct(other), backgroundColor: otherColor }]} /> : null}
-        {hs > 0 ? <View style={[styles.seg, { width: pct(hs), backgroundColor: hsColor }]} /> : null}
+        {other > 0 ? (
+          <View style={[styles.seg, { width: pct(other), backgroundColor: otherColor }]} />
+        ) : null}
+        {hs > 0 ? (
+          <View style={[styles.seg, { width: pct(hs), backgroundColor: hsColor }]} />
+        ) : null}
         {free > 0 ? (
           <View style={[styles.segFree, { width: pct(free), backgroundColor: freeColor }]}>
             {allowance > 0 ? (
               <View
                 style={[
                   styles.segAllowance,
-                  { width: `${(allowance / Math.max(1, free)) * 100}%` as DimensionValue, borderColor: colors.accent },
+                  {
+                    width: `${(allowance / Math.max(1, free)) * 100}%` as DimensionValue,
+                    borderColor: colors.accent,
+                  },
                 ]}
               />
             ) : null}
@@ -328,11 +344,35 @@ function StorageMeter({
         ) : null}
       </View>
       <View style={styles.legend}>
-        <LegendItem swatch={otherColor} label="Other Apps" value={formatBytes(other)} colors={colors} styles={styles} />
-        <LegendItem swatch={hsColor} label="HearthShelf" value={formatBytes(hs)} colors={colors} styles={styles} />
-        <LegendItem swatch={freeColor} label="Free" value={formatBytes(free)} colors={colors} styles={styles} />
+        <LegendItem
+          swatch={otherColor}
+          label="Other Apps"
+          value={formatBytes(other)}
+          colors={colors}
+          styles={styles}
+        />
+        <LegendItem
+          swatch={hsColor}
+          label="HearthShelf"
+          value={formatBytes(hs)}
+          colors={colors}
+          styles={styles}
+        />
+        <LegendItem
+          swatch={freeColor}
+          label="Free"
+          value={formatBytes(free)}
+          colors={colors}
+          styles={styles}
+        />
         {maxBytes > 0 ? (
-          <LegendItem dashed label="Allowed" value={formatBytes(allowance)} colors={colors} styles={styles} />
+          <LegendItem
+            dashed
+            label="Allowed"
+            value={formatBytes(allowance)}
+            colors={colors}
+            styles={styles}
+          />
         ) : null}
       </View>
     </View>

@@ -96,7 +96,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
   },
-  text: { color: '#aba498', fontSize: 14, fontFamily: fonts.sans, textAlign: 'center', lineHeight: 20 },
+  text: {
+    color: '#aba498',
+    fontSize: 14,
+    fontFamily: fonts.sans,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
   button: {
     marginTop: 12,
     backgroundColor: '#e0654a',

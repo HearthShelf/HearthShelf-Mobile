@@ -95,10 +95,7 @@ export interface SyncStatusSheetHandle {
 
 /** Plain-language copy for each state - the whole point of the sheet is that the
  *  listener should never have to guess what a colored cloud means. */
-const COPY: Record<
-  'synced' | 'pending' | 'offline',
-  { title: string; body: string }
-> = {
+const COPY: Record<'synced' | 'pending' | 'offline', { title: string; body: string }> = {
   synced: {
     title: 'Progress saved',
     body: 'Your spot and listening time are up to date on your server. Nothing to do.',
@@ -155,8 +152,7 @@ const SyncStatusSheet = forwardRef<SyncStatusSheetHandle>(function SyncStatusShe
   const { look, kind } = resolve(sync, conn, colors)
   const copy = COPY[kind]
 
-  const lastSynced =
-    sync.lastSyncedAt != null ? relativeTime(sync.lastSyncedAt, Date.now()) : null
+  const lastSynced = sync.lastSyncedAt != null ? relativeTime(sync.lastSyncedAt, Date.now()) : null
 
   // Listening banked offline that hasn't reached the server yet, so we can name
   // exactly what's waiting instead of a vague "some listening". Sessions drive
@@ -264,8 +260,8 @@ const SyncStatusSheet = forwardRef<SyncStatusSheetHandle>(function SyncStatusShe
           <View style={[styles.result, { backgroundColor: colors.destructive + '1f' }]}>
             <Icon name={icons.error} size={18} color={colors.destructive} />
             <AppText variant="meta" color={colors.destructive} style={{ flex: 1 }}>
-              Still couldn't reach your server. Your listening is kept safely and
-              will sync on its own once you're back online.
+              Still couldn't reach your server. Your listening is kept safely and will sync on its
+              own once you're back online.
             </AppText>
           </View>
         ) : null}

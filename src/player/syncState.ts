@@ -121,7 +121,11 @@ export function subscribeSyncState(fn: () => void): () => void {
 
 /** Start (or restart) the live session for a book (starts green - fresh session,
  *  nothing to sync yet). */
-export function syncStateStartSession(itemId: string, startedAt: number, currentTime: number): void {
+export function syncStateStartSession(
+  itemId: string,
+  startedAt: number,
+  currentTime: number,
+): void {
   set({
     status: 'synced',
     live: { itemId, startedAt, startTime: currentTime, currentTime, timeListening: 0 },

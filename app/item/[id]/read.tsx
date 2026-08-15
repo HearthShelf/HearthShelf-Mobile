@@ -227,7 +227,10 @@ function ReaderInner() {
   const chapterFrac = chPages > 1 ? (chPage - 1) / (chPages - 1) : 0
   // Estimated chapter width in whole-book fraction: pages-in-chapter as a share
   // of an assumed ~book-average, bounded so a huge/tiny chapter stays sane.
-  const chapterWidth = Math.min(0.5, Math.max(0.02, chPages > 0 ? 1 / Math.max(1, toc.length) : 0.1))
+  const chapterWidth = Math.min(
+    0.5,
+    Math.max(0.02, chPages > 0 ? 1 / Math.max(1, toc.length) : 0.1),
+  )
   const chapterStart = Math.max(0, Math.min(1 - chapterWidth, pct - chapterFrac * chapterWidth))
 
   const sliderValue = scope === 'book' ? pct : chapterFrac
@@ -279,7 +282,10 @@ function ReaderInner() {
         <AppText style={{ color: colors.textMuted, marginBottom: 16, fontSize: 11, opacity: 0.7 }}>
           {error}
         </AppText>
-        <Pressable onPress={() => router.back()} style={[styles.btn, { borderColor: colors.border }]}>
+        <Pressable
+          onPress={() => router.back()}
+          style={[styles.btn, { borderColor: colors.border }]}
+        >
           <AppText style={{ color: colors.text }}>Go back</AppText>
         </Pressable>
       </View>
@@ -486,7 +492,9 @@ function SettingsPanel({
                 }}
                 style={[styles.seg, { borderColor: on ? tokens.ink : tokens.line }]}
               >
-                <AppText style={{ color: tokens.ink }}>{l === 'scroll' ? 'Scroll' : 'Paged'}</AppText>
+                <AppText style={{ color: tokens.ink }}>
+                  {l === 'scroll' ? 'Scroll' : 'Paged'}
+                </AppText>
               </Pressable>
             )
           })}

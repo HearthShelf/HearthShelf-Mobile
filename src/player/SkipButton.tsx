@@ -39,7 +39,12 @@ export function SkipButton({
       style={[styles.btn, { width: box, height: box }]}
       scaleTo={0.85}
     >
-      <Icon name={icons.replay} size={size} color={color} style={dir > 0 ? styles.mirror : undefined} />
+      <Icon
+        name={icons.replay}
+        size={size}
+        color={color}
+        style={dir > 0 ? styles.mirror : undefined}
+      />
       <View pointerEvents="none" style={[styles.numeralWrap, { paddingTop: nudge }]}>
         <Text allowFontScaling={false} style={[styles.numeral, { color, fontSize }]}>
           {label}

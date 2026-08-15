@@ -56,7 +56,13 @@ export function useTimelineMarkers(
     for (const n of notes) {
       // Only timestamped notes place a marker (general notes have no position).
       if (n.timeSec != null) {
-        items.push({ id: n.id, timeSec: n.timeSec, kind: 'note', userId: n.userId, username: n.username })
+        items.push({
+          id: n.id,
+          timeSec: n.timeSec,
+          kind: 'note',
+          userId: n.userId,
+          username: n.username,
+        })
       }
     }
     for (const s of locked) {

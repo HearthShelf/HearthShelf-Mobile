@@ -144,7 +144,8 @@ function parseSession(raw: string): AbsSession | null {
     if (!p || typeof p !== 'object') return null
     if (typeof p.serverUrl !== 'string' || !p.serverUrl) return null
     if (typeof p.token !== 'string' || !p.token) return null
-    const via = p.via === 'local' || p.via === 'preferred' || p.via === 'fallback' ? p.via : undefined
+    const via =
+      p.via === 'local' || p.via === 'preferred' || p.via === 'fallback' ? p.via : undefined
     return {
       serverUrl: p.serverUrl,
       token: p.token,

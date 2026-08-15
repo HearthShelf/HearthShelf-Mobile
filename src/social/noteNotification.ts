@@ -59,7 +59,11 @@ export interface NoteNotificationData {
  * @param clubId the club the note belongs to (for the deep-link + reply scope).
  * @param itemId the library item the note is on (for the reply POST).
  */
-export async function displayNoteNotification(note: HSNote, clubId: string, itemId: string): Promise<boolean> {
+export async function displayNoteNotification(
+  note: HSNote,
+  clubId: string,
+  itemId: string,
+): Promise<boolean> {
   if (Platform.OS !== 'android') return false
   let notifee: typeof import('@notifee/react-native').default
   let AndroidStyle: typeof import('@notifee/react-native').AndroidStyle

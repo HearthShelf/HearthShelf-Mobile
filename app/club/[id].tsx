@@ -689,7 +689,6 @@ export default function ClubRoomScreen() {
         ) : null}
       </KeyboardAvoidingView>
 
-
       {/* Members sheet (with kick for the owner). */}
       <Sheet ref={membersSheetRef} title="Members" snapPoints={['60%']}>
         {sortedMembers.map((m) => (

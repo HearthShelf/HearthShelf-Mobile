@@ -72,10 +72,7 @@ export function CoverDownloadOverlay({
               transform={`rotate(-90 ${ring / 2} ${ring / 2})`}
             />
           </Svg>
-          <Text
-            allowFontScaling={false}
-            style={{ fontSize, fontWeight: '700', color: '#fff' }}
-          >
+          <Text allowFontScaling={false} style={{ fontSize, fontWeight: '700', color: '#fff' }}>
             {`${pct}%`}
           </Text>
         </View>

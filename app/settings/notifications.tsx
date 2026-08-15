@@ -257,7 +257,12 @@ function SubRow({ sub, last }: { sub: HSSubscription; last?: boolean }) {
         <AppText variant="body" numberOfLines={1}>
           {sub.title}
         </AppText>
-        <AppText variant="caption" color={colors.textMuted} numberOfLines={1} style={{ marginTop: 2 }}>
+        <AppText
+          variant="caption"
+          color={colors.textMuted}
+          numberOfLines={1}
+          style={{ marginTop: 2 }}
+        >
           {subtitle}
         </AppText>
       </View>

@@ -37,10 +37,7 @@ export const DiscoverFeedbackSheet = forwardRef<
     onRate: (item: ABSLibraryItem, rating: number) => void
     onNotInterested: (item: ABSLibraryItem) => void
   }
->(function DiscoverFeedbackSheet(
-  { feedbackFor, ratingFor, onVote, onRate, onNotInterested },
-  ref,
-) {
+>(function DiscoverFeedbackSheet({ feedbackFor, ratingFor, onVote, onRate, onNotInterested }, ref) {
   const colors = useColors()
   const s = useMemo(() => makeStyles(colors), [colors])
   const sheetRef = useRef<SheetRef>(null)

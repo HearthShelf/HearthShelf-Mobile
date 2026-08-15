@@ -84,7 +84,12 @@ export function PlayerCoverCarousel({
   /** Long-press an UP-NEXT cover to open the book actions sheet (same menu as
    *  the home shelves). Not wired on the live page - holding that one is the
    *  fast-forward gesture below. */
-  onLongPressPage?: (page: { itemId: string; title: string; author: string; isLive: boolean }) => void
+  onLongPressPage?: (page: {
+    itemId: string
+    title: string
+    author: string
+    isLive: boolean
+  }) => void
   /** Press-and-hold the live cover: fast-forward while held, normal on release. */
   onLiveHoldStart?: () => void
   onLiveHoldEnd?: () => void
@@ -252,7 +257,10 @@ export function PlayerCoverCarousel({
           {!item.isLive && (
             <>
               <View
-                style={[styles.dim, { backgroundColor: withAlpha('#0a0806', isFocus ? 0.28 : 0.5) }]}
+                style={[
+                  styles.dim,
+                  { backgroundColor: withAlpha('#0a0806', isFocus ? 0.28 : 0.5) },
+                ]}
                 pointerEvents="none"
               />
               <View style={styles.upNextTag} pointerEvents="none">

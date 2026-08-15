@@ -197,7 +197,9 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
         const chapters = detail.media.chapters ?? []
         const duration = page.isLive
           ? (nowPlaying?.duration ?? 0)
-          : (chapters.length ? chapters[chapters.length - 1].end : 0)
+          : chapters.length
+            ? chapters[chapters.length - 1].end
+            : 0
         // The detail metadata carries authors[]/narrators[] but NOT the
         // flattened authorName the list shape (and itemAuthor()) reads, so it
         // has to be derived here or the sheet header shows "Unknown author".

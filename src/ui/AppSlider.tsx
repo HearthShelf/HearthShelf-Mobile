@@ -19,7 +19,13 @@
  * release.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native'
+import {
+  StyleSheet,
+  View,
+  type LayoutChangeEvent,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, {
   runOnJS,
@@ -117,61 +123,58 @@ export function AppSlider({
   const emitComplete = useCallback((v: number) => onCompleteRef.current?.(v), [])
   const tapHaptic = useCallback(() => haptics.select(), [])
 
-  const pan = useMemo(
-    () => {
-      const valueFromX = (x: number) => {
-        'worklet'
-        const usable = trackWSV.value - THUMB_R * 2
-        if (usable <= 0) return valueSV.value
-        const ratio = Math.max(0, Math.min(1, (x - THUMB_R) / usable))
-        return snap(min + ratio * (max - min), min, max, step)
+  const pan = useMemo(() => {
+    const valueFromX = (x: number) => {
+      'worklet'
+      const usable = trackWSV.value - THUMB_R * 2
+      if (usable <= 0) return valueSV.value
+      const ratio = Math.max(0, Math.min(1, (x - THUMB_R) / usable))
+      return snap(min + ratio * (max - min), min, max, step)
+    }
+    const move = (x: number) => {
+      'worklet'
+      const v = valueFromX(x)
+      dragging.value = true
+      dragValue.value = v
+      if (v !== lastSent.value) {
+        lastSent.value = v
+        if (haptic) runOnJS(tapHaptic)()
+        if (commitMode === 'live') runOnJS(emitChange)(v)
       }
-      const move = (x: number) => {
-        'worklet'
-        const v = valueFromX(x)
-        dragging.value = true
-        dragValue.value = v
-        if (v !== lastSent.value) {
+    }
+    // Zero min distance: activates on touch-down, so taps seat the thumb and
+    // the parent sheet never steals the drag.
+    return Gesture.Pan()
+      .minDistance(0)
+      .onBegin((e) => move(e.x))
+      .onUpdate((e) => move(e.x))
+      .onEnd((e) => {
+        const v = valueFromX(e.x)
+        dragging.value = false
+        if (commitMode === 'release' || v !== lastSent.value) {
           lastSent.value = v
-          if (haptic) runOnJS(tapHaptic)()
-          if (commitMode === 'live') runOnJS(emitChange)(v)
+          runOnJS(emitChange)(v)
         }
-      }
-      // Zero min distance: activates on touch-down, so taps seat the thumb and
-      // the parent sheet never steals the drag.
-      return Gesture.Pan()
-        .minDistance(0)
-        .onBegin((e) => move(e.x))
-        .onUpdate((e) => move(e.x))
-        .onEnd((e) => {
-          const v = valueFromX(e.x)
-          dragging.value = false
-          if (commitMode === 'release' || v !== lastSent.value) {
-            lastSent.value = v
-            runOnJS(emitChange)(v)
-          }
-          runOnJS(emitComplete)(v)
-        })
-        .onFinalize((_e, success) => {
-          if (!success) dragging.value = false
-        })
-    },
-    [
-      min,
-      max,
-      step,
-      haptic,
-      commitMode,
-      emitChange,
-      emitComplete,
-      tapHaptic,
-      trackWSV,
-      valueSV,
-      dragValue,
-      dragging,
-      lastSent,
-    ],
-  )
+        runOnJS(emitComplete)(v)
+      })
+      .onFinalize((_e, success) => {
+        if (!success) dragging.value = false
+      })
+  }, [
+    min,
+    max,
+    step,
+    haptic,
+    commitMode,
+    emitChange,
+    emitComplete,
+    tapHaptic,
+    trackWSV,
+    valueSV,
+    dragValue,
+    dragging,
+    lastSent,
+  ])
 
   const usable = Math.max(0, trackW - THUMB_R * 2)
 
@@ -187,8 +190,7 @@ export function AppSlider({
   }))
   const fillStyle = useAnimatedStyle(() => ({ width: THUMB_R + thumbX.value }))
 
-  const tickX = (t: number) =>
-    THUMB_R + (max > min ? ((t - min) / (max - min)) * usable : 0)
+  const tickX = (t: number) => THUMB_R + (max > min ? ((t - min) / (max - min)) * usable : 0)
 
   return (
     <View style={style}>

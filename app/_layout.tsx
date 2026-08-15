@@ -95,8 +95,9 @@ if (SENTRY_DSN) {
       // would drag the whole player/store/downloads graph in ahead of it.
       let live: ReturnType<typeof import('@/lib/feedbackDiagnostics').livePlayerContext> = null
       try {
-        live = (require('@/lib/feedbackDiagnostics') as typeof import('@/lib/feedbackDiagnostics'))
-          .livePlayerContext()
+        live = (
+          require('@/lib/feedbackDiagnostics') as typeof import('@/lib/feedbackDiagnostics')
+        ).livePlayerContext()
       } catch {
         // A crash during startup can precede those modules; send it as-is.
       }
@@ -499,26 +500,26 @@ export default Sentry.wrap(function RootLayout() {
                   can use app primitives; outside AuthGate so a failure in the
                   auth/connection tree is caught too. */}
               <ErrorBoundary label="root">
-              <AuthGate>
-                <AppBlurTargetProvider>
-                  <ThemedStack />
-                  {/* Keep the floating mini player outside each screen's native
+                <AuthGate>
+                  <AppBlurTargetProvider>
+                    <ThemedStack />
+                    {/* Keep the floating mini player outside each screen's native
                       blur target, while sharing that target through this provider. */}
-                  <MiniPlayerDock />
-                </AppBlurTargetProvider>
-                {/* The More bubble. Mounted after the dock so it covers the
+                    <MiniPlayerDock />
+                  </AppBlurTargetProvider>
+                  {/* The More bubble. Mounted after the dock so it covers the
                     mini player, which is a root sibling and would otherwise
                     paint over it. */}
-                <MoreMenuHost />
-                {/* Note-pop toasts fired by the club watcher (notePops.ts). */}
-                <PopToast />
-                {/* Single app-wide confirmation toast, positioned in the
+                  <MoreMenuHost />
+                  {/* Note-pop toasts fired by the club watcher (notePops.ts). */}
+                  <PopToast />
+                  {/* Single app-wide confirmation toast, positioned in the
                     mini-player band above all screens. */}
-                <ToastHost />
-                {/* Full-screen reading-goal celebration, fired on the first app
+                  <ToastHost />
+                  {/* Full-screen reading-goal celebration, fired on the first app
                     open after the yearly goal is reached. */}
-                <GoalCelebrationHost />
-              </AuthGate>
+                  <GoalCelebrationHost />
+                </AuthGate>
               </ErrorBoundary>
               {/* Persistent audio engine - mounted once, never unmounted.
                   Deliberately OUTSIDE the error boundary: a UI render error must

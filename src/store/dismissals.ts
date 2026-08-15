@@ -85,11 +85,7 @@ export function resetDismissals(): void {
  * failure, roll back. Returns a promise that resolves when the server confirms
  * (so the caller can re-pull the queue afterward).
  */
-export async function dismiss(
-  kind: DismissKind,
-  entityId: string,
-  label?: string,
-): Promise<void> {
+export async function dismiss(kind: DismissKind, entityId: string, label?: string): Promise<void> {
   const key = BUCKET[kind]
   if (label) labels.set(entityId, label)
   if ((state[key] ?? []).includes(entityId)) return

@@ -8,7 +8,15 @@
  * plus a hiddenAhead count. This sheet re-gates optimistically with core's
  * gateNotes as position advances between fetches, but never invents note bodies.
  */
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { useSyncExternalStore } from 'react'
 import { ActivityIndicator, StyleSheet, TextInput, View } from 'react-native'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
@@ -69,7 +77,9 @@ export const NotesSheet = forwardRef<SheetHandle, NotesSheetProps>(function Note
   // Composer visibility defaults to the remembered Public/Personal choice; Safe
   // always starts OFF (a deliberate per-note opt-in).
   const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
-  const [visibility, setVisibility] = useState<NoteDefaultVisibility>(settings.noteDefaultVisibility)
+  const [visibility, setVisibility] = useState<NoteDefaultVisibility>(
+    settings.noteDefaultVisibility,
+  )
   const [safe, setSafe] = useState(false)
   // Adopt the remembered default whenever it changes and we're not mid-edit.
   useEffect(() => {
@@ -131,7 +141,9 @@ export const NotesSheet = forwardRef<SheetHandle, NotesSheetProps>(function Note
     haptics.warn()
     const ok = await deleteNote(note.id)
     if (ok) {
-      setNotes((list) => (list ? list.filter((n) => n.id !== note.id && n.parentId !== note.id) : list))
+      setNotes((list) =>
+        list ? list.filter((n) => n.id !== note.id && n.parentId !== note.id) : list,
+      )
       onToast?.('Note deleted')
     } else {
       onToast?.('Could not delete note')
@@ -164,8 +176,8 @@ export const NotesSheet = forwardRef<SheetHandle, NotesSheetProps>(function Note
             <View style={styles.teaser}>
               <Icon name={icons.notes} size={16} color={colors.textMuted} />
               <AppText variant="caption" color={colors.textMuted}>
-                {gated.hiddenAhead} {gated.hiddenAhead === 1 ? 'note is' : 'notes are'} ahead of you.
-                Keep listening to unlock them.
+                {gated.hiddenAhead} {gated.hiddenAhead === 1 ? 'note is' : 'notes are'} ahead of
+                you. Keep listening to unlock them.
               </AppText>
             </View>
           ) : null}
@@ -182,15 +194,23 @@ export const NotesSheet = forwardRef<SheetHandle, NotesSheetProps>(function Note
                 name={replyTo.username}
                 hue={coverHue(replyTo.userId)}
               />
-              <AppText variant="caption" color={colors.textMuted} numberOfLines={1} style={{ flex: 1 }}>
+              <AppText
+                variant="caption"
+                color={colors.textMuted}
+                numberOfLines={1}
+                style={{ flex: 1 }}
+              >
                 Replying to {replyTo.username}
               </AppText>
-              <IconButton name={icons.close} size={16} color={colors.textMuted} onPress={() => setReplyTo(null)} />
+              <IconButton
+                name={icons.close}
+                size={16}
+                color={colors.textMuted}
+                onPress={() => setReplyTo(null)}
+              />
             </View>
           ) : null}
-          {!replyTo ? (
-            <VisibilityToggle value={visibility} onChange={setVisibility} />
-          ) : null}
+          {!replyTo ? <VisibilityToggle value={visibility} onChange={setVisibility} /> : null}
           <View style={styles.composerRow}>
             <TextInput
               style={styles.input}

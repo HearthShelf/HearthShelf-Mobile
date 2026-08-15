@@ -28,10 +28,7 @@ export const MINI_PLAYER_HEIGHT = 60
 // Enter from below the viewport, then overshoot the resting edge once before
 // settling. This is deliberately softer than the small control POP_SPRING: the
 // pill travels much farther, but still finishes with the same tactile character.
-const MINI_PLAYER_ENTER = SlideInDown.springify()
-  .damping(27)
-  .stiffness(340)
-  .mass(0.9)
+const MINI_PLAYER_ENTER = SlideInDown.springify().damping(27).stiffness(340).mass(0.9)
 
 export function MiniPlayer({
   bottomOffset = 0,

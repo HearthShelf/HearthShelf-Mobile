@@ -63,8 +63,16 @@ function NoteBubble({
   const stamp = stampLabel(note.timeSec, chapters)
   const canDelete = (mine || canModerate) && !!onDelete
   return (
-    <View style={[styles.bubble, isReply && styles.replyBubble, highlighted && styles.highlighted]} onLayout={onLayout}>
-      <Avatar uri={avatarUrl(note.userId)} size={30} name={note.username} hue={coverHue(note.userId)} />
+    <View
+      style={[styles.bubble, isReply && styles.replyBubble, highlighted && styles.highlighted]}
+      onLayout={onLayout}
+    >
+      <Avatar
+        uri={avatarUrl(note.userId)}
+        size={30}
+        name={note.username}
+        hue={coverHue(note.userId)}
+      />
       <View style={{ flex: 1, minWidth: 0 }}>
         <View style={styles.metaRow}>
           <AppText variant="label" color={mine ? colors.accent : colors.text} numberOfLines={1}>
@@ -106,7 +114,12 @@ function NoteBubble({
             </Touchable>
           ) : null}
           {canDelete ? (
-            <IconButton name={icons.close} size={15} color={colors.textFaint} onPress={() => onDelete?.(note)} />
+            <IconButton
+              name={icons.close}
+              size={15}
+              color={colors.textFaint}
+              onPress={() => onDelete?.(note)}
+            />
           ) : null}
         </View>
       </View>
@@ -161,7 +174,7 @@ export function NoteThread({
   // The first top-level note newer than the last-visit cursor gets a divider
   // above it. null when nothing is new (or no cursor supplied).
   const firstNewId =
-    newSinceTs != null ? tops.find((n) => n.createdAt > newSinceTs)?.id ?? null : null
+    newSinceTs != null ? (tops.find((n) => n.createdAt > newSinceTs)?.id ?? null) : null
 
   return (
     <View>

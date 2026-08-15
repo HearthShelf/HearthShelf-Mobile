@@ -54,7 +54,11 @@ export function clearSubscriptions(): void {
 }
 
 /** Is the user already following this book (by asin) or series (by seriesAsin)? */
-export function isSubscribed(opts: { asin?: string; seriesAsin?: string; kind: 'book' | 'series' }): boolean {
+export function isSubscribed(opts: {
+  asin?: string
+  seriesAsin?: string
+  kind: 'book' | 'series'
+}): boolean {
   return state.subscriptions.some((s) =>
     opts.kind === 'series'
       ? s.kind === 'series' && s.seriesAsin === opts.seriesAsin

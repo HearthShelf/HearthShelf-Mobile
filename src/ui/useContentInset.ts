@@ -20,7 +20,7 @@ export function useContentInset(): number {
   const { nowPlaying } = useSyncExternalStore(subscribe, getState)
   const hideMiniPlayer = useSyncExternalStore(
     subscribeSettings,
-    () => getSettingsState().hideMiniPlayer
+    () => getSettingsState().hideMiniPlayer,
   )
   const mode = useNavMode()
   const onTabScreen = hasBottomTabBar(pathname)
@@ -52,7 +52,7 @@ export function useMiniPlayerInset(): number {
   const { nowPlaying } = useSyncExternalStore(subscribe, getState)
   const hideMiniPlayer = useSyncExternalStore(
     subscribeSettings,
-    () => getSettingsState().hideMiniPlayer
+    () => getSettingsState().hideMiniPlayer,
   )
   const mode = useNavMode()
   const miniVisible = nowPlaying !== null && !hideMiniPlayer && !miniPlayerHiddenOn(pathname)

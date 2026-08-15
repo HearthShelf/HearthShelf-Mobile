@@ -25,7 +25,10 @@ export async function getDismissals(): Promise<Dismissals> {
 }
 
 /** Dismiss (hide) a series or book. Returns the fresh full list. */
-export async function addDismissal(kind: 'series' | 'item' | 'roster', entityId: string): Promise<Dismissals> {
+export async function addDismissal(
+  kind: 'series' | 'item' | 'roster',
+  entityId: string,
+): Promise<Dismissals> {
   return writeDismissal('POST', kind, entityId)
 }
 

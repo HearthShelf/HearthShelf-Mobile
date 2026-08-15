@@ -9,7 +9,12 @@
  * motion and its own press feedback, drawing from the app's motion vocabulary.
  */
 import { StyleSheet } from 'react-native'
-import Animated, { useAnimatedStyle, useSharedValue, withTiming, Easing } from 'react-native-reanimated'
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated'
 import { useEffect } from 'react'
 import { SpringPressable, DUR } from './motion'
 import { useTheme } from './ThemeProvider'

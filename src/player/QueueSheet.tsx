@@ -335,10 +335,7 @@ const AddBooksSheet = forwardRef<SheetHandle>(function AddBooksSheet(_props, ref
   }))
 
   const queue = useSyncExternalStore(subscribeQueue, getQueueState)
-  const queuedIds = useMemo(
-    () => new Set(queue.manual.map((m) => m.libraryItemId)),
-    [queue.manual],
-  )
+  const queuedIds = useMemo(() => new Set(queue.manual.map((m) => m.libraryItemId)), [queue.manual])
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<ABSLibraryItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -425,7 +422,10 @@ const AddBooksSheet = forwardRef<SheetHandle>(function AddBooksSheet(_props, ref
                 itemId={item.id}
                 size={46}
                 radius={radius.tile}
-                fallback={{ hue: coverHue(item.id), initial: itemTitle(item).charAt(0).toUpperCase() }}
+                fallback={{
+                  hue: coverHue(item.id),
+                  initial: itemTitle(item).charAt(0).toUpperCase(),
+                }}
               />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <AppText variant="label" numberOfLines={1}>

@@ -198,9 +198,8 @@ export default function PlaybackPanel() {
         {s.skipHotspots && s.carouselPlayer ? (
           <View style={styles.conflict}>
             <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
-              Heads up: the player also swipes sideways to change books, so a stray
-              double-tap near the edge can land on a swipe. Turn this off if it fights
-              your swipes.
+              Heads up: the player also swipes sideways to change books, so a stray double-tap near
+              the edge can land on a swipe. Turn this off if it fights your swipes.
             </AppText>
             <Pressable
               onPress={() => setSetting('skipHotspots', false)}

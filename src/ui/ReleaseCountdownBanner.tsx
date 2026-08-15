@@ -46,7 +46,10 @@ export function ReleaseCountdownBanner() {
 
   // A series follow has no date of its own - resolve its roster so its next book
   // can reach the banner alongside directly followed books.
-  const seriesSubs = useMemo(() => subscriptions.filter((s) => s.kind === 'series'), [subscriptions])
+  const seriesSubs = useMemo(
+    () => subscriptions.filter((s) => s.kind === 'series'),
+    [subscriptions],
+  )
   const rosters = useSeriesRosters(seriesSubs)
   const nextBySeries = useNextBySeriesAsin(seriesSubs, rosters, ignoredAsins ?? [], now)
 

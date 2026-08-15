@@ -58,10 +58,7 @@ import {
 } from '@/ui/primitives'
 import { BookTile } from '@/ui/BookTile'
 import { DiscoverAiTile } from '@/ui/DiscoverAiTile'
-import {
-  DiscoverFeedbackSheet,
-  type DiscoverFeedbackHandle,
-} from '@/ui/DiscoverFeedbackSheet'
+import { DiscoverFeedbackSheet, type DiscoverFeedbackHandle } from '@/ui/DiscoverFeedbackSheet'
 import { getRatings, setRating, type RatingMap } from '@/api/ratings'
 import {
   BookActionsSheet,
@@ -242,26 +239,23 @@ export default function DiscoverScreen() {
 
   // Feedback writes optimistically so a tile reacts before the round-trip; the
   // server echoes the full map back and we adopt it when it's non-empty.
-  const writeFeedback = useCallback(
-    (itemKey: string, fb: { vote?: DiscoverVote | null }) => {
-      haptics.select()
-      setFeedback((prev) => {
-        const next = { ...prev }
-        const entry = { ...(next[itemKey] ?? {}) }
-        if (fb.vote !== undefined) {
-          if (fb.vote === null) delete entry.vote
-          else entry.vote = fb.vote
-        }
-        if (Object.keys(entry).length === 0) delete next[itemKey]
-        else next[itemKey] = entry
-        return next
-      })
-      void setDiscoverFeedback(itemKey, fb).then((map) => {
-        if (map && Object.keys(map).length > 0) setFeedback(map)
-      })
-    },
-    [],
-  )
+  const writeFeedback = useCallback((itemKey: string, fb: { vote?: DiscoverVote | null }) => {
+    haptics.select()
+    setFeedback((prev) => {
+      const next = { ...prev }
+      const entry = { ...(next[itemKey] ?? {}) }
+      if (fb.vote !== undefined) {
+        if (fb.vote === null) delete entry.vote
+        else entry.vote = fb.vote
+      }
+      if (Object.keys(entry).length === 0) delete next[itemKey]
+      else next[itemKey] = entry
+      return next
+    })
+    void setDiscoverFeedback(itemKey, fb).then((map) => {
+      if (map && Object.keys(map).length > 0) setFeedback(map)
+    })
+  }, [])
 
   // Ratings write to their own endpoint, and unlike feedback that write can
   // FAIL loudly - so roll the optimistic value back rather than leaving a star

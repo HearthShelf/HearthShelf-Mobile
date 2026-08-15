@@ -217,7 +217,11 @@ export const GoodreadsImportSheet = forwardRef<BottomSheetModal, { onDismiss?: (
             </>
           )}
           {message ? (
-            <AppText variant="caption" color={colors.textMuted} style={{ paddingHorizontal: spacing.xs }}>
+            <AppText
+              variant="caption"
+              color={colors.textMuted}
+              style={{ paddingHorizontal: spacing.xs }}
+            >
               {message}
             </AppText>
           ) : null}

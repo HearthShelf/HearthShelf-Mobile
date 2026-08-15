@@ -25,15 +25,7 @@ import {
 } from '@/api/abs'
 import { getProgressState, subscribeProgress } from '@/store/progress'
 import { playItemById } from '@/player/playback'
-import {
-  AppText,
-  Avatar,
-  Centered,
-  IconButton,
-  Screen,
-  Touchable,
-  icons,
-} from '@/ui/primitives'
+import { AppText, Avatar, Centered, IconButton, Screen, Touchable, icons } from '@/ui/primitives'
 import { BookTile } from '@/ui/BookTile'
 import { EmptyState, Skeleton, SkeletonTile } from '@/ui/states'
 import { Icon } from '@/ui/icons'
@@ -336,7 +328,6 @@ export default function GroupDrilldown() {
           ))}
         </ScrollView>
       )}
-
     </Screen>
   )
 }

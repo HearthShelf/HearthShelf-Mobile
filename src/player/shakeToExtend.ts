@@ -132,7 +132,12 @@ function mountNative(callbacksRef: React.MutableRefObject<ShakeCallbacks>): () =
     unsubSettings()
     sub?.remove()
     // Stop the native sensor when the host unmounts.
-    setAutoSleepShake(false, getSettingsState().sleepShakeMinutes, false, getSettingsState().haptics)
+    setAutoSleepShake(
+      false,
+      getSettingsState().sleepShakeMinutes,
+      false,
+      getSettingsState().haptics,
+    )
   }
 }
 

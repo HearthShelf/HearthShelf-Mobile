@@ -276,9 +276,7 @@ export default function StatsTab() {
   const silentReload = useCallback(async () => {
     try {
       const statsRes = await getHSStats()
-      setStatus((s) =>
-        s.phase === 'ready' ? { ...s, stats: vmFromHs(statsRes) } : s,
-      )
+      setStatus((s) => (s.phase === 'ready' ? { ...s, stats: vmFromHs(statsRes) } : s))
     } catch {
       // Leave the current numbers on screen; a background poll never surfaces an
       // error or clears good data.
@@ -336,9 +334,7 @@ export default function StatsTab() {
   const retryHistory = useCallback(async () => {
     const hist = await fetchHistory()
     setStatus((s) =>
-      s.phase === 'ready'
-        ? { ...s, history: hist.history, historyFailed: hist.failed }
-        : s,
+      s.phase === 'ready' ? { ...s, history: hist.history, historyFailed: hist.failed } : s,
     )
   }, [fetchHistory])
 
@@ -402,9 +398,7 @@ export default function StatsTab() {
           <AppText variant="hero">Your stats</AppText>
         </View>
 
-        {hasAnyListening && (
-          <JumpChips onJump={jumpTo} styles={styles} colors={colors} />
-        )}
+        {hasAnyListening && <JumpChips onJump={jumpTo} styles={styles} colors={colors} />}
 
         {hasAnyListening ? (
           <>
@@ -533,13 +527,7 @@ function JumpChips({
 
 // Loading skeleton that mirrors the real stats layout (title, tiles, goal,
 // chart) so content fills the same slots with no reflow.
-function StatsSkeleton({
-  styles,
-  contentMaxWidth,
-}: {
-  styles: Styles
-  contentMaxWidth: number
-}) {
+function StatsSkeleton({ styles, contentMaxWidth }: { styles: Styles; contentMaxWidth: number }) {
   return (
     <View
       style={{
@@ -554,7 +542,13 @@ function StatsSkeleton({
       <Skeleton width={'100%'} height={96} radius={radius.card} />
       <View style={styles.tileGrid}>
         {[0, 1, 2, 3].map((i) => (
-          <Skeleton key={i} width={'46%'} height={92} radius={radius.card} style={{ flexGrow: 1 }} />
+          <Skeleton
+            key={i}
+            width={'46%'}
+            height={92}
+            radius={radius.card}
+            style={{ flexGrow: 1 }}
+          />
         ))}
       </View>
       <Skeleton width={'100%'} height={120} radius={radius.card} />
@@ -1308,7 +1302,11 @@ function Heatmap({
     let start: Date
     if (useYear) {
       for (const d of history.days)
-        byDate.set(d.date, { secs: d.secondsListened, sessions: d.sessions, books: d.booksFinished })
+        byDate.set(d.date, {
+          secs: d.secondsListened,
+          sessions: d.sessions,
+          books: d.booksFinished,
+        })
       start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7 * 52)
     } else {
       for (const [k, v] of Object.entries(stats.byDay))
@@ -1466,7 +1464,12 @@ function Heatmap({
       {/* Selected-week detail card, below the heatmap (never a bubble under the
           finger). Shown in heatmap view once a week is tapped. */}
       {view === 'heatmap' && selectedWeek != null && selectedDays.length > 0 && (
-        <WeekDetail days={selectedDays} hasDetail={model.hasDetail} styles={styles} colors={colors} />
+        <WeekDetail
+          days={selectedDays}
+          hasDetail={model.hasDetail}
+          styles={styles}
+          colors={colors}
+        />
       )}
     </View>
   )
@@ -1638,7 +1641,10 @@ function MonthList({
           <Touchable key={m.key} style={styles.monthRow} onPress={() => onOpenMonth(m.key)}>
             <View style={{ flex: 1, minWidth: 0 }}>
               <AppText variant="label">{m.label}</AppText>
-              <AppText variant="caption" color={m.activeDays > 0 ? colors.textMuted : colors.textFaint}>
+              <AppText
+                variant="caption"
+                color={m.activeDays > 0 ? colors.textMuted : colors.textFaint}
+              >
                 {sub}
               </AppText>
             </View>
@@ -1848,17 +1854,19 @@ function CompareCard({
           {selectedName && (
             <CompareChip label={selectedName} on onPress={() => undefined} colors={colors} />
           )}
-          {roster.slice(0, 8).map((u) =>
-            u.userId === userId ? null : (
-              <CompareChip
-                key={u.userId}
-                label={u.username}
-                on={false}
-                onPress={() => setUserId(u.userId)}
-                colors={colors}
-              />
-            ),
-          )}
+          {roster
+            .slice(0, 8)
+            .map((u) =>
+              u.userId === userId ? null : (
+                <CompareChip
+                  key={u.userId}
+                  label={u.username}
+                  on={false}
+                  onPress={() => setUserId(u.userId)}
+                  colors={colors}
+                />
+              ),
+            )}
         </ScrollView>
         {roster.length > 8 && (
           <Touchable style={styles.compareSearchBtn} onPress={() => pickerRef.current?.present()}>
@@ -1990,7 +1998,12 @@ const ComparePickerSheet = forwardRef<
         </Touchable>
         {filtered.map((u) => (
           <Touchable key={u.userId} style={styles.comparePickRow} onPress={() => onPick(u.userId)}>
-            <Avatar uri={avatarUrl(u.userId)} size={28} name={u.username} hue={coverHue(u.userId)} />
+            <Avatar
+              uri={avatarUrl(u.userId)}
+              size={28}
+              name={u.username}
+              hue={coverHue(u.userId)}
+            />
             <AppText variant="body" numberOfLines={1} style={{ flex: 1 }}>
               {u.username}
             </AppText>

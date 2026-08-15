@@ -170,8 +170,7 @@ export default function SeriesDetailScreen() {
     // Paint immediately from the in-process cache so re-opening a series doesn't
     // flash owned-only before the missing rows arrive. The fetch below refreshes.
     const cached = peekAudibleSeries(seriesName)
-    if (cached?.seriesAsin)
-      setMissing(missingSeriesBooks(cached.books, ownedBooks, ignoredAsins))
+    if (cached?.seriesAsin) setMissing(missingSeriesBooks(cached.books, ownedBooks, ignoredAsins))
     void (async () => {
       const [audible, enabled] = await Promise.all([
         fetchAudibleSeries(seriesName),
@@ -828,11 +827,7 @@ function Header({
                   onToggleIgnore()
                 }}
               >
-                <Icon
-                  name={ignored ? icons.hidden : icons.visible}
-                  size={22}
-                  color={colors.text}
-                />
+                <Icon name={ignored ? icons.hidden : icons.visible} size={22} color={colors.text} />
                 <View style={{ flex: 1 }}>
                   <AppText variant="body">{ignored ? 'Stop ignoring' : 'Ignore series'}</AppText>
                   <AppText variant="caption" color={colors.textMuted}>

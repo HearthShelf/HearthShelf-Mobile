@@ -47,7 +47,10 @@ export const AddToListSheet = forwardRef<
     queueEntries?: QueueEntry[]
     onAdded: (message: string) => void
   }
->(function AddToListSheet({ libraryId, libraryItemId, libraryItemIds, queueEntries, onAdded }, ref) {
+>(function AddToListSheet(
+  { libraryId, libraryItemId, libraryItemIds, queueEntries, onAdded },
+  ref,
+) {
   // Normalize single/bulk callers to one id list.
   const ids = libraryItemIds ?? (libraryItemId ? [libraryItemId] : [])
   const canQueue = (queueEntries?.length ?? 0) > 0
@@ -61,10 +64,7 @@ export const AddToListSheet = forwardRef<
   const styles = useMemo(() => makeStyles(colors), [colors])
   const [tab, setTab] = useState<Tab>(canQueue ? 'queue' : 'collection')
   const queue = useSyncExternalStore(subscribeQueue, getQueueState)
-  const queuedIds = useMemo(
-    () => new Set(queue.manual.map((m) => m.libraryItemId)),
-    [queue.manual],
-  )
+  const queuedIds = useMemo(() => new Set(queue.manual.map((m) => m.libraryItemId)), [queue.manual])
   const [collections, setCollections] = useState<ABSCollection[] | null>(null)
   const [playlists, setPlaylists] = useState<ABSPlaylist[] | null>(null)
   const [newName, setNewName] = useState('')
@@ -95,9 +95,7 @@ export const AddToListSheet = forwardRef<
       added += 1
     }
     finish(
-      added === 0
-        ? 'Already in your queue'
-        : `Added to up next${added > 1 ? ` (${added})` : ''}`,
+      added === 0 ? 'Already in your queue' : `Added to up next${added > 1 ? ` (${added})` : ''}`,
     )
   }
 
@@ -148,7 +146,10 @@ export const AddToListSheet = forwardRef<
   return (
     <Sheet ref={sheetRef} title="Add to list" snapPoints={['70%']}>
       <View style={styles.segFull}>
-        {(canQueue ? (['queue', 'collection', 'playlist'] as Tab[]) : (['collection', 'playlist'] as Tab[])).map((t) => (
+        {(canQueue
+          ? (['queue', 'collection', 'playlist'] as Tab[])
+          : (['collection', 'playlist'] as Tab[])
+        ).map((t) => (
           <Pressable
             key={t}
             style={[styles.seg, tab === t && styles.segOn]}
@@ -168,8 +169,8 @@ export const AddToListSheet = forwardRef<
       {tab === 'queue' ? (
         <View>
           <AppText variant="meta" color={colors.textMuted} style={{ marginBottom: spacing.md }}>
-            Add {ids.length > 1 ? `these ${ids.length} books` : 'this book'} to your up-next
-            queue. In Auto mode they play after your Auto picks.
+            Add {ids.length > 1 ? `these ${ids.length} books` : 'this book'} to your up-next queue.
+            In Auto mode they play after your Auto picks.
           </AppText>
           <Pressable
             style={[styles.queueBtn, busy && { opacity: 0.5 }]}
@@ -184,65 +185,65 @@ export const AddToListSheet = forwardRef<
         </View>
       ) : (
         <>
-      <View style={styles.createRow}>
-        <TextInput
-          style={styles.input}
-          placeholder={`New ${tab} name…`}
-          placeholderTextColor={colors.textFaint}
-          value={newName}
-          onChangeText={setNewName}
-          onSubmitEditing={() => void createNew()}
-        />
-        <Pressable
-          style={[styles.createBtn, (!newName.trim() || busy) && { opacity: 0.5 }]}
-          disabled={!newName.trim() || busy}
-          onPress={() => void createNew()}
-        >
-          <Icon name={icons.check} size={16} color={colors.onAccent} />
-          <AppText variant="label" color={colors.onAccent}>
-            Create
-          </AppText>
-        </Pressable>
-      </View>
-
-      {loading ? (
-        <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.xl }} />
-      ) : lists.length === 0 ? (
-        <AppText
-          variant="meta"
-          color={colors.textMuted}
-          style={{ textAlign: 'center', marginTop: spacing.xl }}
-        >
-          No {tab}s yet. Create one above.
-        </AppText>
-      ) : (
-        <View>
-          {lists.map((l) => (
+          <View style={styles.createRow}>
+            <TextInput
+              style={styles.input}
+              placeholder={`New ${tab} name…`}
+              placeholderTextColor={colors.textFaint}
+              value={newName}
+              onChangeText={setNewName}
+              onSubmitEditing={() => void createNew()}
+            />
             <Pressable
-              key={l.id}
-              style={styles.row}
-              disabled={busy}
-              onPress={() =>
-                tab === 'collection'
-                  ? void addToCollection(l.id, l.name)
-                  : void addToPlaylist(l.id, l.name)
-              }
+              style={[styles.createBtn, (!newName.trim() || busy) && { opacity: 0.5 }]}
+              disabled={!newName.trim() || busy}
+              onPress={() => void createNew()}
             >
-              <View style={styles.rowIcon}>
-                <Icon
-                  name={tab === 'collection' ? icons.checkCircle : icons.chapters}
-                  size={18}
-                  color={colors.textMuted}
-                />
-              </View>
-              <AppText variant="body" style={{ flex: 1 }} numberOfLines={1}>
-                {l.name}
+              <Icon name={icons.check} size={16} color={colors.onAccent} />
+              <AppText variant="label" color={colors.onAccent}>
+                Create
               </AppText>
-              <IconButton name={icons.check} color={colors.textMuted} size={20} />
             </Pressable>
-          ))}
-        </View>
-      )}
+          </View>
+
+          {loading ? (
+            <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.xl }} />
+          ) : lists.length === 0 ? (
+            <AppText
+              variant="meta"
+              color={colors.textMuted}
+              style={{ textAlign: 'center', marginTop: spacing.xl }}
+            >
+              No {tab}s yet. Create one above.
+            </AppText>
+          ) : (
+            <View>
+              {lists.map((l) => (
+                <Pressable
+                  key={l.id}
+                  style={styles.row}
+                  disabled={busy}
+                  onPress={() =>
+                    tab === 'collection'
+                      ? void addToCollection(l.id, l.name)
+                      : void addToPlaylist(l.id, l.name)
+                  }
+                >
+                  <View style={styles.rowIcon}>
+                    <Icon
+                      name={tab === 'collection' ? icons.checkCircle : icons.chapters}
+                      size={18}
+                      color={colors.textMuted}
+                    />
+                  </View>
+                  <AppText variant="body" style={{ flex: 1 }} numberOfLines={1}>
+                    {l.name}
+                  </AppText>
+                  <IconButton name={icons.check} color={colors.textMuted} size={20} />
+                </Pressable>
+              ))}
+            </View>
+          )}
         </>
       )}
     </Sheet>
@@ -251,58 +252,63 @@ export const AddToListSheet = forwardRef<
 
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
-  segFull: {
-    flexDirection: 'row',
-    gap: 4,
-    backgroundColor: colors.fill,
-    borderRadius: radius.card,
-    padding: 4,
-    marginBottom: spacing.lg,
-  },
-  seg: { flex: 1, alignItems: 'center', paddingVertical: spacing.sm + 2, borderRadius: radius.row },
-  segOn: { backgroundColor: colors.card },
-  createRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
-  input: {
-    flex: 1,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-    borderRadius: radius.row,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    color: colors.text,
-    fontSize: 15,
-  },
-  createBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.row,
-    backgroundColor: colors.accent,
-  },
-  queueBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-    borderRadius: radius.card,
-    backgroundColor: colors.accent,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.hairline,
-  },
-  rowIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-})
+    segFull: {
+      flexDirection: 'row',
+      gap: 4,
+      backgroundColor: colors.fill,
+      borderRadius: radius.card,
+      padding: 4,
+      marginBottom: spacing.lg,
+    },
+    seg: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: spacing.sm + 2,
+      borderRadius: radius.row,
+    },
+    segOn: { backgroundColor: colors.card },
+    createRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
+    input: {
+      flex: 1,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      borderRadius: radius.row,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.md,
+      color: colors.text,
+      fontSize: 15,
+    },
+    createBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.row,
+      backgroundColor: colors.accent,
+    },
+    queueBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      paddingVertical: spacing.md,
+      borderRadius: radius.card,
+      backgroundColor: colors.accent,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
+    },
+    rowIcon: {
+      width: 34,
+      height: 34,
+      borderRadius: 10,
+      backgroundColor: colors.elevated,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  })

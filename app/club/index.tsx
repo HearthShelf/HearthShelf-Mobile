@@ -104,7 +104,11 @@ export default function MyClubsScreen() {
           My Book Clubs
         </AppText>
         {clubsEnabled && (clubs?.length ?? 0) > 0 ? (
-          <IconButton name={icons.add} onPress={() => newClubRef.current?.present()} style={styles.headerBtn} />
+          <IconButton
+            name={icons.add}
+            onPress={() => newClubRef.current?.present()}
+            style={styles.headerBtn}
+          />
         ) : null}
       </View>
 
@@ -147,7 +151,6 @@ export default function MyClubsScreen() {
       )}
 
       <NewClubSheet ref={newClubRef} onCreate={createNewClub} styles={styles} colors={colors} />
-
     </Screen>
   )
 }

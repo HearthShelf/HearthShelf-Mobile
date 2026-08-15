@@ -290,7 +290,8 @@ export default function QuestGiverScreen() {
     // makes it exclusive rather than a superset. Not gated on a request
     // backend: enabling the option searches, and what you can DO with an
     // external pick is decided later by `kind`.
-    let candidates: QgCandidate[] = scope === 'external' ? [] : qgLibraryCandidates(books, ignoredIds)
+    let candidates: QgCandidate[] =
+      scope === 'external' ? [] : qgLibraryCandidates(books, ignoredIds)
     const externalById = new Map<string, QgCandidate>()
     if (usesExternal) {
       const terms = qgExternalSearchTerms(profile, books, weights ?? {})
@@ -747,8 +748,8 @@ export default function QuestGiverScreen() {
                       ? 'Only books you already own.'
                       : scope === 'external'
                         ? rmabEnabled
-                          ? "Skips your library entirely - only titles you can request, or buy on Audible."
-                          : "Skips your library entirely - only titles to buy on Audible."
+                          ? 'Skips your library entirely - only titles you can request, or buy on Audible.'
+                          : 'Skips your library entirely - only titles to buy on Audible.'
                         : rmabEnabled
                           ? 'Your books, plus titles you can request or buy on Audible.'
                           : 'Your books, plus great titles to buy on Audible.'}

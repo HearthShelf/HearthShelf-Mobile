@@ -323,7 +323,11 @@ function LibrarySwitcher({
                   color={isActive ? colors.accent : colors.textMuted}
                 />
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <AppText variant="body" color={isActive ? colors.accent : colors.text} numberOfLines={1}>
+                  <AppText
+                    variant="body"
+                    color={isActive ? colors.accent : colors.text}
+                    numberOfLines={1}
+                  >
                     {lib.name}
                   </AppText>
                   {counts[lib.id] !== undefined ? (

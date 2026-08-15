@@ -47,9 +47,7 @@ export function TimelineMarkers({
             key={`${first.id}-${i}`}
             hitSlop={12}
             style={[styles.marker, { left: `${m.fraction * 100}%` }]}
-            onPress={() =>
-              ahead ? onAheadTeaser(first.timeSec) : onOpenNote(first.timeSec)
-            }
+            onPress={() => (ahead ? onAheadTeaser(first.timeSec) : onOpenNote(first.timeSec))}
           >
             {ahead ? (
               <View style={styles.tick} />

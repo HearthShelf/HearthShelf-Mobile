@@ -69,10 +69,7 @@ function buildDump(args: {
   kv('OS', Platform.OS)
   kv('Version', String(Platform.Version))
   kv('isPad (ios)', Platform.OS === 'ios' ? String((Platform as { isPad?: boolean }).isPad) : 'n/a')
-  kv(
-    'isTV',
-    String((Platform as { isTV?: boolean }).isTV),
-  )
+  kv('isTV', String((Platform as { isTV?: boolean }).isTV))
   kv('constants.reactNativeVersion', JSON.stringify(Platform.constants?.reactNativeVersion))
   kv(
     'constants.Model/systemName',

@@ -49,7 +49,11 @@ function readData(raw: unknown): NoteNotificationData | null {
  */
 async function handleEvent(
   type: number,
-  detail: { notification?: { id?: string; data?: unknown }; input?: string; pressAction?: { id?: string } },
+  detail: {
+    notification?: { id?: string; data?: unknown }
+    input?: string
+    pressAction?: { id?: string }
+  },
   EventType: typeof import('@notifee/react-native').EventType,
 ): Promise<void> {
   const data = readData(detail.notification?.data)

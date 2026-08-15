@@ -80,7 +80,9 @@ export function DiscoverAiTile({
         style={styles.bar}
         accessibilityRole="button"
         accessibilityLabel={
-          rating > 0 ? `Rated ${rating} of 5. Rate or vote on this pick` : 'Rate or vote on this pick'
+          rating > 0
+            ? `Rated ${rating} of 5. Rate or vote on this pick`
+            : 'Rate or vote on this pick'
         }
       >
         <View style={styles.stars}>

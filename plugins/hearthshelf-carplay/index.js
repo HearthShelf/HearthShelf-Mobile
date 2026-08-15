@@ -57,7 +57,7 @@ function addSourceFiles(config) {
         project.addSourceFile(
           projectPath,
           { target: project.getFirstTarget().uuid, sourceTree: 'SOURCE_ROOT' },
-          group
+          group,
         )
       }
     }

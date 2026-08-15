@@ -950,12 +950,9 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
       const server = connectedServer.current
       if (!server) return false
       try {
-        const target: LinkedServer | string = 'role' in server ? (server as LinkedServer) : server.url
-        const { serverUrl, token, via, expiresAt } = await connectServer(
-          tokenFn,
-          server.id,
-          target,
-        )
+        const target: LinkedServer | string =
+          'role' in server ? (server as LinkedServer) : server.url
+        const { serverUrl, token, via, expiresAt } = await connectServer(tokenFn, server.id, target)
         const scope = via === 'local' ? await currentNetworkScope() : undefined
         await setSession({
           serverUrl,

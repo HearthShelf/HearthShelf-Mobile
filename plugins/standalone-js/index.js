@@ -67,12 +67,12 @@ function withDevSupportDisabled(config) {
     if (/getDefaultReactHost\s*\(/.test(src) && /context\s*=\s*applicationContext\s*,/.test(src)) {
       src = src.replace(
         /(context\s*=\s*applicationContext\s*,)/,
-        '$1\n      useDevSupport = false,'
+        '$1\n      useDevSupport = false,',
       )
     } else {
       throw new Error(
         '[standalone-js] Could not find the getDefaultReactHost(context = applicationContext, ...) ' +
-          'call in MainApplication to disable dev support. The Expo template may have changed.'
+          'call in MainApplication to disable dev support. The Expo template may have changed.',
       )
     }
 

@@ -22,10 +22,7 @@ export function OfflineBanner({ onRetry, reason }: { onRetry: () => void; reason
   const label = reason ?? 'Offline - downloaded books only'
 
   return (
-    <View
-      style={[styles.bar, { paddingTop: insets.top + spacing.xs }]}
-      pointerEvents="box-none"
-    >
+    <View style={[styles.bar, { paddingTop: insets.top + spacing.xs }]} pointerEvents="box-none">
       <Icon name={icons.cloudOff} size={16} color={colors.brandHearth} />
       <AppText variant="caption" color={colors.text} numberOfLines={1} style={styles.label}>
         {label}

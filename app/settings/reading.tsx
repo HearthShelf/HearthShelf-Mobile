@@ -15,11 +15,7 @@ import {
   type ReaderAlign,
   type ReaderLayout,
 } from '@hearthshelf/core'
-import {
-  getReaderPrefs,
-  setReaderPref,
-  subscribeReaderPrefs,
-} from '@/reader/readerPrefs'
+import { getReaderPrefs, setReaderPref, subscribeReaderPrefs } from '@/reader/readerPrefs'
 import {
   SettingsPanel,
   SettingsGroup,
@@ -110,7 +106,12 @@ export default function ReadingPanel() {
             ]}
           />
         </SettingsRow>
-        <SettingsRow title="Justify text" desc="Align both edges, like a printed book." stacked last>
+        <SettingsRow
+          title="Justify text"
+          desc="Align both edges, like a printed book."
+          stacked
+          last
+        >
           <Seg<ReaderAlign>
             value={p.align}
             onChange={(v) => setReaderPref('align', v)}
