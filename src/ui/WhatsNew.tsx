@@ -23,6 +23,7 @@ import {
   useWindowDimensions,
 } from 'react-native'
 import Animated, {
+  cancelAnimation,
   Easing,
   useAnimatedStyle,
   useSharedValue,
@@ -30,7 +31,12 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated'
 import { LinearGradient } from 'expo-linear-gradient'
-import { fetchMobileChangelog, type ChangelogEntry, type ChangelogSection } from '@/api/changelog'
+import {
+  entriesUpToVersion,
+  fetchMobileChangelog,
+  type ChangelogEntry,
+  type ChangelogSection,
+} from '@/api/changelog'
 import { FULL_VERSION } from '@/lib/config'
 import { dismissChip } from '@/lib/whatsNew'
 import { Icon, icons } from '@/ui/icons'
@@ -87,6 +93,11 @@ export function WhatsNewChip({ visible, onPress }: { visible: boolean; onPress: 
     if (!visible || reduceMotion) return
     x.value = -1
     x.value = withRepeat(withTiming(1, { duration: SWEEP_MS, easing: Easing.linear }), -1, false)
+    // An infinite withRepeat keeps running on the UI thread even once this
+    // renders null, so cancel it when the chip is retired or unmounts.
+    return () => {
+      cancelAnimation(x)
+    }
   }, [visible, reduceMotion, x])
 
   const sweepStyle = useAnimatedStyle(() => ({
@@ -144,7 +155,11 @@ export function WhatsNewModal({ visible, onClose }: { visible: boolean; onClose:
   const load = useCallback(async () => {
     setFailed(false)
     try {
-      setEntries(await fetchMobileChangelog())
+      // Anchored to the running build: this version's notes and older, never a
+      // newer release's. Crediting a 0.0.2 build with 0.4.0's features is worse
+      // than showing nothing.
+      const all = await fetchMobileChangelog()
+      setEntries(entriesUpToVersion(all, FULL_VERSION))
     } catch {
       setEntries(null)
       setFailed(true)
@@ -202,11 +217,23 @@ export function WhatsNewModal({ visible, onClose }: { visible: boolean; onClose:
           ) : entries && entries.length === 0 ? (
             <View style={styles.stateBox}>
               <AppText variant="body" color={colors.textMuted} style={styles.stateText}>
-                No release notes yet.
+                {/* Reached when this exact build isn't published - a local dev
+                    build or an unreleased tag. Deliberately shows nothing rather
+                    than a newer release's notes. */}
+                No release notes for this build.
+              </AppText>
+              <AppText variant="meta" color={colors.textFaint} style={styles.stateText}>
+                {FULL_VERSION}
               </AppText>
             </View>
           ) : (
             <ScrollView
+              // flex:1 on the ScrollView ITSELF, not the content container. The
+              // card is a fixed-height flex column; without this the scroll view
+              // sizes to its content and overflows (clipped, unscrollable)
+              // instead of taking the space left under the header and scrolling
+              // inside it.
+              style={styles.scroll}
               contentContainerStyle={styles.scrollBody}
               showsVerticalScrollIndicator={false}
             >
@@ -295,18 +322,22 @@ function ReleaseBlock({ entry }: { entry: ChangelogEntry }) {
 /**
  * Chip + modal wired together, for callers that just want the whole feature.
  *
- * Opening retires the chip in storage so it won't return next launch, but the
- * chip stays on screen for this session - hiding it on tap would unmount the
- * modal it just opened, since both live under this component.
+ * Opening retires the chip both on screen (`used`) and in storage
+ * (`dismissChip`) - once you've seen the notes the announcement has done its
+ * job, so it shouldn't linger for the rest of the session. The chip and the
+ * modal are siblings rather than parent/child precisely so hiding one doesn't
+ * unmount the other.
  */
 export function WhatsNew({ chipVisible }: { chipVisible: boolean }) {
   const [open, setOpen] = useState(false)
+  const [used, setUsed] = useState(false)
   return (
     <>
       <WhatsNewChip
-        visible={chipVisible}
+        visible={chipVisible && !used}
         onPress={() => {
           setOpen(true)
+          setUsed(true)
           void dismissChip()
         }}
       />
@@ -375,6 +406,9 @@ const makeStyles = (colors: Palette) =>
       justifyContent: 'center',
     },
 
+    scroll: { flex: 1 },
+    // No flexGrow here: the content must be free to exceed the card's height,
+    // which is what makes it scroll.
     scrollBody: { padding: spacing.lg, gap: spacing.xl },
     stateBox: {
       flex: 1,

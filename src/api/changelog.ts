@@ -51,7 +51,7 @@ export async function fetchMobileChangelog(opts?: {
 }): Promise<ChangelogEntry[]> {
   const params = new URLSearchParams({
     product: PRODUCT,
-    limit: String(opts?.limit ?? 15),
+    limit: String(opts?.limit ?? 30),
     channel: opts?.channel ?? 'all',
   })
   const res = await fetchWithTimeout(
@@ -62,4 +62,28 @@ export async function fetchMobileChangelog(opts?: {
   if (!res.ok) throw new Error(`Changelog request failed (${res.status})`)
   const body = (await res.json()) as { entries?: ChangelogEntry[] }
   return body?.entries ?? []
+}
+
+/**
+ * The running build's release notes plus everything that shipped before it -
+ * never anything newer.
+ *
+ * Showing the latest published release regardless of what you're running is
+ * actively misleading: it credits your build with features it doesn't have. So
+ * this anchors on an EXACT match for `version` and returns that entry plus its
+ * predecessors.
+ *
+ * The cut is made by position in the API's own newest-first ordering rather than
+ * by comparing version numbers ourselves. That matters because pre-release tails
+ * don't sort numerically - `0.0.2-R2` and `0.0.2-Beta1` both ship *after* plain
+ * `0.0.2` - and reimplementing semver precedence here would get that wrong.
+ *
+ * Returns an empty array when `version` isn't published (a local dev build, an
+ * unreleased tag), which the UI renders as an honest empty state.
+ */
+export function entriesUpToVersion(entries: ChangelogEntry[], version: string): ChangelogEntry[] {
+  if (!version) return []
+  const at = entries.findIndex((e) => e.version === version)
+  if (at === -1) return []
+  return entries.slice(at)
 }
