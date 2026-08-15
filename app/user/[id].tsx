@@ -15,15 +15,7 @@ import type { HSProfileResponse, HSProfileListen, HSProfileBook } from '@hearths
 import { coverHue, formatDuration } from '@hearthshelf/core'
 import { getProfile } from '@/api/social'
 import { avatarUrl, coverUrl } from '@/api/abs'
-import {
-  Screen,
-  Centered,
-  AppText,
-  Avatar,
-  Cover,
-  IconButton,
-  Loading,
-} from '@/ui/primitives'
+import { Screen, Centered, AppText, Avatar, Cover, IconButton, Loading } from '@/ui/primitives'
 import { EmptyState, ErrorState } from '@/ui/states'
 import { Icon, icons } from '@/ui/icons'
 import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
@@ -205,7 +197,9 @@ export default function UserProfileScreen() {
         {profile.listeningShared && profile.listening && (
           <ListeningHero
             listen={profile.listening}
-            username={profile.username || 'They'}
+            // Subject of "<x> listened 3h ago", so it must be second person on
+            // your own profile rather than your own name in the third person.
+            username={profile.isMe ? 'You' : profile.username || 'They'}
             styles={styles}
             colors={colors}
             onOpen={openBook}
@@ -225,7 +219,11 @@ export default function UserProfileScreen() {
           <EmptyState
             icon={icons.lock}
             title="Listening activity is private"
-            body={`${profile.username || 'This listener'} hasn't turned on "Share when I'm listening".`}
+            body={
+              profile.isMe
+                ? 'You haven\'t turned on "Share when I\'m listening", so this stays hidden from others.'
+                : `${profile.username || 'This listener'} hasn't turned on "Share when I'm listening".`
+            }
             style={styles.blockEmpty}
           />
         )}
@@ -234,12 +232,7 @@ export default function UserProfileScreen() {
 
         <YearInReviewSection profile={profile} styles={styles} colors={colors} />
 
-        <FinishedSection
-          profile={profile}
-          styles={styles}
-          colors={colors}
-          onOpen={openBook}
-        />
+        <FinishedSection profile={profile} styles={styles} colors={colors} onOpen={openBook} />
       </ScrollView>
     </Screen>
   )
@@ -271,10 +264,7 @@ function ListeningHero({
       : 'Last listened to'
 
   return (
-    <Pressable
-      style={[styles.heroCard, shadow.card]}
-      onPress={() => onOpen(listen.libraryItemId)}
-    >
+    <Pressable style={[styles.heroCard, shadow.card]} onPress={() => onOpen(listen.libraryItemId)}>
       <LinearGradient
         pointerEvents="none"
         colors={[
@@ -619,7 +609,11 @@ function FinishedSection({
         <EmptyState
           icon={icons.lock}
           title="Reading list is private"
-          body={`${profile.username || 'This listener'} hasn't turned on "Share my reading list", so their finished books stay hidden.`}
+          body={
+            profile.isMe
+              ? 'You haven\'t turned on "Share my reading list", so your finished books stay hidden from others.'
+              : `${profile.username || 'This listener'} hasn't turned on "Share my reading list", so their finished books stay hidden.`
+          }
           style={styles.blockEmpty}
         />
       </View>
