@@ -1,0 +1,39 @@
+#!/bin/sh
+#
+# Format staged files with prettier before they land.
+#
+# The repo has always had a .prettierrc.json, but nothing enforced it: the
+# editor extension formatted on save while CLI tooling did not, so 91 files
+# drifted out of format and every touched file picked up unrelated
+# reformatting noise in its diff.
+#
+# Deliberately a plain git hook rather than husky + lint-staged: two more
+# dependencies (on a tree that already needs --legacy-peer-deps) to run three
+# lines of shell.
+#
+# Enable with:  git config core.hooksPath .githooks
+# Skip once with: git commit --no-verify
+
+set -e
+
+# Only files staged as Added/Copied/Modified/Renamed, NUL-separated so paths
+# with spaces survive. Deleted files must not be re-added.
+staged=$(git diff --cached --name-only --diff-filter=ACMR -z |
+	tr '\0' '\n' |
+	grep -E '\.(js|jsx|ts|tsx|json|jsonc|css|html|yml|yaml)$' || true)
+
+[ -z "$staged" ] && exit 0
+
+# --ignore-unknown skips anything prettier has no parser for; the .prettierignore
+# filter keeps ignored paths (docs/redesign, packages/core) from being rewritten.
+printf '%s\n' "$staged" | while IFS= read -r f; do
+	[ -n "$f" ] || continue
+	[ -f "$f" ] || continue
+	if [ "$(npx --no-install prettier --ignore-unknown --check "$f" >/dev/null 2>&1; echo $?)" != "0" ]; then
+		npx --no-install prettier --ignore-unknown --write "$f" >/dev/null 2>&1 || continue
+		git add -- "$f"
+		echo "prettier: formatted $f"
+	fi
+done
+
+exit 0

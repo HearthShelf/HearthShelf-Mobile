@@ -3,3 +3,8 @@ android
 ios
 packages/core
 *.md
+
+# Design mockups: hand-written HTML that is read, not built. Several files have
+# unclosed tags that prettier refuses to parse, which would keep format:check
+# permanently red.
+docs/redesign
