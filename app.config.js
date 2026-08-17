@@ -58,7 +58,7 @@ const GOOGLE_IOS_URL_SCHEME =
 const SENTRY_DSN = process.env.HEARTHSHELF_DISABLE_SENTRY
   ? ''
   : process.env.EXPO_PUBLIC_SENTRY_DSN ||
-    'https://e44ed90551d4e3c3379246a5efce27c7@o4511760230907904.ingest.us.sentry.io/4511760235888640'
+    'https://de02a3cd2a5b81852eaabf7bf0a34459@o4511760230907904.ingest.us.sentry.io/4511924430110720'
 
 const extra = {
   EXPO_PUBLIC_CONTROL_PLANE_URL: CONTROL_PLANE_URL,
@@ -364,7 +364,7 @@ module.exports = {
       // reports stay minified - the app itself still runs and still reports.
       '@sentry/react-native/expo',
       {
-        organization: 'hearthshelf',
+        organization: 'nyxservices',
         project: 'hs-mobileapp',
         // Applies the Sentry Android Gradle plugin, which uploads the R8/ProGuard
         // MAPPING FILE for release builds. Without this block the plugin is never

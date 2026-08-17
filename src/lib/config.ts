@@ -67,7 +67,7 @@ export const BUILD_NUMBER = Constants.nativeBuildVersion || undefined
 // independent and keeps working either way.
 export const SENTRY_DSN = cfg(
   'EXPO_PUBLIC_SENTRY_DSN',
-  'https://e44ed90551d4e3c3379246a5efce27c7@o4511760230907904.ingest.us.sentry.io/4511760235888640',
+  'https://de02a3cd2a5b81852eaabf7bf0a34459@o4511760230907904.ingest.us.sentry.io/4511924430110720',
 )
 
 /**
