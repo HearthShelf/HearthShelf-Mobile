@@ -917,6 +917,21 @@ class HearthShelfAutoService : MediaLibraryService() {
     }
     rawPlayer = null
     session = null
+    // Shut the io pool down, or its thread outlives the service.
+    //
+    // Executors.newSingleThreadExecutor() creates a NON-DAEMON thread that stays
+    // alive (and keeps this service instance reachable) until it is shut down
+    // explicitly. Android creates and destroys this service repeatedly across a
+    // process - every Auto connect, every notification revive - and each cycle
+    // used to strand another live thread plus everything it retained. A crash
+    // arrived from a pool numbered `pool-12252-thread-1` (HS-MOBILEAPP-1K): by
+    // then the heap was exhausted and the OOM landed on whatever allocated next,
+    // which is why it surfaced as an unrelated getSharedPreferences frame.
+    //
+    // shutdown() (not shutdownNow()) so the final progress sync banked just above
+    // still runs to completion - it is already awaited, and dropping it here
+    // would lose the listened position that awaitFinal exists to protect.
+    io.shutdown()
     super.onDestroy()
   }
 
