@@ -30,7 +30,7 @@ import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { useContentInset } from '@/ui/useContentInset'
 import { FULL_VERSION, SENTRY_DSN } from '@/lib/config'
-import { attachFeedbackDiagnostics } from '@/lib/feedbackDiagnostics'
+import { withFeedbackScope } from '@/lib/feedbackDiagnostics'
 
 type Kind = 'bug' | 'idea' | 'other'
 
@@ -125,44 +125,53 @@ export default function FeedbackScreen() {
     }
     setSending(true)
     try {
-      // Attach player state BEFORE capturing, so the report carries what the app
-      // was actually doing. A description alone ("progress reset when I unlocked
-      // my phone") can't distinguish a sync failure from a process kill from a bad
+      // Capture player state alongside the report, so it carries what the app was
+      // actually doing. A description alone ("progress reset when I unlocked my
+      // phone") can't distinguish a sync failure from a process kill from a bad
       // resume - the snapshot can. The log trail comes back to be attached as a
       // file: feedback events drop scope breadcrumbs, so that is the one way it
       // reaches Sentry (see feedbackDiagnostics).
-      const log = attachFeedbackDiagnostics()
-      const attachments = [
-        ...(shot
-          ? [
-              {
-                filename: 'screenshot.jpg',
-                // Decoded from base64 to bytes rather than sent as a string, so
-                // Sentry stores a real image file instead of a text blob.
-                data: base64ToBytes(shot.base64),
-                contentType: 'image/jpeg',
-              },
-            ]
-          : []),
-        ...(log ? [{ filename: 'hearthshelf-log.txt', data: log, contentType: 'text/plain' }] : []),
-      ]
-      Sentry.captureFeedback(
-        {
-          message: message.trim(),
-          name: user?.username ?? user?.fullName ?? undefined,
-          email: email.trim() || undefined,
-          source: 'mobile-feedback-tab',
-          tags: {
-            feedback_kind: kind,
-            app_version: FULL_VERSION || 'unknown',
-            platform: Platform.OS,
-            has_screenshot: String(!!shot),
-            has_log: String(!!log),
+      //
+      // withFeedbackScope confines the diagnostic CONTEXTS to this capture. They
+      // used to be set globally and never cleared, so every later crash in the run
+      // inherited this report's snapshot; the tags now ride on the event below
+      // rather than on the scope, for the same reason.
+      withFeedbackScope(({ tags, log }) => {
+        const attachments = [
+          ...(shot
+            ? [
+                {
+                  filename: 'screenshot.jpg',
+                  // Decoded from base64 to bytes rather than sent as a string, so
+                  // Sentry stores a real image file instead of a text blob.
+                  data: base64ToBytes(shot.base64),
+                  contentType: 'image/jpeg',
+                },
+              ]
+            : []),
+          ...(log
+            ? [{ filename: 'hearthshelf-log.txt', data: log, contentType: 'text/plain' }]
+            : []),
+        ]
+        Sentry.captureFeedback(
+          {
+            message: message.trim(),
+            name: user?.username ?? user?.fullName ?? undefined,
+            email: email.trim() || undefined,
+            source: 'mobile-feedback-tab',
+            tags: {
+              ...tags,
+              feedback_kind: kind,
+              app_version: FULL_VERSION || 'unknown',
+              platform: Platform.OS,
+              has_screenshot: String(!!shot),
+              has_log: String(!!log),
+            },
           },
-        },
-        // Second arg is an EventHint; `attachments` rides along with the event.
-        attachments.length ? { attachments } : undefined,
-      )
+          // Second arg is an EventHint; `attachments` rides along with the event.
+          attachments.length ? { attachments } : undefined,
+        )
+      })
       haptics.success()
       setMessage('')
       setShot(null)

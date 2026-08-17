@@ -94,13 +94,18 @@ export interface PlayerSnapshot {
 /**
  * The same snapshot, for a crash/error event rather than a feedback report.
  *
- * attachFeedbackDiagnostics writes `player`/`launch` onto the GLOBAL Sentry
- * scope, and nothing ever clears them - so once a listener sends one report,
- * every later crash in that run inherits that frozen snapshot and reads as
- * though it happened at the moment of the report. Two events 87 minutes apart
+ * The feedback diagnostics used to write onto the GLOBAL Sentry scope with
+ * nothing ever clearing it, so once a listener sent one report, every later
+ * crash in that run inherited the frozen snapshot and read as though it had
+ * happened at the moment of the report. Two events nearly three hours apart
  * (HS-MOBILEAPP-1A and -1C) arrived carrying a byte-identical player block and
  * the same currentRunAgeSeconds, which made an unrelated error look like part
- * of the crashing session. Sampling live in beforeSend keeps a crash honest.
+ * of the crashing session - and during triage that coincidence was briefly
+ * taken as proof the two shared a root cause.
+ *
+ * Sampling live in beforeSend keeps the CONTEXTS honest. The tags and the
+ * recent_log context are not re-sampled there, so those are no longer written
+ * to the global scope at all - see withFeedbackScope.
  *
  * Never throws - a diagnostic must not be able to drop a crash report.
  */
@@ -145,73 +150,133 @@ function playerSnapshot(): PlayerSnapshot {
   }
 }
 
+/** What a feedback report carries beyond its prose: searchable tags, and the
+ *  breadcrumb trail as text for the caller to send as a file attachment (see the
+ *  note at the top of this file about why it can't ride as breadcrumbs). */
+export interface FeedbackDiagnostics {
+  tags: Record<string, string>
+  log: string | null
+}
+
 /**
- * Attach diagnostics to the current Sentry scope, and return the breadcrumb trail
- * as text for the caller to send as an attachment (see the note at the top of this
- * file about why it can't ride as breadcrumbs). Null when there is no trail.
+ * Build the diagnostics for a feedback report.
  *
- * Called immediately before captureFeedback so the scope carries this context on
- * the event. Uses a synchronous scope mutation rather than withScope so the
- * caller's captureFeedback (which reads the current scope) picks it up.
+ * RETURNS the tags rather than writing them to the global scope. Callers should
+ * go through withFeedbackScope, which also confines the contexts to a temporary
+ * scope. That distinction is the whole point of this shape.
  *
- * Never throws.
+ * This used to write everything onto the global scope, where nothing ever
+ * cleared it. Sentry keeps that scope for the life of the run, so every crash
+ * AFTER a listener sent one report inherited its tags and its recent_log - a
+ * frozen snapshot of an unrelated moment, presented as if it described the
+ * crash. beforeSend (app/_layout.tsx) re-samples the player/launch CONTEXTS to
+ * keep those honest, but it does not touch tags or recent_log, so the leak
+ * survived there.
+ *
+ * The cost was real: HS-MOBILEAPP-1A and -1C were the only two non-feedback
+ * events in the project carrying player_sync/player_car/prior_run_unclean, both
+ * inherited from a single report, and during triage that shared fingerprint was
+ * briefly read as proof the two crashes had one root cause.
+ *
+ * Tags now ride on the feedback event itself (captureFeedback takes a `tags`
+ * field), so they describe that report and nothing else.
+ *
+ * Never throws - diagnostics must never block a report.
  */
-export function attachFeedbackDiagnostics(): string | null {
+export function buildFeedbackDiagnostics(): FeedbackDiagnostics {
   try {
     const snap = playerSnapshot()
-    Sentry.setContext('player', snap as unknown as Record<string, unknown>)
 
     // Tags are the searchable/filterable fields - these are the ones worth
     // slicing a set of reports by ("show me every report where sync was failing").
-    Sentry.setTag('player_sync', snap.syncStatus)
-    Sentry.setTag('player_playing', String(snap.isPlaying))
-    Sentry.setTag('player_car', String(snap.carActive))
-    Sentry.setTag('player_downloaded', String(snap.downloaded))
-    Sentry.setTag('player_active', String(snap.itemId !== null))
+    const tags: Record<string, string> = {
+      player_sync: snap.syncStatus,
+      player_playing: String(snap.isPlaying),
+      player_car: String(snap.carActive),
+      player_downloaded: String(snap.downloaded),
+      player_active: String(snap.itemId !== null),
+      prior_run_unclean: String(didPriorRunEndUncleanly()),
+    }
 
     // A local position meaningfully ahead of where this book resumed is the
     // signature of the progress-reset family: it means the app came back at an
     // older spot than the one we had on disk. Tagged so those reports can be
     // found directly instead of read one at a time.
     if (snap.position !== null && snap.startPosition !== null) {
-      Sentry.setTag('player_moved_since_load', String(snap.position !== snap.startPosition))
+      tags.player_moved_since_load = String(snap.position !== snap.startPosition)
     }
 
-    attachLaunchContext()
-    return attachTrail()
+    return { tags, log: buildTrail() }
   } catch {
-    // Diagnostics must never block a report.
-    return null
+    return { tags: {}, log: null }
   }
 }
 
 /**
- * How this run started, and how the last one ended.
+ * Set the player/launch contexts on whichever scope is active.
  *
- * This is the single most useful field for the "progress reset / app reloaded"
- * family of reports. Those describe a symptom (the splash screen appeared, the
- * position went backwards) whose cause is upstream: the OS killed the process
- * while the screen was off, so the app cold-started and resumed from the last
- * position that had reached the server. Without this flag that has to be inferred
- * from app_start_time; with it, the report says so directly.
+ * captureFeedback has no `contexts` field, so unlike the tags these can only
+ * reach the event through a scope. Call it inside a Sentry.withScope callback
+ * (see withFeedbackScope) so the values are discarded when that scope closes
+ * rather than persisting for the rest of the run.
+ *
+ * Never throws.
  */
-function attachLaunchContext(): void {
-  const unclean = didPriorRunEndUncleanly()
-  const startedAt = priorRunStart()
-  Sentry.setTag('prior_run_unclean', String(unclean))
-  Sentry.setContext('launch', {
-    priorRunEndedUncleanly: unclean,
-    priorRunStartedAt: startedAt ? new Date(startedAt).toISOString() : null,
-    /** Seconds this JS runtime has been alive. A small number on a report about
-     *  losing progress means the app restarted just before the listener noticed.
-     *
-     *  Sourced from crashLog, which is evaluated at startup. It used to be a
-     *  module-local Date.now() in THIS file - but this module is only reachable
-     *  from the feedback screen, an expo-router route that is not evaluated until
-     *  the listener navigates to it. So the field reported "seconds since the
-     *  feedback tab was opened", which reads exactly like a fresh restart on every
-     *  report and is worthless precisely where it was meant to help. */
-    currentRunAgeSeconds: currentRunAgeSeconds(),
+function setDiagnosticContexts(
+  scope: Sentry.Scope,
+  snap: PlayerSnapshot,
+  log: string | null,
+): void {
+  try {
+    scope.setContext('player', snap as unknown as Record<string, unknown>)
+    scope.setContext('launch', {
+      priorRunEndedUncleanly: didPriorRunEndUncleanly(),
+      priorRunStartedAt: priorRunStart() ? new Date(priorRunStart() as number).toISOString() : null,
+      /** Seconds this JS runtime has been alive. A small number on a report about
+       *  losing progress means the app restarted just before the listener noticed.
+       *
+       *  Sourced from crashLog, which is evaluated at startup. It used to be a
+       *  module-local Date.now() in THIS file - but this module is only reachable
+       *  from the feedback screen, an expo-router route that is not evaluated until
+       *  the listener navigates to it. So the field reported "seconds since the
+       *  feedback tab was opened", which reads exactly like a fresh restart on every
+       *  report and is worthless precisely where it was meant to help. */
+      currentRunAgeSeconds: currentRunAgeSeconds(),
+    })
+    if (log) {
+      scope.setContext('recent_log', {
+        tail: log.split('\n').slice(-CONTEXT_TAIL_CRUMBS).join('\n'),
+        totalLines: log.split('\n').length,
+      })
+    }
+  } catch {
+    // A context that fails to attach must not stop the report.
+  }
+}
+
+/**
+ * Run `send` with the feedback diagnostics applied to a temporary scope.
+ *
+ * The scope is popped when this returns, so the player/launch/recent_log
+ * contexts describe this report only and cannot bleed onto a later crash. The
+ * tags are handed to `send` instead, to go on the event itself.
+ *
+ * Returns void deliberately: the RN SDK's withScope is typed `T | undefined`
+ * (it swallows a throwing callback), so a passthrough return value would be
+ * silently optional. `send` is called for its capture side effect, and the
+ * caller's own try/catch owns the failure path.
+ */
+export function withFeedbackScope(send: (diag: FeedbackDiagnostics) => void): void {
+  let snap: PlayerSnapshot | null = null
+  try {
+    snap = playerSnapshot()
+  } catch {
+    snap = null
+  }
+  const diag = buildFeedbackDiagnostics()
+  Sentry.withScope((scope) => {
+    if (snap) setDiagnosticContexts(scope, snap, diag.log)
+    send(diag)
   })
 }
 
@@ -223,8 +288,12 @@ function crumbLine(c: { t: number; tag: string; msg: string; repeats?: number })
 }
 
 /**
- * Build the on-disk breadcrumb ring into the attachable log, and put its tail in
- * a context.
+ * Build the on-disk breadcrumb ring into the attachable log.
+ *
+ * Returns the text only - the caller puts the tail into a scoped `recent_log`
+ * context (see setDiagnosticContexts). This used to set that context itself, on
+ * the global scope, which is how a stale log tail ended up riding along on every
+ * later crash in the run.
  *
  * crashLog already writes these continuously for native-abort reporting, so the
  * trail leading up to whatever the listener is describing is usually already on
@@ -238,7 +307,7 @@ function crumbLine(c: { t: number; tag: string; msg: string; repeats?: number })
  * died. Kept under its own heading so the two runs are never read as one
  * continuous trail.
  */
-function attachTrail(): string | null {
+function buildTrail(): string | null {
   try {
     const lines: string[] = []
     const prior = readPriorRunBreadcrumbs()
@@ -254,13 +323,6 @@ function attachTrail(): string | null {
       for (const c of crumbs.slice(-MAX_ATTACHED_CRUMBS)) lines.push(crumbLine(c))
     }
     if (!lines.length) return null
-
-    // The tail inline, so triage can read the last few moves straight off the
-    // event without opening the attachment.
-    Sentry.setContext('recent_log', {
-      tail: lines.slice(-CONTEXT_TAIL_CRUMBS).join('\n'),
-      totalLines: lines.length,
-    })
     return lines.join('\n')
   } catch {
     return null
