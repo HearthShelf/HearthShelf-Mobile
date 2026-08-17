@@ -81,6 +81,27 @@ const Native = NativeModules.HearthShelfAuto as HSPlayer | undefined
  *  recover" would be worse than a late report. */
 const RECLAIM_CONFIRM_MS = 6000
 
+/** How long a reclaim recovery is allowed to keep retrying before we stop
+ *  re-arming it. See the RECLAIM_MAX_ATTEMPTS comment. */
+const RECLAIM_WINDOW_MS = 30_000
+
+/** How many reclaim recoveries may run inside RECLAIM_WINDOW_MS.
+ *
+ *  A reclaim recovery re-runs sync(), and sync() can call Native.play() again -
+ *  so if the play lands somewhere that has no player to act on, native answers
+ *  with another onPlaybackLost and the two bounce off each other with nothing
+ *  in between to slow them down. That is not hypothetical: a field report
+ *  (HS-MOBILEAPP-1N) carried `native lost the track; reloading from store
+ *  (x4562)` in its breadcrumb tail, logged over seconds, with the audio dead
+ *  the whole time and the phone spinning in a hot loop.
+ *
+ *  A genuine reclaim is a rare, isolated event - the OS reclaimed the service
+ *  once and we put it back. Several within seconds means the recovery itself is
+ *  not landing, and repeating it a thousand more times will not change that. So
+ *  the recovery is allowed a few honest retries and then stands down, leaving
+ *  the failure to be reported once rather than burning the battery. */
+const RECLAIM_MAX_ATTEMPTS = 3
+
 /**
  * Hand the store's current book to the car player.
  *
@@ -121,6 +142,11 @@ export function PlayerHost() {
   const loadedItem = useRef<string | null>(null)
   // Pending "did the reclaim recovery actually produce audio" check.
   const reclaimProbe = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Reclaim recovery attempts inside the current window, and when that window
+  // opened. Together these stop a reclaim/play bounce from spinning forever
+  // (see RECLAIM_MAX_ATTEMPTS).
+  const reclaimAttempts = useRef(0)
+  const reclaimWindowStart = useRef(0)
   // The book we believe the CAR player holds (see handBookToCar). null means the
   // car has nothing loaded, which is how it always connects.
   const carBook = useRef<string | null>(null)
@@ -219,8 +245,40 @@ export function PlayerHost() {
       // a fresh play edge once the reload completes, so the user's tap is honored
       // rather than needing a second one.
       emitter.addListener('onPlaybackLost', () => {
-        breadcrumb('player', 'native lost the track; reloading from store')
+        const now = Date.now()
+        // Open a fresh window if the last reclaim is old enough that this one is
+        // a genuinely new incident rather than the same bounce continuing.
+        if (now - reclaimWindowStart.current > RECLAIM_WINDOW_MS) {
+          reclaimWindowStart.current = now
+          reclaimAttempts.current = 0
+        }
+        reclaimAttempts.current += 1
+        if (reclaimAttempts.current > RECLAIM_MAX_ATTEMPTS) {
+          // Stand down rather than re-arm into the same bounce. Drop the playing
+          // intent so the UI stops claiming it is playing over silence, and so
+          // sync() has no play edge left to re-issue - that intent is what native
+          // keeps answering with onPlaybackLost.
+          breadcrumb(
+            'player',
+            `native lost the track ${reclaimAttempts.current}x; giving up on reload`,
+          )
+          lastPlaying.current = false
+          setPlaying(false)
+          showToast('Playback stopped. Tap play to start again.')
+          return
+        }
         const s = getState()
+        // While the car owns playback there is no phone player to rebuild: the
+        // sync() below stands the phone down and forwards transport to the car
+        // instead, so "reload from store" cannot reach the thing that was lost.
+        // Re-arming here just re-issues play() at a player that answers with
+        // another onPlaybackLost - the bounce this guard exists to stop. The
+        // car has its own empty-player recovery (onCarNeedsBook).
+        if (s.carActive) {
+          breadcrumb('player', 'native lost the track while the car owns playback; ignoring')
+          return
+        }
+        breadcrumb('player', 'native lost the track; reloading from store')
         loadedKey.current = null
         lastPlaying.current = null
         // Re-run the store->native effect now rather than waiting for the next
