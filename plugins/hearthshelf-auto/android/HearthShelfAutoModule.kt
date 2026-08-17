@@ -180,6 +180,42 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     )
   }
 
+  /**
+   * Java heap usage and live thread count, for memory-pressure breadcrumbs.
+   *
+   * Exists because an OOM stack cannot name what filled the heap. HS-MOBILEAPP-1C
+   * died inside a React Fabric mount with zero app frames anywhere in the trace -
+   * that frame is merely where the allocation happened to fail, and reasoning
+   * backwards from it identified nothing. HS-MOBILEAPP-1K was only diagnosable
+   * because its thread happened to be named `pool-12252-thread-1`, which gave the
+   * count away by accident.
+   *
+   * threads is the cheap tell for the leak class we have actually hit: a service
+   * or executor that is recreated and never shut down (see the io.shutdown() in
+   * HearthShelfAutoService.onDestroy). A steady heap with a climbing thread count
+   * says retention; both climbing together says ordinary bloat.
+   *
+   * Values are MB, and `limit` is the growth limit the OOM message quotes, so a
+   * breadcrumb can be compared directly against a crash.
+   */
+  @ReactMethod
+  fun getMemoryStats(promise: Promise) {
+    promise.resolve(
+      try {
+        val rt = Runtime.getRuntime()
+        val mb = 1024.0 * 1024.0
+        Arguments.createMap().apply {
+          putDouble("usedMb", (rt.totalMemory() - rt.freeMemory()) / mb)
+          putDouble("totalMb", rt.totalMemory() / mb)
+          putDouble("limitMb", rt.maxMemory() / mb)
+          putInt("threads", Thread.activeCount())
+        }
+      } catch (e: Exception) {
+        Arguments.createMap()
+      }
+    )
+  }
+
   /** Mirror the notePops master on/off into the car service's prefs. The RN
    *  settings store persists to AsyncStorage (SQLite), which the headless Auto
    *  service can't read, so JS pushes the boolean here. See

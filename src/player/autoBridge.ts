@@ -70,6 +70,7 @@ interface HearthShelfAutoNative {
   getOfflineBookmarks(): Promise<string>
   clearOfflineBookmarks(keysJson: string): void
   isAirplaneMode(): Promise<boolean>
+  getMemoryStats(): Promise<MemoryStats | Record<string, never>>
   setNotePopsEnabled(enabled: boolean): void
   setChapterProgress(enabled: boolean): void
   setSleepShake(enabled: boolean, minutes: number, timerActive: boolean, hapticLevel: string): void
@@ -166,6 +167,33 @@ export async function isAirplaneMode(): Promise<boolean> {
     return await native.isAirplaneMode()
   } catch {
     return false
+  }
+}
+
+/** Java heap usage (MB) and live thread count. See getMemoryStats in the module. */
+export interface MemoryStats {
+  usedMb: number
+  totalMb: number
+  limitMb: number
+  threads: number
+}
+
+/**
+ * Sample the Java heap and thread count, or null when unavailable (iOS, or an
+ * older native build without the method).
+ *
+ * Used to breadcrumb memory pressure so an OOM has something to be read against.
+ * An OOM stack names only where the failing allocation happened to land, which in
+ * HS-MOBILEAPP-1C was a React Fabric mount with no app frames at all - unusable
+ * for finding the retainer.
+ */
+export async function getMemoryStats(): Promise<MemoryStats | null> {
+  if (Platform.OS !== 'android' || !native?.getMemoryStats) return null
+  try {
+    const m = await native.getMemoryStats()
+    return typeof (m as MemoryStats)?.limitMb === 'number' ? (m as MemoryStats) : null
+  } catch {
+    return null
   }
 }
 

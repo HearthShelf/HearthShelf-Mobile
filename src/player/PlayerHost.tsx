@@ -46,7 +46,7 @@ import { coverUrl } from '@/api/abs'
 import { addBookmarkPending } from './pendingBookmarks'
 import { localCoverFor } from './downloads'
 import { handOffToCar, playItemById, syncProgress, ensureSessionForPlayback } from './playback'
-import { loadAutoCarBook, syncAutoCarState } from './autoBridge'
+import { getMemoryStats, loadAutoCarBook, syncAutoCarState } from './autoBridge'
 import { advanceQueueOnEnd, skipChapterOrFinish } from './advance'
 import { useShakeToExtend } from './shakeToExtend'
 import { useSleepBeep } from './sleepBeep'
@@ -525,6 +525,29 @@ export function PlayerHost() {
     // about to press play. Silent when no car is attached, so this is free.
     const appState = AppState.addEventListener('change', (next) => {
       if (next === 'active') syncAutoCarState()
+      // Breadcrumb heap + thread count on every foreground/background edge.
+      //
+      // An OOM stack cannot say what filled the heap - HS-MOBILEAPP-1C died in a
+      // React Fabric mount with no app frames at all, and HS-MOBILEAPP-1K was
+      // only diagnosable because its thread was coincidentally named
+      // `pool-12252-thread-1`. A trail of these turns the next one into a
+      // reading: a climbing thread count across backgrounding is the fingerprint
+      // of the service-recreation leak (fixed in 3e10bb3), while heap climbing on
+      // its own points somewhere else entirely.
+      //
+      // These edges are the right sampling points - a leak driven by service
+      // recreation shows up precisely when the app leaves and returns - and cost
+      // nothing in between. The crumb ring collapses identical repeats, so a
+      // stable app barely marks it.
+      void getMemoryStats()
+        .then((m) => {
+          if (!m) return
+          breadcrumb(
+            'mem',
+            `${next} heap ${Math.round(m.usedMb)}/${Math.round(m.limitMb)}MB threads ${m.threads}`,
+          )
+        })
+        .catch(() => {})
     })
 
     return () => {
