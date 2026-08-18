@@ -34,6 +34,7 @@ import {
   setPlaying,
   requestSeek,
   setSleepTimer,
+  CHAPTER_END_GUARD_SEC,
   cancelSleepTimer,
   addSleepMinutes,
   type ChapterMark,
@@ -498,7 +499,11 @@ function ActiveSleep({
     if (sleepTimer?.kind !== 'endOfChapter') return null
     const target = chapters[sleepTimer.chapterIndex]
     if (!target) return null
-    const boundary = sleepTimer.at === 'start' ? target.start : target.end
+    // Mirror the tick's own stop point (end boundaries fire a guard band early,
+    // see CHAPTER_END_GUARD_SEC) so the countdown hits 0 when playback actually
+    // stops rather than a couple of seconds after.
+    const boundary =
+      sleepTimer.at === 'start' ? target.start : target.end - CHAPTER_END_GUARD_SEC
     return Math.max(0, Math.round(boundary - position))
   })()
   const secondsLeft =

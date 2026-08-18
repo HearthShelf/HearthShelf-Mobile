@@ -483,7 +483,38 @@ export function setSleepTimer(timer: SleepTimer): void {
   consecutiveShakeExtends = 0
   // A manual sleep action means the user is engaged; clear any shake suppression.
   autoSleepSuppressed = false
-  set({ sleepTimer: timer })
+  set({ sleepTimer: retargetNearBoundary(timer) })
+}
+
+/**
+ * Push an end-of-chapter target forward when its boundary is nearly on top of
+ * us, so the timer can't stop playback within seconds of being armed.
+ *
+ * The arming UI only guarantees the boundary is in the FUTURE, which is true of
+ * one two seconds away too. That case is easy to hit rather than exotic: it is
+ * exactly where a sleep-rewind leaves you when you resume, so re-arming
+ * end-of-chapter after a sleep would immediately sleep again at the same
+ * boundary. Auto-sleep arms through here too and has no UI to reason about it.
+ *
+ * Judged on how much is left to HEAR, not on whether we slept here before - a
+ * long sleep-rewind can leave a genuine stretch of chapter to listen to, and
+ * that should still stop at this boundary rather than run on into the next
+ * chapter.
+ */
+function retargetNearBoundary(timer: SleepTimer): SleepTimer {
+  if (timer?.kind !== 'endOfChapter') return timer
+  const chapters = state.nowPlaying?.chapters ?? []
+  const boundaryOf = (i: number) =>
+    timer.at === 'start' ? chapters[i]?.start : chapters[i]?.end
+  let idx = timer.chapterIndex
+  while (
+    idx + 1 < chapters.length &&
+    boundaryOf(idx) !== undefined &&
+    boundaryOf(idx)! - state.position < MIN_CHAPTER_REMAINING_SEC
+  ) {
+    idx += 1
+  }
+  return idx === timer.chapterIndex ? timer : { ...timer, chapterIndex: idx }
 }
 
 export function cancelSleepTimer(): void {
@@ -507,6 +538,22 @@ const MAX_SLEEP_TOTAL_SEC = 3 * 60 * 60
  *  A person shaking themselves awake does it once or twice; a phone jostling in
  *  a pocket for an hour does it dozens of times - this tells the two apart. */
 const MAX_CONSECUTIVE_SHAKE_EXTENDS = 6
+
+/** An end-of-chapter target with less than this left to play is skipped in
+ *  favor of the next boundary (see retargetNearBoundary). */
+const MIN_CHAPTER_REMAINING_SEC = 60
+
+/** Stop this far BEFORE an end-of-chapter boundary.
+ *
+ *  On the LAST chapter that boundary is the end of the book, so firing exactly
+ *  on it is a race against the engine's own end-of-media signal - and losing
+ *  that race means onEnded -> finishBook() marks the book finished and starts
+ *  the next one instead of sleeping. Position ticks are ~1Hz, so the engine
+ *  wins often. Stopping a couple of seconds early takes the race away entirely.
+ *
+ *  Only applied to 'end' boundaries: a 'start' boundary is mid-book and has no
+ *  completion to race, and shaving it would stop before the chapter it names. */
+export const CHAPTER_END_GUARD_SEC = 2.5
 
 let consecutiveShakeExtends = 0
 
@@ -653,7 +700,8 @@ export function reportPosition(position: number): void {
       const chapters = state.nowPlaying?.chapters ?? []
       const target = chapters[timer.chapterIndex]
       if (target) {
-        const stopAt = timer.at === 'start' ? target.start : target.end
+        const stopAt =
+          timer.at === 'start' ? target.start : target.end - CHAPTER_END_GUARD_SEC
         if (position >= stopAt) {
           fireStop(position)
           return

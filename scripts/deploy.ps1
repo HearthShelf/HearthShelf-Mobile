@@ -172,20 +172,55 @@ $env:JAVA_HOME = $JdkPath
 
 # Gradle's Sentry plugin shells out to sentry-cli, which reads SENTRY_AUTH_TOKEN from the
 # environment. Expo CLI loads .env.local for its own tasks but Gradle never sees it.
-if (-not $env:SENTRY_AUTH_TOKEN) {
-  foreach ($envFile in @('.env.local', '.env')) {
-    $envPath = Join-Path $RepoRoot $envFile
-    if (-not (Test-Path $envPath)) { continue }
-    $match = Select-String -Path $envPath -Pattern '^\s*SENTRY_AUTH_TOKEN\s*=\s*(.+?)\s*$' | Select-Object -First 1
-    if ($match) {
-      $env:SENTRY_AUTH_TOKEN = $match.Matches[0].Groups[1].Value.Trim("'", '"')
-      Write-Host "Loaded SENTRY_AUTH_TOKEN from $envFile" -ForegroundColor DarkGray
-      break
+#
+# The FILE WINS over an inherited $env:SENTRY_AUTH_TOKEN, which is the reverse of
+# what this used to do. A token left in the shell from an earlier session used to
+# take precedence and the file was never read - so after the Sentry org was
+# renamed, .env.local held a perfectly good token while every build kept failing
+# with "organization not found" from the stale one, and nothing in the output
+# said which token was in play. .env.local is the copy the developer actually
+# edits and rotates, so it is the source of truth; the environment stays as a
+# fallback for CI, where there is no .env.local.
+#
+# The regex is anchored to the exact name so a suffixed variant (e.g. a
+# SENTRY_AUTH_TOKEN_REGEN pasted in while rotating) can't be picked up by
+# -First 1 depending on line order.
+$sentryTokenSource = $null
+foreach ($envFile in @('.env.local', '.env')) {
+  $envPath = Join-Path $RepoRoot $envFile
+  if (-not (Test-Path $envPath)) { continue }
+  $match = Select-String -Path $envPath -Pattern '^\s*SENTRY_AUTH_TOKEN\s*=\s*(.+?)\s*$' | Select-Object -First 1
+  if ($match) {
+    $fileToken = $match.Matches[0].Groups[1].Value.Trim("'", '"')
+    if ($env:SENTRY_AUTH_TOKEN -and $env:SENTRY_AUTH_TOKEN -ne $fileToken) {
+      Write-Host "  overriding SENTRY_AUTH_TOKEN from the environment with the one in $envFile" -ForegroundColor DarkGray
     }
+    $env:SENTRY_AUTH_TOKEN = $fileToken
+    $sentryTokenSource = $envFile
+    break
   }
 }
 if (-not $env:SENTRY_AUTH_TOKEN) {
   Write-Host "SENTRY_AUTH_TOKEN not set - Sentry symbol upload will fail. Add it to .env.local." -ForegroundColor Yellow
+} else {
+  if (-not $sentryTokenSource) { $sentryTokenSource = 'environment' }
+  # Report the org the token actually carries. sentry-cli PREFERS the org baked
+  # into a sntrys_ token over defaults.org in sentry.properties, so a token issued
+  # before an org rename fails with "organization not found" no matter what the
+  # config says - and the only way to see that coming is to print it.
+  $sentryOrg = '(unknown)'
+  if ($env:SENTRY_AUTH_TOKEN.StartsWith('sntrys_')) {
+    $body = $env:SENTRY_AUTH_TOKEN.Substring(7)
+    for ($c = $body.Length; $c -gt 0; $c--) {
+      try {
+        $seg = $body.Substring(0, $c)
+        $pad = $seg.PadRight($seg.Length + ((4 - $seg.Length % 4) % 4), '=')
+        $claims = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($pad.Replace('-', '+').Replace('_', '/'))) | ConvertFrom-Json
+        if ($claims.org) { $sentryOrg = $claims.org; break }
+      } catch { }
+    }
+  }
+  Write-Host "Loaded SENTRY_AUTH_TOKEN from $sentryTokenSource (org: $sentryOrg)" -ForegroundColor DarkGray
 }
 
 if (-not $env:NODE_ENV) {
@@ -304,6 +339,25 @@ if ($Prebuild) {
       }
     }
 
+  # Clear a HUSK left by a previous prebuild that died mid-delete.
+  #
+  # The EBUSY failure below aborts partway through removing android/, so the tree
+  # survives with app/ and sentry.properties but WITHOUT gradlew.bat or the
+  # top-level gradle files. prebuild does not reliably recover from that by
+  # itself, and the leftover sentry.properties is the very file that gets locked -
+  # so the next run can fail on the same file again. Deleting the husk up front
+  # removes both problems. android/ is gitignored and fully regenerated, so this
+  # is never destructive.
+  $androidDir = Join-Path $RepoRoot 'android'
+  if ((Test-Path $androidDir) -and -not (Test-Path (Join-Path $androidDir 'gradlew.bat'))) {
+    Write-Step 'Clearing incomplete android/ tree from a previous failed prebuild'
+    try {
+      Remove-Item -LiteralPath $androidDir -Recurse -Force -ErrorAction Stop
+    } catch {
+      throw "android/ is incomplete (no gradlew.bat) and could not be deleted: $($_.Exception.Message). Close anything holding files under android/ and re-run."
+    }
+  }
+
   Write-Step 'expo prebuild --platform android'
   Push-Location $RepoRoot
   try {
@@ -322,8 +376,44 @@ if ($Prebuild) {
   # above but the script used to carry on into the build, where the only symptom
   # was a missing gradlew.bat - which reads like a broken install rather than a
   # failed prebuild. Check the wrapper too, since that's what step 4 needs.
+  # One automatic retry on the file-lock failure.
+  #
+  # The daemon-stop above races the OS actually releasing the handle: a daemon
+  # that exits still holds android/sentry.properties for a moment, and any Gradle
+  # command run outside this script (a manual ./gradlew, an IDE sync) spawns a
+  # fresh daemon it never saw. Both leave the same husk. Since a re-run of the
+  # whole script is what fixed it by hand - purely because the lock had lapsed by
+  # then - do that here instead of making the user do it: clear the husk, wait for
+  # the handle to drop, and prebuild once more.
   if ($prebuildExit -ne 0) {
-    throw "expo prebuild failed (exit $prebuildExit). android/ is now incomplete - re-run this script; the daemon-stop above usually clears the file lock that causes this."
+    Write-Warning 'prebuild failed (usually the android/sentry.properties file lock) - clearing android/ and retrying once'
+    if (Test-Path $androidDir) {
+      # The lock can outlive the process by a moment; give it a few tries rather
+      # than failing on the first EBUSY.
+      $cleared = $false
+      foreach ($attempt in 1..5) {
+        try { Remove-Item -LiteralPath $androidDir -Recurse -Force -ErrorAction Stop; $cleared = $true; break }
+        catch { Start-Sleep -Seconds 2 }
+      }
+      if (-not $cleared) {
+        throw "expo prebuild failed (exit $prebuildExit) and android/ could not be deleted - something still holds a file under it. Close Gradle/Android Studio and re-run."
+      }
+    }
+    Push-Location $RepoRoot
+    try {
+      if ($StandaloneDebug) {
+        $env:HEARTHSHELF_STANDALONE_DEBUG = '1'
+        npx expo prebuild --platform android
+        $prebuildExit = $LASTEXITCODE
+        Remove-Item Env:\HEARTHSHELF_STANDALONE_DEBUG
+      } else {
+        npx expo prebuild --platform android
+        $prebuildExit = $LASTEXITCODE
+      }
+    } finally { Pop-Location }
+  }
+  if ($prebuildExit -ne 0) {
+    throw "expo prebuild failed twice (exit $prebuildExit). android/ is now incomplete - check for a process holding android/sentry.properties (Gradle/Kotlin daemon, Android Studio) and re-run."
   }
   if (-not (Test-Path (Join-Path $RepoRoot 'android\gradlew.bat'))) {
     throw 'expo prebuild finished but android/gradlew.bat is missing - the native tree is incomplete. Delete android/ and re-run.'
