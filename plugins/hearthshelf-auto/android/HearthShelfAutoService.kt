@@ -10,6 +10,7 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -85,6 +86,13 @@ class HearthShelfAutoService : MediaLibraryService() {
   private val io = MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor())
 
   private val TAG = "HSAuto"
+
+  /** Rolling window for the stream-error retry cap (see noteStreamRetry). */
+  private val STREAM_RETRY_WINDOW_MS = 60_000L
+
+  /** Stream-error recoveries allowed per window. A real dead zone clears in one
+   *  or two; more than that is a server or token problem a reload cannot fix. */
+  private val STREAM_MAX_RETRIES = 3
 
 
   // Resume target (absolute book ms) for the item currently being loaded; applied
@@ -173,6 +181,38 @@ class HearthShelfAutoService : MediaLibraryService() {
    * position overrides the session's currentTime - it's the phone's exact live
    * spot, not the last value that reached the server.
    */
+  // Stream-error recovery attempts inside STREAM_RETRY_WINDOW_MS. Only ever
+  // touched from the player listener, which is main-thread only.
+  private var streamRetries = 0
+  private var streamRetryWindowStart = 0L
+
+  /**
+   * Whether another stream-error recovery may run, and count it.
+   *
+   * The recovery re-prepares the same url, so a server that is genuinely down
+   * (or a token that will not refresh) fails again immediately and reports
+   * another error - error and reload bouncing off each other with nothing in
+   * between to slow them down. The phone side already learned this the hard way
+   * (HS-MOBILEAPP-1N, see RECLAIM_MAX_ATTEMPTS): a cap is what turns an infinite
+   * retry storm into a bounded attempt that gives up quietly.
+   *
+   * A window rather than a total, so a long drive that hits one dead zone per
+   * hour recovers every time instead of exhausting a lifetime budget.
+   */
+  private fun noteStreamRetry(): Boolean {
+    val now = SystemClock.elapsedRealtime()
+    if (now - streamRetryWindowStart > STREAM_RETRY_WINDOW_MS) {
+      streamRetryWindowStart = now
+      streamRetries = 0
+    }
+    streamRetries += 1
+    if (streamRetries > STREAM_MAX_RETRIES) {
+      Log.w(TAG, "car stream retry cap hit ($streamRetries); leaving playback stopped")
+      return false
+    }
+    return true
+  }
+
   private fun loadBookIntoCar(itemId: String, positionSec: Double) {
     // De-dupe: two controllers connect per takeover, so JS pushes the same book
     // twice within ~200ms. Without this each push opens its own ABS play session
@@ -580,6 +620,18 @@ class HearthShelfAutoService : MediaLibraryService() {
           Sentry.captureException(error)
         } catch (e: Throwable) {
           // reporting must never break playback
+        }
+        // Reporting alone left the head unit silent and stuck: the error was
+        // diagnosable afterwards but nothing tried to recover, and there is no
+        // "tap play again" in a car worth asking a driver to do.
+        //
+        // A recoverable transport fault (the stream died mid-book) is answered by
+        // asking JS to hand the book over again, which re-prepares the car player
+        // from the live position - the same channel an empty car player already
+        // uses. Content faults would reproduce on reload, so they are only
+        // reported, as before.
+        if (isRecoverableSourceError(error) && noteStreamRetry()) {
+          HearthShelfAutoModule.emitCarNeedsBook()
         }
       }
     })

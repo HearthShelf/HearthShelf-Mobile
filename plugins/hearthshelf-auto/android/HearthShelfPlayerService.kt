@@ -407,6 +407,30 @@ class HearthShelfPlayerService : MediaSessionService() {
         // Pausing/resuming flips the shake gate (only listen while playing).
         evaluateShake()
       }
+      override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+        // The phone player had NO error handler at all: a stream that died
+        // mid-book (server restarted, token expired, connection dropped under a
+        // bridge) stopped the audio silently. Nothing reached JS, so the UI kept
+        // claiming it was playing over silence and the only way out was for the
+        // user to notice and tap play.
+        //
+        // Recoverable I/O faults are reported as onPlaybackLost, which is the
+        // channel that already means "native no longer holds this track" - JS
+        // responds by reloading the book from the live store position, which is
+        // exactly the recovery a dropped stream needs. Crucially that path is
+        // attempt-capped (RECLAIM_MAX_ATTEMPTS), so a server that is genuinely
+        // down gives up and tells the user instead of retrying forever.
+        //
+        // Anything else (malformed media, unsupported codec) will fail the same
+        // way on reload, so it is only reported, never retried.
+        Log.e(TAG, "phone playerError ${error.errorCodeName}", error)
+        if (HearthShelfAutoModule.carPlayer != null) return
+        if (isRecoverableSourceError(error)) {
+          HearthShelfAutoModule.emitPlaybackLost()
+        } else {
+          HearthShelfAutoModule.emitState(false)
+        }
+      }
       override fun onPlaybackStateChanged(state: Int) {
         if (state == Player.STATE_ENDED && HearthShelfAutoModule.carPlayer == null) {
           HearthShelfAutoModule.emitState(false)

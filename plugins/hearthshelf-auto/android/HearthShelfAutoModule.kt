@@ -671,6 +671,35 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
   }
 }
 
+/**
+ * Whether a playback failure is worth retrying by reloading the track.
+ *
+ * True for transport-level faults: the bytes stopped arriving, but the media
+ * itself is fine, so re-preparing from the current position generally works.
+ * That covers the common real-world cause - a streamed book whose connection
+ * died mid-chapter (server restart, expired token, tunnel/dead-zone) - which
+ * otherwise just stops the audio for good.
+ *
+ * False for content faults (malformed container, unsupported codec, bad
+ * manifest). Those are deterministic: a reload reproduces them exactly, so
+ * retrying only spins.
+ *
+ * Shared by both services so the phone and the car agree on what is worth
+ * retrying.
+ */
+fun isRecoverableSourceError(error: androidx.media3.common.PlaybackException): Boolean =
+  when (error.errorCode) {
+    androidx.media3.common.PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+    androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+    androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+    androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+    androidx.media3.common.PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
+    androidx.media3.common.PlaybackException.ERROR_CODE_IO_NO_PERMISSION,
+    androidx.media3.common.PlaybackException.ERROR_CODE_IO_CLEARTEXT_NOT_PERMITTED,
+    androidx.media3.common.PlaybackException.ERROR_CODE_TIMEOUT -> true
+    else -> false
+  }
+
 @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
 class HearthShelfAutoPackage : ReactPackage {
   override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> =
