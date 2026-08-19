@@ -12,13 +12,20 @@ export function NotificationBell({ style }: { style?: StyleProp<ViewStyle> }) {
   const router = useRouter()
   const colors = useColors()
   const [unread, setUnread] = useState(0)
+  // Total rows, not just unread: the bell hides when the inbox is EMPTY, but
+  // must stay put once there is anything to go back and re-read. Hiding on
+  // `unread` alone would make it vanish the instant you read a notification,
+  // taking the only route to the inbox with it.
+  const [total, setTotal] = useState(0)
 
   useFocusEffect(
     useCallback(() => {
       let active = true
       const refresh = async () => {
         const response = await getNotifications()
-        if (active) setUnread(response.unreadCount)
+        if (!active) return
+        setUnread(response.unreadCount)
+        setTotal(response.notifications.length)
       }
       void refresh()
       const timer = setInterval(() => void refresh(), POLL_MS)
@@ -28,6 +35,9 @@ export function NotificationBell({ style }: { style?: StyleProp<ViewStyle> }) {
       }
     }, []),
   )
+
+  // Nothing to show and nothing to revisit - don't spend a header slot on it.
+  if (total === 0) return null
 
   return (
     <Touchable

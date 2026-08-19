@@ -920,10 +920,21 @@ function HomeHeader({
         >
           <Icon name={icons.edit} size={19} color={colors.text} />
         </Touchable>
-        <Touchable onPress={() => router.push('/settings/storage')} style={styles.headerBtn}>
-          <Icon name={icons.download} size={19} color={colors.text} />
-          {downloading ? <View style={styles.headerDot} /> : null}
-        </Touchable>
+        {/* Only while something is actually transferring. Idle download
+            management lives in Settings > Storage, so a permanent icon here
+            spent a header slot on a screen you rarely need - and the header
+            row had grown crowded enough that the icons stopped reading as
+            distinct actions. */}
+        {downloading ? (
+          <Touchable
+            onPress={() => router.push('/settings/storage')}
+            style={styles.headerBtn}
+            accessibilityLabel="Downloads in progress"
+          >
+            <Icon name={icons.download} size={19} color={colors.text} />
+            <View style={styles.headerDot} />
+          </Touchable>
+        ) : null}
         <Touchable onPress={() => router.push('/search?from=home')} style={styles.headerBtn}>
           <Icon name={icons.search} size={19} color={colors.text} />
         </Touchable>
