@@ -373,6 +373,43 @@ export async function searchLibraryAll(
   return absRequest<ABSSearchResponse>(`/api/libraries/${libraryId}/search?q=${q}&limit=${limit}`)
 }
 
+/**
+ * Find the owned library item for an Audible ASIN, or null when it isn't in the
+ * library (yet).
+ *
+ * Why a search rather than a lookup: ABS exposes no by-ASIN endpoint, and the
+ * minified list metadata omits `asin` entirely - only the expanded item read
+ * carries it (ABSBookMetadataDetail). ABS's search does index the ASIN, so we
+ * query it directly and then CONFIRM against the detail record rather than
+ * trusting the hit: a bare ASIN is also a substring that can match a
+ * description, and routing someone to the wrong book is worse than leaving them
+ * on the upcoming page.
+ *
+ * Best-effort by design - every failure mode (offline, no libraries, no match)
+ * returns null so callers can fall back rather than error.
+ */
+export async function findOwnedItemByAsin(asin: string): Promise<string | null> {
+  const wanted = asin.trim().toLowerCase()
+  if (!wanted) return null
+  try {
+    const libraries = await getLibraries()
+    for (const library of libraries) {
+      const hits = await searchLibrary(library.id, asin, 5)
+      for (const hit of hits) {
+        try {
+          const detail = await getItemDetail(hit.id)
+          if ((detail.media?.metadata?.asin ?? '').trim().toLowerCase() === wanted) return hit.id
+        } catch {
+          // Skip an item we can't read and try the next hit.
+        }
+      }
+    }
+  } catch {
+    // Offline or the server refused - the caller falls back to the upcoming page.
+  }
+  return null
+}
+
 export async function getItemsInProgress(): Promise<ABSLibraryItem[]> {
   const data = await absRequest<ABSItemsInProgressResponse>('/api/me/items-in-progress')
   return data.libraryItems

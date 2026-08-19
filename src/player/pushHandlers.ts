@@ -6,9 +6,11 @@
  * Everything here lazy-loads expo-notifications via dynamic import so a build
  * without the native module linked never throws at load (see pushRegister.ts).
  * A release push carries `data: { kind: 'release', asin, signal }`; tapping it
- * opens the upcoming-book page for that ASIN.
+ * opens the owned book when the signal says it has landed in the library, and
+ * the upcoming page otherwise (see releaseNotificationRoute).
  */
 import { router } from 'expo-router'
+import { releaseNotificationRoute } from '@/notifications/releaseRoute'
 
 let mounted = false
 
@@ -16,9 +18,14 @@ let mounted = false
 function handleResponse(response: unknown): void {
   try {
     const data = (response as { notification?: { request?: { content?: { data?: unknown } } } })
-      ?.notification?.request?.content?.data as { kind?: string; asin?: string } | undefined
+      ?.notification?.request?.content?.data as
+      { kind?: string; asin?: string; signal?: string } | undefined
     if (data?.kind === 'release' && data.asin) {
-      router.push(`/upcoming/${encodeURIComponent(data.asin)}`)
+      const asin = data.asin
+      // An "it's in your library now" tap opens the owned book, not the
+      // upcoming page (see releaseNotificationRoute). Async because resolving
+      // the owned copy needs a lookup; it falls back to the upcoming page.
+      void releaseNotificationRoute(asin, data.signal).then((path) => router.push(path))
     } else if (data?.kind === 'club-invite') {
       router.push('/notifications')
     }

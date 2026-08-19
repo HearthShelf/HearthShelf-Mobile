@@ -8,6 +8,7 @@ import {
   markNotificationRead,
   type HSNotification,
 } from '@/api/notifications'
+import { releaseNotificationRoute } from '@/notifications/releaseRoute'
 import { AppText, Centered, IconButton, Loading, Screen, Touchable } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
 import { Toast, useToast } from '@/ui/Toast'
@@ -61,7 +62,9 @@ export default function NotificationsScreen() {
     const clubId = dataString(notification, 'clubId')
     const asin = dataString(notification, 'asin')
     if (notification.kind === 'release' && asin) {
-      router.push(`/upcoming/${encodeURIComponent(asin)}`)
+      // "Now in your library" opens the owned book; the still-upcoming signals
+      // open the upcoming page (see releaseNotificationRoute).
+      router.push(await releaseNotificationRoute(asin, dataString(notification, 'signal')))
       return
     }
     if (notification.kind !== 'club_invite' && clubId) {
