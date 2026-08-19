@@ -200,8 +200,31 @@ foreach ($envFile in @('.env.local', '.env')) {
     break
   }
 }
+# A DEBUG build has nothing worth symbolicating: no R8 mapping, and unstripped
+# .so files the local machine already has. But the Sentry Gradle plugin's upload
+# tasks are wired into assembleDebug all the same, and they are NOT gated on
+# having a token - `shouldSentryAutoUpload()` only checks the
+# SENTRY_DISABLE_* opt-outs (see @sentry/react-native/sentry.gradle.kts). So a
+# token that is missing, expired, or scoped without project:releaseS fails
+# :app:uploadSentryNativeSymbolsForDebug with "Auth token is required for this
+# request" and takes the whole local build down with it - after the APK has
+# already been assembled successfully. The app.config.js comment claiming
+# "Android tolerates a missing token" was simply wrong.
+#
+# Turning the upload off for debug removes a network+auth dependency from the
+# inner dev loop entirely, so `deploy.ps1` cannot fail on Sentry's account state.
+# Release builds are untouched: that is where the mapping file actually matters
+# (see the experimental_android block in app.config.js), and where a missing
+# token SHOULD be loud.
+if (-not $Release) {
+  $env:SENTRY_DISABLE_NATIVE_DEBUG_UPLOAD = 'true'
+  $env:SENTRY_DISABLE_AUTO_UPLOAD = 'true'
+}
+
 if (-not $env:SENTRY_AUTH_TOKEN) {
-  Write-Host "SENTRY_AUTH_TOKEN not set - Sentry symbol upload will fail. Add it to .env.local." -ForegroundColor Yellow
+  if ($Release) {
+    Write-Host "SENTRY_AUTH_TOKEN not set - Sentry symbol upload will fail. Add it to .env.local." -ForegroundColor Yellow
+  }
 } else {
   if (-not $sentryTokenSource) { $sentryTokenSource = 'environment' }
   # Report the org the token actually carries. sentry-cli PREFERS the org baked
