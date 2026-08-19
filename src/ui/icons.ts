@@ -96,6 +96,7 @@ export const icons = {
   feedback: 'feedback',
   club: 'groups',
   people: 'group',
+  personAdd: 'person-add',
   chat: 'forum',
   bookmarks: 'bookmarks',
   visible: 'visibility',

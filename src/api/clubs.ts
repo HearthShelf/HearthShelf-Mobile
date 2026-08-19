@@ -10,6 +10,20 @@ import { getSession } from './session'
 
 const DISABLED_CLUBS: HSClubsResponse = { enabled: false, mine: [], joinable: [] }
 
+export interface ClubInvitee {
+  userId: string
+  username: string
+  pendingInviteId: string | null
+}
+
+export interface ClubInviteResult {
+  userId: string
+  inviteId?: string
+  invited: boolean
+  reason?: string
+  emailSent?: boolean
+}
+
 function visibleClubs(res: HSClubsResponse): HSClubsResponse {
   if (!res.enabled) return DISABLED_CLUBS
   return {
@@ -87,6 +101,71 @@ export async function createClub(name: string, libraryItemId?: string): Promise<
     return (await res.json()) as HSClub
   } catch {
     return null
+  }
+}
+
+export async function getClubInvitees(id: string): Promise<ClubInvitee[]> {
+  const session = getSession()
+  if (!session) return []
+  try {
+    const res = await fetch(`${session.serverUrl}/hs/clubs/${encodeURIComponent(id)}/invitees`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+    })
+    if (!res.ok) return []
+    const value = (await res.json()) as { users?: ClubInvitee[] }
+    return Array.isArray(value.users) ? value.users : []
+  } catch {
+    return []
+  }
+}
+
+export async function inviteClubUsers(id: string, userIds: string[]): Promise<ClubInviteResult[]> {
+  const session = getSession()
+  if (!session) return []
+  try {
+    const res = await fetch(`${session.serverUrl}/hs/clubs/${encodeURIComponent(id)}/invites`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userIds }),
+    })
+    if (!res.ok) return []
+    const value = (await res.json()) as { results?: ClubInviteResult[] }
+    return Array.isArray(value.results) ? value.results : []
+  } catch {
+    return []
+  }
+}
+
+export async function respondToClubInvite(
+  clubId: string,
+  inviteId: string,
+  accept: boolean,
+): Promise<boolean> {
+  const session = getSession()
+  if (!session) return false
+  try {
+    const action = accept ? 'accept' : 'decline'
+    const res = await fetch(
+      `${session.serverUrl}/hs/clubs/${encodeURIComponent(clubId)}/invites/${encodeURIComponent(inviteId)}/${action}`,
+      { method: 'POST', headers: { Authorization: `Bearer ${session.token}` } },
+    )
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+export async function revokeClubInvite(clubId: string, inviteId: string): Promise<boolean> {
+  const session = getSession()
+  if (!session) return false
+  try {
+    const res = await fetch(
+      `${session.serverUrl}/hs/clubs/${encodeURIComponent(clubId)}/invites/${encodeURIComponent(inviteId)}`,
+      { method: 'DELETE', headers: { Authorization: `Bearer ${session.token}` } },
+    )
+    return res.ok
+  } catch {
+    return false
   }
 }
 

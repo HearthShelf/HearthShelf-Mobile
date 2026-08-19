@@ -12,13 +12,15 @@ import { router } from 'expo-router'
 
 let mounted = false
 
-/** Route a tapped release notification to the upcoming-book page. */
+/** Route a tapped server notification to the relevant in-app surface. */
 function handleResponse(response: unknown): void {
   try {
     const data = (response as { notification?: { request?: { content?: { data?: unknown } } } })
       ?.notification?.request?.content?.data as { kind?: string; asin?: string } | undefined
     if (data?.kind === 'release' && data.asin) {
       router.push(`/upcoming/${encodeURIComponent(data.asin)}`)
+    } else if (data?.kind === 'club-invite') {
+      router.push('/notifications')
     }
   } catch {
     // A malformed payload just doesn't navigate.
@@ -54,6 +56,10 @@ export function mountPushHandlers(): () => void {
       if (Platform.OS === 'android') {
         await Notifications.setNotificationChannelAsync('releases', {
           name: 'Book releases',
+          importance: Notifications.AndroidImportance.DEFAULT,
+        })
+        await Notifications.setNotificationChannelAsync('social', {
+          name: 'Invitations and social updates',
           importance: Notifications.AndroidImportance.DEFAULT,
         })
       }

@@ -34,6 +34,7 @@ import {
 import { setSessionExpiredHandler } from '@/api/controlPlane'
 import { registerLaunch } from '@/lib/whatsNew'
 import { WhatsNew } from '@/ui/WhatsNew'
+import { NotificationBell } from '@/notifications/NotificationBell'
 import { clearSession } from '@/api/session'
 import { clearAudibleCache } from '@/api/absAudible'
 import { clearSubscriptions } from '@/player/subscriptions'
@@ -910,6 +911,7 @@ function HomeHeader({
         ) : null}
       </Touchable>
       <View style={styles.headerBtns}>
+        <NotificationBell style={styles.headerBtn} />
         <WhatsNew chipVisible={whatsNew} />
         <Touchable
           onPress={onEdit}

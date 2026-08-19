@@ -27,6 +27,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
+import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import type { HSClubBook, HSClubDetail, HSClubMember, HSNote } from '@hearthshelf/core'
 import { coverHue, formatTimestamp, sortMembersByProgress } from '@hearthshelf/core'
 import {
@@ -38,6 +39,10 @@ import {
   kickClubMember,
   setClubCurrentBook,
   removeClubQueued,
+  getClubInvitees,
+  inviteClubUsers,
+  revokeClubInvite,
+  type ClubInvitee,
 } from '@/api/clubs'
 import { holdClubPolling } from '@/player/clubSync'
 import { useMiniPlayerInset } from '@/ui/useContentInset'
@@ -114,10 +119,13 @@ export default function ClubRoomScreen() {
   // The frozen "new since last visit" divider boundary (see load()). undefined
   // until the first load resolves it; reset when the viewed book changes.
   const [newSinceTs, setNewSinceTs] = useState<number | undefined>(undefined)
+  const [invitees, setInvitees] = useState<ClubInvitee[] | null>(null)
+  const [selectedInvitees, setSelectedInvitees] = useState<string[]>([])
 
   const membersSheetRef = useRef<SheetRef>(null)
   const historySheetRef = useRef<SheetRef>(null)
   const ownerSheetRef = useRef<SheetRef>(null)
+  const inviteSheetRef = useRef<SheetRef>(null)
 
   // Deep-link scroll: when opened from a note-pop notification, scroll the thread
   // to the note and briefly highlight it. `highlightId` clears after the flash so
@@ -365,6 +373,45 @@ export default function ClubRoomScreen() {
     else show('Could not remove')
   }
 
+  const openInvites = async () => {
+    if (!detail || !isOwner) return
+    setInvitees(null)
+    setSelectedInvitees([])
+    inviteSheetRef.current?.present()
+    setInvitees(await getClubInvitees(detail.club.id))
+  }
+
+  const sendInvites = async () => {
+    if (!detail || selectedInvitees.length === 0 || busy) return
+    setBusy(true)
+    const results = await inviteClubUsers(detail.club.id, selectedInvitees)
+    setBusy(false)
+    const sent = results.filter((result) => result.invited).length
+    if (sent === 0) {
+      show('Could not send those invitations')
+      return
+    }
+    const withoutEmail = results.filter(
+      (result) => result.invited && result.emailSent === false,
+    ).length
+    show(
+      withoutEmail > 0
+        ? `${sent} invited in-app; ${withoutEmail} could not be emailed`
+        : `${sent} ${sent === 1 ? 'invitation' : 'invitations'} sent`,
+    )
+    setSelectedInvitees([])
+    setInvitees(await getClubInvitees(detail.club.id))
+  }
+
+  const cancelInvite = async (invitee: ClubInvitee) => {
+    if (!detail || !invitee.pendingInviteId || busy) return
+    setBusy(true)
+    const ok = await revokeClubInvite(detail.club.id, invitee.pendingInviteId)
+    setBusy(false)
+    if (!ok) show('Could not cancel that invitation')
+    setInvitees(await getClubInvitees(detail.club.id))
+  }
+
   if (loadError) {
     return (
       <Screen tabBar={<AppTabBar activeName={active} onPressTab={goToTab} />}>
@@ -406,6 +453,7 @@ export default function ClubRoomScreen() {
         title={detail.club.name}
         subtitle={`${detail.members.length} ${detail.members.length === 1 ? 'member' : 'members'}`}
         onBack={() => router.back()}
+        onInvite={isOwner ? () => void openInvites() : undefined}
         onMembers={() => membersSheetRef.current?.present()}
         onOverflow={isMember ? () => ownerSheetRef.current?.present() : undefined}
       />
@@ -720,6 +768,103 @@ export default function ClubRoomScreen() {
         ))}
       </Sheet>
 
+      <Sheet
+        ref={inviteSheetRef}
+        title="Invite readers"
+        kicker={detail.club.name}
+        snapPoints={['78%']}
+      >
+        <AppText variant="meta" color={colors.textMuted} style={styles.inviteHelp}>
+          Choose readers from this server. They’ll receive an in-app invitation and an email when an
+          address is available.
+        </AppText>
+        {invitees === null ? (
+          <Loading label="Loading readers…" />
+        ) : invitees.length === 0 ? (
+          <Centered>
+            <Icon name={icons.people} size={34} color={colors.textMuted} />
+            <AppText variant="label">Everyone is already here</AppText>
+            <AppText variant="meta" color={colors.textMuted} style={{ textAlign: 'center' }}>
+              There are no other server readers available to invite.
+            </AppText>
+          </Centered>
+        ) : (
+          <>
+            <BottomSheetScrollView contentContainerStyle={styles.inviteList}>
+              {invitees.map((invitee) => {
+                const selected = selectedInvitees.includes(invitee.userId)
+                return (
+                  <View key={invitee.userId} style={styles.inviteRow}>
+                    <Avatar
+                      uri={avatarUrl(invitee.userId)}
+                      size={40}
+                      name={invitee.username}
+                      hue={coverHue(invitee.userId)}
+                    />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <AppText variant="label" numberOfLines={1}>
+                        {invitee.username}
+                      </AppText>
+                      <AppText variant="caption" color={colors.textMuted}>
+                        {invitee.pendingInviteId ? 'Invitation pending' : 'On this server'}
+                      </AppText>
+                    </View>
+                    {invitee.pendingInviteId ? (
+                      <Touchable
+                        style={styles.inviteSecondary}
+                        disabled={busy}
+                        onPress={() => void cancelInvite(invitee)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Cancel invitation to ${invitee.username}`}
+                      >
+                        <AppText variant="caption">Cancel</AppText>
+                      </Touchable>
+                    ) : (
+                      <Touchable
+                        style={[styles.inviteSecondary, selected && styles.inviteSelected]}
+                        onPress={() =>
+                          setSelectedInvitees((value) =>
+                            selected
+                              ? value.filter((userId) => userId !== invitee.userId)
+                              : [...value, invitee.userId],
+                          )
+                        }
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: selected }}
+                        accessibilityLabel={`Invite ${invitee.username}`}
+                      >
+                        <Icon
+                          name={selected ? icons.check : icons.personAdd}
+                          size={17}
+                          color={selected ? colors.onAccent : colors.textMuted}
+                        />
+                        <AppText variant="caption" color={selected ? colors.onAccent : colors.text}>
+                          {selected ? 'Selected' : 'Select'}
+                        </AppText>
+                      </Touchable>
+                    )}
+                  </View>
+                )
+              })}
+            </BottomSheetScrollView>
+            <Touchable
+              style={[styles.inviteSend, selectedInvitees.length === 0 && { opacity: 0.45 }]}
+              disabled={selectedInvitees.length === 0 || busy}
+              onPress={() => void sendInvites()}
+              accessibilityRole="button"
+              accessibilityLabel={`Send ${selectedInvitees.length} book club invitations`}
+            >
+              <Icon name={icons.send} size={18} color={colors.onAccent} />
+              <AppText variant="label" color={colors.onAccent}>
+                {busy
+                  ? 'Sending…'
+                  : `Send invites${selectedInvitees.length ? ` (${selectedInvitees.length})` : ''}`}
+              </AppText>
+            </Touchable>
+          </>
+        )}
+      </Sheet>
+
       {/* Book history. */}
       <Sheet ref={historySheetRef} title="Book history" snapPoints={['60%']}>
         {detail.books.length === 0 ? (
@@ -871,12 +1016,14 @@ function Header({
   title,
   subtitle,
   onBack,
+  onInvite,
   onMembers,
   onOverflow,
 }: {
   title: string
   subtitle?: string
   onBack: () => void
+  onInvite?: () => void
   onMembers?: () => void
   onOverflow?: () => void
 }) {
@@ -895,6 +1042,15 @@ function Header({
           </AppText>
         ) : null}
       </View>
+      {onInvite ? (
+        <IconButton
+          name={icons.personAdd}
+          size={21}
+          onPress={onInvite}
+          style={styles.headerBtn}
+          accessibilityLabel="Invite readers"
+        />
+      ) : null}
       {onMembers ? (
         <IconButton name={icons.people} size={22} onPress={onMembers} style={styles.headerBtn} />
       ) : null}
@@ -1082,5 +1238,39 @@ const makeStyles = (colors: Palette) =>
       alignItems: 'center',
       gap: spacing.md,
       paddingVertical: spacing.md + 2,
+    },
+    inviteHelp: { marginBottom: spacing.md, lineHeight: 20 },
+    inviteList: { paddingBottom: spacing.md },
+    inviteRow: {
+      minHeight: 66,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
+    },
+    inviteSecondary: {
+      minWidth: 88,
+      minHeight: 44,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.xs,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    inviteSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
+    inviteSend: {
+      minHeight: 48,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      marginTop: spacing.sm,
+      borderRadius: radius.pill,
+      backgroundColor: colors.accent,
     },
   })

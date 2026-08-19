@@ -78,11 +78,55 @@ export default function NotificationsPanel() {
           icon={icons.bell}
           title="Release notifications"
           desc="Get told when a book you're waiting for is ready."
-          control={<SettingsToggle on={master} onChange={(v) => setSetting('notifyEnabled', v)} />}
-          last={!master}
+          control={
+            <SettingsToggle
+              on={master}
+              onChange={(value) => {
+                setSetting('notifyEnabled', value)
+                if (value && !s.notifyInApp && !s.notifyEmail) setSetting('notifyInApp', true)
+              }}
+            />
+          }
+          last
         />
-        {master && (
-          <>
+      </SettingsGroup>
+      {master ? (
+        <>
+          <SettingsLabel>Delivery</SettingsLabel>
+          <SettingsGroup>
+            <SettingsRow
+              icon={icons.bell}
+              title="In app"
+              desc="Show in your HearthShelf inbox and alert this phone."
+              control={
+                <SettingsToggle
+                  on={s.notifyInApp}
+                  onChange={(value) => {
+                    setSetting('notifyInApp', value)
+                    if (!value && !s.notifyEmail) setSetting('notifyEnabled', false)
+                  }}
+                />
+              }
+            />
+            <SettingsRow
+              icon="email"
+              title="Email"
+              desc="Send alerts to the email on your server account."
+              control={
+                <SettingsToggle
+                  on={s.notifyEmail}
+                  onChange={(value) => {
+                    setSetting('notifyEmail', value)
+                    if (!value && !s.notifyInApp) setSetting('notifyEnabled', false)
+                  }}
+                />
+              }
+              last
+            />
+          </SettingsGroup>
+
+          <SettingsLabel>Alert me</SettingsLabel>
+          <SettingsGroup>
             <SettingsRow
               title="When it's in your library"
               desc="The moment a followed book is ready to play."
@@ -121,12 +165,12 @@ export default function NotificationsPanel() {
                 formatLabel={(v) => (v === 0 ? 'Off' : `${v}d`)}
               />
             </SettingsRow>
-          </>
-        )}
-      </SettingsGroup>
+          </SettingsGroup>
+        </>
+      ) : null}
 
       {/* Actionable permission row: in-app on, but the OS denied it. */}
-      {master && osDenied ? (
+      {master && s.notifyInApp && osDenied ? (
         <Pressable onPress={() => void Linking.openSettings()}>
           <SettingsGroup>
             <SettingsRow
@@ -165,7 +209,7 @@ export default function NotificationsPanel() {
         </SettingsRow>
       </SettingsGroup>
 
-      {!EAS_PROJECT_ID && master ? (
+      {!EAS_PROJECT_ID && master && s.notifyInApp ? (
         <AppText
           variant="caption"
           color={colors.textMuted}

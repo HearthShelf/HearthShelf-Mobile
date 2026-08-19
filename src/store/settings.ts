@@ -259,9 +259,11 @@ export interface SettingsState {
   clubsEnabled: boolean
   clubPlayerButton: boolean
 
-  // Release notifications (account). Follow an upcoming book/series and get a
-  // push when it's available; countdownWindowDays drives the Home banner.
+  // Release notifications (account). Follow an upcoming book/series and choose
+  // whether alerts land in the shared inbox/mobile push, email, or both.
   notifyEnabled: boolean
+  notifyInApp: boolean
+  notifyEmail: boolean
   notifyAvailableInLibrary: boolean
   notifyOnReleaseDate: boolean
   notifyReminderDaysBefore: number
@@ -365,6 +367,8 @@ let state: SettingsState = {
   clubsEnabled: true,
   clubPlayerButton: true,
   notifyEnabled: true,
+  notifyInApp: true,
+  notifyEmail: false,
   notifyAvailableInLibrary: true,
   notifyOnReleaseDate: true,
   notifyReminderDaysBefore: 3,
