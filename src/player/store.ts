@@ -162,7 +162,10 @@ export function loadTrack(track: NowPlaying, autoPlay = true): void {
     },
   })
   // Only arm the sleep timer when actually starting playback.
-  if (autoPlay) maybeAutoArmSleep()
+  if (autoPlay) {
+    expireStaleSleepTimer()
+    maybeAutoArmSleep()
+  }
 }
 
 /**
@@ -189,6 +192,7 @@ export function setPlaying(isPlaying: boolean): void {
   if (!isPlaying) notePaused()
   set({ isPlaying })
   if (isPlaying) {
+    expireStaleSleepTimer()
     applyAutoRewind()
     maybeAutoArmSleep()
   }
@@ -267,6 +271,10 @@ export function mirrorCarTrack(track: NowPlaying): void {
   // The car owns the playhead now; its mirrored positions must not be held
   // against a phone-side seek target.
   pendingSeek = null
+  // The car is about to drive position ticks with isPlaying set, which is what
+  // counts a duration timer down - so a leftover timer from a previous listening
+  // session would fire minutes into the drive. Judge it before the ticks start.
+  expireStaleSleepTimer()
   set({
     nowPlaying: track,
     position: track.startPosition,
@@ -292,6 +300,7 @@ export function togglePlay(): void {
     if (!nowPlaying) notePaused()
     set({ isPlaying: nowPlaying })
     if (nowPlaying) {
+      expireStaleSleepTimer()
       applyAutoRewind()
       maybeAutoArmSleep()
     }
@@ -445,6 +454,40 @@ function inQuietHours(now: Date, startHHMM: string, endHHMM: string): boolean {
 }
 
 /**
+ * A sleep timer belongs to ONE listening session. It only counts down while
+ * audio plays, so a timer armed one evening and never finished (playback paused,
+ * phone pocketed, app left backgrounded) survives in this long-lived runtime and
+ * is still armed the NEXT time play starts - which can be the next day. The
+ * leftover then counts down its last few minutes and fires mid-listen: rewinding
+ * by rewindSec and pausing what looks like a perfectly healthy player. A field
+ * report hit exactly this in the car - a timer armed the previous night fired
+ * minutes into a drive 17 hours later (HS-MOBILEAPP-5).
+ *
+ * So a timer that has neither ticked nor been touched for this long is stale and
+ * is discarded on the next play edge. maybeAutoArmSleep still runs after the
+ * discard, so inside quiet hours a fresh auto timer arms for the new session.
+ */
+const STALE_SLEEP_TIMER_MS = 60 * 60 * 1000
+
+/** ms epoch when the sleep timer last showed signs of life: armed, extended, or
+ *  counted down a tick. Meaningless while sleepTimer is null. */
+let sleepTimerTouchedAt = 0
+
+/** Note that the live timer is current (see STALE_SLEEP_TIMER_MS). */
+function touchSleepTimer(): void {
+  sleepTimerTouchedAt = Date.now()
+}
+
+/** Drop a timer left over from a previous listening session (see
+ *  STALE_SLEEP_TIMER_MS). Called from the play edges before auto-arm runs. */
+function expireStaleSleepTimer(): void {
+  if (!state.sleepTimer) return
+  if (Date.now() - sleepTimerTouchedAt < STALE_SLEEP_TIMER_MS) return
+  breadcrumb('player', 'discarding a stale sleep timer from a previous listening session')
+  set({ sleepTimer: null, volume: 1 })
+}
+
+/**
  * Suppress auto-sleep re-arming after "On excessive shake: disable sleep" fires.
  * A shake storm inside quiet hours (phone jostling on a walk) both cancels the
  * running timer and sets this, so play entry points don't immediately re-arm a
@@ -475,6 +518,7 @@ function maybeAutoArmSleep(): void {
   if (!inside) return
   if (autoSleepSuppressed) return
   const totalSec = s.autoSleepDur * 60
+  touchSleepTimer()
   set({ sleepTimer: { kind: 'duration', remainingSec: totalSec, totalSec } })
 }
 
@@ -483,6 +527,7 @@ export function setSleepTimer(timer: SleepTimer): void {
   consecutiveShakeExtends = 0
   // A manual sleep action means the user is engaged; clear any shake suppression.
   autoSleepSuppressed = false
+  touchSleepTimer()
   set({ sleepTimer: retargetNearBoundary(timer) })
 }
 
@@ -504,8 +549,7 @@ export function setSleepTimer(timer: SleepTimer): void {
 function retargetNearBoundary(timer: SleepTimer): SleepTimer {
   if (timer?.kind !== 'endOfChapter') return timer
   const chapters = state.nowPlaying?.chapters ?? []
-  const boundaryOf = (i: number) =>
-    timer.at === 'start' ? chapters[i]?.start : chapters[i]?.end
+  const boundaryOf = (i: number) => (timer.at === 'start' ? chapters[i]?.start : chapters[i]?.end)
   let idx = timer.chapterIndex
   while (
     idx + 1 < chapters.length &&
@@ -593,6 +637,7 @@ export function addSleepMinutes(mins: number, viaShake = false): AddSleepMinutes
     consecutiveShakeExtends = 0
   }
 
+  touchSleepTimer()
   const add = mins * 60
   const uncappedRemaining = timer.remainingSec + add
   const remainingSec = Math.min(uncappedRemaining, MAX_SLEEP_TOTAL_SEC)
@@ -683,6 +728,7 @@ export function reportPosition(position: number): void {
   // is actually advancing (pausing the book pauses the timer for free).
   const timer = state.sleepTimer
   if (timer && state.isPlaying) {
+    touchSleepTimer()
     if (timer.kind === 'duration' || timer.kind === 'clock') {
       const elapsed = Math.max(0, position - prev)
       const remaining = timer.remainingSec - elapsed
@@ -700,8 +746,7 @@ export function reportPosition(position: number): void {
       const chapters = state.nowPlaying?.chapters ?? []
       const target = chapters[timer.chapterIndex]
       if (target) {
-        const stopAt =
-          timer.at === 'start' ? target.start : target.end - CHAPTER_END_GUARD_SEC
+        const stopAt = timer.at === 'start' ? target.start : target.end - CHAPTER_END_GUARD_SEC
         if (position >= stopAt) {
           fireStop(position)
           return
