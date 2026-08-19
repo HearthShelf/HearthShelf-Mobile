@@ -142,6 +142,9 @@ export function PlayerHost() {
   const loadedItem = useRef<string | null>(null)
   // Pending "did the reclaim recovery actually produce audio" check.
   const reclaimProbe = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Timestamp (ms) until which onState isPlaying=false is treated as the dying
+  // player's stop echo and ignored (see the onPlaybackLost handler).
+  const reclaimIgnorePauseUntil = useRef(0)
   // Reclaim recovery attempts inside the current window, and when that window
   // opened. Together these stop a reclaim/play bounce from spinning forever
   // (see RECLAIM_MAX_ATTEMPTS).
@@ -207,6 +210,15 @@ export function PlayerHost() {
         // intent and echoing a pause back). Genuine external transport (lock
         // screen) still comes through once the seek window closes.
         if (Date.now() < seekingUntil.current) return
+        // A reclaim reload is in flight: the reclaimed player's teardown surfaces
+        // as an ordinary isPlaying=false, and adopting it would overwrite the
+        // play intent the reload was issued with - the store flips to paused, the
+        // probe below then judges the recovery failed, and the user is left
+        // tapping play a second time ("reload did not take", HS-MOBILEAPP-2/4).
+        // Hold false states until the window closes; a true state is the real
+        // recovery confirmation and ends the window itself.
+        if (!e.isPlaying && Date.now() < reclaimIgnorePauseUntil.current) return
+        if (e.isPlaying) reclaimIgnorePauseUntil.current = 0
         // Keep our "last pushed" marker in step so the store update below doesn't
         // make sync() re-issue the very command native just reported.
         lastPlaying.current = e.isPlaying
@@ -281,6 +293,10 @@ export function PlayerHost() {
         breadcrumb('player', 'native lost the track; reloading from store')
         loadedKey.current = null
         lastPlaying.current = null
+        // While the reload buffers, ignore paused states from the old player's
+        // teardown so they can't cancel the re-armed play intent (see onState).
+        // Same span as the probe: a genuine failure still reports after it.
+        reclaimIgnorePauseUntil.current = now + RECLAIM_CONFIRM_MS
         // Re-run the store->native effect now rather than waiting for the next
         // store change; without a nudge, a stable store would leave it unloaded.
         syncNative.current?.()
