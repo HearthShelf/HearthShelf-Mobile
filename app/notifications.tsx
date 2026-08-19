@@ -3,6 +3,8 @@ import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { respondToClubInvite } from '@/api/clubs'
 import {
+  deleteAllNotifications,
+  deleteNotification,
   getNotifications,
   markAllNotificationsRead,
   markNotificationRead,
@@ -74,6 +76,29 @@ export default function NotificationsScreen() {
     }
   }
 
+  // Remove a row optimistically - a dismissal that has to wait for a round trip
+  // feels broken on a list you are clearing. On failure we reload, which puts
+  // the row back rather than leaving the UI claiming something is gone.
+  const dismiss = async (notification: HSNotification) => {
+    setNotifications((current) => (current ?? []).filter((n) => n.id !== notification.id))
+    if (!notification.readAt) setUnread((n) => Math.max(0, n - 1))
+    if (!(await deleteNotification(notification.id))) {
+      show("Couldn't dismiss that notification")
+      await load()
+    }
+  }
+
+  const clearAll = async () => {
+    const previous = notifications
+    setNotifications([])
+    setUnread(0)
+    if (!(await deleteAllNotifications())) {
+      setNotifications(previous)
+      show("Couldn't clear your notifications")
+      await load()
+    }
+  }
+
   const respond = async (notification: HSNotification, accept: boolean) => {
     const clubId = dataString(notification, 'clubId')
     const inviteId = dataString(notification, 'inviteId') || notification.entityId || ''
@@ -117,6 +142,17 @@ export default function NotificationsScreen() {
           >
             <AppText variant="caption" color={colors.accent}>
               Mark all read
+            </AppText>
+          </Touchable>
+        ) : notifications && notifications.length > 0 ? (
+          <Touchable
+            style={styles.markAll}
+            onPress={() => void clearAll()}
+            accessibilityRole="button"
+            accessibilityLabel="Clear all notifications"
+          >
+            <AppText variant="caption" color={colors.accent}>
+              Clear all
             </AppText>
           </Touchable>
         ) : null}
@@ -213,6 +249,18 @@ export default function NotificationsScreen() {
                     </AppText>
                   ) : null}
                 </View>
+                {/* A button rather than swipe-to-dismiss: invite rows already
+                    carry Accept/Decline, and a horizontal swipe over them is
+                    ambiguous about which action it means. */}
+                <Touchable
+                  style={styles.dismiss}
+                  onPress={() => void dismiss(notification)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Dismiss ${notification.title}`}
+                  hitSlop={8}
+                >
+                  <Icon name={icons.close} size={16} color={colors.textMuted} />
+                </Touchable>
               </Touchable>
             )
           })}
@@ -225,6 +273,10 @@ export default function NotificationsScreen() {
 
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
+    dismiss: {
+      paddingLeft: spacing.sm,
+      alignSelf: 'flex-start',
+    },
     header: {
       minHeight: 64,
       paddingHorizontal: spacing.lg,

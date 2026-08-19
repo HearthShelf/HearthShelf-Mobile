@@ -51,6 +51,31 @@ async function mark(path: string): Promise<boolean> {
   }
 }
 
+/** Shared DELETE helper - mirrors `mark`, which does the same for PUT. */
+async function remove(path: string): Promise<boolean> {
+  const session = getSession()
+  if (!session) return false
+  try {
+    const res = await fetch(`${session.serverUrl}${path}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${session.token}` },
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+/** Dismiss one notification. */
+export function deleteNotification(id: string): Promise<boolean> {
+  return remove(`/hs/notifications/${encodeURIComponent(id)}`)
+}
+
+/** Clear the whole inbox. */
+export function deleteAllNotifications(): Promise<boolean> {
+  return remove('/hs/notifications')
+}
+
 export function markNotificationRead(id: string): Promise<boolean> {
   return mark(`/hs/notifications/${encodeURIComponent(id)}/read`)
 }
