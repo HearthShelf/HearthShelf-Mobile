@@ -14,6 +14,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { ABSMediaProgress, ABSMeResponse } from '@hearthshelf/core'
 import { getMe, setItemFinished, resetItemProgress as resetItemProgressApi } from '@/api/abs'
+import { breadcrumb } from '@/lib/crashLog'
 import { getSettingsState } from '@/store/settings'
 import { isDownloaded, deleteDownload } from '@/player/downloads'
 import { finishDatePrompt } from '@/ui/FinishDatePrompt'
@@ -240,8 +241,28 @@ function keepFresherLocalPositions(
     const serverAt = typeof server.lastUpdate === 'number' ? server.lastUpdate : 0
     // Strictly newer only: equal stamps mean this row already came from the
     // server, and there is nothing local to protect.
-    if (localAt <= serverAt) continue
-    if (now - localAt > LOCAL_POSITION_MAX_AGE_MS) continue
+    if (localAt <= serverAt) {
+      // Progress-reset trace. This is the branch that DECLINES to protect a
+      // local position. If the server row is behind the playhead here, the
+      // refresh is about to move the book backwards - the reported
+      // "reset on unlock". Only logged when the move is backwards and
+      // material (>60s), so a normal refresh stays quiet.
+      const drop = local.currentTime - server.currentTime
+      if (drop > 60) {
+        breadcrumb(
+          'progress',
+          `server row ${Math.round(drop)}s BEHIND local for ${id.slice(0, 8)} but newer (srv+${serverAt - localAt}ms) - local position dropped`,
+        )
+      }
+      continue
+    }
+    if (now - localAt > LOCAL_POSITION_MAX_AGE_MS) {
+      breadcrumb(
+        'progress',
+        `local position for ${id.slice(0, 8)} too old (${Math.round((now - localAt) / 1000)}s) - server row kept`,
+      )
+      continue
+    }
     const duration = server.duration || local.duration || 0
     next.set(id, {
       ...server,

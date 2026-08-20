@@ -46,6 +46,7 @@ import { AppBlurTargetProvider } from '@/ui/BlurTarget'
 import { flushPriorCrash, mountCrashLifecycle } from '@/lib/crashReporter'
 import { mountHeartbeat } from '@/lib/heartbeat'
 import { mountUpdateCheck } from '@/lib/updateCheck'
+import { mountLifecycleTrace } from '@/player/lifecycleTrace'
 import { beginStartupTrace, startPhase, finishStartupTrace } from '@/lib/startupTrace'
 
 // Sentry. Runs first among the module-load side effects below so anything that
@@ -476,6 +477,11 @@ export default Sentry.wrap(function RootLayout() {
   // plane version check (toast / forced alert) on iOS. Checks at launch and on
   // each return to foreground; no-ops in dev builds.
   useEffect(() => mountUpdateCheck(), [])
+
+  // Lock/unlock + playhead tracing for the progress-reset and session-
+  // fragmentation reports. Read-only; writes breadcrumbs the feedback form
+  // uploads. See player/lifecycleTrace.ts.
+  useEffect(() => mountLifecycleTrace(), [])
 
   // Fonts are embedded natively at build time via the expo-font config plugin
   // (see app.config.js), so they are available synchronously at launch - no

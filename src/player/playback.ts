@@ -54,6 +54,10 @@ interface ActiveSession {
   title: string
   /** ms epoch this session started (for the live Recent Listens row). */
   startedAt: number
+  /** When the CURRENT ABS session id was opened. Differs from startedAt after a
+   *  404 reopen; tracing-only, so segment length is measurable without
+   *  disturbing the listen's true start date. */
+  segmentOpenedAt?: number
   /** Book position (seconds) at the last successful server sync. */
   lastSyncedTime: number
   /** Real listened-time (seconds) accrued since the last server sync. Grows
@@ -386,9 +390,18 @@ export async function playItemById(
   // a session behind and listening continued elsewhere. resolveResumePosition
   // reconciles it against the media-progress row and our own local writes.
   let startAt = session.currentTime > 0 ? session.currentTime : 0
+  const sessionSaid = startAt
   if (startAt === 0) startAt = resumePositionFor(progressFor(itemId))
   else startAt = resolveResumePosition(itemId, startAt)
+  const resolved = startAt
   startAt = preferLivePlayhead(itemId, startAt)
+  // Where a resume actually landed, and which input won. The reset reports are
+  // ultimately "this number was too small", so record the candidates that
+  // produced it.
+  breadcrumb(
+    'resume',
+    `start @${Math.round(startAt)}s (session said ${Math.round(sessionSaid)}s, resolved ${Math.round(resolved)}s, saved ${Math.round(progressFor(itemId)?.currentTime ?? 0)}s)`,
+  )
   const np: NowPlaying = {
     itemId,
     sessionId: session.id,
@@ -860,6 +873,14 @@ async function pushListened(a: ActiveSession, currentTime: number): Promise<bool
     // restarted or it expired) - retrying the same id can never succeed, so
     // reopen a fresh session and re-push against it instead of looping forever.
     if (e instanceof ABSRequestError && e.status === 404) {
+      // Session fragmentation trace: each 404 here ends one ABS session and
+      // opens another, which is what splits a night's listen into segments.
+      // Logs how long the dead session lasted so a regular cadence (token TTL,
+      // proxy idle timeout, ABS expiry) is visible as a repeating interval.
+      breadcrumb(
+        'session',
+        `404 on sync, reopening after ${Math.round((Date.now() - (a.segmentOpenedAt ?? a.startedAt)) / 1000)}s @${Math.round(currentTime)}s, ${timeListened}s unsynced`,
+      )
       return reopenAndResync(a, currentTime, timeListened)
     }
     // Connectivity blip: roll the unsynced time back so the next tick retries it,
@@ -898,7 +919,11 @@ async function reopenAndResync(
       reduceStreamingPending(a.itemId, timeListened)
       return true
     }
+    breadcrumb('session', `reopened as ${session.id.slice(0, 8)} @${Math.round(currentTime)}s`)
     a.sessionId = session.id
+    // NOT startedAt: that dates the listen (bankStreaming replays it as the
+    // session date after a relaunch). Segment timing gets its own field.
+    a.segmentOpenedAt = startedNow()
     await syncSession(session.id, {
       currentTime: Math.round(currentTime),
       timeListened,
