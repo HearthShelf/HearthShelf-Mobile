@@ -185,8 +185,17 @@ export async function setClubMembership(id: string, join: boolean): Promise<bool
   }
 }
 
-/** Owner: advance the club to a new current book (previous one gets finished). */
-export async function setClubCurrentBook(id: string, libraryItemId: string): Promise<boolean> {
+/**
+ * Owner: advance the club to a new current book. What happens to the outgoing
+ * book is the caller's choice: `finishPrevious` true files it under past reads
+ * (the club read it to the end), false sets it aside unfinished so it stays
+ * eligible to come back via requeueClubBook.
+ */
+export async function setClubCurrentBook(
+  id: string,
+  libraryItemId: string,
+  finishPrevious = true,
+): Promise<boolean> {
   const session = getSession()
   if (!session) return false
   const { serverUrl, token } = session
@@ -194,7 +203,43 @@ export async function setClubCurrentBook(id: string, libraryItemId: string): Pro
     const res = await fetch(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}/books`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ libraryItemId, finishPrevious }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+/** Owner: move a past read or a set aside book back into the up-next queue. The
+ *  server refuses (409) when the book is the club's current read. */
+export async function requeueClubBook(id: string, libraryItemId: string): Promise<boolean> {
+  const session = getSession()
+  if (!session) return false
+  const { serverUrl, token } = session
+  try {
+    const res = await fetch(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}/requeue`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ libraryItemId }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+/** Owner: rewrite the up-next order. Books the caller leaves out keep their
+ *  relative order at the back, so reordering from a stale list never drops one. */
+export async function reorderClubQueue(id: string, libraryItemIds: string[]): Promise<boolean> {
+  const session = getSession()
+  if (!session) return false
+  const { serverUrl, token } = session
+  try {
+    const res = await fetch(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}/queue-order`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ libraryItemIds }),
     })
     return res.ok
   } catch {

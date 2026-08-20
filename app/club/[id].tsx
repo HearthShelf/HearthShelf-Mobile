@@ -39,6 +39,8 @@ import {
   kickClubMember,
   setClubCurrentBook,
   removeClubQueued,
+  requeueClubBook,
+  reorderClubQueue,
   getClubInvitees,
   inviteClubUsers,
   revokeClubInvite,
@@ -70,7 +72,7 @@ import { Icon } from '@/ui/icons'
 import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { Toast, useToast } from '@/ui/Toast'
 import { haptics } from '@/ui/haptics'
-import { confirm } from '@/ui/confirm'
+import { choose, confirm } from '@/ui/confirm'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 
@@ -341,19 +343,67 @@ export default function ClubRoomScreen() {
     else show('Could not remove')
   }
 
-  // Owner: promote a queued book to be the current book now (finishes the old
-  // one), or drop it from the queue.
+  // Owner: promote a queued book to be the current book now, or drop it from the
+  // queue. Starting a book when one is already current has to say what happened
+  // to the outgoing book, so we ask rather than assume: finishing it files it
+  // under past reads, setting it aside keeps it eligible to come back later.
+  // Cancel stays a real third answer - it must not quietly pick a branch.
   const promoteQueued = async (book: HSClubBook) => {
     if (!detail || busy) return
+    const outgoing = detail.club.currentBook
+    let finishPrevious = true
+    if (outgoing && outgoing.libraryItemId !== book.libraryItemId) {
+      const answer = await choose({
+        title: `Start "${book.title || 'this book'}"?`,
+        message: `The club is currently reading "${outgoing.title || 'a book'}". What should happen to it?`,
+        options: [
+          { value: 'finished', label: 'We finished it' },
+          { value: 'aside', label: 'Set it aside' },
+        ],
+      })
+      if (!answer) return
+      finishPrevious = answer === 'finished'
+    }
     setBusy(true)
     haptics.success()
-    const ok = await setClubCurrentBook(detail.club.id, book.libraryItemId)
+    const ok = await setClubCurrentBook(detail.club.id, book.libraryItemId, finishPrevious)
     setBusy(false)
     if (ok) {
       show(`Now reading ${book.title || 'the next book'}`)
       setViewBookId(undefined)
       await load({ markRead: true })
     } else show('Could not start the book')
+  }
+
+  // Owner: put a past read or a set aside book back into the up-next queue.
+  const requeueBook = async (book: HSClubBook) => {
+    if (!detail || busy) return
+    setBusy(true)
+    const ok = await requeueClubBook(detail.club.id, book.libraryItemId)
+    setBusy(false)
+    if (ok) {
+      haptics.mode()
+      show(`"${book.title || 'Book'}" moved back to up next`)
+      setViewBookId(undefined)
+      await load()
+    } else show('Could not move that book. Start a different book first.')
+  }
+
+  // Owner: nudge a queued book one slot up or down. The whole order is sent, so
+  // the server never has to reconcile a partial list.
+  const moveQueued = async (index: number, delta: number) => {
+    if (!detail || busy) return
+    const target = index + delta
+    if (target < 0 || target >= detail.queue.length) return
+    const ids = detail.queue.map((b) => b.libraryItemId)
+    const [moved] = ids.splice(index, 1)
+    ids.splice(target, 0, moved)
+    setBusy(true)
+    haptics.select()
+    const ok = await reorderClubQueue(detail.club.id, ids)
+    setBusy(false)
+    if (ok) await load()
+    else show('Could not reorder the queue')
   }
 
   const dropQueued = async (book: HSClubBook) => {
@@ -539,7 +589,7 @@ export default function ClubRoomScreen() {
             >
               Up next
             </AppText>
-            {detail.queue.map((b) => (
+            {detail.queue.map((b, i) => (
               <View key={b.libraryItemId} style={styles.queueRow}>
                 <Touchable onPress={() => router.push(`/item/${b.libraryItemId}?from=${active}`)}>
                   <Cover
@@ -565,10 +615,39 @@ export default function ClubRoomScreen() {
                 </View>
                 {isOwner ? (
                   <>
+                    {detail.queue.length > 1 ? (
+                      <>
+                        <Touchable
+                          hitSlop={6}
+                          disabled={busy || i === 0}
+                          onPress={() => void moveQueued(i, -1)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Move ${b.title || 'book'} up`}
+                          style={{ padding: spacing.xs, opacity: i === 0 ? 0.3 : 1 }}
+                        >
+                          <Icon name={icons.arrowUpward} size={16} color={colors.textMuted} />
+                        </Touchable>
+                        <Touchable
+                          hitSlop={6}
+                          disabled={busy || i === detail.queue.length - 1}
+                          onPress={() => void moveQueued(i, 1)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Move ${b.title || 'book'} down`}
+                          style={{
+                            padding: spacing.xs,
+                            opacity: i === detail.queue.length - 1 ? 0.3 : 1,
+                          }}
+                        >
+                          <Icon name={icons.arrowDownward} size={16} color={colors.textMuted} />
+                        </Touchable>
+                      </>
+                    ) : null}
                     <Touchable
                       hitSlop={8}
                       disabled={busy}
                       onPress={() => void dropQueued(b)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${b.title || 'book'} from up next`}
                       style={{ padding: spacing.xs }}
                     >
                       <Icon name={icons.close} size={16} color={colors.textMuted} />
@@ -873,7 +952,12 @@ export default function ClubRoomScreen() {
           </AppText>
         ) : (
           detail.books.map((b) => {
-            const current = b.finishedAt == null
+            // A book leaves the current slot either finished or set aside, so
+            // "not finished" alone no longer means it is the current read.
+            const current =
+              b.libraryItemId === detail.club.currentBook?.libraryItemId ||
+              (b.finishedAt == null && b.abandonedAt == null)
+            const setAside = !current && b.abandonedAt != null
             const active =
               b.libraryItemId === (viewBookId ?? detail.club.currentBook?.libraryItemId)
             return (
@@ -897,9 +981,25 @@ export default function ClubRoomScreen() {
                     {b.title || 'Untitled'}
                   </AppText>
                   <AppText variant="caption" color={current ? colors.accent : colors.textMuted}>
-                    {current ? 'Reading now' : 'Finished'}
+                    {current ? 'Reading now' : setAside ? 'Set aside' : 'Finished'}
                   </AppText>
                 </View>
+                {isOwner && !current ? (
+                  <Touchable
+                    style={styles.requeueBtn}
+                    disabled={busy}
+                    onPress={() => {
+                      historySheetRef.current?.dismiss()
+                      void requeueBook(b)
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Move ${b.title || 'book'} back to up next`}
+                  >
+                    <AppText variant="caption" color={colors.textMuted}>
+                      Up next
+                    </AppText>
+                  </Touchable>
+                ) : null}
                 {active ? <Icon name={icons.checkCircle} size={18} color={colors.accent} /> : null}
               </Touchable>
             )

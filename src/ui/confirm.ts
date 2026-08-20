@@ -52,3 +52,53 @@ export function confirm({
     )
   })
 }
+
+export interface ChooseOption<T extends string> {
+  /** Value resolved when this button is pressed. */
+  value: T
+  /** Button label. */
+  label: string
+  /** Style the button as destructive (red on iOS). */
+  destructive?: boolean
+}
+
+export interface ChooseOptions<T extends string> {
+  title: string
+  message?: string
+  /** Buttons in display order. Keep to two or three - Alert stacks them
+   *  vertically on iOS once there are more than two, and Android caps at three. */
+  options: ChooseOption<T>[]
+  cancelLabel?: string
+}
+
+/**
+ * A confirm with more than two outcomes, for a fork where cancelling and
+ * choosing the second branch are genuinely different intents - "the club
+ * finished this book" vs "the club set it aside" vs "never mind". A plain
+ * confirm would have to conflate one of those with dismissal.
+ *
+ * Resolves the chosen option's `value`, or null if the user cancels/dismisses.
+ */
+export function choose<T extends string>({
+  title,
+  message,
+  options,
+  cancelLabel = 'Cancel',
+}: ChooseOptions<T>): Promise<T | null> {
+  haptics.warn()
+  return new Promise((resolve) => {
+    Alert.alert(
+      title,
+      message,
+      [
+        ...options.map((o) => ({
+          text: o.label,
+          style: o.destructive ? ('destructive' as const) : ('default' as const),
+          onPress: () => resolve(o.value),
+        })),
+        { text: cancelLabel, style: 'cancel' as const, onPress: () => resolve(null) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(null) },
+    )
+  })
+}
