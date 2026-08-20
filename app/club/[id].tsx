@@ -51,10 +51,11 @@ import { useMiniPlayerInset } from '@/ui/useContentInset'
 import { useSheetBackHandler } from '@/ui/useBackHandler'
 import { postNote, deleteNote } from '@/api/notes'
 import { getMeId } from '@/api/me'
-import { coverUrl, avatarUrl } from '@/api/abs'
+import { coverUrl, avatarUrl, getLibraries } from '@/api/abs'
 import { getState as getPlayerState, subscribe as subscribePlayer } from '@/player/store'
 import { NoteThread, stampLabel, type ChapterMark } from '@/social/NoteThread'
 import { SafeSwitch } from '@/social/NoteComposerControls'
+import { AddClubBooksSheet } from '@/social/AddClubBooksSheet'
 import {
   AppText,
   Avatar,
@@ -108,6 +109,9 @@ export default function ClubRoomScreen() {
   const miniInset = useMiniPlayerInset()
 
   const [detail, setDetail] = useState<HSClubDetail | null>(null)
+  // The library the add-books search runs against. Best-effort: a failure just
+  // leaves the sheet saying no library is available, rather than blocking the room.
+  const [libraryId, setLibraryId] = useState<string | null>(null)
   const [loadError, setLoadError] = useState(false)
   // Which book of the history is being viewed; undefined = the current book.
   const [viewBookId, setViewBookId] = useState<string | undefined>(undefined)
@@ -126,6 +130,7 @@ export default function ClubRoomScreen() {
 
   const membersSheetRef = useRef<SheetRef>(null)
   const historySheetRef = useRef<SheetRef>(null)
+  const addBooksSheetRef = useRef<SheetRef>(null)
   const ownerSheetRef = useRef<SheetRef>(null)
   const inviteSheetRef = useRef<SheetRef>(null)
 
@@ -196,6 +201,25 @@ export default function ClubRoomScreen() {
     },
     [id, viewBookId, position],
   )
+
+  // Resolve the book library once, for the add-books search. Owner-only surface,
+  // but resolving unconditionally keeps the effect free of role timing.
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const libs = await getLibraries()
+        if (cancelled) return
+        const primary = libs.find((l) => l.mediaType === 'book') ?? libs[0]
+        setLibraryId(primary?.id ?? null)
+      } catch {
+        // Offline or unreachable - the sheet reports no library.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     // New book view = recompute the divider boundary from its own unread count.
@@ -599,16 +623,34 @@ export default function ClubRoomScreen() {
         ) : null}
 
         {/* Up next queue. Everyone sees what's lined up; the owner can start the
-            next book now or remove one. Only shown on the current-book view. */}
-        {isCurrentView && detail.queue.length > 0 ? (
+            next book now, reorder, or remove one. Only shown on the current-book
+            view. The owner still gets the section when the queue is empty - that
+            is where "Add books" lives, so hiding it would hide the way in. */}
+        {isCurrentView && (detail.queue.length > 0 || isOwner) ? (
           <View style={styles.queueSection}>
-            <AppText
-              variant="eyebrow"
-              color={colors.textMuted}
-              style={{ marginBottom: spacing.sm }}
-            >
-              Up next
-            </AppText>
+            <View style={styles.queueHead}>
+              <AppText variant="eyebrow" color={colors.textMuted}>
+                Up next
+              </AppText>
+              {isOwner ? (
+                <Touchable
+                  style={styles.addBooksBtn}
+                  onPress={() => addBooksSheetRef.current?.present()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add books to up next"
+                >
+                  <Icon name={icons.add} size={14} color={colors.accent} />
+                  <AppText variant="caption" color={colors.accent}>
+                    Add books
+                  </AppText>
+                </Touchable>
+              ) : null}
+            </View>
+            {detail.queue.length === 0 ? (
+              <AppText variant="caption" color={colors.textMuted}>
+                Line up what the club reads next.
+              </AppText>
+            ) : null}
             {detail.queue.map((b, i) => (
               <View key={b.libraryItemId} style={styles.queueRow}>
                 <Touchable onPress={() => router.push(`/item/${b.libraryItemId}?from=${active}`)}>
@@ -1064,6 +1106,16 @@ export default function ClubRoomScreen() {
         )}
       </Sheet>
 
+      <AddClubBooksSheet
+        ref={addBooksSheetRef}
+        clubId={detail.club.id}
+        clubName={detail.club.name}
+        libraryId={libraryId}
+        existing={[...detail.books, ...detail.queue]}
+        onAdded={() => void load()}
+        onMessage={show}
+      />
+
       <Toast message={message} />
     </Screen>
   )
@@ -1300,6 +1352,14 @@ const makeStyles = (colors: Palette) =>
       paddingVertical: spacing.xl,
     },
     reachRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+    queueHead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.sm,
+      marginBottom: spacing.sm,
+    },
+    addBooksBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, padding: spacing.xs },
     chatSection: { paddingHorizontal: spacing.lg, marginTop: spacing.lg },
     teaser: {
       flexDirection: 'row',
