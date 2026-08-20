@@ -15,6 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { ABSMediaProgress, ABSMeResponse } from '@hearthshelf/core'
 import { getMe, setItemFinished, resetItemProgress as resetItemProgressApi } from '@/api/abs'
 import { breadcrumb } from '@/lib/crashLog'
+import { reportProgressDrop } from '@/store/progressResetReport'
 import { getSettingsState } from '@/store/settings'
 import { isDownloaded, deleteDownload } from '@/player/downloads'
 import { finishDatePrompt } from '@/ui/FinishDatePrompt'
@@ -254,6 +255,21 @@ function keepFresherLocalPositions(
           `server row ${Math.round(drop)}s BEHIND local for ${id.slice(0, 8)} but newer (srv+${serverAt - localAt}ms) - local position dropped`,
         )
       }
+      // Self-report a felt loss. Silent otherwise - see progressResetReport.ts.
+      // Only when the local row carries a real stamp: localAt === serverAt === 0
+      // means neither side is dated (a stub, or a row that never synced), so
+      // "the server is newer" is an artifact of the 0 fallback rather than a
+      // decision worth an event.
+      if (localAt > 0) {
+        reportProgressDrop({
+          itemId: id,
+          localSec: local.currentTime,
+          serverSec: server.currentTime,
+          localUpdatedAt: localAt,
+          serverUpdatedAt: serverAt,
+          branch: 'server_newer',
+        })
+      }
       continue
     }
     if (now - localAt > LOCAL_POSITION_MAX_AGE_MS) {
@@ -261,6 +277,14 @@ function keepFresherLocalPositions(
         'progress',
         `local position for ${id.slice(0, 8)} too old (${Math.round((now - localAt) / 1000)}s) - server row kept`,
       )
+      reportProgressDrop({
+        itemId: id,
+        localSec: local.currentTime,
+        serverSec: server.currentTime,
+        localUpdatedAt: localAt,
+        serverUpdatedAt: serverAt,
+        branch: 'local_too_old',
+      })
       continue
     }
     const duration = server.duration || local.duration || 0

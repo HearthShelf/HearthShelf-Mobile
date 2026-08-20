@@ -1249,6 +1249,13 @@ const makeStyles = (colors: Palette) =>
       borderRadius: radius.pill,
       backgroundColor: colors.accent,
     },
+    requeueBtn: {
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs,
+      borderRadius: radius.pill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
     chatSection: { paddingHorizontal: spacing.lg, marginTop: spacing.lg },
     teaser: {
       flexDirection: 'row',
