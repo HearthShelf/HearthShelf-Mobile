@@ -69,6 +69,13 @@ export default function NotificationsScreen() {
       router.push(await releaseNotificationRoute(asin, dataString(notification, 'signal')))
       return
     }
+    if (notification.kind === 'mention' && clubId) {
+      // ?note= scrolls the room to the comment and highlights it.
+      const noteId = dataString(notification, 'noteId')
+      const q = noteId ? `?note=${encodeURIComponent(noteId)}` : ''
+      router.push(`/club/${encodeURIComponent(clubId)}${q}`)
+      return
+    }
     if (notification.kind !== 'club_invite' && clubId) {
       router.push(`/club/${encodeURIComponent(clubId)}`)
     } else {
@@ -196,7 +203,9 @@ export default function NotificationsScreen() {
                         ? icons.people
                         : notification.kind === 'release'
                           ? icons.newRelease
-                          : icons.bell
+                          : notification.kind === 'mention'
+                            ? icons.mention
+                            : icons.bell
                     }
                     size={21}
                     color={colors.accent}

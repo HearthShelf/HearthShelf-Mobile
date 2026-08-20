@@ -19,14 +19,22 @@ function handleResponse(response: unknown): void {
   try {
     const data = (response as { notification?: { request?: { content?: { data?: unknown } } } })
       ?.notification?.request?.content?.data as
-      { kind?: string; asin?: string; signal?: string } | undefined
+      | { kind?: string; asin?: string; signal?: string; clubId?: string; noteId?: string }
+      | undefined
     if (data?.kind === 'release' && data.asin) {
       const asin = data.asin
       // An "it's in your library now" tap opens the owned book, not the
       // upcoming page (see releaseNotificationRoute). Async because resolving
       // the owned copy needs a lookup; it falls back to the upcoming page.
       void releaseNotificationRoute(asin, data.signal).then((path) => router.push(path))
-    } else if (data?.kind === 'club-invite') {
+    } else if (data?.kind === 'mention' && data.clubId) {
+      // ?note= scrolls the room to the comment and highlights it, so a mention
+      // lands on what was said rather than the top of the club.
+      const q = data.noteId ? `?note=${encodeURIComponent(data.noteId)}` : ''
+      router.push(`/club/${encodeURIComponent(data.clubId)}${q}`)
+    } else if (data?.kind === 'club_invite' || data?.kind === 'club-invite') {
+      // The server and the inbox both use 'club_invite'; the hyphenated form is
+      // only kept so a push already queued on a device still routes.
       router.push('/notifications')
     }
   } catch {

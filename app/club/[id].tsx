@@ -116,6 +116,11 @@ export default function ClubRoomScreen() {
   // Which book of the history is being viewed; undefined = the current book.
   const [viewBookId, setViewBookId] = useState<string | undefined>(undefined)
   const [body, setBody] = useState('')
+  // Members picked from the @ list. Collected on selection rather than re-parsed
+  // from the text, so a username with a space (or one that is a prefix of
+  // another) resolves to exactly who was chosen. Filtered against the final body
+  // on submit, so deleting the "@name" drops the mention with it.
+  const [mentionPicks, setMentionPicks] = useState<HSClubMember[]>([])
   const [replyTo, setReplyTo] = useState<HSNote | null>(null)
   const [safe, setSafe] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -248,6 +253,37 @@ export default function ClubRoomScreen() {
   const isOwner = detail?.members.some((m) => m.userId === meId && m.role === 'owner') ?? false
   const isMember = detail?.members.some((m) => m.userId === meId) ?? false
 
+  // The "@…" being typed at the end of the draft, if any. Anchored to the end
+  // rather than the caret: RN's TextInput needs explicit selection tracking for
+  // mid-string editing, and typing a mention as you go is the real case.
+  const mentionQuery = useMemo(() => {
+    const at = body.lastIndexOf('@')
+    if (at === -1) return null
+    const before = body[at - 1]
+    if (before !== undefined && !/\s/.test(before)) return null
+    const tail = body.slice(at + 1)
+    // Allow one space so "@ann marie" keeps matching, but stop at a second.
+    if (tail.includes('\n') || (tail.match(/ /g)?.length ?? 0) > 1) return null
+    return { at, text: tail }
+  }, [body])
+
+  const mentionMatches = useMemo(() => {
+    if (!mentionQuery || !isMember) return []
+    const q = mentionQuery.text.trim().toLowerCase()
+    return (detail?.members ?? [])
+      .filter((m) => m.userId && m.userId !== meId)
+      .filter((m) => !q || m.username.toLowerCase().includes(q))
+      .slice(0, 5)
+  }, [mentionQuery, detail?.members, meId, isMember])
+
+  const pickMention = (member: HSClubMember) => {
+    if (!mentionQuery) return
+    setBody(`${body.slice(0, mentionQuery.at)}@${member.username} `)
+    setMentionPicks((picked) =>
+      picked.some((p) => p.userId === member.userId) ? picked : [...picked, member],
+    )
+  }
+
   const submit = async () => {
     const text = body.trim()
     if (!text || !detail || !viewedBook || busy) return
@@ -265,10 +301,14 @@ export default function ClubRoomScreen() {
       // top-level opt-in; a reply can't be safe.
       safe: replyTo ? false : safe,
       body: text,
+      mentions: mentionPicks
+        .filter((m) => text.toLowerCase().includes(`@${m.username.toLowerCase()}`))
+        .map((m) => m.userId),
     })
     setBusy(false)
     if (created) {
       setBody('')
+      setMentionPicks([])
       setReplyTo(null)
       setSafe(false)
       setStampEnabled(true)
@@ -829,6 +869,28 @@ export default function ClubRoomScreen() {
                   </AppText>
                 </Touchable>
               )
+            ) : null}
+            {mentionMatches.length > 0 ? (
+              <View style={styles.mentionList}>
+                {mentionMatches.map((m) => (
+                  <Touchable
+                    key={m.userId}
+                    style={styles.mentionItem}
+                    onPress={() => pickMention(m)}
+                    accessibilityLabel={`Mention ${m.username}`}
+                  >
+                    <Avatar
+                      uri={avatarUrl(m.userId)}
+                      size={24}
+                      name={m.username}
+                      hue={coverHue(m.userId)}
+                    />
+                    <AppText variant="label" numberOfLines={1}>
+                      {m.username}
+                    </AppText>
+                  </Touchable>
+                ))}
+              </View>
             ) : null}
             <View style={styles.composerRow}>
               <TextInput
@@ -1394,6 +1456,21 @@ const makeStyles = (colors: Palette) =>
     },
     replyBanner: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
     composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm },
+    // Sits in the composer stack above the input (like the reply banner) rather
+    // than floating over it - an absolute overlay fights KeyboardAvoidingView.
+    mentionList: {
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      borderRadius: radius.row,
+      overflow: 'hidden',
+    },
+    mentionItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+    },
     input: {
       flex: 1,
       maxHeight: 120,

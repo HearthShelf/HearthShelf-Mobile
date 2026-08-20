@@ -1,7 +1,7 @@
 /**
  * Home countdown banner: "X days until <book>" for whatever the listener is
  * waiting on whose release falls within their countdown window (settings:
- * notifyCountdownWindowDays, default 14). Renders nothing when nothing
+ * notifyPrefs.countdownWindowDays, default 14). Renders nothing when nothing
  * qualifies, so it is safe to always mount.
  *
  * Fed from BOTH follow kinds: a book followed directly, and the next book of a
@@ -34,7 +34,7 @@ import { useTheme } from '@/ui/ThemeProvider'
 export function ReleaseCountdownBanner() {
   const router = useRouter()
   const { subscriptions } = useSyncExternalStore(subscribeSubscriptions, getSubscriptionsState)
-  const { notifyCountdownWindowDays } = useSyncExternalStore(subscribeSettings, getSettingsState)
+  const { notifyPrefs } = useSyncExternalStore(subscribeSettings, getSettingsState)
   const styles = useStyles()
   const { colors } = useTheme()
 
@@ -58,10 +58,10 @@ export function ReleaseCountdownBanner() {
     () =>
       bannerReleases(
         pendingReleases(subscriptions, nextBySeries, ignoredAsins ?? []),
-        { countdownWindowDays: notifyCountdownWindowDays },
+        { countdownWindowDays: notifyPrefs.countdownWindowDays },
         now,
       ),
-    [subscriptions, nextBySeries, ignoredAsins, notifyCountdownWindowDays, now],
+    [subscriptions, nextBySeries, ignoredAsins, notifyPrefs.countdownWindowDays, now],
   )
 
   if (upcoming.length === 0) return null

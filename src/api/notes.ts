@@ -63,6 +63,9 @@ export interface PostNoteParams {
    *  Top-level notes only; the server forces it false on replies. Default false. */
   safe?: boolean
   body: string
+  /** Club member ids the note @mentions. The server re-authorizes every id
+   *  against club membership, so this is a request, never a grant. */
+  mentions?: string[]
 }
 
 /** Post a note. Returns the created HSNote, or null on any failure (the caller
@@ -85,6 +88,7 @@ export async function postNote(params: PostNoteParams): Promise<HSNote | null> {
         ...(params.visibility ? { visibility: params.visibility } : {}),
         safe: params.safe ?? false,
         body: params.body,
+        ...(params.mentions?.length ? { mentions: params.mentions } : {}),
       }),
     })
     if (!res.ok) return null

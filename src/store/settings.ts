@@ -33,6 +33,7 @@ import type {
   QueueMode,
   AutoRulePref,
   HomeSectionPref,
+  HSNotifyPrefs,
   SettingChange,
   SettingValue,
 } from '@hearthshelf/core'
@@ -45,6 +46,7 @@ import {
   normalizeHomeSections,
   validateSetting,
   READER_DEFAULTS,
+  DEFAULT_NOTIFY_PREFS,
 } from '@hearthshelf/core'
 import type {
   ReaderTheme,
@@ -260,15 +262,11 @@ export interface SettingsState {
   clubsEnabled: boolean
   clubPlayerButton: boolean
 
-  // Release notifications (account). Follow an upcoming book/series and choose
-  // whether alerts land in the shared inbox/mobile push, email, or both.
-  notifyEnabled: boolean
-  notifyInApp: boolean
-  notifyEmail: boolean
-  notifyAvailableInLibrary: boolean
-  notifyOnReleaseDate: boolean
-  notifyReminderDaysBefore: number
-  notifyCountdownWindowDays: number
+  // Notifications (account). Delivery channels chosen once, then each category
+  // (release alerts, club mentions, club invites) opts in under them. See
+  // HSNotifyPrefs in @hearthshelf/core; read it through resolveChannels /
+  // shouldNotify, which own inheritance and the club-invite floor.
+  notifyPrefs: HSNotifyPrefs
 
   // Social pops (device). Show a toast when playback crosses a club note; can be
   // silenced on one device without leaving the club.
@@ -367,13 +365,7 @@ let state: SettingsState = {
   shareCurrentlyListening: null,
   clubsEnabled: true,
   clubPlayerButton: true,
-  notifyEnabled: true,
-  notifyInApp: true,
-  notifyEmail: false,
-  notifyAvailableInLibrary: true,
-  notifyOnReleaseDate: true,
-  notifyReminderDaysBefore: 3,
-  notifyCountdownWindowDays: 14,
+  notifyPrefs: DEFAULT_NOTIFY_PREFS,
   notePops: true,
   noteDefaultVisibility: 'public',
 

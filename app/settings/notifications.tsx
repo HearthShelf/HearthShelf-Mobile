@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { AppState, Linking, Pressable, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import { coverHue, countdownLabel } from '@hearthshelf/core'
-import type { HSSubscription } from '@hearthshelf/core'
+import type { HSSubscription, NotifyChannel, NotifyType } from '@hearthshelf/core'
 import { getSettingsState, subscribeSettings, setSetting } from '@/store/settings'
 import {
   getSubscriptionsState,
@@ -67,73 +67,108 @@ export default function NotificationsPanel() {
     return () => sub.remove()
   }, [checkPermission])
 
-  const master = s.notifyEnabled
+  const prefs = s.notifyPrefs
+  const release = prefs.types.release
   const seriesSubs = subscriptions.filter((x) => x.kind === 'series')
   const bookSubs = subscriptions.filter((x) => x.kind === 'book')
 
+  const setGlobal = (channel: NotifyChannel, on: boolean) => {
+    const global = { ...prefs.global, [channel]: on }
+    // Every channel off means "notify me nowhere", which reads as a bug rather
+    // than a choice - keep the tray on as the floor.
+    if (!global.inApp && !global.push && !global.email) global.inApp = true
+    setSetting('notifyPrefs', { ...prefs, global })
+  }
+
+  const setTypeEnabled = (type: NotifyType, on: boolean) => {
+    setSetting('notifyPrefs', {
+      ...prefs,
+      types: { ...prefs.types, [type]: { ...prefs.types[type], enabled: on } },
+    })
+  }
+
+  const setRelease = (patch: Partial<typeof release>) => {
+    setSetting('notifyPrefs', {
+      ...prefs,
+      types: { ...prefs.types, release: { ...release, ...patch } },
+    })
+  }
+
   return (
     <SettingsPanel>
+      <SettingsLabel>Delivery</SettingsLabel>
       <SettingsGroup>
         <SettingsRow
           icon={icons.bell}
-          title="Release notifications"
-          desc="Get told when a book you're waiting for is ready."
+          title="In app"
+          desc="Show alerts in your HearthShelf notification tray."
           control={
             <SettingsToggle
-              on={master}
-              onChange={(value) => {
-                setSetting('notifyEnabled', value)
-                if (value && !s.notifyInApp && !s.notifyEmail) setSetting('notifyInApp', true)
-              }}
+              on={prefs.global.inApp}
+              onChange={(value) => setGlobal('inApp', value)}
+            />
+          }
+        />
+        <SettingsRow
+          icon={icons.bell}
+          title="Mobile push"
+          desc="Alert this phone even when HearthShelf is closed."
+          control={
+            <SettingsToggle on={prefs.global.push} onChange={(value) => setGlobal('push', value)} />
+          }
+        />
+        <SettingsRow
+          icon={icons.bell}
+          title="Email"
+          desc="Send alerts to the email on your server account."
+          control={
+            <SettingsToggle
+              on={prefs.global.email}
+              onChange={(value) => setGlobal('email', value)}
             />
           }
           last
         />
       </SettingsGroup>
-      {master ? (
-        <>
-          <SettingsLabel>Delivery</SettingsLabel>
-          <SettingsGroup>
-            <SettingsRow
-              icon={icons.bell}
-              title="In app"
-              desc="Show in your HearthShelf inbox and alert this phone."
-              control={
-                <SettingsToggle
-                  on={s.notifyInApp}
-                  onChange={(value) => {
-                    setSetting('notifyInApp', value)
-                    if (!value && !s.notifyEmail) setSetting('notifyEnabled', false)
-                  }}
-                />
-              }
-            />
-            <SettingsRow
-              icon="email"
-              title="Email"
-              desc="Send alerts to the email on your server account."
-              control={
-                <SettingsToggle
-                  on={s.notifyEmail}
-                  onChange={(value) => {
-                    setSetting('notifyEmail', value)
-                    if (!value && !s.notifyInApp) setSetting('notifyEnabled', false)
-                  }}
-                />
-              }
-              last
-            />
-          </SettingsGroup>
 
-          <SettingsLabel>Alert me</SettingsLabel>
+      <SettingsLabel>Alert me about</SettingsLabel>
+      <SettingsGroup>
+        <SettingsRow
+          icon={icons.bell}
+          title="Release alerts"
+          desc="Books and series you follow."
+          control={
+            <SettingsToggle
+              on={release.enabled}
+              onChange={(value) => setTypeEnabled('release', value)}
+            />
+          }
+        />
+        <SettingsRow
+          icon={icons.bell}
+          title="Club mentions"
+          desc="When someone @mentions you in a book club discussion."
+          control={
+            <SettingsToggle
+              on={prefs.types.mention.enabled}
+              onChange={(value) => setTypeEnabled('mention', value)}
+            />
+          }
+          last
+        />
+      </SettingsGroup>
+
+      {release.enabled ? (
+        <>
+          <SettingsLabel>Release alerts</SettingsLabel>
           <SettingsGroup>
             <SettingsRow
               title="When it's in your library"
               desc="The moment a followed book is ready to play."
               control={
                 <SettingsToggle
-                  on={s.notifyAvailableInLibrary}
-                  onChange={(v) => setSetting('notifyAvailableInLibrary', v)}
+                  on={release.availableInLibrary}
+                  onChange={(v) => setRelease({ availableInLibrary: v })}
                 />
               }
             />
@@ -142,26 +177,26 @@ export default function NotificationsPanel() {
               desc="When Audible says it's out, even before it syncs in."
               control={
                 <SettingsToggle
-                  on={s.notifyOnReleaseDate}
-                  onChange={(v) => setSetting('notifyOnReleaseDate', v)}
+                  on={release.onReleaseDate}
+                  onChange={(v) => setRelease({ onReleaseDate: v })}
                 />
               }
             />
             <SettingsRow
               title="Early reminder"
               desc={
-                s.notifyReminderDaysBefore > 0
-                  ? `A heads-up ${s.notifyReminderDaysBefore} day${s.notifyReminderDaysBefore === 1 ? '' : 's'} before release.`
+                release.reminderDaysBefore > 0
+                  ? `A heads-up ${release.reminderDaysBefore} day${release.reminderDaysBefore === 1 ? '' : 's'} before release.`
                   : 'No early reminder.'
               }
               stacked
               last
             >
               <SettingsSlider
-                value={s.notifyReminderDaysBefore}
+                value={release.reminderDaysBefore}
                 min={0}
-                max={14}
-                onChange={(v) => setSetting('notifyReminderDaysBefore', v)}
+                max={30}
+                onChange={(v) => setRelease({ reminderDaysBefore: v })}
                 formatLabel={(v) => (v === 0 ? 'Off' : `${v}d`)}
               />
             </SettingsRow>
@@ -169,14 +204,14 @@ export default function NotificationsPanel() {
         </>
       ) : null}
 
-      {/* Actionable permission row: in-app on, but the OS denied it. */}
-      {master && s.notifyInApp && osDenied ? (
+      {/* Actionable permission row: push is on, but the OS denied it. */}
+      {prefs.global.push && osDenied ? (
         <Pressable onPress={() => void Linking.openSettings()}>
           <SettingsGroup>
             <SettingsRow
               icon="notifications-off"
               title="Turn on notifications for HearthShelf"
-              desc="Your phone is blocking alerts, so followed books won't buzz. Tap to open system settings."
+              desc="Your phone is blocking alerts, so nothing will buzz. Tap to open system settings."
               danger
               control={
                 <View style={{ paddingHorizontal: spacing.md, paddingVertical: 4 }}>
@@ -195,21 +230,21 @@ export default function NotificationsPanel() {
         <SettingsRow
           icon={icons.schedule}
           title="Countdown on Home"
-          desc={`Show a countdown starting ${s.notifyCountdownWindowDays} day${s.notifyCountdownWindowDays === 1 ? '' : 's'} before release.`}
+          desc={`Show a countdown starting ${prefs.countdownWindowDays} day${prefs.countdownWindowDays === 1 ? '' : 's'} before release.`}
           stacked
           last
         >
           <SettingsSlider
-            value={s.notifyCountdownWindowDays}
+            value={prefs.countdownWindowDays}
             min={1}
             max={30}
-            onChange={(v) => setSetting('notifyCountdownWindowDays', v)}
+            onChange={(v) => setSetting('notifyPrefs', { ...prefs, countdownWindowDays: v })}
             formatLabel={(v) => `${v}d`}
           />
         </SettingsRow>
       </SettingsGroup>
 
-      {!EAS_PROJECT_ID && master && s.notifyInApp ? (
+      {!EAS_PROJECT_ID && prefs.global.push ? (
         <AppText
           variant="caption"
           color={colors.textMuted}
