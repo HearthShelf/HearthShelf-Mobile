@@ -7,6 +7,7 @@
  * web app exactly.
  */
 import { CONTROL_PLANE_URL } from '@/lib/config'
+import { breadcrumb } from '@/lib/crashLog'
 import { fetchWithTimeout } from './fetchWithTimeout'
 
 // `forceRefresh` asks the caller to bypass Clerk's token cache and mint a fresh
@@ -60,8 +61,21 @@ async function request<T>(getToken: GetToken, path: string, init?: RequestInit):
   // stops their playback) via onSessionExpired. Only if the fresh token is ALSO
   // rejected do we hand off to the session-expired handler.
   if (res.status === 401) {
+    // Breadcrumbed because an eviction is otherwise INVISIBLE. Signing out
+    // clears the player too (handleSignOut -> clearTrack), so a wrong 401 reads
+    // to the listener as "it logged me out and reset my book" with nothing in
+    // the trail to say why - which is exactly how HS-MOBILEAPP-A arrived, with
+    // no auth activity recorded at all. The retry outcome is the diagnostic:
+    // a recovered 401 means the guard worked, while a pair of them means the
+    // refreshed token was genuinely rejected and the sign-out was correct.
+    breadcrumb('auth', `401 on ${path}; retrying with a refreshed token`)
     res = await requestOnce(getToken, path, init, true)
-    if (res.status === 401) onSessionExpired?.()
+    if (res.status === 401) {
+      breadcrumb('auth', `401 again on ${path} after refresh; signing out`)
+      onSessionExpired?.()
+    } else {
+      breadcrumb('auth', `refreshed token accepted on ${path}`)
+    }
   }
 
   if (!res.ok) {

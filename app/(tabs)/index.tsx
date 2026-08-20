@@ -32,6 +32,7 @@ import {
   isGeneratedRecShelf,
 } from '@hearthshelf/core'
 import { setSessionExpiredHandler } from '@/api/controlPlane'
+import { breadcrumb } from '@/lib/crashLog'
 import { registerLaunch } from '@/lib/whatsNew'
 import { WhatsNew } from '@/ui/WhatsNew'
 import { NotificationBell } from '@/notifications/NotificationBell'
@@ -264,6 +265,11 @@ export default function HomeScreen() {
 
   const handleSignOut = useCallback(
     async (reason?: 'expired') => {
+      // An 'expired' sign-out is involuntary and takes the loaded book with it
+      // (clearTrack below), so record it: to the listener this presents as
+      // "it logged me out and reset my place", with no other trace that it
+      // happened. See the 401 crumbs in controlPlane for the cause side.
+      breadcrumb('auth', `signing out (${reason ?? 'user'}); clearing the player`)
       clearTrack()
       clearAutoSession()
       stopQueueSync()
