@@ -6,7 +6,9 @@
  *
  * This is also where the per-book actions for an unowned book live, so they sit
  * in one tray the way an owned book's actions do:
- *   Follow  - tell me when it lands (an unreleased book can't be requested)
+ *   Follow  - tell me when it lands (an unreleased book can't be requested;
+ *             requesting a book already follows it, so this is for the ones
+ *             that can't be requested yet)
  *   Ignore  - it will never be an audiobook (an ebook-only side story, a print
  *             edition), so stop counting it against the series
  */
@@ -164,13 +166,16 @@ export const NotOwnedSheet = forwardRef<
                   ? `We'll add ${book.title} to your library when it's ready.`
                   : `Your request was sent - an admin needs to approve it before it downloads.`}
               </AppText>
+              <AppText variant="meta" color={colors.textMuted}>
+                We'll let you know when it lands in your library.
+              </AppText>
               <PrimaryButton label="Done" icon={icons.check} onPress={reset} />
             </>
           ) : phase === 'confirm' ? (
             <>
               <AppText variant="meta" color={colors.textMuted}>
                 ReadMeABook will search for it, download it, and add it to your library
-                automatically.
+                automatically, and we'll notify you when it arrives.
               </AppText>
               {error ? (
                 <AppText variant="meta" color={colors.destructive}>
