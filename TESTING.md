@@ -108,6 +108,14 @@ npm run deploy:native       # native (Kotlin / config-plugin) change - runs preb
 ```powershell
 $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
 $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot"
+# Debug builds have no R8 mapping and unstripped .so files this machine already
+# has, but the Sentry Gradle plugin still wires its upload tasks into
+# assembleDebug - and they are NOT gated on having a usable token. Without these
+# two, the build fails at :app:uploadSentryNativeSymbolsForDebug with "Auth token
+# is required" AFTER the APK has already assembled. scripts/deploy.ps1 sets them
+# for you; a bare gradlew invocation needs them here.
+$env:SENTRY_DISABLE_NATIVE_DEBUG_UPLOAD = "true"
+$env:SENTRY_DISABLE_AUTO_UPLOAD = "true"
 cd C:\code\HearthShelf\mobile\android
 .\gradlew.bat assembleDebug
 # APK -> android/app/build/outputs/apk/debug/app-debug.apk
