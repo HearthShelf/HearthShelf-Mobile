@@ -85,16 +85,20 @@ const MORE_TAB: TabDef = { name: 'more', label: 'More', icon: 'more' }
  */
 function useTabs(limit: number): TabDef[] {
   const navItems = useSyncExternalStore(subscribeSettings, () => getSettingsState().navItems)
+  const clubsEnabled = useSyncExternalStore(
+    subscribeSettings,
+    () => getSettingsState().clubsEnabled,
+  )
   const { activeRole } = useConnection()
   return useMemo(() => {
-    const { bar } = resolveNav(navItems, activeRole === 'admin')
+    const { bar } = resolveNav(navItems, activeRole === 'admin', clubsEnabled)
     const pinned = bar.slice(0, limit).map((m) => ({
       name: m.key,
       label: barLabel(m),
       icon: m.icon,
     }))
     return [...pinned, MORE_TAB]
-  }, [navItems, activeRole, limit])
+  }, [navItems, activeRole, clubsEnabled, limit])
 }
 
 /** How many pinned items each treatment shows before More. The floating pill is

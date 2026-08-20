@@ -17,7 +17,7 @@
  * Reached from My Settings > Navigation. Device-scoped, like the other nav
  * preferences: the arrangement belongs to the screen it's laid out on.
  */
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
@@ -26,6 +26,7 @@ import { getSettingsState, setNavItems, subscribeSettings } from '@/store/settin
 import {
   NAV_ITEMS,
   MAX_BAR_ITEMS,
+  navItemVisible,
   type NavItemKey,
   type NavItemPref,
   type NavPlacement,
@@ -107,15 +108,20 @@ export default function NavigationScreen() {
   const s = useSyncExternalStore(subscribeSettings, getSettingsState)
   const { activeRole } = useConnection()
 
-  // Admin-only destinations are not shown to everyone else, and are left
-  // untouched in the saved arrangement rather than being edited out of it.
-  const visible = useMemo(
-    () => s.navItems.filter((it) => !NAV_ITEMS[it.key]?.adminOnly || activeRole === 'admin'),
-    [s.navItems, activeRole],
+  // Destinations the role or the reader's settings rule out are not shown here,
+  // and are left untouched in the saved arrangement rather than being edited out
+  // of it - so turning book clubs back on restores the entry where it was.
+  const canReach = useCallback(
+    (it: NavItemPref) => {
+      const meta = NAV_ITEMS[it.key]
+      return meta ? navItemVisible(meta, activeRole === 'admin', s.clubsEnabled) : false
+    },
+    [activeRole, s.clubsEnabled],
   )
+  const visible = useMemo(() => s.navItems.filter(canReach), [s.navItems, canReach])
   const hiddenByRole = useMemo(
-    () => s.navItems.filter((it) => NAV_ITEMS[it.key]?.adminOnly && activeRole !== 'admin'),
-    [s.navItems, activeRole],
+    () => s.navItems.filter((it) => !canReach(it)),
+    [s.navItems, canReach],
   )
 
   // The list is driven from local state, not straight off the store. Feeding the

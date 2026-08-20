@@ -37,6 +37,7 @@ export type NavItemKey =
   | 'history'
   | 'collections'
   | 'playlists'
+  | 'clubs'
   | 'settings'
   | 'server-settings'
 
@@ -70,6 +71,8 @@ export interface NavItemMeta {
   group: 1 | 2 | 3
   /** True for destinations only an admin may reach. */
   adminOnly?: boolean
+  /** True for destinations that vanish when the reader turns book clubs off. */
+  clubsOnly?: boolean
 }
 
 /**
@@ -132,6 +135,15 @@ export const NAV_ITEMS: Record<NavItemKey, NavItemMeta> = {
     href: '/playlists',
     group: 2,
   },
+  clubs: {
+    key: 'clubs',
+    label: 'Book Clubs',
+    shortLabel: 'Clubs',
+    icon: 'club',
+    href: '/club',
+    group: 2,
+    clubsOnly: true,
+  },
   settings: { key: 'settings', label: 'Settings', icon: 'settings', href: '/settings', group: 3 },
   'server-settings': {
     key: 'server-settings',
@@ -154,22 +166,36 @@ export function barLabel(meta: NavItemMeta): string {
   return meta.shortLabel ?? meta.label
 }
 
+/** Whether a destination is reachable at all right now. A destination the role
+ *  or the reader's settings rule out is dropped from both lists rather than
+ *  shown as a dead end. */
+export function navItemVisible(
+  meta: NavItemMeta,
+  isAdmin: boolean,
+  clubsEnabled: boolean,
+): boolean {
+  if (meta.adminOnly && !isAdmin) return false
+  if (meta.clubsOnly && !clubsEnabled) return false
+  return true
+}
+
 /**
  * Resolve the arrangement into the two lists the UI renders, dropping anything
- * the current role can't reach. The bar is capped at MAX_BAR_ITEMS; any overflow
- * (a stale saved list, or a role change) falls into the menu rather than being
- * dropped, so a destination is never silently unreachable.
+ * the current role or settings can't reach. The bar is capped at MAX_BAR_ITEMS;
+ * any overflow (a stale saved list, or a role change) falls into the menu rather
+ * than being dropped, so a destination is never silently unreachable.
  */
 export function resolveNav(
   items: NavItemPref[],
   isAdmin: boolean,
+  clubsEnabled = true,
 ): { bar: NavItemMeta[]; menu: NavItemMeta[] } {
   const bar: NavItemMeta[] = []
   const menu: NavItemMeta[] = []
   for (const it of items) {
     const meta = NAV_ITEMS[it.key]
     if (!meta) continue
-    if (meta.adminOnly && !isAdmin) continue
+    if (!navItemVisible(meta, isAdmin, clubsEnabled)) continue
     if (it.placement === 'hidden') continue
     if (it.placement === 'bar' && bar.length < MAX_BAR_ITEMS) bar.push(meta)
     else menu.push(meta)

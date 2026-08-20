@@ -106,8 +106,12 @@ export function MoreMenu({ open, onClose }: { open: boolean; onClose: () => void
   // Rebuilt per render, so a role change, or a fresh arrangement from the
   // Navigation editor, is reflected the next time the menu opens.
   const navItems = useSyncExternalStore(subscribeSettings, () => getSettingsState().navItems)
+  const clubsEnabled = useSyncExternalStore(
+    subscribeSettings,
+    () => getSettingsState().clubsEnabled,
+  )
   const entries = useMemo<MenuEntry[]>(() => {
-    const { menu } = resolveNav(navItems, activeRole === 'admin')
+    const { menu } = resolveNav(navItems, activeRole === 'admin', clubsEnabled)
     return menu.map((m) => ({
       id: m.key,
       label: m.label,
@@ -115,7 +119,7 @@ export function MoreMenu({ open, onClose }: { open: boolean; onClose: () => void
       route: m.route,
       href: m.href,
     }))
-  }, [navItems, activeRole])
+  }, [navItems, activeRole, clubsEnabled])
 
   // The bubble has to outlive `open` going false so the close animation can run;
   // `mounted` drops it once that finishes.
