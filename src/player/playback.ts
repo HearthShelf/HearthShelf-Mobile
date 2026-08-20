@@ -43,6 +43,7 @@ import {
   syncStateClear,
   isOfflineMode,
   subscribeSeeked,
+  setLiveSession,
 } from './syncState'
 
 interface ActiveSession {
@@ -85,6 +86,21 @@ interface OfflineSession {
 }
 
 let active: ActiveSession | null = null
+
+/**
+ * Set (or clear) the active session, keeping the shared live-session registry in
+ * step.
+ *
+ * Every assignment to `active` goes through here. The registry is what stops the
+ * background flush task from closing the session the user is listening on (see
+ * syncState.setLiveSession), and a single missed clear would resurrect that bug
+ * in a way no type checks - so the two are mutated together in one place rather
+ * than at each of the five call sites.
+ */
+function setActiveSession(next: ActiveSession | null): void {
+  active = next
+  setLiveSession(next ? next.sessionId : null)
+}
 let offline: OfflineSession | null = null
 // The book position reported by the previous progress tick, used to derive real
 // listened-time (the gap between ticks while playing). Reset on load/seek.
@@ -421,7 +437,7 @@ export async function playItemById(
     `${itemId} online @${Math.round(startAt)}s (session ${session.currentTime > 0 ? 'had' : 'no'} pos, ${local ? 'local file' : 'stream'})`,
   )
 
-  active = {
+  const opened: ActiveSession = {
     sessionId: session.id,
     itemId,
     duration: session.duration,
@@ -431,7 +447,8 @@ export async function playItemById(
     pendingListened: 0,
     totalListened: 0,
   }
-  syncStateStartSession(itemId, active.startedAt, startAt)
+  setActiveSession(opened)
+  syncStateStartSession(itemId, opened.startedAt, startAt)
 
   // Auto-download the book you just started (and prefetch the queue), per prefs.
   applyAutoDownloads({
@@ -558,7 +575,7 @@ export async function ensureSessionForPlayback(): Promise<boolean> {
   }
 
   const pos = getState().position
-  active = {
+  const opened: ActiveSession = {
     sessionId: session.id,
     itemId: np.itemId,
     duration: session.duration || np.duration,
@@ -568,12 +585,13 @@ export async function ensureSessionForPlayback(): Promise<boolean> {
     pendingListened: 0,
     totalListened: 0,
   }
+  setActiveSession(opened)
   lastTickTime = null
   // Stamp the session onto the loaded track WITHOUT touching position: the audio
   // is already playing and PlayerHost keys its native load on itemId:sessionId,
   // so this must not look like a new track to load.
   attachSessionId(session.id)
-  syncStateStartSession(np.itemId, active.startedAt, pos)
+  syncStateStartSession(np.itemId, opened.startedAt, pos)
   breadcrumb('play', `${np.itemId} session opened on play @${Math.round(pos)}s`)
   return true
 }
@@ -645,7 +663,7 @@ async function playFromDownloadOffline(itemId: string, autoPlay = true): Promise
   }
   loadTrack(np, autoPlay)
   breadcrumb('play', `${itemId} offline @${Math.round(startAt)}s (${resumed ? 're-entry' : 'new'})`)
-  active = null
+  setActiveSession(null)
   if (resumed) {
     // Keep localId/startedAt/timeListening exactly as they were: the id keeps the
     // ledger writing to the one row, startedAt keeps the listen dated to when it
@@ -921,6 +939,9 @@ async function reopenAndResync(
     }
     breadcrumb('session', `reopened as ${session.id.slice(0, 8)} @${Math.round(currentTime)}s`)
     a.sessionId = session.id
+    // The live-session registry must follow the reopen, or the background flush
+    // task would treat the NEW session as an orphan and close it too.
+    if (a === active) setLiveSession(session.id)
     // NOT startedAt: that dates the listen (bankStreaming replays it as the
     // session date after a relaunch). Segment timing gets its own field.
     a.segmentOpenedAt = startedNow()
@@ -979,7 +1000,7 @@ async function safeClose(): Promise<void> {
   if (!active) return
   const { sessionId, itemId, duration, pendingListened } = active
   const pos = getState().position
-  active = null
+  setActiveSession(null)
   lastTickTime = null
   // The close below carries the final position, so a queued settle-push would be
   // both redundant and aimed at a session that no longer exists.

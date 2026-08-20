@@ -103,6 +103,35 @@ export function setOfflineMode(v: boolean): void {
   offlineMode = v
 }
 
+/**
+ * The ABS session id playback is currently listening on, or null.
+ *
+ * Lives here, in the leaf module both sides already import, because
+ * pendingProgress must be able to ask "is this session still alive?" while
+ * playback imports pendingProgress - a direct import back would cycle. Same
+ * reason subscribeSeeked lives here.
+ *
+ * Why anything needs to ask: every progress tick banks the LIVE session into the
+ * streaming buffer (playback.bankStreaming), so that buffer is not a graveyard -
+ * it holds the currently-playing session too. migrateOrphanStreaming drains the
+ * whole buffer and closes each entry's session server-side, which is correct at
+ * launch (nothing is playing yet) and catastrophic from the 15-minute background
+ * flush task: it closed the session the user was actively listening on, the next
+ * sync 404'd, and reopenAndResync started a new one - chopping one night's listen
+ * into 15-minute segments (HS-MOBILEAPP-5).
+ */
+let liveSessionId: string | null = null
+
+/** True when `id` is the session playback is listening on right now. */
+export function isLiveSession(id: string | undefined | null): boolean {
+  return !!id && id === liveSessionId
+}
+
+/** Set by playback as it opens/adopts/closes an ABS session. */
+export function setLiveSession(id: string | null): void {
+  liveSessionId = id
+}
+
 function set(patch: Partial<SyncState>): void {
   state = { ...state, ...patch }
   listeners.forEach((l) => l())

@@ -37,7 +37,7 @@ import {
 import { getSession } from '@/api/session'
 import { breadcrumb } from '@/lib/crashLog'
 import { progressFor } from '@/store/progress'
-import { notifyServerReached } from './syncState'
+import { notifyServerReached, isLiveSession } from './syncState'
 
 export interface PendingSessionState {
   /** Keyed by SESSION id (not book id) - one book can have many banked listens. */
@@ -395,9 +395,27 @@ export function clearStreamingPending(libraryItemId: string): void {
  */
 export async function migrateOrphanStreaming(): Promise<void> {
   if (!streaming.size) return
-  const orphans = [...streaming.entries()]
-  streaming = new Map()
+  // Every progress tick banks the LIVE session here (playback.bankStreaming), so
+  // this buffer is not a graveyard - during playback it holds the session the
+  // user is listening on RIGHT NOW. Draining it wholesale is correct at launch,
+  // where nothing is playing yet, and wrong from the 15-minute background flush
+  // task: it closed the live session server-side, the next sync 404'd, and
+  // reopenAndResync opened a fresh one - which is what chopped an overnight
+  // listen into 15-minute segments (HS-MOBILEAPP-5, and the `closed orphan`
+  // pairs in HS-MOBILEAPP-C).
+  //
+  // So the live session is left in the buffer, untouched: it is not orphaned,
+  // its listened-time is still accruing, and safeClose will deal with it when
+  // playback actually ends.
+  const orphans: [string, StreamingEntry][] = []
+  const stillLive = new Map<string, StreamingEntry>()
+  for (const [id, e] of streaming) {
+    if (isLiveSession(e.sessionId)) stillLive.set(id, e)
+    else orphans.push([id, e])
+  }
+  streaming = stillLive
   persistStreaming()
+  if (!orphans.length) return
 
   const now = Date.now()
   for (const [libraryItemId, e] of orphans) {
