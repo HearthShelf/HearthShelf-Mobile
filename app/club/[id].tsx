@@ -485,7 +485,10 @@ export default function ClubRoomScreen() {
   }
 
   const sortedMembers = sortMembersByProgress(detail.members)
-  const pastBooks = detail.books.filter((b) => b.finishedAt != null)
+  // Books that have left the current slot, whether the club finished them or set
+  // them aside. Both belong in the history sheet - a set aside book is the one
+  // most likely to be brought back, so hiding it would strand it.
+  const pastBooks = detail.books.filter((b) => b.finishedAt != null || b.abandonedAt != null)
   const isCurrentView = !viewBookId || viewBookId === detail.club.currentBook?.libraryItemId
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -555,10 +558,27 @@ export default function ClubRoomScreen() {
             ) : null}
           </View>
         ) : (
-          <View style={styles.bookHeader}>
-            <AppText variant="meta" color={colors.textMuted}>
-              This club hasn't picked a book yet.
+          // No book yet. Without an action this reads as a dead end, since books
+          // are added from a book's own page rather than from here.
+          <View style={styles.emptyBook}>
+            <Icon name={icons.book} size={28} color={colors.textFaint} />
+            <AppText variant="title">Choose your first read</AppText>
+            <AppText variant="meta" color={colors.textMuted} style={{ textAlign: 'center' }}>
+              {isOwner
+                ? 'Open a book in your library and add it to this club.'
+                : "The club owner hasn't picked a book yet."}
             </AppText>
+            {isOwner ? (
+              <Touchable
+                style={styles.queueStartBtn}
+                onPress={() => router.push(`/(tabs)/library`)}
+                accessibilityRole="button"
+              >
+                <AppText variant="caption" color={colors.onAccent}>
+                  Browse library
+                </AppText>
+              </Touchable>
+            ) : null}
           </View>
         )}
 
@@ -1100,6 +1120,23 @@ function MemberRace({ member, isMe }: { member: HSClubMember; isMe: boolean }) {
             ]}
           />
         </View>
+        {/* Where this member is across the club's whole book list, shown only
+            once there is more than one book for them to be somewhere in. */}
+        {member.reach && member.reach.total > 1 ? (
+          <View style={styles.reachRow}>
+            {member.reach.aheadOfClub ? (
+              <Icon name={icons.trending} size={12} color={colors.accent} />
+            ) : null}
+            <AppText
+              variant="caption"
+              color={member.reach.aheadOfClub ? colors.accent : colors.textFaint}
+              numberOfLines={1}
+            >
+              Book {member.reach.index + 1} of {member.reach.total}
+              {member.reach.title ? ` · ${member.reach.title}` : ''}
+            </AppText>
+          </View>
+        ) : null}
         {member.listeningNow ? (
           <AppText variant="caption" color={colors.accent} style={{ marginTop: 2 }}>
             Listening now
@@ -1256,6 +1293,13 @@ const makeStyles = (colors: Palette) =>
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.hairline,
     },
+    emptyBook: {
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.xl,
+    },
+    reachRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
     chatSection: { paddingHorizontal: spacing.lg, marginTop: spacing.lg },
     teaser: {
       flexDirection: 'row',
