@@ -309,7 +309,7 @@ function sanitizeChapters(raw: { title?: unknown; start: number; end: number }[]
 export async function playItemById(
   itemId: string,
   autoPlay = true,
-  opts: { armRecompute?: boolean } = {},
+  opts: { armRecompute?: boolean; resumeAt?: number } = {},
 ): Promise<void> {
   const local = localSourceFor(itemId)
   // A session object surviving into offline mode does NOT mean the server is
@@ -321,7 +321,8 @@ export async function playItemById(
   // Loading the player WITHOUT starting audio must not open an ABS session.
   //
   // The Now Playing tab calls this with autoPlay=false purely to render the
-  // player on your last book. It is the only caller that does. Opening a real
+  // player on your last book; the car handback does too, passing `resumeAt`
+  // because it knows a newer position than the saved row. Opening a real
   // play session there made the server record a listen for every cold start that
   // landed on the tab: rows reading "0:00 listened", and - because the session
   // opens at whatever position was resolved and closes at the real one - rows
@@ -332,7 +333,7 @@ export async function playItemById(
   // Deferred to the first play (see ensureSessionForPlayback), which every
   // transport path already funnels through.
   if (!autoPlay) {
-    await loadPreview(itemId, local, online)
+    await loadPreview(itemId, local, online, opts.resumeAt)
     return
   }
 
@@ -439,6 +440,16 @@ export async function playItemById(
  * book uses its local files; otherwise we fetch the stream URL from the item
  * detail (a read-only call that records nothing).
  *
+ * `resumeAt` overrides that saved row for callers that already KNOW where the
+ * listener is and whose knowledge is newer than the server's. The car handback
+ * is the case that matters: the car has been playing for minutes while the
+ * phone's media-progress row sat frozen at the handoff point, so resolving from
+ * the row rewinds the listener by however long the drive lasted. Seeking after
+ * the load cannot fix that - the seek races the fresh track's own load and, when
+ * it loses, leaves a pendingSeek that swallows every position tick until it
+ * times out (HS-MOBILEAPP-A: loaded at 33871s when the car had reached 34157s,
+ * then a 2-hour stretch of held ticks ending in "seek never landed").
+ *
  * Falls back to the offline path when the book is downloaded and the server is
  * unreachable, matching playItemById.
  */
@@ -446,6 +457,7 @@ async function loadPreview(
   itemId: string,
   local: ReturnType<typeof localSourceFor>,
   online: boolean,
+  resumeAt?: number,
 ): Promise<void> {
   // Close whatever was live: loading a different book into the player ends the
   // previous listen, exactly as the session-opening path does.
@@ -454,7 +466,7 @@ async function loadPreview(
   offline = null
   lastTickTime = null
 
-  const startAt = resumePositionFor(progressFor(itemId))
+  const startAt = resumeAt ?? resumePositionFor(progressFor(itemId))
 
   if (local) {
     const first = local.tracks[0]

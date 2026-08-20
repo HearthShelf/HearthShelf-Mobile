@@ -32,7 +32,6 @@ import {
   leaveCar,
   mirrorCarTrack,
   setRate,
-  requestSeek,
   currentChapter,
   setDeadTransportReporter,
 } from './store'
@@ -377,16 +376,22 @@ export function PlayerHost() {
             `handback${resume ? ` re-resolve ${resume.itemId} @${Math.round(resume.position)}s` : ' (phone track already loaded)'}`,
           )
           // The mirrored track's position is the only record of where the car
-          // got to; seed it so the reload resumes there rather than at the
-          // server's last synced spot.
+          // got to; hand it to the LOAD so the track resolves there rather than
+          // at the server's last synced spot.
+          //
+          // This used to seek after the load instead, which lost twice over: the
+          // track still loaded at the stale saved position (the phone's
+          // media-progress row froze at the handoff, so it was behind by the
+          // whole drive), and the seek then raced that fresh load. When the seek
+          // lost the race it left a pendingSeek that swallowed every position
+          // tick until it timed out - a listener re-loaded two hours behind with
+          // a scrubber that would not move (HS-MOBILEAPP-A).
           if (resume && Platform.OS === 'android') {
-            void playItemById(resume.itemId, false)
-              .then(() => requestSeek(resume.position))
-              .catch((err) => {
-                breadcrumb('car', `handback re-resolve failed: ${err?.message ?? 'unknown'}`)
-                reportCarHandbackFailure(resume.itemId, err)
-                showToast('Tap play to resume on your phone')
-              })
+            void playItemById(resume.itemId, false, { resumeAt: resume.position }).catch((err) => {
+              breadcrumb('car', `handback re-resolve failed: ${err?.message ?? 'unknown'}`)
+              reportCarHandbackFailure(resume.itemId, err)
+              showToast('Tap play to resume on your phone')
+            })
           }
           return
         }
