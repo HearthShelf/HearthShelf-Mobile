@@ -657,10 +657,67 @@ export default function ClubRoomScreen() {
               Where everyone is
             </AppText>
             {sortedMembers.map((m) => (
-              <MemberRace key={m.userId} member={m} isMe={m.userId === meId} />
+              <MemberRace
+                key={m.userId}
+                member={m}
+                isMe={m.userId === meId}
+                onOpenUser={(userId) =>
+                  router.push(`/user/${encodeURIComponent(userId)}?from=${active}`)
+                }
+              />
             ))}
           </View>
         ) : null}
+
+        {/* Chat thread. */}
+        <View
+          style={styles.chatSection}
+          onLayout={(e) => {
+            chatSectionYRef.current = e.nativeEvent.layout.y
+            tryScrollToDeepLink()
+          }}
+        >
+          <AppText variant="title" style={{ marginBottom: spacing.sm }}>
+            Discussion
+          </AppText>
+          {detail.notes.notes.length === 0 ? (
+            <AppText
+              variant="meta"
+              color={colors.textMuted}
+              style={{ paddingVertical: spacing.lg }}
+            >
+              No notes on this book yet.
+            </AppText>
+          ) : (
+            <NoteThread
+              notes={detail.notes.notes}
+              chapters={chapters}
+              meId={meId}
+              canModerate={isOwner}
+              highlightId={highlightId ?? undefined}
+              newSinceTs={newSinceTs}
+              onReply={isMember ? (n) => setReplyTo(n) : undefined}
+              onDelete={isMember ? removeNote : undefined}
+              onOpenUser={(userId) =>
+                router.push(`/user/${encodeURIComponent(userId)}?from=${active}`)
+              }
+              onNoteLayout={(_, y) => {
+                noteYRef.current = y
+                tryScrollToDeepLink()
+              }}
+            />
+          )}
+          {detail.notes.hiddenAhead > 0 ? (
+            <View style={styles.teaser}>
+              <Icon name={icons.notes} size={16} color={colors.textMuted} />
+              <AppText variant="caption" color={colors.textMuted}>
+                {detail.notes.hiddenAhead}{' '}
+                {detail.notes.hiddenAhead === 1 ? 'note is' : 'notes are'} ahead of you. Keep
+                listening to unlock them.
+              </AppText>
+            </View>
+          ) : null}
+        </View>
 
         {/* Up next queue. Everyone sees what's lined up; the owner can start the
             next book now, reorder, or remove one. Only shown on the current-book
@@ -769,53 +826,6 @@ export default function ClubRoomScreen() {
             ))}
           </View>
         ) : null}
-
-        {/* Chat thread. */}
-        <View
-          style={styles.chatSection}
-          onLayout={(e) => {
-            chatSectionYRef.current = e.nativeEvent.layout.y
-            tryScrollToDeepLink()
-          }}
-        >
-          <AppText variant="title" style={{ marginBottom: spacing.sm }}>
-            Discussion
-          </AppText>
-          {detail.notes.notes.length === 0 ? (
-            <AppText
-              variant="meta"
-              color={colors.textMuted}
-              style={{ paddingVertical: spacing.lg }}
-            >
-              No notes on this book yet.
-            </AppText>
-          ) : (
-            <NoteThread
-              notes={detail.notes.notes}
-              chapters={chapters}
-              meId={meId}
-              canModerate={isOwner}
-              highlightId={highlightId ?? undefined}
-              newSinceTs={newSinceTs}
-              onReply={isMember ? (n) => setReplyTo(n) : undefined}
-              onDelete={isMember ? removeNote : undefined}
-              onNoteLayout={(_, y) => {
-                noteYRef.current = y
-                tryScrollToDeepLink()
-              }}
-            />
-          )}
-          {detail.notes.hiddenAhead > 0 ? (
-            <View style={styles.teaser}>
-              <Icon name={icons.notes} size={16} color={colors.textMuted} />
-              <AppText variant="caption" color={colors.textMuted}>
-                {detail.notes.hiddenAhead}{' '}
-                {detail.notes.hiddenAhead === 1 ? 'note is' : 'notes are'} ahead of you. Keep
-                listening to unlock them.
-              </AppText>
-            </View>
-          ) : null}
-        </View>
       </ScrollView>
 
       {/* Composer - members only, on the current book. Wrapped so the keyboard
@@ -1185,7 +1195,15 @@ export default function ClubRoomScreen() {
 
 // ---- Member progress race row ----
 
-function MemberRace({ member, isMe }: { member: HSClubMember; isMe: boolean }) {
+function MemberRace({
+  member,
+  isMe,
+  onOpenUser,
+}: {
+  member: HSClubMember
+  isMe: boolean
+  onOpenUser?: (userId: string) => void
+}) {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const fraction =
@@ -1194,7 +1212,13 @@ function MemberRace({ member, isMe }: { member: HSClubMember; isMe: boolean }) {
       : 0
   const finished = member.isFinished === true
   return (
-    <View style={styles.raceRow}>
+    <Touchable
+      style={styles.raceRow}
+      disabled={!onOpenUser}
+      onPress={() => onOpenUser?.(member.userId)}
+      accessibilityRole={onOpenUser ? 'button' : undefined}
+      accessibilityLabel={onOpenUser ? `View ${member.username}'s profile` : undefined}
+    >
       <View>
         <Avatar
           uri={avatarUrl(member.userId)}
@@ -1257,7 +1281,7 @@ function MemberRace({ member, isMe }: { member: HSClubMember; isMe: boolean }) {
           </AppText>
         ) : null}
       </View>
-    </View>
+    </Touchable>
   )
 }
 

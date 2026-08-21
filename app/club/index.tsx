@@ -60,6 +60,13 @@ export default function MyClubsScreen() {
       void getClubs().then((res) => {
         if (cancelled) return
         const mine = res.enabled ? res.mine : []
+        // One club is not a list worth showing - go straight in. replace(), not
+        // push(), so Back leaves the club rather than bouncing to a list that
+        // would immediately redirect again.
+        if (mine.length === 1) {
+          router.replace(`/club/${encodeURIComponent(mine[0].id)}?from=${active}`)
+          return
+        }
         setClubs(mine)
         // Fetch each club's unread count in parallel. getClub() without a
         // bookId/position is a plain read and does NOT advance the read cursor
@@ -77,7 +84,7 @@ export default function MyClubsScreen() {
       return () => {
         cancelled = true
       }
-    }, []),
+    }, [router, active]),
   )
 
   const goToTab = useGoToTab()

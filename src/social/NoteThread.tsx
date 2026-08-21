@@ -9,7 +9,7 @@
  * same way.
  */
 import { useMemo } from 'react'
-import { StyleSheet, View, type LayoutChangeEvent } from 'react-native'
+import { Image, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
 import type { HSNote } from '@hearthshelf/core'
 import { coverHue, formatTimestamp } from '@hearthshelf/core'
 import { avatarUrl } from '@/api/abs'
@@ -33,6 +33,81 @@ export function stampLabel(timeSec: number | null, chapters: ChapterMark[]): str
   return ch?.title ? `${ch.title} · ${ts}` : ts
 }
 
+/** Escape a username for use inside a RegExp alternation. */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * A note body with its @mentions picked out. Splits on the exact usernames the
+ * server recorded (note.mentions) rather than guessing at "@word", so a name
+ * containing a space highlights as one mention and a stray "@" in prose does not.
+ *
+ * Each mention renders as the person's avatar followed by their name - the
+ * avatar stands in for the "@", which is a sigil the picker needed but a reader
+ * does not. Tapping opens their profile when the caller supports it.
+ */
+function NoteBody({ note, onOpenUser }: { note: HSNote; onOpenUser?: (userId: string) => void }) {
+  const colors = useColors()
+  const styles = useStyles()
+  const parts = useMemo(() => {
+    const mentions = (note.mentions ?? []).filter((m) => m.username)
+    if (mentions.length === 0) return null
+    // Longest first so "@ann marie" wins over "@ann".
+    const ordered = [...mentions].sort((a, b) => b.username.length - a.username.length)
+    const byName = new Map(ordered.map((m) => [m.username.toLowerCase(), m.userId]))
+    const pattern = new RegExp(
+      `@(?:${ordered.map((m) => escapeRegExp(m.username)).join('|')})`,
+      'gi',
+    )
+    const out: Array<string | { name: string; userId: string }> = []
+    let last = 0
+    for (const match of note.body.matchAll(pattern)) {
+      const at = match.index ?? 0
+      if (at > last) out.push(note.body.slice(last, at))
+      const name = match[0].slice(1)
+      out.push({ name, userId: byName.get(name.toLowerCase()) ?? '' })
+      last = at + match[0].length
+    }
+    if (last < note.body.length) out.push(note.body.slice(last))
+    return out
+  }, [note.body, note.mentions])
+
+  if (!parts) {
+    return (
+      <AppText variant="meta" style={{ marginTop: 2 }}>
+        {note.body}
+      </AppText>
+    )
+  }
+  return (
+    <AppText variant="meta" style={{ marginTop: 2 }}>
+      {parts.map((part, i) =>
+        typeof part === 'string' ? (
+          part
+        ) : (
+          // The avatar replaces the "@" sigil - it was only ever there for the
+          // picker. Rendered as an inline Image rather than the Avatar view, so
+          // it flows inside the text run and wraps with it on both platforms.
+          <Text
+            key={i}
+            style={styles.mention}
+            onPress={part.userId && onOpenUser ? () => onOpenUser(part.userId) : undefined}
+            suppressHighlighting={!part.userId || !onOpenUser}
+          >
+            <Image
+              source={{ uri: avatarUrl(part.userId) }}
+              style={styles.mentionAvatar}
+              accessibilityIgnoresInvertColors
+            />
+            {` ${part.name}`}
+          </Text>
+        ),
+      )}
+    </AppText>
+  )
+}
+
 function NoteBubble({
   note,
   chapters,
@@ -42,6 +117,7 @@ function NoteBubble({
   highlighted,
   onReply,
   onDelete,
+  onOpenUser,
   onLayout,
 }: {
   note: HSNote
@@ -54,6 +130,8 @@ function NoteBubble({
   highlighted?: boolean
   onReply?: (note: HSNote) => void
   onDelete?: (note: HSNote) => void
+  /** Open a reader's profile. Omitted by callers with nowhere to send them. */
+  onOpenUser?: (userId: string) => void
   /** Fires with this note's row layout so the parent can scroll it into view. */
   onLayout?: (e: LayoutChangeEvent) => void
 }) {
@@ -67,17 +145,30 @@ function NoteBubble({
       style={[styles.bubble, isReply && styles.replyBubble, highlighted && styles.highlighted]}
       onLayout={onLayout}
     >
-      <Avatar
-        uri={avatarUrl(note.userId)}
-        size={30}
-        name={note.username}
-        hue={coverHue(note.userId)}
-      />
+      <Touchable
+        disabled={!onOpenUser || !note.userId}
+        onPress={() => onOpenUser?.(note.userId)}
+        accessibilityRole={onOpenUser ? 'button' : undefined}
+        accessibilityLabel={onOpenUser ? `View ${note.username || 'reader'}'s profile` : undefined}
+      >
+        <Avatar
+          uri={avatarUrl(note.userId)}
+          size={30}
+          name={note.username}
+          hue={coverHue(note.userId)}
+        />
+      </Touchable>
       <View style={{ flex: 1, minWidth: 0 }}>
         <View style={styles.metaRow}>
-          <AppText variant="label" color={mine ? colors.accent : colors.text} numberOfLines={1}>
-            {note.username || 'Someone'}
-          </AppText>
+          <Touchable
+            disabled={!onOpenUser || !note.userId}
+            onPress={() => onOpenUser?.(note.userId)}
+            accessibilityRole={onOpenUser ? 'button' : undefined}
+          >
+            <AppText variant="label" color={mine ? colors.accent : colors.text} numberOfLines={1}>
+              {note.username || 'Someone'}
+            </AppText>
+          </Touchable>
           {stamp ? (
             <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
               {stamp}
@@ -102,9 +193,7 @@ function NoteBubble({
             </View>
           ) : null}
         </View>
-        <AppText variant="meta" style={{ marginTop: 2 }}>
-          {note.body}
-        </AppText>
+        <NoteBody note={note} onOpenUser={onOpenUser} />
         <View style={styles.actionsRow}>
           {onReply && !isReply ? (
             <Touchable hitSlop={6} onPress={() => onReply(note)}>
@@ -135,6 +224,7 @@ export function NoteThread({
   highlightId,
   onReply,
   onDelete,
+  onOpenUser,
   onNoteLayout,
   newSinceTs,
 }: {
@@ -146,6 +236,9 @@ export function NoteThread({
   highlightId?: string
   onReply?: (note: HSNote) => void
   onDelete?: (note: HSNote) => void
+  /** Open a reader's profile from their name, avatar, or an @mention of them.
+   *  Omitted by callers with nowhere to send them. */
+  onOpenUser?: (userId: string) => void
   /** Fires the highlighted note's y within the thread so the caller can scroll. */
   onNoteLayout?: (id: string, y: number) => void
   /** When set, a "new since last visit" divider renders before the first
@@ -211,6 +304,7 @@ export function NoteThread({
               highlighted={n.id === highlightId}
               onReply={onReply}
               onDelete={onDelete}
+              onOpenUser={onOpenUser}
             />
             {replies.map((r) => (
               <NoteBubble
@@ -222,6 +316,7 @@ export function NoteThread({
                 canModerate={canModerate}
                 highlighted={r.id === highlightId}
                 onDelete={onDelete}
+                onOpenUser={onOpenUser}
               />
             ))}
           </View>
@@ -262,6 +357,10 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.fill,
     },
     chipSafe: { backgroundColor: colors.accentWash },
+    mention: { color: colors.accent, fontWeight: '600' },
+    // Sized to sit on the text baseline rather than the cap height, so the row
+    // does not grow taller than an unmentioned line.
+    mentionAvatar: { width: 14, height: 14, borderRadius: 7 },
     actionsRow: {
       flexDirection: 'row',
       alignItems: 'center',
