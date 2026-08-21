@@ -154,6 +154,28 @@ export default function NotificationsPanel() {
               onChange={(value) => setTypeEnabled('mention', value)}
             />
           }
+        />
+        <SettingsRow
+          icon={icons.bell}
+          title="Comment reactions"
+          desc="When someone reacts to one of your club comments."
+          control={
+            <SettingsToggle
+              on={prefs.types.reaction.enabled}
+              onChange={(value) => setTypeEnabled('reaction', value)}
+            />
+          }
+        />
+        <SettingsRow
+          icon={icons.bell}
+          title="Comment replies"
+          desc="When someone replies to one of your club comments."
+          control={
+            <SettingsToggle
+              on={prefs.types.reply.enabled}
+              onChange={(value) => setTypeEnabled('reply', value)}
+            />
+          }
           last
         />
       </SettingsGroup>

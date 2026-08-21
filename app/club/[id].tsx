@@ -28,8 +28,19 @@ import {
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
-import type { HSClubBook, HSClubDetail, HSClubMember, HSNote } from '@hearthshelf/core'
-import { coverHue, formatTimestamp, sortMembersByProgress } from '@hearthshelf/core'
+import type {
+  HSClubBook,
+  HSClubDetail,
+  HSClubMember,
+  HSNote,
+  NoteReactionKind,
+} from '@hearthshelf/core'
+import {
+  coverHue,
+  formatTimestamp,
+  sortMembersByProgress,
+  NOTE_REACTION_KINDS,
+} from '@hearthshelf/core'
 import {
   getClub,
   setClubMembership,
@@ -49,11 +60,18 @@ import {
 import { holdClubPolling } from '@/player/clubSync'
 import { useMiniPlayerInset } from '@/ui/useContentInset'
 import { useSheetBackHandler } from '@/ui/useBackHandler'
-import { postNote, deleteNote } from '@/api/notes'
+import { postNote, deleteNote, reactToNote } from '@/api/notes'
 import { getMeId } from '@/api/me'
+import * as Clipboard from 'expo-clipboard'
 import { coverUrl, avatarUrl, getLibraries } from '@/api/abs'
 import { getState as getPlayerState, subscribe as subscribePlayer } from '@/player/store'
-import { NoteThread, stampLabel, type ChapterMark } from '@/social/NoteThread'
+import {
+  NoteThread,
+  reactionGlyph,
+  reactionLabel,
+  stampLabel,
+  type ChapterMark,
+} from '@/social/NoteThread'
 import { SafeSwitch } from '@/social/NoteComposerControls'
 import { AddClubBooksSheet } from '@/social/AddClubBooksSheet'
 import {
@@ -136,6 +154,9 @@ export default function ClubRoomScreen() {
   const membersSheetRef = useRef<SheetRef>(null)
   const historySheetRef = useRef<SheetRef>(null)
   const addBooksSheetRef = useRef<SheetRef>(null)
+  const noteActionsRef = useRef<SheetRef>(null)
+  // The note a long-press opened the action menu for.
+  const [actionNote, setActionNote] = useState<HSNote | null>(null)
   const ownerSheetRef = useRef<SheetRef>(null)
   const inviteSheetRef = useRef<SheetRef>(null)
 
@@ -316,6 +337,35 @@ export default function ClubRoomScreen() {
     } else {
       show('Could not post')
     }
+  }
+
+  // Toggle one reaction. The tallies are re-read from the server response rather
+  // than incremented locally, so a stale count converges on the truth.
+  const toggleReaction = async (note: HSNote, kind: NoteReactionKind, on: boolean) => {
+    if (!isMember) return
+    haptics.select()
+    const reactions = await reactToNote(note.id, kind, on)
+    if (!reactions) {
+      show('Could not save that reaction')
+      return
+    }
+    setDetail((prev) =>
+      prev
+        ? {
+            ...prev,
+            notes: {
+              ...prev.notes,
+              notes: prev.notes.notes.map((n) => (n.id === note.id ? { ...n, reactions } : n)),
+            },
+          }
+        : prev,
+    )
+  }
+
+  const openNoteActions = (note: HSNote) => {
+    haptics.select()
+    setActionNote(note)
+    noteActionsRef.current?.present()
   }
 
   const removeNote = async (note: HSNote) => {
@@ -701,6 +751,8 @@ export default function ClubRoomScreen() {
               onOpenUser={(userId) =>
                 router.push(`/user/${encodeURIComponent(userId)}?from=${active}`)
               }
+              onReact={isMember ? (n, kind, on) => void toggleReaction(n, kind, on) : undefined}
+              onLongPress={openNoteActions}
               onNoteLayout={(_, y) => {
                 noteYRef.current = y
                 tryScrollToDeepLink()
@@ -1188,6 +1240,83 @@ export default function ClubRoomScreen() {
         onMessage={show}
       />
 
+      {/* Long-press actions for one comment. Reactions live here rather than as
+          a permanent row of buttons under every note, which would crowd the
+          thread; the tallies under a note stay tappable for a quick re-toggle. */}
+      <Sheet ref={noteActionsRef} title={actionNote?.username || 'Comment'}>
+        {actionNote ? (
+          <>
+            <View style={styles.reactPickRow}>
+              {NOTE_REACTION_KINDS.map((kind: NoteReactionKind) => {
+                const mine = actionNote.reactions?.some((r) => r.kind === kind && r.mine) ?? false
+                return (
+                  <Touchable
+                    key={kind}
+                    style={[styles.reactPick, mine && styles.reactPickOn]}
+                    disabled={!isMember}
+                    onPress={() => {
+                      noteActionsRef.current?.dismiss()
+                      void toggleReaction(actionNote, kind, !mine)
+                    }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: mine }}
+                    accessibilityLabel={reactionLabel(kind)}
+                  >
+                    <AppText variant="title">{reactionGlyph(kind)}</AppText>
+                  </Touchable>
+                )
+              })}
+            </View>
+            {isMember && !actionNote.parentId ? (
+              <Touchable
+                style={styles.sheetAction}
+                onPress={() => {
+                  noteActionsRef.current?.dismiss()
+                  setReplyTo(actionNote)
+                }}
+              >
+                <Icon name={icons.chat} size={20} color={colors.textMuted} />
+                <AppText variant="body">Reply</AppText>
+              </Touchable>
+            ) : null}
+            <Touchable
+              style={styles.sheetAction}
+              onPress={() => {
+                noteActionsRef.current?.dismiss()
+                void Clipboard.setStringAsync(actionNote.body).then(() => show('Comment copied'))
+              }}
+            >
+              <Icon name={icons.notes} size={20} color={colors.textMuted} />
+              <AppText variant="body">Copy text</AppText>
+            </Touchable>
+            <Touchable
+              style={styles.sheetAction}
+              onPress={() => {
+                noteActionsRef.current?.dismiss()
+                router.push(`/user/${encodeURIComponent(actionNote.userId)}?from=${active}`)
+              }}
+            >
+              <Icon name={icons.person} size={20} color={colors.textMuted} />
+              <AppText variant="body">View profile</AppText>
+            </Touchable>
+            {actionNote.userId === meId || isOwner ? (
+              <Touchable
+                style={styles.sheetAction}
+                onPress={() => {
+                  noteActionsRef.current?.dismiss()
+                  void removeNote(actionNote)
+                }}
+              >
+                <Icon name={icons.delete} size={20} color={colors.destructive} />
+                <AppText variant="body" color={colors.destructive}>
+                  Delete
+                </AppText>
+              </Touchable>
+            ) : null}
+          </>
+        ) : null}
+      </Sheet>
+
       <Toast message={message} />
     </Screen>
   )
@@ -1438,6 +1567,21 @@ const makeStyles = (colors: Palette) =>
       paddingVertical: spacing.xl,
     },
     reachRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+    reactPickRow: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: spacing.md,
+      paddingBottom: spacing.sm,
+    },
+    reactPick: {
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radius.pill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      backgroundColor: colors.fill,
+    },
+    reactPickOn: { borderColor: colors.accent, backgroundColor: colors.accentWash },
     queueHead: {
       flexDirection: 'row',
       alignItems: 'center',

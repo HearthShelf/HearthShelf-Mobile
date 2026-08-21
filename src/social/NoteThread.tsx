@@ -9,13 +9,13 @@
  * same way.
  */
 import { useMemo } from 'react'
-import { Image, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
-import type { HSNote } from '@hearthshelf/core'
+import { Image, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
+import type { HSNote, NoteReactionKind } from '@hearthshelf/core'
 import { coverHue, formatTimestamp } from '@hearthshelf/core'
 import { avatarUrl } from '@/api/abs'
 import { AppText, Avatar, IconButton, Touchable } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
-import { spacing, type Palette } from '@/ui/theme'
+import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 
 export interface ChapterMark {
@@ -31,6 +31,28 @@ export function stampLabel(timeSec: number | null, chapters: ChapterMark[]): str
   const ch = chapters.find((c) => timeSec >= c.start && timeSec < c.end)
   const ts = formatTimestamp(timeSec)
   return ch?.title ? `${ch.title} · ${ts}` : ts
+}
+
+/**
+ * How each reaction kind is drawn and described.
+ *
+ * Keyed loosely rather than by an exhaustive Record<NoteReactionKind, ...>: the
+ * server stores any well-formed kind, so a newer client's reaction can reach an
+ * older build. Those fall back to a neutral glyph and still show their count,
+ * which is the whole point of storing kinds as strings.
+ */
+const REACTIONS: Record<string, { glyph: string; label: string }> = {
+  up: { glyph: '\u{1F44D}', label: 'thumbs up' },
+  heart: { glyph: '\u{2764}\u{FE0F}', label: 'heart' },
+  laugh: { glyph: '\u{1F602}', label: 'laugh' },
+}
+
+export function reactionGlyph(kind: string): string {
+  return REACTIONS[kind]?.glyph ?? '\u{2B50}'
+}
+
+export function reactionLabel(kind: string): string {
+  return REACTIONS[kind]?.label ?? kind
 }
 
 /** Escape a username for use inside a RegExp alternation. */
@@ -118,6 +140,8 @@ function NoteBubble({
   onReply,
   onDelete,
   onOpenUser,
+  onReact,
+  onLongPress,
   onLayout,
 }: {
   note: HSNote
@@ -132,6 +156,10 @@ function NoteBubble({
   onDelete?: (note: HSNote) => void
   /** Open a reader's profile. Omitted by callers with nowhere to send them. */
   onOpenUser?: (userId: string) => void
+  /** Toggle one reaction kind. Omitted where reacting isn't offered. */
+  onReact?: (note: HSNote, kind: NoteReactionKind, on: boolean) => void
+  /** Long-press this note (opens the caller's action menu). */
+  onLongPress?: (note: HSNote) => void
   /** Fires with this note's row layout so the parent can scroll it into view. */
   onLayout?: (e: LayoutChangeEvent) => void
 }) {
@@ -141,9 +169,13 @@ function NoteBubble({
   const stamp = stampLabel(note.timeSec, chapters)
   const canDelete = (mine || canModerate) && !!onDelete
   return (
-    <View
+    <Pressable
       style={[styles.bubble, isReply && styles.replyBubble, highlighted && styles.highlighted]}
       onLayout={onLayout}
+      disabled={!onLongPress}
+      onLongPress={() => onLongPress?.(note)}
+      delayLongPress={300}
+      accessibilityHint={onLongPress ? 'Long press for comment actions' : undefined}
     >
       <Touchable
         disabled={!onOpenUser || !note.userId}
@@ -211,8 +243,30 @@ function NoteBubble({
             />
           ) : null}
         </View>
+        {/* Tallies for every kind that has at least one reactor. A kind this
+            build has no icon for still shows its count, so a reaction added by
+            a newer client is never invisible here. */}
+        {note.reactions?.length ? (
+          <View style={styles.reactRow}>
+            {note.reactions.map((r) => (
+              <Touchable
+                key={r.kind}
+                style={[styles.reactChip, r.mine && styles.reactChipOn]}
+                disabled={!onReact}
+                onPress={() => onReact?.(note, r.kind, !r.mine)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: r.mine }}
+                accessibilityLabel={`${r.count} ${reactionLabel(r.kind)}${r.mine ? ', including you' : ''}`}
+              >
+                <AppText variant="caption" color={r.mine ? colors.accent : colors.textMuted}>
+                  {reactionGlyph(r.kind)} {r.count}
+                </AppText>
+              </Touchable>
+            ))}
+          </View>
+        ) : null}
       </View>
-    </View>
+    </Pressable>
   )
 }
 
@@ -225,6 +279,8 @@ export function NoteThread({
   onReply,
   onDelete,
   onOpenUser,
+  onReact,
+  onLongPress,
   onNoteLayout,
   newSinceTs,
 }: {
@@ -239,6 +295,10 @@ export function NoteThread({
   /** Open a reader's profile from their name, avatar, or an @mention of them.
    *  Omitted by callers with nowhere to send them. */
   onOpenUser?: (userId: string) => void
+  /** Toggle one reaction kind on a note. Omitted where reacting isn't offered. */
+  onReact?: (note: HSNote, kind: NoteReactionKind, on: boolean) => void
+  /** Long-press a note, for the caller's action menu. */
+  onLongPress?: (note: HSNote) => void
   /** Fires the highlighted note's y within the thread so the caller can scroll. */
   onNoteLayout?: (id: string, y: number) => void
   /** When set, a "new since last visit" divider renders before the first
@@ -305,6 +365,8 @@ export function NoteThread({
               onReply={onReply}
               onDelete={onDelete}
               onOpenUser={onOpenUser}
+              onReact={onReact}
+              onLongPress={onLongPress}
             />
             {replies.map((r) => (
               <NoteBubble
@@ -317,6 +379,8 @@ export function NoteThread({
                 highlighted={r.id === highlightId}
                 onDelete={onDelete}
                 onOpenUser={onOpenUser}
+                onReact={onReact}
+                onLongPress={onLongPress}
               />
             ))}
           </View>
@@ -358,6 +422,18 @@ const makeStyles = (colors: Palette) =>
     },
     chipSafe: { backgroundColor: colors.accentWash },
     mention: { color: colors.accent, fontWeight: '600' },
+    reactRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.xs },
+    reactChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 2,
+      borderRadius: radius.pill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      backgroundColor: colors.fill,
+    },
+    reactChipOn: { borderColor: colors.accent, backgroundColor: colors.accentWash },
     // Sized to sit on the text baseline rather than the cap height, so the row
     // does not grow taller than an unmentioned line.
     mentionAvatar: { width: 14, height: 14, borderRadius: 7 },

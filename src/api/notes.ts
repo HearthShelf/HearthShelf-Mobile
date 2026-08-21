@@ -6,7 +6,13 @@
  * social.ts: an older server (or notes disabled) yields { enabled:false } and
  * the UI hides the surface instead of erroring.
  */
-import type { HSNote, HSNotesResponse, NoteVisibility } from '@hearthshelf/core'
+import type {
+  HSNote,
+  HSNotesResponse,
+  HSNoteReaction,
+  NoteReactionKind,
+  NoteVisibility,
+} from '@hearthshelf/core'
 import { getSession } from './session'
 
 const DISABLED_NOTES: HSNotesResponse = {
@@ -66,6 +72,36 @@ export interface PostNoteParams {
   /** Club member ids the note @mentions. The server re-authorizes every id
    *  against club membership, so this is a request, never a grant. */
   mentions?: string[]
+}
+
+/**
+ * Add or remove one reaction on a note. `on` is explicit rather than a toggle so
+ * a double tap converges on the same state instead of flipping twice.
+ *
+ * Returns the note's fresh tallies for the caller to reconcile against, or null
+ * on any failure (older server, offline) - a client that optimistically bumped
+ * its own count should roll back on null.
+ */
+export async function reactToNote(
+  noteId: string,
+  kind: NoteReactionKind,
+  on: boolean,
+): Promise<HSNoteReaction[] | null> {
+  const session = getSession()
+  if (!session) return null
+  const { serverUrl, token } = session
+  try {
+    const res = await fetch(`${serverUrl}/hs/notes/${encodeURIComponent(noteId)}/reactions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, on }),
+    })
+    if (!res.ok) return null
+    const data = (await res.json()) as { reactions?: HSNoteReaction[] }
+    return Array.isArray(data.reactions) ? data.reactions : []
+  } catch {
+    return null
+  }
 }
 
 /** Post a note. Returns the created HSNote, or null on any failure (the caller

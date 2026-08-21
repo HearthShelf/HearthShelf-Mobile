@@ -205,7 +205,11 @@ export default function NotificationsScreen() {
                           ? icons.newRelease
                           : notification.kind === 'mention'
                             ? icons.mention
-                            : icons.bell
+                            : notification.kind === 'reaction'
+                              ? icons.thumbUp
+                              : notification.kind === 'reply'
+                                ? icons.chat
+                                : icons.bell
                     }
                     size={21}
                     color={colors.accent}
