@@ -76,6 +76,21 @@ export function beginStartupTrace(): void {
       // last-phase-started tag hid.
       const stuck = [...inFlight]
       const stuckLabel = stuck.length ? stuck.join(',') : '(none)'
+      // NOT A LAUNCH AT ALL: no phase ever started.
+      //
+      // beginStartupTrace() runs at module scope (app/_layout.tsx), but the
+      // first phase only starts once AuthGate mounts. A process the OS spins up
+      // WITHOUT a UI - a background task wake, a headless media-service start -
+      // therefore arms this watchdog and then legitimately never reaches a
+      // phase. Sixty seconds later it reported a "startup stall" for a launch
+      // that was never attempted (HS-MOBILEAPP-H: inFlight [], phasesStarted [],
+      // in_foreground false), filing level:error issues for a non-event.
+      //
+      // This is NOT the same as the empty-inFlight case the report deliberately
+      // keeps: a launch wedged BETWEEN phases has started phases to show, and
+      // still reports with stuck '(none)'. The signal is `started` being empty,
+      // which means the UI never came up, not that it came up and hung.
+      if (!started.length) return
       Sentry.captureMessage(`startup stalled; in-flight: ${stuckLabel}`, {
         level: 'error',
         tags: {

@@ -125,6 +125,13 @@ export interface DownloadsState {
  *  giving up on it. Bounded so this never becomes a standing subscription. */
 const QUEUE_SETTLE_MS = 30000
 
+/** Minimum gap between download-progress writes to the store.
+ *
+ *  expo-file-system reports every chunk, which on a fast connection is many
+ *  callbacks a second; each one re-renders every subscriber. ~4 updates a second
+ *  is smooth for a progress bar and cheap enough that a slow device keeps up. */
+const PROGRESS_EMIT_MS = 250
+
 const STORE_KEY = 'hs.downloads.v1'
 const DEFAULT_MAX_BYTES = UNLIMITED_BYTES
 const DEFAULT_AUTO: AutoDownloadPrefs = { onStart: false, queueAhead: 0, continueListening: true }
@@ -413,10 +420,27 @@ export async function downloadItem(itemId: string, title: string, author: string
         }
       }
 
+      // expo-file-system fires this for every chunk written - many times a
+      // second on a fast connection. Each call used to patch() -> emit(), which
+      // re-renders every subscriber of the downloads store, and on a slow device
+      // React gave up: "Maximum update depth exceeded", thrown from the emit
+      // inside the progress callback (HS-MOBILEAPP-E, a 2-core Android 11 phone
+      // downloading in the background).
+      //
+      // A download bar does not need more than a few updates a second, so the
+      // store write is throttled to PROGRESS_EMIT_MS. The LATEST value is always
+      // kept and flushed by the next call past the interval, so the bar cannot
+      // freeze mid-download; completion is written by the code after the
+      // transfer (which sets progress 1 / done) rather than by a trailing tick,
+      // so a dropped final callback costs nothing.
+      let lastEmit = 0
       const onProgress = (p: {
         totalBytesWritten: number
         totalBytesExpectedToWrite: number
       }): void => {
+        const now = Date.now()
+        if (now - lastEmit < PROGRESS_EMIT_MS) return
+        lastEmit = now
         const trackFrac =
           p.totalBytesExpectedToWrite > 0 ? p.totalBytesWritten / p.totalBytesExpectedToWrite : 0
         // Weight each track by its share of the book's duration.
