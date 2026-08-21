@@ -149,11 +149,16 @@ export const DEFAULT_NAV_ITEMS: NavItemPref[] = [
   { key: 'discover', placement: 'menu' },
   { key: 'questgiver', placement: 'menu' },
   { key: 'following', placement: 'menu' },
-  { key: 'downloads', placement: 'menu' },
+  { key: 'clubs', placement: 'menu' },
   { key: 'history', placement: 'menu' },
   { key: 'collections', placement: 'menu' },
   { key: 'playlists', placement: 'menu' },
-  { key: 'clubs', placement: 'menu' },
+  // Downloads defaults to hidden: the same screen is reachable at
+  // Settings > Storage, so shipping it in the menu duplicated a destination.
+  // Still fully available - anyone who wants it can drag it back in the
+  // Navigation editor, and anyone who already had it keeps it (saved
+  // arrangements are applied before these defaults fill in the gaps).
+  { key: 'downloads', placement: 'hidden' },
   { key: 'settings', placement: 'menu' },
   { key: 'server-settings', placement: 'menu' },
 ]

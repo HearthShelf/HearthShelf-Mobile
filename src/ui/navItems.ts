@@ -113,6 +113,15 @@ export const NAV_ITEMS: Record<NavItemKey, NavItemMeta> = {
     href: '/following',
     group: 2,
   },
+  clubs: {
+    key: 'clubs',
+    label: 'Book Clubs',
+    shortLabel: 'Clubs',
+    icon: 'club',
+    href: '/club',
+    group: 2,
+    clubsOnly: true,
+  },
   downloads: {
     key: 'downloads',
     label: 'Downloads',
@@ -134,15 +143,6 @@ export const NAV_ITEMS: Record<NavItemKey, NavItemMeta> = {
     icon: 'playlists',
     href: '/playlists',
     group: 2,
-  },
-  clubs: {
-    key: 'clubs',
-    label: 'Book Clubs',
-    shortLabel: 'Clubs',
-    icon: 'club',
-    href: '/club',
-    group: 2,
-    clubsOnly: true,
   },
   settings: { key: 'settings', label: 'Settings', icon: 'settings', href: '/settings', group: 3 },
   'server-settings': {
