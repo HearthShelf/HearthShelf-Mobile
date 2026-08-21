@@ -84,6 +84,10 @@ export function reportDeadTransport(source: string, detail: string): void {
  * any report filed after a reclaim (crash or feedback) replays the trail.
  */
 export function reportPlaybackLost(recovered: boolean, detail: Record<string, unknown>): void {
+  // `detail.cause` is 'native' (the service reported the loss) or 'stall' (the
+  // JS watchdog inferred it from silent progress). Tagged, not just in extra, so
+  // the two are separable in triage - they have different root causes even
+  // though they share this recovery.
   breadcrumb(
     'player',
     `playback lost; recovered=${recovered} ${JSON.stringify(detail)}`.slice(0, 300),
@@ -95,6 +99,7 @@ export function reportPlaybackLost(recovered: boolean, detail: Record<string, un
       tags: {
         area: 'playback_reclaim',
         playback_reclaim_recovered: 'false',
+        playback_lost_cause: typeof detail.cause === 'string' ? detail.cause : 'native',
       },
       extra: detail,
     })

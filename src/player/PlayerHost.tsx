@@ -11,7 +11,7 @@
  * setPlaying) - the exact same store calls the old <Video> onProgress made, so no
  * player-UI screen changes.
  */
-import { useEffect, useRef, type MutableRefObject } from 'react'
+import { useCallback, useEffect, useRef, type MutableRefObject } from 'react'
 import {
   AppState,
   NativeEventEmitter,
@@ -101,6 +101,20 @@ const RECLAIM_WINDOW_MS = 30_000
  *  the failure to be reported once rather than burning the battery. */
 const RECLAIM_MAX_ATTEMPTS = 3
 
+/** How long the store may claim to be playing with no onProgress before the
+ *  watchdog calls it a stall.
+ *
+ *  Progress ticks arrive about once a second while audio runs, so this is many
+ *  missed ticks rather than a narrow race. It is deliberately generous: a false
+ *  positive reloads the track under a listener who was fine, which is worse than
+ *  noticing a real stall a few seconds later. */
+const STALL_AFTER_MS = 20_000
+
+/** How often the watchdog checks. Coarse on purpose - this runs for the whole
+ *  time a book is playing, and the thing it watches for is measured in tens of
+ *  seconds. */
+const STALL_CHECK_MS = 5000
+
 /**
  * Hand the store's current book to the car player.
  *
@@ -149,6 +163,10 @@ export function PlayerHost() {
   // (see RECLAIM_MAX_ATTEMPTS).
   const reclaimAttempts = useRef(0)
   const reclaimWindowStart = useRef(0)
+  // When onProgress last arrived. 0 means "nothing yet this run"; the watchdog
+  // seeds it on the play edge so a book that never produces a single tick still
+  // trips the stall check.
+  const lastProgressAt = useRef(0)
   // The book we believe the CAR player holds (see handBookToCar). null means the
   // car has nothing loaded, which is how it always connects.
   const carBook = useRef<string | null>(null)
@@ -184,12 +202,121 @@ export function PlayerHost() {
     setDeadTransportReporter(reportDeadTransport)
   }, [])
 
+  // The recovery run when the native player is no longer producing audio.
+  //
+  // `cause` says how we found out:
+  //   'native' - the service told us (a transport command hit a reclaimed
+  //              service, or ExoPlayer raised a recoverable source error).
+  //   'stall'  - nobody told us. The progress watchdog below noticed that the
+  //              store says playing while onProgress has gone silent.
+  //
+  // One implementation shared by the native listener (registered once, on mount)
+  // and the watchdog effect - which means ONE attempt cap. Two independent
+  // recovery paths racing the same player is exactly the bounce that
+  // RECLAIM_MAX_ATTEMPTS exists to stop.
+  //
+  // Stable identity (empty deps): it reads live state via getState() and refs
+  // rather than closing over render values, so the mount-once listener effect
+  // can capture it safely.
+  const recoverLostPlayback = useCallback((cause: 'native' | 'stall') => {
+    const now = Date.now()
+    // Open a fresh window if the last reclaim is old enough that this one is
+    // a genuinely new incident rather than the same bounce continuing.
+    if (now - reclaimWindowStart.current > RECLAIM_WINDOW_MS) {
+      reclaimWindowStart.current = now
+      reclaimAttempts.current = 0
+    }
+    reclaimAttempts.current += 1
+    if (reclaimAttempts.current > RECLAIM_MAX_ATTEMPTS) {
+      // Stand down rather than re-arm into the same bounce. Drop the playing
+      // intent so the UI stops claiming it is playing over silence, and so
+      // sync() has no play edge left to re-issue - that intent is what native
+      // keeps answering with onPlaybackLost.
+      breadcrumb(
+        'player',
+        `${cause === 'stall' ? 'playback stalled' : 'native lost the track'} ${reclaimAttempts.current}x; giving up on reload`,
+      )
+      lastPlaying.current = false
+      setPlaying(false)
+      showToast('Playback stopped. Tap play to start again.')
+      return
+    }
+    const s = getState()
+    // While the car owns playback there is no phone player to rebuild: the
+    // sync() below stands the phone down and forwards transport to the car
+    // instead, so "reload from store" cannot reach the thing that was lost.
+    // Re-arming here just re-issues play() at a player that answers with
+    // another onPlaybackLost - the bounce this guard exists to stop. The
+    // car has its own empty-player recovery (onCarNeedsBook).
+    if (s.carActive) {
+      breadcrumb(
+        'player',
+        `${cause === 'stall' ? 'playback stalled' : 'native lost the track'} while the car owns playback; ignoring`,
+      )
+      return
+    }
+    breadcrumb(
+      'player',
+      `${cause === 'stall' ? 'playback stalled (no progress while playing)' : 'native lost the track'}; reloading from store`,
+    )
+    loadedKey.current = null
+    lastPlaying.current = null
+    // While the reload buffers, ignore paused states from the old player's
+    // teardown so they can't cancel the re-armed play intent (see onState).
+    // Same span as the probe: a genuine failure still reports after it.
+    reclaimIgnorePauseUntil.current = now + RECLAIM_CONFIRM_MS
+    // Re-run the store->native effect now rather than waiting for the next
+    // store change; without a nudge, a stable store would leave it unloaded.
+    syncNative.current?.()
+
+    // Report the outcome, not just the event.
+    //
+    // The reclaim is expected; what we cannot see from in here is whether the
+    // reload actually produced audio. A memory-pressure reclaim is not
+    // reproducible in Metro, so the field is the only place this fix gets
+    // tested - and a user staring at a still-dead play button generates no
+    // event of any kind unless we make one.
+    //
+    // Confirmation is "did a real playing state arrive after the reload":
+    // onState fires from the engine, so receiving isPlaying=true means audio
+    // genuinely started, not merely that we re-issued the command. The window
+    // is generous because a reclaimed service must be recreated and the track
+    // re-buffered from scratch.
+    //
+    // Both outcomes are breadcrumbed; only a FAILED recovery raises a Sentry
+    // event (see reportPlaybackLost).
+    if (reclaimProbe.current) clearTimeout(reclaimProbe.current)
+    const wantedPlaying = s.isPlaying
+    reclaimProbe.current = setTimeout(() => {
+      reclaimProbe.current = null
+      const after = getState()
+      // Only judge it a failure when the user actually wanted audio. If they
+      // hit play and we are still not playing, the reload did not take.
+      const recovered = !wantedPlaying || after.isPlaying
+      reportPlaybackLost(recovered, {
+        cause,
+        itemId: s.nowPlaying?.itemId ?? null,
+        wantedPlaying,
+        playingAfter: after.isPlaying,
+        positionAtLoss: Math.round(s.position),
+        positionAfter: Math.round(after.position),
+        // A file:// source rules out an expired stream token as the cause of
+        // a failed reload, which is the first thing to suspect otherwise.
+        localSource: !!s.nowPlaying?.url?.startsWith('file://'),
+      })
+    }, RECLAIM_CONFIRM_MS)
+  }, [])
+
   // ---- native -> store: progress / state / ended ----
   useEffect(() => {
     if (!Native) return
     const emitter = new NativeEventEmitter(NativeModules.HearthShelfAuto)
     const subs = [
       emitter.addListener('onProgress', (e: { position: number }) => {
+        // Liveness stamp for the stall watchdog: this listener is the ONLY thing
+        // that advances the store's position, so its silence is exactly what a
+        // stalled engine looks like from JS.
+        lastProgressAt.current = Date.now()
         reportPosition(e.position)
         // While the car owns playback it does its own ABS progress sync (with its
         // own session). Running JS sync too would double-post to two sessions, so
@@ -255,87 +382,7 @@ export function PlayerHost() {
       // lastPlaying too means the isPlaying we still have set will be re-pushed as
       // a fresh play edge once the reload completes, so the user's tap is honored
       // rather than needing a second one.
-      emitter.addListener('onPlaybackLost', () => {
-        const now = Date.now()
-        // Open a fresh window if the last reclaim is old enough that this one is
-        // a genuinely new incident rather than the same bounce continuing.
-        if (now - reclaimWindowStart.current > RECLAIM_WINDOW_MS) {
-          reclaimWindowStart.current = now
-          reclaimAttempts.current = 0
-        }
-        reclaimAttempts.current += 1
-        if (reclaimAttempts.current > RECLAIM_MAX_ATTEMPTS) {
-          // Stand down rather than re-arm into the same bounce. Drop the playing
-          // intent so the UI stops claiming it is playing over silence, and so
-          // sync() has no play edge left to re-issue - that intent is what native
-          // keeps answering with onPlaybackLost.
-          breadcrumb(
-            'player',
-            `native lost the track ${reclaimAttempts.current}x; giving up on reload`,
-          )
-          lastPlaying.current = false
-          setPlaying(false)
-          showToast('Playback stopped. Tap play to start again.')
-          return
-        }
-        const s = getState()
-        // While the car owns playback there is no phone player to rebuild: the
-        // sync() below stands the phone down and forwards transport to the car
-        // instead, so "reload from store" cannot reach the thing that was lost.
-        // Re-arming here just re-issues play() at a player that answers with
-        // another onPlaybackLost - the bounce this guard exists to stop. The
-        // car has its own empty-player recovery (onCarNeedsBook).
-        if (s.carActive) {
-          breadcrumb('player', 'native lost the track while the car owns playback; ignoring')
-          return
-        }
-        breadcrumb('player', 'native lost the track; reloading from store')
-        loadedKey.current = null
-        lastPlaying.current = null
-        // While the reload buffers, ignore paused states from the old player's
-        // teardown so they can't cancel the re-armed play intent (see onState).
-        // Same span as the probe: a genuine failure still reports after it.
-        reclaimIgnorePauseUntil.current = now + RECLAIM_CONFIRM_MS
-        // Re-run the store->native effect now rather than waiting for the next
-        // store change; without a nudge, a stable store would leave it unloaded.
-        syncNative.current?.()
-
-        // Report the outcome, not just the event.
-        //
-        // The reclaim is expected; what we cannot see from in here is whether the
-        // reload actually produced audio. A memory-pressure reclaim is not
-        // reproducible in Metro, so the field is the only place this fix gets
-        // tested - and a user staring at a still-dead play button generates no
-        // event of any kind unless we make one.
-        //
-        // Confirmation is "did a real playing state arrive after the reload":
-        // onState fires from the engine, so receiving isPlaying=true means audio
-        // genuinely started, not merely that we re-issued the command. The window
-        // is generous because a reclaimed service must be recreated and the track
-        // re-buffered from scratch.
-        //
-        // Both outcomes are breadcrumbed; only a FAILED recovery raises a Sentry
-        // event (see reportPlaybackLost).
-        if (reclaimProbe.current) clearTimeout(reclaimProbe.current)
-        const wantedPlaying = s.isPlaying
-        reclaimProbe.current = setTimeout(() => {
-          reclaimProbe.current = null
-          const after = getState()
-          // Only judge it a failure when the user actually wanted audio. If they
-          // hit play and we are still not playing, the reload did not take.
-          const recovered = !wantedPlaying || after.isPlaying
-          reportPlaybackLost(recovered, {
-            itemId: s.nowPlaying?.itemId ?? null,
-            wantedPlaying,
-            playingAfter: after.isPlaying,
-            positionAtLoss: Math.round(s.position),
-            positionAfter: Math.round(after.position),
-            // A file:// source rules out an expired stream token as the cause of
-            // a failed reload, which is the first thing to suspect otherwise.
-            localSource: !!s.nowPlaying?.url?.startsWith('file://'),
-          })
-        }, RECLAIM_CONFIRM_MS)
-      }),
+      emitter.addListener('onPlaybackLost', () => recoverLostPlayback('native')),
       // Native playback failed (expired stream token, network stall, unplayable
       // format). Drop the optimistic playing state so the UI stops showing
       // "playing" over silence, and surface the reason. Sync the lastPlaying
@@ -582,6 +629,49 @@ export function PlayerHost() {
       }
     }
   }, [])
+
+  // ---- stall watchdog ----
+  //
+  // Every path into onPlaybackLost needs something to announce itself: a
+  // transport command landing on a reclaimed service, or ExoPlayer raising a
+  // recoverable error. A player that simply goes QUIET - still nominally
+  // playing, no error, no progress - trips none of them. Nothing detected it,
+  // nothing recovered, and nothing reported, so it only ever reached us as user
+  // feedback (HS-MOBILEAPP-M: 1017 seconds backgrounded with playing=true while
+  // the position advanced 11 seconds).
+  //
+  // This closes that gap from the JS side, with no native change: onProgress is
+  // the sole driver of the store's position, so "the store says playing and
+  // onProgress has gone silent" IS the stall, observed rather than announced.
+  // Recovery routes through the same shared handler - and therefore the same
+  // attempt cap - as a native-reported loss.
+  useEffect(() => {
+    const id = setInterval(() => {
+      const s = getState()
+      // Only meaningful while the phone player is supposed to be producing audio.
+      // The car runs its own player and the phone stands down, emitting nothing -
+      // silence there is correct, not a stall.
+      if (!s.isPlaying || s.carActive || !s.nowPlaying) return
+      // A genuine rebuffer already explains the silence, and the engine reports
+      // it. Waiting it out is right; reloading mid-rebuffer would be the false
+      // positive that costs a listener their audio.
+      if (s.buffering) return
+      const last = lastProgressAt.current
+      if (!last) {
+        // Playing but not a single tick yet: start the clock here rather than
+        // firing immediately, so a slow first buffer is not read as a stall.
+        lastProgressAt.current = Date.now()
+        return
+      }
+      if (Date.now() - last < STALL_AFTER_MS) return
+      // Reset before recovering: the reload re-arms playback and its first tick
+      // restamps this, but if recovery stands down (attempt cap) we must not
+      // re-fire on the same stale stamp every tick.
+      lastProgressAt.current = Date.now()
+      recoverLostPlayback('stall')
+    }, STALL_CHECK_MS)
+    return () => clearInterval(id)
+  }, [recoverLostPlayback])
 
   // ---- store -> native: load / play / pause / seek / rate / volume ----
   useEffect(() => {
