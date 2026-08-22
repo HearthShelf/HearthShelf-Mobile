@@ -46,6 +46,22 @@ type Kind = 'bug' | 'idea' | 'other'
 const MAX_SHOT_BYTES = 1_000_000
 
 /**
+ * Ceiling on ALL attached screenshots together, in decoded bytes.
+ *
+ * The Sentry limit that matters is per EVENT, not per file, so several images
+ * that each pass MAX_SHOT_BYTES can still blow it collectively - and the failure
+ * mode is the same silent drop, except now it can take the log file with it.
+ * Kept a little under 3x the single-image cap to leave room for the event body
+ * and the diagnostic log.
+ */
+const MAX_SHOTS_TOTAL_BYTES = 2_800_000
+
+/** How many screenshots one report may carry. Enough to show a before/after or a
+ *  short sequence; past that a report is better told in words, and every extra
+ *  image eats the same per-event budget the diagnostic log needs. */
+const MAX_SHOTS = 4
+
+/**
  * base64 -> bytes, so the attachment is stored as a real JPEG rather than a text
  * blob. `atob` is present in Hermes (already relied on in api/serverIdentity.ts),
  * which avoids pulling in a Buffer polyfill for one call site.
@@ -73,7 +89,8 @@ export default function FeedbackScreen() {
   const [message, setMessage] = useState('')
   const [email, setEmail] = useState(user?.primaryEmailAddress?.emailAddress ?? '')
   const [sending, setSending] = useState(false)
-  const [shot, setShot] = useState<{ uri: string; base64: string; bytes: number } | null>(null)
+  const [shots, setShots] = useState<{ uri: string; base64: string; bytes: number }[]>([])
+  const shotsBytes = shots.reduce((total, s) => total + s.bytes, 0)
 
   const canSend = message.trim().length >= 5 && !sending
 
@@ -89,29 +106,73 @@ export default function FeedbackScreen() {
    * its per-event limit - a full-resolution Pixel screenshot is comfortably over
    * it, so an unconstrained attach would look like it worked and arrive with
    * nothing. Better to say so than to send a report that quietly lost its image.
+   *
+   * Several images may be picked at once (a before/after, or a short sequence).
+   * The budget that matters is per EVENT, so each image is checked against
+   * MAX_SHOT_BYTES and the running total against MAX_SHOTS_TOTAL_BYTES - a set
+   * that individually passes can still collectively overflow and take the
+   * diagnostic log down with it. Anything that does not fit is reported by name
+   * rather than dropped quietly, and whatever DID fit is still attached: a
+   * partial set of screenshots is worth more than an all-or-nothing refusal.
    */
   const pickShot = async () => {
+    const room = MAX_SHOTS - shots.length
+    if (room <= 0) {
+      showToast(`You can attach up to ${MAX_SHOTS} screenshots.`)
+      return
+    }
     try {
       const res = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: 'images',
         quality: 0.5,
         base64: true,
-        allowsMultipleSelection: false,
+        allowsMultipleSelection: true,
+        selectionLimit: room,
       })
       if (res.canceled) return
-      const asset = res.assets?.[0]
-      if (!asset?.base64) {
-        showToast("Couldn't read that image.")
-        return
+      const picked = res.assets ?? []
+      if (!picked.length) return
+
+      const accepted: { uri: string; base64: string; bytes: number }[] = []
+      let running = shotsBytes
+      let tooBig = 0
+      let noRoom = 0
+      let unreadable = 0
+      for (const asset of picked) {
+        if (accepted.length >= room) {
+          noRoom += 1
+          continue
+        }
+        if (!asset.base64) {
+          unreadable += 1
+          continue
+        }
+        // base64 inflates ~4/3; measure the DECODED size, which is what ships.
+        const bytes = Math.floor((asset.base64.length * 3) / 4)
+        if (bytes > MAX_SHOT_BYTES) {
+          tooBig += 1
+          continue
+        }
+        if (running + bytes > MAX_SHOTS_TOTAL_BYTES) {
+          noRoom += 1
+          continue
+        }
+        running += bytes
+        accepted.push({ uri: asset.uri, base64: asset.base64, bytes })
       }
-      // base64 inflates ~4/3; measure the DECODED size, which is what ships.
-      const bytes = Math.floor((asset.base64.length * 3) / 4)
-      if (bytes > MAX_SHOT_BYTES) {
-        showToast('That image is too large to attach. Try a cropped screenshot.')
-        return
+
+      if (accepted.length) {
+        haptics.select()
+        setShots((current) => [...current, ...accepted])
       }
-      haptics.select()
-      setShot({ uri: asset.uri, base64: asset.base64, bytes })
+      const skipped = tooBig + noRoom + unreadable
+      if (skipped) {
+        showToast(
+          tooBig && !noRoom && !unreadable
+            ? `${tooBig === 1 ? 'That image is' : `${tooBig} images are`} too large to attach. Try a cropped screenshot.`
+            : `Attached ${accepted.length}; skipped ${skipped} that wouldn't fit.`,
+        )
+      }
     } catch {
       showToast("Couldn't open your photos.")
     }
@@ -138,17 +199,16 @@ export default function FeedbackScreen() {
       // rather than on the scope, for the same reason.
       withFeedbackScope(({ tags, log }) => {
         const attachments = [
-          ...(shot
-            ? [
-                {
-                  filename: 'screenshot.jpg',
-                  // Decoded from base64 to bytes rather than sent as a string, so
-                  // Sentry stores a real image file instead of a text blob.
-                  data: base64ToBytes(shot.base64),
-                  contentType: 'image/jpeg',
-                },
-              ]
-            : []),
+          // Numbered so the order the reporter picked them in survives into
+          // Sentry - a before/after pair is meaningless if they arrive shuffled
+          // or overwrite each other under one filename.
+          ...shots.map((s, i) => ({
+            filename: shots.length > 1 ? `screenshot-${i + 1}.jpg` : 'screenshot.jpg',
+            // Decoded from base64 to bytes rather than sent as a string, so
+            // Sentry stores a real image file instead of a text blob.
+            data: base64ToBytes(s.base64),
+            contentType: 'image/jpeg',
+          })),
           ...(log
             ? [{ filename: 'hearthshelf-log.txt', data: log, contentType: 'text/plain' }]
             : []),
@@ -164,7 +224,11 @@ export default function FeedbackScreen() {
               feedback_kind: kind,
               app_version: FULL_VERSION || 'unknown',
               platform: Platform.OS,
-              has_screenshot: String(!!shot),
+              has_screenshot: String(shots.length > 0),
+              // The count, not just the boolean: a report that meant to carry
+              // three images and arrived with one is a dropped attachment, and
+              // that is invisible without something to compare against.
+              screenshot_count: String(shots.length),
               has_log: String(!!log),
             },
           },
@@ -174,7 +238,7 @@ export default function FeedbackScreen() {
       })
       haptics.success()
       setMessage('')
-      setShot(null)
+      setShots([])
       showToast('Thanks - your feedback is on its way.')
     } catch {
       showToast("That didn't send. Please try again.")
@@ -242,32 +306,38 @@ export default function FeedbackScreen() {
           />
 
           <AppText variant="eyebrow" color={colors.textMuted}>
-            Screenshot (optional)
+            Screenshots (optional)
           </AppText>
-          {shot ? (
-            <View style={styles.shotRow}>
-              <Image source={{ uri: shot.uri }} style={styles.shotThumb} resizeMode="cover" />
+          {shots.map((s, i) => (
+            <View key={`${s.uri}:${i}`} style={styles.shotRow}>
+              <Image source={{ uri: s.uri }} style={styles.shotThumb} resizeMode="cover" />
               <View style={styles.flex}>
                 <AppText variant="label" numberOfLines={1}>
-                  Screenshot attached
+                  {shots.length > 1 ? `Screenshot ${i + 1}` : 'Screenshot attached'}
                 </AppText>
                 <AppText variant="caption" color={colors.textFaint}>
-                  {Math.round(shot.bytes / 1024)} KB
+                  {Math.round(s.bytes / 1024)} KB
                 </AppText>
               </View>
-              <Pressable onPress={() => setShot(null)} hitSlop={12}>
+              <Pressable
+                onPress={() => setShots((current) => current.filter((_, at) => at !== i))}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove screenshot ${i + 1}`}
+              >
                 <AppText variant="label" color={colors.destructive}>
                   Remove
                 </AppText>
               </Pressable>
             </View>
-          ) : (
+          ))}
+          {shots.length < MAX_SHOTS ? (
             <Pressable onPress={() => void pickShot()} style={styles.shotPick}>
               <AppText variant="label" color={colors.textMuted}>
-                Attach a screenshot
+                {shots.length ? 'Attach another screenshot' : 'Attach a screenshot'}
               </AppText>
             </Pressable>
-          )}
+          ) : null}
 
           <PrimaryButton
             label={sending ? 'Sending...' : 'Send feedback'}
