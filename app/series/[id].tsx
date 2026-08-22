@@ -28,7 +28,7 @@ import {
   isUpcoming,
   type OwnedSeriesBook,
 } from '@hearthshelf/core'
-import { coverUrl, getLibrarySeries, itemAuthor, itemNarrator, itemTitle } from '@/api/abs'
+import { coverUrl, getSeriesWithBooks, itemAuthor, itemNarrator, itemTitle } from '@/api/abs'
 import { fetchAudibleSeries, peekAudibleSeries } from '@/api/absAudible'
 import { getRmabEnabled } from '@/api/absRmab'
 import { catalogSeriesById } from '@/player/offlineCatalog'
@@ -122,9 +122,13 @@ export default function SeriesDetailScreen() {
     let cancelled = false
     void (async () => {
       try {
-        const all = await getLibrarySeries(libraryId)
+        // Fetch THIS series only. This used to page the entire library's series
+        // catalog and .find() the one wanted - megabytes of JSON per tap on a
+        // large library, with every tap starting another. That is what made
+        // series open only after several taps, some never open at all, and the
+        // whole app drag while the fetches piled up (HS-MOBILEAPP-10/11/13).
+        const found = await getSeriesWithBooks(libraryId, id)
         if (cancelled) return
-        const found = all.find((s) => s.id === id)
         if (!found) throw new Error('Series not found')
         setSeries(found)
         // Progress is best-effort - a failure shouldn't block the page.

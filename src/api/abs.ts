@@ -266,8 +266,57 @@ export async function getAllLibraryItems(libraryId: string): Promise<ABSLibraryI
 
 // ---- Series / Authors / Narrators (Library view selector) ----
 
-/** All series in a library, each carrying its books (for the group drilldown). */
+/**
+ * Short-lived cache for the full series catalog.
+ *
+ * getLibrarySeries pages the ENTIRE library's series with their books, and 13
+ * call sites reach for it - Home alone calls it twice per load (ignored-series
+ * filtering, then Continue-Series). On a large library that is megabytes of JSON
+ * per call, repeated on every navigation, which is a large part of why the app
+ * drags (HS-MOBILEAPP-13).
+ *
+ * A few seconds is enough to collapse a burst of callers around one navigation
+ * into a single fetch, while staying short enough that a series edit shows up
+ * essentially immediately. The in-flight promise is shared too, so concurrent
+ * callers (Home's two, or a screen mounting mid-fetch) await one request rather
+ * than starting their own.
+ *
+ * Deliberately NOT a long-lived cache: this data changes when the user edits
+ * series membership, and a stale catalog is a correctness problem, not just a
+ * cosmetic one.
+ */
+const SERIES_CACHE_MS = 5000
+const seriesCache = new Map<string, { at: number; series: ABSSeries[] }>()
+const seriesInFlight = new Map<string, Promise<ABSSeries[]>>()
+
+/** Drop the cached series catalog (all libraries). Call after anything that
+ *  changes series membership so the next read is fresh. */
+export function invalidateSeriesCache(): void {
+  seriesCache.clear()
+  seriesInFlight.clear()
+}
+
+/** All series in a library, each carrying its books (for the group drilldown).
+ *  Served from a few-second cache; see SERIES_CACHE_MS. Prefer
+ *  getSeriesWithBooks when you want ONE series. */
 export async function getLibrarySeries(libraryId: string): Promise<ABSSeries[]> {
+  const hit = seriesCache.get(libraryId)
+  if (hit && Date.now() - hit.at < SERIES_CACHE_MS) return hit.series
+  const flight = seriesInFlight.get(libraryId)
+  if (flight) return flight
+  const p = fetchLibrarySeries(libraryId)
+    .then((series) => {
+      seriesCache.set(libraryId, { at: Date.now(), series })
+      return series
+    })
+    .finally(() => {
+      seriesInFlight.delete(libraryId)
+    })
+  seriesInFlight.set(libraryId, p)
+  return p
+}
+
+async function fetchLibrarySeries(libraryId: string): Promise<ABSSeries[]> {
   // ABS's series endpoint treats limit=0 as "count only" (returns an empty
   // results[] with the real total), unlike the items endpoint where 0 = all. So
   // page through with an explicit large limit to actually get the series.
@@ -282,6 +331,69 @@ export async function getLibrarySeries(libraryId: string): Promise<ABSSeries[]> 
     if (results.length < limit) break
   }
   return out
+}
+
+/**
+ * base64 for the ABS filter param. Series ids are ASCII (uuid-like), so a plain
+ * per-char encode is sufficient and avoids a Buffer polyfill; `btoa` is not
+ * dependable across Hermes builds, and `atob` (used elsewhere in this app) only
+ * covers the decode direction.
+ */
+const B64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+function base64Utf8(input: string): string {
+  let out = ''
+  for (let i = 0; i < input.length; i += 3) {
+    const c0 = input.charCodeAt(i)
+    const c1 = i + 1 < input.length ? input.charCodeAt(i + 1) : NaN
+    const c2 = i + 2 < input.length ? input.charCodeAt(i + 2) : NaN
+    out += B64_ALPHABET[c0 >> 2]
+    out += B64_ALPHABET[((c0 & 3) << 4) | (Number.isNaN(c1) ? 0 : c1 >> 4)]
+    out += Number.isNaN(c1)
+      ? '='
+      : B64_ALPHABET[((c1 & 15) << 2) | (Number.isNaN(c2) ? 0 : c2 >> 6)]
+    out += Number.isNaN(c2) ? '=' : B64_ALPHABET[c2 & 63]
+  }
+  return out
+}
+
+/**
+ * One series and its books, without downloading the whole series catalog.
+ *
+ * The series screen used to call getLibrarySeries() and `.find()` the one it
+ * wanted - which pages the ENTIRE library's series (up to 50 pages of 500, each
+ * carrying its books) to render a single page. On a large library that is
+ * megabytes of JSON per tap, and every tap starts another one: series that open
+ * only after several taps, some that never open at all, and the whole app
+ * dragging while the fetches pile up (HS-MOBILEAPP-10/11/13).
+ *
+ * ABS filters library items by series directly. The filter value is the series id
+ * base64'd (libraryFilters.decode does `Buffer.from(decodeURIComponent(v),
+ * 'base64')`), and `sort=sequence` gives reading order server-side. Minified
+ * items carry everything the screen renders.
+ *
+ * Returns null when the series has no items - the caller falls back to the
+ * offline catalog, exactly as it did when the find() missed.
+ */
+export async function getSeriesWithBooks(
+  libraryId: string,
+  seriesId: string,
+): Promise<ABSSeries | null> {
+  const filter = `series.${encodeURIComponent(base64Utf8(seriesId))}`
+  const data = await absRequest<ABSLibraryItemsResponse>(
+    `/api/libraries/${libraryId}/items?filter=${filter}&sort=sequence&limit=500&minified=1`,
+  )
+  const books = data.results ?? []
+  if (!books.length) return null
+  // The filtered item list carries no series NAME, so take it from the books'
+  // own series metadata (every item in the result belongs to this series).
+  const name = books.map((b) => b.media?.metadata?.seriesName).find((n): n is string => !!n) ?? ''
+  return {
+    id: seriesId,
+    name,
+    nameIgnorePrefix: name,
+    description: null,
+    books,
+  }
 }
 
 export async function getLibraryAuthors(libraryId: string): Promise<ABSLibraryAuthor[]> {
