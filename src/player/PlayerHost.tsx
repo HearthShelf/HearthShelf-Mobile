@@ -101,6 +101,16 @@ const RECLAIM_WINDOW_MS = 30_000
  *  the failure to be reported once rather than burning the battery. */
 const RECLAIM_MAX_ATTEMPTS = 3
 
+/** How far the position must move before we count it as real playback rather
+ *  than the tail of a tick that was already in flight. */
+const RECLAIM_PROGRESS_EPSILON_SEC = 2
+
+/** How late the reclaim probe may run and still be trusted to judge recovery.
+ *
+ *  Android suspends JS timers for a backgrounded app, so an armed probe can
+ *  fire long after its delay - see the note where the verdict is computed. */
+const RECLAIM_PROBE_MAX_LATE_MS = 60_000
+
 /** How long the store may claim to be playing with no onProgress before the
  *  watchdog calls it a stall.
  *
@@ -287,19 +297,52 @@ export function PlayerHost() {
     // event (see reportPlaybackLost).
     if (reclaimProbe.current) clearTimeout(reclaimProbe.current)
     const wantedPlaying = s.isPlaying
+    const probeArmedAt = now
+    const positionAtLoss = s.position
     reclaimProbe.current = setTimeout(() => {
       reclaimProbe.current = null
       const after = getState()
+      // Android FREEZES JS timers while the app is backgrounded, so this
+      // callback does not reliably run RECLAIM_CONFIRM_MS after it was armed -
+      // it runs whenever the runtime is next scheduled, which can be half an
+      // hour later. By then the store describes some unrelated later moment
+      // (the listener finished and paused, or moved on), and judging the
+      // recovery on it reports a failure that never happened. A real field
+      // event did exactly that: playingAfter=false, yet the position had
+      // advanced 1798s between loss and report - thirty minutes of audio that
+      // demonstrably played, inside a "6 second" window (HS-MOBILEAPP-2).
+      //
+      // Position movement is the ground truth here, and it is the ONE signal
+      // that cannot lie: only onProgress advances it, and onProgress only fires
+      // when the engine is actually decoding. So treat any real advance as
+      // proof the reload took, whatever the current isPlaying says.
+      const advanced = after.position - positionAtLoss > RECLAIM_PROGRESS_EPSILON_SEC
+      const lateBy = Date.now() - probeArmedAt
+      if (lateBy > RECLAIM_PROBE_MAX_LATE_MS && !advanced) {
+        // Ran far too late AND has no movement to judge on - the store has
+        // moved on and there is nothing trustworthy left to measure. Say so
+        // rather than guessing; a wrong "did not recover" trains us to ignore
+        // the very signal this probe exists to provide.
+        breadcrumb(
+          'player',
+          `reclaim probe ran ${Math.round(lateBy / 1000)}s late with no movement; verdict withheld`,
+        )
+        return
+      }
       // Only judge it a failure when the user actually wanted audio. If they
       // hit play and we are still not playing, the reload did not take.
-      const recovered = !wantedPlaying || after.isPlaying
+      const recovered = !wantedPlaying || after.isPlaying || advanced
       reportPlaybackLost(recovered, {
         cause,
         itemId: s.nowPlaying?.itemId ?? null,
         wantedPlaying,
         playingAfter: after.isPlaying,
-        positionAtLoss: Math.round(s.position),
+        positionAtLoss: Math.round(positionAtLoss),
         positionAfter: Math.round(after.position),
+        // How long the probe actually took to run. Anything far above
+        // RECLAIM_CONFIRM_MS means the runtime was suspended in between, which
+        // changes how much the other fields are worth trusting.
+        probeLateBySec: Math.round(lateBy / 1000),
         // A file:// source rules out an expired stream token as the cause of
         // a failed reload, which is the first thing to suspect otherwise.
         localSource: !!s.nowPlaying?.url?.startsWith('file://'),
