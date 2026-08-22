@@ -44,6 +44,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 
 /**
  * Native Android Auto car surface for HearthShelf.
@@ -84,6 +85,38 @@ class HearthShelfAutoService : MediaLibraryService() {
   // that reliably tripped an ANR in the Auto service. Returning the future lets
   // media3 await it off the main thread instead.
   private val io = MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor())
+
+  /**
+   * Submit background work, ignoring it if the pool is already shut down.
+   *
+   * onDestroy() shuts `io` down, but work keeps arriving after that: JS pushes a
+   * book at a service it still believes is live, and media3 controllers can
+   * outlive the teardown by a moment. Submitting to a stopped pool throws
+   * RejectedExecutionException, and these submissions happen on pool and binder
+   * threads with no handler above them - so it lands as a FATAL uncaught crash
+   * during ordinary teardown (HS-MOBILEAPP-P, thrown from loadBookIntoCar while
+   * the pool read "Shutting down").
+   *
+   * Dropping the work is the correct response: the service is going away, so
+   * there is nothing left for it to act on. The one submission that must not be
+   * lost - the final progress sync in onDestroy - is issued BEFORE shutdown()
+   * and is separately awaited, so it is unaffected by this.
+   */
+  private fun submitIo(what: String, task: () -> Unit) {
+    try {
+      io.execute {
+        try {
+          task()
+        } catch (t: Throwable) {
+          // A crash on the io thread is likewise unhandled and would take the
+          // process down; the service is best-effort, so log and carry on.
+          Log.e(TAG, "io task failed: $what", t)
+        }
+      }
+    } catch (e: RejectedExecutionException) {
+      Log.w(TAG, "io task dropped after shutdown: $what")
+    }
+  }
 
   private val TAG = "HSAuto"
 
@@ -221,7 +254,7 @@ class HearthShelfAutoService : MediaLibraryService() {
       if (loadingItemId == itemId) return
       loadingItemId = itemId
     }
-    io.execute {
+    submitIo("loadBookIntoCar") {
       val loaded = resolveBook(itemId)
       if (loaded == null) {
         Log.e(TAG, "loadBookIntoCar: resolve failed for $itemId")
@@ -231,7 +264,7 @@ class HearthShelfAutoService : MediaLibraryService() {
         // handover did not take - otherwise its marker sticks and no later tap ever
         // retries, which is a worse failure than the one that just happened.
         HearthShelfAutoModule.emitCarLoadFailed()
-        return@execute
+        return@submitIo
       }
       // The start position rides setMediaItems below, so clear the READY-seek
       // fallback - otherwise it would fire a second, redundant seek.
@@ -530,7 +563,7 @@ class HearthShelfAutoService : MediaLibraryService() {
     // there is no correctness change - only a chance to have finished early.
     // It also pre-resolves the drawable ids the layout below needs, for the same
     // reason: whichever thread asks first pays for the lookup.
-    io.execute {
+    submitIo("onCreate") {
       try {
         prefs.getString("serverUrl", null)
         for (n in WARM_DRAWABLES) drawableId(n)
@@ -773,13 +806,13 @@ class HearthShelfAutoService : MediaLibraryService() {
     val tok = token
     // onCustomCommand runs on the MAIN thread - the PATCH must hop to io.
     if (base != null && tok != null && !offlineMode()) {
-      io.execute { httpPatchFinished("$base/api/me/progress/$id", tok) }
+      submitIo("markFinished") { httpPatchFinished("$base/api/me/progress/$id", tok) }
     } else {
       // Offline: bank the finish onto the same per-listen ledger the position
       // rides on, so it replays with everything else on reconnect rather than
       // being lost. Ordered behind the syncProgress bank above (same executor),
       // which is what created the entry this flags.
-      io.execute { markOfflineFinished() }
+      submitIo("markOfflineFinished") { markOfflineFinished() }
     }
     // Queue advance stays JS-owned (server owns the queue) - same contract as a
     // natural end. No-op when JS isn't attached; the finish above still landed.
@@ -829,12 +862,12 @@ class HearthShelfAutoService : MediaLibraryService() {
     // JSON rewrite + commit - and bookmarkNow's caller is onCustomCommand, a
     // media3 callback, which runs on the MAIN thread. Only the player reads
     // (position, chapters) above need the caller's thread, and they are done.
-    io.execute {
+    submitIo("bookmarkNow") {
       val base = serverUrl
       val tok = token
       if (base == null || tok == null || offlineMode()) {
         queueOfflineBookmark(id, posSec, title)
-        return@execute
+        return@submitIo
       }
       try {
         val conn = (URL("$base/api/items/$id/bookmarks").openConnection() as HttpURLConnection).apply {
@@ -1546,11 +1579,11 @@ class HearthShelfAutoService : MediaLibraryService() {
     if (!notePopsEnabled) return
     val base = serverUrl ?: return
     val tok = token ?: return
-    io.execute {
+    submitIo("setupNoteWatch") {
       try {
-        val clubId = findClubForBook(base, tok, itemId) ?: return@execute
+        val clubId = findClubForBook(base, tok, itemId) ?: return@submitIo
         // Guard against a newer book having loaded while this ran.
-        if (currentItemId != itemId) return@execute
+        if (currentItemId != itemId) return@submitIo
         noteClubId = clubId
         notePrevPosSec = startSec
         fetchNoteStubs(base, tok, clubId, itemId, startSec)
@@ -1621,7 +1654,7 @@ class HearthShelfAutoService : MediaLibraryService() {
     if (System.currentTimeMillis() - lastNotesFetchMs > 45_000L) {
       lastNotesFetchMs = System.currentTimeMillis()
       val posForFetch = nowSec
-      io.execute {
+      submitIo("checkNotes.fetch") {
         try {
           if (currentItemId == itemId && noteClubId == clubId) {
             fetchNoteStubs(base, tok, clubId, itemId, posForFetch)
@@ -1661,7 +1694,7 @@ class HearthShelfAutoService : MediaLibraryService() {
 
     // Normal forward crossing: notify the earliest just-passed note (usually one).
     val stub = crossed.first()
-    io.execute {
+    submitIo("checkNotes.mark") {
       try {
         if (currentItemId == itemId && noteClubId == clubId) {
           onNoteCrossed(base, tok, clubId, itemId, stub)
@@ -1847,7 +1880,7 @@ class HearthShelfAutoService : MediaLibraryService() {
     // within this run, so the write only has to be durable, not immediate.
     val payload = JSONArray(ids).toString()
     val key = noteSeenKey(clubId)
-    io.execute { prefs.edit().putString(key, payload).apply() }
+    submitIo("persistPrefs") { prefs.edit().putString(key, payload).apply() }
   }
 
   private fun enc(s: String): String = java.net.URLEncoder.encode(s, "UTF-8")
