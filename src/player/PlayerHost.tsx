@@ -35,6 +35,7 @@ import {
   currentChapter,
   setDeadTransportReporter,
 } from './store'
+import { syncStateCarOwned } from './syncState'
 import { breadcrumb } from '@/lib/crashLog'
 import {
   reportCarHandbackFailure,
@@ -477,17 +478,44 @@ export function PlayerHost() {
           // tick until it timed out - a listener re-loaded two hours behind with
           // a scrubber that would not move (HS-MOBILEAPP-A).
           if (resume && Platform.OS === 'android') {
-            void playItemById(resume.itemId, false, { resumeAt: resume.position }).catch((err) => {
-              breadcrumb('car', `handback re-resolve failed: ${err?.message ?? 'unknown'}`)
-              reportCarHandbackFailure(resume.itemId, err)
-              showToast('Tap play to resume on your phone')
-            })
+            void playItemById(resume.itemId, false, { resumeAt: resume.position })
+              .then(() => {
+                // Take ownership of syncing again, now, rather than at the next
+                // play tap.
+                //
+                // playItemById(autoPlay=false) deliberately opens NO ABS session -
+                // that is deferred to first play, so merely opening the player
+                // never records a phantom listen. Correct for the Now Playing
+                // tab, wrong here: the car just stopped syncing, so until the
+                // listener presses play nothing owns the position at all. The
+                // phone showed "not synced" for hours and even Sync now was a
+                // no-op (forceSyncNow bails with no active session), while the
+                // car's last session held the only server-side record.
+                //
+                // Opening here is not a phantom listen: the listener HAS been
+                // listening - the car was playing this book seconds ago - and the
+                // session carries the position the car handed back.
+                void ensureSessionForPlayback().catch(() => {})
+              })
+              .catch((err) => {
+                breadcrumb('car', `handback re-resolve failed: ${err?.message ?? 'unknown'}`)
+                reportCarHandbackFailure(resume.itemId, err)
+                showToast('Tap play to resume on your phone')
+              })
+          } else if (Platform.OS === 'android') {
+            // Nothing to re-resolve (the phone track was already loaded), but the
+            // car still just stopped syncing - so the phone must pick it up.
+            void ensureSessionForPlayback().catch(() => {})
           }
           return
         }
         // Set the flag FIRST so the phone player stands down (stops issuing
         // load/play below) before we touch the car.
         setCarActive(e.active)
+        // The JS sync path stands down with it, so its last verdict would freeze
+        // on screen for the whole drive. Say the car owns syncing instead (see
+        // syncStateCarOwned).
+        syncStateCarOwned()
         if (Platform.OS !== 'android') return
 
         // The car connects with an EMPTY player - without a book loaded, Android

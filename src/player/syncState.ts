@@ -11,6 +11,9 @@
  *                        mid-sync). Resolves to green when the sync lands.
  *  - 'failed'  (red):    a sync attempt failed / server unreachable. Can't send.
  *                        Resolves to orange (catching up) then green on reconnect.
+ *  - 'car':              Android Auto owns playback and is syncing on its OWN ABS
+ *                        session. The JS sync path is deliberately idle, so this
+ *                        store has no verdict to give - see syncStateCarOwned.
  *  - 'idle':             nothing playing.
  *
  * There is deliberately no visible "syncing" state: a quick background POST while
@@ -20,7 +23,7 @@
  * player stores).
  */
 
-export type SyncStatus = 'idle' | 'synced' | 'pending' | 'failed'
+export type SyncStatus = 'idle' | 'synced' | 'pending' | 'failed' | 'car'
 
 /** The session currently playing, for the live Recent Listens row. */
 export interface LiveSession {
@@ -185,6 +188,44 @@ export function syncStatePending(): void {
 /** A sync attempt failed / the server is unreachable. Red. */
 export function syncStateFailed(): void {
   set({ status: 'failed' })
+}
+
+/**
+ * Android Auto took over: the CAR is syncing now, on its own ABS session, and the
+ * JS sync path stands down (PlayerHost skips syncProgress while carActive, so the
+ * car and phone can't double-post to two sessions).
+ *
+ * That means this store stops receiving verdicts - and whatever it last held
+ * FREEZES. A handover that happened while the icon was orange left it orange for
+ * the whole drive, with `lastSyncedAt` stuck at the pre-handover time, so the
+ * sheet reported "last synced 3 hours ago" while the server was being updated the
+ * entire time (reported from the field, with the web app showing the live Android
+ * Auto session that the phone claimed wasn't syncing).
+ *
+ * So say what is actually true: the car owns it. Deliberately NOT 'synced' - we
+ * have no evidence of the car's last sync from here, and claiming green would be
+ * the same lie in the other direction.
+ */
+export function syncStateCarOwned(): void {
+  if (state.status === 'idle') return
+  set({ status: 'car' })
+}
+
+/**
+ * The car handed playback back. Release the 'car' status so the phone's own sync
+ * verdicts start showing again.
+ *
+ * Goes to 'pending', not 'synced': the phone is about to re-open its own session
+ * and push the position the car left off at, and until that lands there IS
+ * unsynced state here. Orange resolving to green a moment later is honest;
+ * claiming green immediately would be a guess about a sync that has not happened.
+ *
+ * Only acts on the 'car' status, so a handback can never overwrite a real verdict
+ * (e.g. a 'failed' recorded before the car took over).
+ */
+export function syncStateLeftCar(): void {
+  if (state.status !== 'car') return
+  set({ status: 'pending' })
 }
 
 /** The listener moved the playhead (seek/skip), so the server's position is now

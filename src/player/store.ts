@@ -18,7 +18,7 @@
 import { getSettingsState } from '@/store/settings'
 import { parseHHMM } from '@/lib/timeFormat'
 import { haptics } from '@/ui/haptics'
-import { syncStateSeeked } from './syncState'
+import { syncStateSeeked, syncStateLeftCar } from './syncState'
 // crashLog imports only expo-file-system, so this stays a leaf dependency and
 // cannot cycle back into the player.
 import { breadcrumb } from '@/lib/crashLog'
@@ -126,7 +126,15 @@ export function subscribe(fn: () => void): () => void {
 }
 
 function set(patch: Partial<PlayerState>): void {
+  const leftCar = state.carActive && patch.carActive === false
   state = { ...state, ...patch }
+  // Release the sync indicator the moment car ownership ends, wherever that
+  // happens. Both exits (leaveCar on the disconnect edge, and the onCarAbsent
+  // reconcile that catches a stuck flag) funnel through here, so hooking the
+  // FLAG rather than either call site means no future exit path can forget it
+  // and strand the icon on 'car' - which would be the same class of bug as the
+  // stuck carActive it was added to describe.
+  if (leftCar) syncStateLeftCar()
   listeners.forEach((l) => l())
 }
 

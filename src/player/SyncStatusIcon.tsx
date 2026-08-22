@@ -40,7 +40,7 @@ function resolve(
   sync: SyncState,
   conn: ConnectionStatus,
   colors: Palette,
-): { look: Look; kind: 'synced' | 'pending' | 'offline' } {
+): { look: Look; kind: 'synced' | 'pending' | 'offline' | 'car' } {
   // The player's own sync result is the stronger signal and WINS over the
   // connection phase. A sync that landed is direct proof the server is reachable,
   // whereas conn.phase can be a stale 'offline' - it's set by an edge-triggered
@@ -53,6 +53,12 @@ function resolve(
     return { look: { name: icons.cloudDone, color: colors.success }, kind: 'synced' }
   if (sync.status === 'pending')
     return { look: { name: icons.cloudQueue, color: colors.accent }, kind: 'pending' }
+  // Android Auto owns playback and syncs on its own session; the JS sync path is
+  // deliberately idle, so this store has no verdict. Green rather than orange:
+  // listening IS reaching the server, and orange here read as "nothing has synced
+  // for 3 hours" while the web app showed the live car session.
+  if (sync.status === 'car')
+    return { look: { name: icons.cloudDone, color: colors.success }, kind: 'car' }
   // Only with no sync verdict of our own (idle) does the connection phase decide.
   if (conn.phase === 'offline')
     return { look: { name: icons.cloudOff, color: colors.destructive }, kind: 'offline' }
@@ -95,7 +101,7 @@ export interface SyncStatusSheetHandle {
 
 /** Plain-language copy for each state - the whole point of the sheet is that the
  *  listener should never have to guess what a colored cloud means. */
-const COPY: Record<'synced' | 'pending' | 'offline', { title: string; body: string }> = {
+const COPY: Record<'synced' | 'pending' | 'offline' | 'car', { title: string; body: string }> = {
   synced: {
     title: 'Progress saved',
     body: 'Your spot and listening time are up to date on your server. Nothing to do.',
@@ -107,6 +113,10 @@ const COPY: Record<'synced' | 'pending' | 'offline', { title: string; body: stri
   offline: {
     title: "Can't reach your server",
     body: "The app couldn't reach your server, so your latest listening is saved on this phone for now. It's not lost - it syncs on its own once you're back online. Tap Retry to try again right now.",
+  },
+  car: {
+    title: 'Saving from your car',
+    body: 'Android Auto is playing, and it saves your spot and listening time to your server itself. The phone stays out of the way so the two never disagree.',
   },
 }
 
@@ -152,7 +162,12 @@ const SyncStatusSheet = forwardRef<SyncStatusSheetHandle>(function SyncStatusShe
   const { look, kind } = resolve(sync, conn, colors)
   const copy = COPY[kind]
 
-  const lastSynced = sync.lastSyncedAt != null ? relativeTime(sync.lastSyncedAt, Date.now()) : null
+  // The phone's own last-sync stamp, which FREEZES while the car owns syncing (the
+  // JS sync path stands down, so nothing updates it). Showing it there reported
+  // "last synced 3 hours ago" during a drive in which the car had been syncing the
+  // whole time - so it is suppressed rather than allowed to lie.
+  const lastSynced =
+    kind !== 'car' && sync.lastSyncedAt != null ? relativeTime(sync.lastSyncedAt, Date.now()) : null
 
   // Listening banked offline that hasn't reached the server yet, so we can name
   // exactly what's waiting instead of a vague "some listening". Sessions drive
@@ -164,7 +179,7 @@ const SyncStatusSheet = forwardRef<SyncStatusSheetHandle>(function SyncStatusShe
   const syncing = feedback === 'syncing'
   // Green = nothing to push, so the button just confirms; every other state
   // offers a real retry (the user asked for this even when it will likely fail).
-  const retry = kind !== 'synced'
+  const retry = kind !== 'synced' && kind !== 'car'
 
   const onSync = async () => {
     haptics.select()
