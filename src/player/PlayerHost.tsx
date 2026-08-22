@@ -515,6 +515,34 @@ export function PlayerHost() {
       // Native bounced a transport command back: the car owns playback but its
       // player is empty, so there was nothing for that command to act on. Answer
       // with the book the store holds (see handBookToCar / emitCarNeedsBook).
+      // Native answered syncCarState with "no car is attached".
+      //
+      // Only meaningful when JS currently believes otherwise. carActive can get
+      // stuck true: swapping from USB Android Auto to Bluetooth earbuds can route
+      // audio away without gearhead's controller disconnecting, so onDisconnected
+      // never fires. The phone player then stays stood down forever - pause taps
+      // forward to a car that isn't there (the UI flips to paused while audio
+      // keeps running), the "playing in car" banner sticks, and the reclaim
+      // recovery suppresses itself with "native lost the track while the car owns
+      // playback" (HS-MOBILEAPP-W/X).
+      //
+      // Deliberately NOT routed through the onCarActive(false) handback: that
+      // means "the car handed back", and pauses + re-resolves the track. Here the
+      // audio never stopped and nothing about the book changed - only our belief
+      // was wrong. So just clear the flag and let sync() resume driving the phone
+      // player, which is where the audio already is.
+      emitter.addListener('onCarAbsent', () => {
+        if (!getState().carActive) return
+        breadcrumb('car', 'no car attached but carActive was set; clearing stale car ownership')
+        carBook.current = null
+        setCarActive(false)
+        // The phone player has been stood down while this was wrong, so its
+        // loaded-track markers describe a player that is no longer driving. Drop
+        // them and let sync() rebuild from the store at the live position.
+        loadedKey.current = null
+        lastPlaying.current = null
+        syncNative.current?.()
+      }),
       emitter.addListener('onCarNeedsBook', () => {
         breadcrumb('car', 'car player is empty; handing it the loaded book')
         // This event is native telling us the car's player is EMPTY, so whatever

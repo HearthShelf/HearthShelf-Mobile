@@ -447,14 +447,30 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
    * answer comes from the one place that actually knows (carPlayer), not from an
    * event that may have fired hours ago.
    *
-   * Silent when no car is attached, rather than emitting active=false. JS already
-   * defaults to "no car" and treats false as a HANDBACK, which drops the playing
-   * state - so announcing it here would pause a phone that is happily playing if
-   * the host ever remounts. The false edge has its own emitters (onDisconnected /
-   * onDestroy); this one exists only to report a car JS doesn't know about.
+   * Does NOT emit active=false when no car is attached. JS defaults to "no car"
+   * and treats a false onCarActive as a HANDBACK, which pauses and re-resolves -
+   * so announcing it here would interrupt a phone that is happily playing every
+   * time the host remounts.
+   *
+   * But silence alone left a stuck belief uncorrectable. Swapping from USB
+   * Android Auto to Bluetooth earbuds can route audio away without gearhead's
+   * controller disconnecting, so onDisconnected never fires and JS stays
+   * car-owned forever: the phone player stands down, every pause tap forwards to
+   * a car that isn't there ("shows paused but doesn't pause"), the "playing in
+   * car" banner sticks, and the reclaim recovery suppresses itself with "native
+   * lost the track while the car owns playback" (HS-MOBILEAPP-W/X).
+   *
+   * So absence is now reported as its own event, onCarAbsent, which JS applies
+   * ONLY to correct a stale carActive - clearing the flag without the handback's
+   * pause/re-resolve. A JS runtime that already believes there is no car ignores
+   * it, which is what makes it safe to send on every foreground.
    */
   @ReactMethod fun syncCarState() {
-    val car = carPlayer ?: return
+    val car = carPlayer
+    if (car == null) {
+      emitCarAbsent()
+      return
+    }
     emitCarActive(true)
     if (car.loadedItemId() != null) car.republishLoaded()
   }
@@ -660,6 +676,15 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
      */
     fun emitCarNeedsBook() {
       emitter?.invoke("onCarNeedsBook", Arguments.createMap())
+    }
+
+    /** No car is attached right now. Sent in answer to syncCarState only, so JS
+     *  can correct a carActive that got stuck true (see syncCarState). This is
+     *  deliberately NOT onCarActive(false): that means "the car handed back" and
+     *  carries a pause + re-resolve, which is wrong for a runtime that simply
+     *  believed the wrong thing. */
+    fun emitCarAbsent() {
+      emitter?.invoke("onCarAbsent", Arguments.createMap())
     }
 
     /** The book JS handed over could not be resolved (no session, dead network,
