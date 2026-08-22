@@ -246,6 +246,41 @@ if (-not $env:SENTRY_AUTH_TOKEN) {
   Write-Host "Loaded SENTRY_AUTH_TOKEN from $sentryTokenSource (org: $sentryOrg)" -ForegroundColor DarkGray
 }
 
+# --- sideload version stamp ---
+#
+# A sideloaded build used to report the static app.config.js fallback (0.0.2) for
+# EVERY sideload ever made. That value is also Sentry's `release`, so field
+# reports from this phone were indistinguishable from each other AND from a real
+# 0.0.2 - which is how HS-MOBILEAPP-V arrived: a 6-hour progress reset whose
+# diagnostic telemetry had shipped in 0.7.0, but the build under test said 0.0.2
+# and nobody could tell it was running older code than the fix.
+#
+# So a sideload now stamps itself from the LAST RELEASE TAG plus the commit it was
+# actually built from: 0.7.1-dev.467af25. The tag says which release this is
+# descended from; the sha says exactly which build, so two sideloads from the same
+# tag are never confused and "when did I last sideload?" is answerable from the
+# About screen or any Sentry event.
+#
+# Release builds are untouched: -Release defers to the tag-driven CD value (or the
+# static fallback), because that version is a store/OTA identity, not a local marker.
+#
+# NOTE this feeds runtimeVersion (policy: appVersion), so each sideload gets its own
+# OTA namespace - correct, since a dev build must never be handed a store OTA bundle.
+if (-not $Release -and -not $env:EXPO_PUBLIC_APP_VERSION) {
+  # Tags live on the remote too, but a local read keeps this working offline. Fetch
+  # is deliberately NOT done here - it would add network latency to every deploy,
+  # and a tag created elsewhere since the last pull is not what this build contains.
+  $lastTag = (& git -C $RepoRoot describe --tags --abbrev=0 2>$null)
+  $sha = (& git -C $RepoRoot rev-parse --short HEAD 2>$null)
+  if ($lastTag -and $sha) {
+    $dirty = if ((& git -C $RepoRoot status --porcelain 2>$null)) { '.dirty' } else { '' }
+    $env:EXPO_PUBLIC_APP_VERSION = "$lastTag-dev.$sha$dirty"
+    Write-Host "Sideload version: $env:EXPO_PUBLIC_APP_VERSION" -ForegroundColor DarkGray
+  } else {
+    Write-Warning 'Could not read a git tag/sha - falling back to the static app.config.js version.'
+  }
+}
+
 if (-not $env:NODE_ENV) {
   $env:NODE_ENV = if ($Release) { 'production' } else { 'development' }
 }
