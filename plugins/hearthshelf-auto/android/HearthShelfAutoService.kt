@@ -1054,11 +1054,19 @@ class HearthShelfAutoService : MediaLibraryService() {
 
     /** Grant our custom commands so the buttons are actionable, and publish the
      *  full custom layout (skip / chapter / speed / bookmark) to this controller.
-     *  The standard seek-to-previous/next player commands are withheld: with them
-     *  advertised, Android Auto renders its own prev/next buttons and pushes all
-     *  custom actions into the overflow menu. Chapter nav still works - the custom
-     *  prev/next-chapter buttons call the player directly, and the Queue's
-     *  jump-to-chapter uses COMMAND_SEEK_TO_MEDIA_ITEM, which stays available. */
+     *  The standard seek-to-previous/next player commands are withheld from CAR
+     *  controllers: with them advertised, Android Auto renders its own prev/next
+     *  buttons and pushes all custom actions into the overflow menu. Chapter nav
+     *  still works - the custom prev/next-chapter buttons call the player
+     *  directly, and the Queue's jump-to-chapter uses COMMAND_SEEK_TO_MEDIA_ITEM,
+     *  which stays available.
+     *
+     *  Every OTHER controller keeps them, which is what makes steering-wheel and
+     *  headset skip keys work: those are hardware keys dispatched through the
+     *  media-button receiver (not the car's own UI), so withholding the commands
+     *  globally left them bound to nothing (HS-MOBILEAPP-14). They land on
+     *  ChapterForwardingPlayer.seekToNext/Previous, which skip by the listener's
+     *  configured seconds rather than changing track. */
     override fun onConnect(
       session: MediaSession,
       controller: MediaSession.ControllerInfo
@@ -1072,13 +1080,20 @@ class HearthShelfAutoService : MediaLibraryService() {
         .add(SessionCommand(CMD_SPEED, Bundle.EMPTY))
         .add(SessionCommand(CMD_BOOKMARK, Bundle.EMPTY))
         .build()
-      val playerCommands = MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS
-        .buildUpon()
-        .remove(Player.COMMAND_SEEK_TO_PREVIOUS)
-        .remove(Player.COMMAND_SEEK_TO_NEXT)
-        .remove(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
-        .remove(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
-        .build()
+      // Only the car's own UI needs these withheld (see the note above); the
+      // media-button/notification controller must keep them or hardware skip
+      // keys are filtered out before they reach the player.
+      val playerCommands = if (isCarController(controller)) {
+        MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS
+          .buildUpon()
+          .remove(Player.COMMAND_SEEK_TO_PREVIOUS)
+          .remove(Player.COMMAND_SEEK_TO_NEXT)
+          .remove(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+          .remove(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+          .build()
+      } else {
+        MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS
+      }
       if (isCarController(controller)) {
         // Announce the takeover exactly ONCE. Sentry showed `car took over`
         // firing twice (two controllers connecting), which drove JS to push the
@@ -1565,6 +1580,63 @@ class HearthShelfAutoService : MediaLibraryService() {
       val c = ch()
       seekToAbsolute(wrappedPlayer, if (c != null) (c.start * 1000).toLong() + positionMs else positionMs)
     }
+
+    /**
+     * Steering-wheel / headset skip-track buttons.
+     *
+     * Those are HARDWARE keys: they dispatch the standard
+     * seek-to-next/previous commands and cannot be pointed at our custom skip
+     * actions, so with the standard commands withheld they had nothing to bind
+     * to and did nothing at all (HS-MOBILEAPP-14/R).
+     *
+     * For an audiobook "next track" is not a useful action - a book is one long
+     * item - so these map to the same absolute-time skip the on-screen buttons
+     * use, honoring the listener's configured skip seconds. That matches what
+     * other audiobook apps do with the same buttons, and what was asked for:
+     * skip forward and back within the chapter.
+     *
+     * Absolute-time seeks (not window-relative) so a skip near a boundary
+     * crosses into the neighbouring chapter instead of clamping at the clip
+     * edge, exactly like CMD_REWIND/CMD_FORWARD.
+     */
+    override fun seekToNext() {
+      val totalMs = (absDurationSec * 1000).toLong()
+      val target = absMs() + forwardSec * 1000
+      seekToAbsolute(wrappedPlayer, if (totalMs > 0) target.coerceAtMost(totalMs) else target)
+    }
+
+    override fun seekToPrevious() {
+      seekToAbsolute(wrappedPlayer, (absMs() - rewindSec * 1000).coerceAtLeast(0))
+    }
+
+    // Media3 routes hardware skip keys through the MEDIA_ITEM variants too
+    // (which normally change track); send them to the same skip so the button
+    // behaves the same however the head unit dispatches it.
+    override fun seekToNextMediaItem() = seekToNext()
+
+    override fun seekToPreviousMediaItem() = seekToPrevious()
+
+    // Media3 asks the player which commands it supports and hides a control when
+    // the answer is no. The session withholds the standard seek commands to keep
+    // Android Auto from drawing its own prev/next buttons (see onConnect), but
+    // the wrapped player must still CLAIM them or the hardware keys are dropped
+    // before they reach the overrides above.
+    override fun isCommandAvailable(command: Int): Boolean = when (command) {
+      Player.COMMAND_SEEK_TO_NEXT,
+      Player.COMMAND_SEEK_TO_PREVIOUS,
+      Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+      Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> true
+      else -> super.isCommandAvailable(command)
+    }
+
+    override fun getAvailableCommands(): Player.Commands =
+      super.getAvailableCommands()
+        .buildUpon()
+        .add(Player.COMMAND_SEEK_TO_NEXT)
+        .add(Player.COMMAND_SEEK_TO_PREVIOUS)
+        .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+        .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+        .build()
   }
 
   // ---- Club note-pops (Phase 7) ----
