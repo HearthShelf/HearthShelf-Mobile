@@ -54,6 +54,36 @@ const serverUpdatedAt = new Map<string, number>()
  *  only keep a dead row alive. */
 const LOCAL_POSITION_MAX_AGE_MS = 12 * 60 * 60 * 1000
 
+/**
+ * How much newer the server's stamp must be before it can overrule a local
+ * position that is AHEAD of it.
+ *
+ * `lastUpdate` is stamped when each side writes its row, and those writes race:
+ * a sync in flight when we take our local snapshot lands a moment later, so the
+ * server row is stamped newer while describing an OLDER playhead. Trusting the
+ * stamp then throws away a good position.
+ *
+ * Measured, not guessed: HS-MOBILEAPP-15 caught it with a server row stamped
+ * 670ms newer whose position was 409 SECONDS behind. A position cannot legitimately
+ * move 409s backwards in 670ms unless the listener seeked - and a seek writes
+ * locally too, so it would not arrive this way.
+ *
+ * Anything inside this window is treated as concurrent rather than newer, and the
+ * position itself decides. Comfortably wider than a request round trip, and far
+ * narrower than a real listening gap on another device.
+ */
+const CONCURRENT_STAMP_MS = 15_000
+
+/**
+ * How far the server must be BEHIND for the guard above to apply.
+ *
+ * Small differences are ordinary rounding between a tick and its sync, where the
+ * server's value is fine and preferring the local one would fight normal
+ * convergence. Only a gap big enough to be felt as a lost position is worth
+ * overriding a newer stamp for.
+ */
+const CONCURRENT_MIN_DROP_SEC = 60
+
 /** When the server last moved this book's progress, per the most recent refresh.
  *  undefined when the server has never reported a stamp for it. */
 export function serverProgressUpdatedAt(itemId: string): number | undefined {
@@ -240,9 +270,30 @@ function keepFresherLocalPositions(
     if (!local || !(local.currentTime > 0)) continue
     const localAt = typeof local.lastUpdate === 'number' ? local.lastUpdate : 0
     const serverAt = typeof server.lastUpdate === 'number' ? server.lastUpdate : 0
+    // A server stamp that is only MARGINALLY newer while its position is
+    // materially BEHIND is a race, not a newer observation: our local write and
+    // an in-flight sync landed within the same moment, and the sync's response
+    // carries the position from before that write. Treat the two as concurrent
+    // and let the position decide, which keeps the playhead we already have.
+    //
+    // Bounded on both sides so this cannot swallow a genuine remote listen: the
+    // stamps must be within CONCURRENT_STAMP_MS (a round trip, not a listening
+    // gap), and the drop must exceed CONCURRENT_MIN_DROP_SEC (a felt loss, not
+    // tick/sync rounding). A real listen on another device moves the stamp far
+    // more than a few seconds, so it still wins.
+    const concurrentRace =
+      localAt > 0 &&
+      serverAt - localAt <= CONCURRENT_STAMP_MS &&
+      local.currentTime - server.currentTime > CONCURRENT_MIN_DROP_SEC
+    if (concurrentRace) {
+      breadcrumb(
+        'progress',
+        `server row ${Math.round(local.currentTime - server.currentTime)}s behind local for ${id.slice(0, 8)} but only ${serverAt - localAt}ms newer - keeping local position (concurrent write)`,
+      )
+    }
     // Strictly newer only: equal stamps mean this row already came from the
     // server, and there is nothing local to protect.
-    if (localAt <= serverAt) {
+    if (localAt <= serverAt && !concurrentRace) {
       // Progress-reset trace. This is the branch that DECLINES to protect a
       // local position. If the server row is behind the playhead here, the
       // refresh is about to move the book backwards - the reported
