@@ -39,7 +39,6 @@ import {
   addSleepMinutes,
   type ChapterMark,
 } from './store'
-import { useBookmarks } from './useBookmarks'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { AppText, Sheet, type SheetRef, Touchable } from '@/ui/primitives'
 import { AppSlider } from '@/ui/AppSlider'
@@ -192,12 +191,16 @@ export const ChaptersSheet = forwardRef<SheetHandle>(function ChaptersSheet(_pro
 
 export const BookmarksSheet = forwardRef<
   SheetHandle,
-  { itemId: string | null; onSeek: (sec: number) => void }
->(function BookmarksSheet({ itemId, onSeek }, ref) {
+  {
+    bookmarks: readonly ABSBookmark[]
+    onSeek: (sec: number) => void
+    onRemove: (time: number) => Promise<void>
+    onMove: (fromTime: number, toTime: number, title: string) => Promise<void>
+  }
+>(function BookmarksSheet({ bookmarks, onSeek, onRemove, onMove }, ref) {
   const sheetRef = useSheetHandle(ref)
   const { colors, shadow } = useTheme()
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
-  const { bookmarks, removeBookmark, moveBookmark } = useBookmarks(itemId)
   const editRef = useRef<SheetRef>(null)
   const [editing, setEditing] = useState<ABSBookmark | null>(null)
 
@@ -243,14 +246,14 @@ export const BookmarksSheet = forwardRef<
                   {formatTimestamp(b.time)}
                 </AppText>
               </View>
-              <Touchable hitSlop={8} onPress={() => removeBookmark(b.time)}>
+              <Touchable hitSlop={8} onPress={() => onRemove(b.time)}>
                 <Icon name={icons.close} size={18} color={colors.textMuted} />
               </Touchable>
             </Touchable>
           ))}
         </BottomSheetScrollView>
       )}
-      <BookmarkEditSheet ref={editRef} bookmark={editing} onSave={moveBookmark} />
+      <BookmarkEditSheet ref={editRef} bookmark={editing} onSave={onMove} />
     </Sheet>
   )
 })
@@ -502,8 +505,7 @@ function ActiveSleep({
     // Mirror the tick's own stop point (end boundaries fire a guard band early,
     // see CHAPTER_END_GUARD_SEC) so the countdown hits 0 when playback actually
     // stops rather than a couple of seconds after.
-    const boundary =
-      sleepTimer.at === 'start' ? target.start : target.end - CHAPTER_END_GUARD_SEC
+    const boundary = sleepTimer.at === 'start' ? target.start : target.end - CHAPTER_END_GUARD_SEC
     return Math.max(0, Math.round(boundary - position))
   })()
   const secondsLeft =

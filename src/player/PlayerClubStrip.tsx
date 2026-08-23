@@ -10,10 +10,11 @@ import {
 } from 'react-native'
 import { formatTimestamp } from '@hearthshelf/core'
 import type { HSClubMember, HSNote, HSNoteStub } from '@hearthshelf/core'
+import { avatarUrl } from '@/api/abs'
 import { getMeId } from '@/api/me'
 import { postNote } from '@/api/notes'
 import { refreshActiveClub, type ActiveClub } from '@/player/clubSync'
-import { AppText, Touchable } from '@/ui/primitives'
+import { AppText, Avatar, Touchable } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
 import { haptics } from '@/ui/haptics'
 import { useBackHandler } from '@/ui/useBackHandler'
@@ -23,7 +24,6 @@ import { useTheme } from '@/ui/ThemeProvider'
 const RECENT_WINDOW_SEC = 5 * 60
 const UPCOMING_WINDOW_SEC = 2 * 60
 const MAX_RACE_PIPS = 5
-const PIP_COLORS = ['#bba097', '#85a59a', '#c0a869', '#9e88a8', '#8b665e'] as const
 
 type NearbyNote =
   | { kind: 'visible'; note: HSNote; deltaSec: number }
@@ -103,12 +103,27 @@ function nearbyTiming(deltaSec: number): string {
   return deltaSec > 0 ? `in ${minutes} min` : `${minutes} min behind`
 }
 
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  if (!parts.length) return '?'
-  const first = parts[0].charAt(0)
-  const last = parts.length > 1 ? parts[parts.length - 1].charAt(0) : ''
-  return `${first}${last}`.toUpperCase()
+function raceContext(
+  members: HSClubMember[],
+  meId: string,
+  position: number,
+  duration: number,
+): string {
+  if (!meId || duration <= 0) return 'See where everyone is in the book'
+  const mine = Math.max(0, Math.min(1, position / duration))
+  let ahead = 0
+  let behind = 0
+  for (const member of members) {
+    if (member.userId === meId) continue
+    const fraction = progressFraction(member)
+    if (fraction == null) continue
+    if (fraction > mine + 0.002) ahead++
+    else if (fraction < mine - 0.002) behind++
+  }
+  if (ahead && behind) return `${ahead} ahead · ${behind} behind`
+  if (ahead) return `${ahead} ${ahead === 1 ? 'reader' : 'readers'} ahead`
+  if (behind) return `Ahead of ${behind} ${behind === 1 ? 'reader' : 'readers'}`
+  return 'Reading together here'
 }
 
 export function PlayerClubStrip({
@@ -269,7 +284,10 @@ export function PlayerClubStrip({
     () => racePips(club.members, meId, position, duration),
     [club.members, duration, meId, position],
   )
-  const listening = club.members.find((member) => member.listeningNow)
+  const otherListening = club.members.find(
+    (member) => member.listeningNow && member.userId !== meId,
+  )
+  const progressContext = raceContext(club.members, meId, position, duration)
   const raceFill =
     pips.find((pip) => pip.me)?.fraction ??
     (duration > 0 ? Math.max(0, Math.min(1, position / duration)) : 0)
@@ -403,9 +421,7 @@ export function PlayerClubStrip({
               {note.kind === 'locked' ? (
                 <Icon name={icons.lock} size={17} color={colors.accent} />
               ) : (
-                <AppText variant="caption" color="#fff" style={styles.noteInitials}>
-                  {initials(note.note.username)}
-                </AppText>
+                <Avatar uri={avatarUrl(note.note.userId)} size={34} name={note.note.username} />
               )}
             </View>
             <View style={styles.noteCopy}>
@@ -431,7 +447,6 @@ export function PlayerClubStrip({
           <View style={styles.race}>
             <View style={styles.raceHeader}>
               <View style={styles.clubNameRow}>
-                <View style={styles.liveDot} />
                 <AppText variant="caption" color="#fff" numberOfLines={1} style={styles.clubName}>
                   {club.name}
                 </AppText>
@@ -443,37 +458,23 @@ export function PlayerClubStrip({
             <View style={styles.raceTrack}>
               <View style={styles.raceLine} />
               <View style={[styles.raceFill, { width: `${raceFill * 100}%` as `${number}%` }]} />
-              {pips.map((pip, index) => (
+              {pips.map((pip) => (
                 <View
                   key={pip.id}
                   style={[
                     styles.racePip,
-                    {
-                      left: `${pip.fraction * 100}%` as `${number}%`,
-                      backgroundColor: pip.me
-                        ? colors.accent
-                        : PIP_COLORS[index % PIP_COLORS.length],
-                    },
+                    { left: `${pip.fraction * 100}%` as `${number}%` },
                     pip.me && styles.racePipMe,
                   ]}
                 >
-                  <AppText
-                    variant="caption"
-                    color={pip.me ? colors.onAccent : '#17100d'}
-                    style={styles.racePipText}
-                  >
-                    {pip.me ? 'You' : initials(pip.name)}
-                  </AppText>
+                  <Avatar uri={avatarUrl(pip.id)} size={18} name={pip.name} />
                 </View>
               ))}
             </View>
             <View style={styles.raceFooter}>
               <View style={styles.listeningCopy}>
-                {listening && <View style={styles.listeningDot} />}
                 <AppText variant="caption" color="rgba(255,255,255,0.62)" numberOfLines={1}>
-                  {listening
-                    ? `${listening.userId === meId ? 'You are' : `${listening.username} is`} listening now`
-                    : 'See where everyone is in the book'}
+                  {otherListening ? `${otherListening.username} is listening now` : progressContext}
                 </AppText>
               </View>
               <AppText variant="caption" color={colors.accent} style={styles.openClubCopy}>
@@ -548,23 +549,12 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: '#657f77',
     },
     lockedNoteIcon: { backgroundColor: 'rgba(239,118,84,0.13)' },
-    noteInitials: { fontSize: 9, lineHeight: 11, fontWeight: '900' },
     noteCopy: { flex: 1, minWidth: 0 },
     noteTitle: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
     noteBody: { marginTop: 3, fontSize: 10, lineHeight: 13 },
     race: { minHeight: 92, paddingHorizontal: spacing.md, paddingTop: 11, paddingBottom: 10 },
     raceHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    clubNameRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 7 },
-    liveDot: {
-      width: 7,
-      height: 7,
-      flexShrink: 0,
-      borderRadius: 4,
-      backgroundColor: colors.accent,
-      shadowColor: colors.accent,
-      shadowOpacity: 0.5,
-      shadowRadius: 4,
-    },
+    clubNameRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center' },
     clubName: { flex: 1, minWidth: 0, fontWeight: '800' },
     raceTrack: { height: 28, marginTop: 6, marginBottom: 4, position: 'relative' },
     raceLine: {
@@ -598,11 +588,11 @@ const makeStyles = (colors: Palette) =>
     },
     racePipMe: {
       zIndex: 3,
+      borderColor: colors.accent,
       shadowColor: colors.accent,
       shadowOpacity: 0.5,
       shadowRadius: 3,
     },
-    racePipText: { fontSize: 7, lineHeight: 8, fontWeight: '900' },
     raceFooter: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -616,7 +606,6 @@ const makeStyles = (colors: Palette) =>
       alignItems: 'center',
       gap: 5,
     },
-    listeningDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#8fb39c' },
     openClubCopy: { fontWeight: '800' },
     keyboardAvoider: { width: '100%', overflow: 'visible' },
     composer: {

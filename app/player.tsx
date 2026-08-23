@@ -247,7 +247,13 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   }, [])
 
   const duration = nowPlaying?.duration ?? 0
-  const { bookmarks, addBookmark } = useBookmarks(nowPlaying?.itemId ?? null)
+  // One bookmark hook owns both the More badge and the tray. Keeping two hook
+  // instances here gave them separate server snapshots: after a save the badge
+  // could show 1 while the already-mounted tray still rendered its old empty
+  // list.
+  const { bookmarks, addBookmark, removeBookmark, moveBookmark } = useBookmarks(
+    nowPlaying?.itemId ?? null,
+  )
 
   // The item's libraryId isn't on the play session; fetch it lazily once for
   // Add-to-list (collections/playlists are library-scoped).
@@ -1406,7 +1412,13 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
             chapters={chapters}
             onSeek={requestSeek}
           />
-          <BookmarksSheet ref={bookmarksRef} itemId={nowPlaying.itemId} onSeek={requestSeek} />
+          <BookmarksSheet
+            ref={bookmarksRef}
+            bookmarks={bookmarks}
+            onSeek={requestSeek}
+            onRemove={removeBookmark}
+            onMove={moveBookmark}
+          />
           <PlayerNotesSheet ref={notesRef} onToast={(msg) => toast.show(msg)} />
           <BookActionsSheet ref={bookActionsRef} onToast={(msg) => toast.show(msg)} />
           {libraryId && (
