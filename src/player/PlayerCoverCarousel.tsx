@@ -14,8 +14,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FlatList, StyleSheet, View } from 'react-native'
 import type { ListRenderItemInfo } from 'react-native'
 import { coverHue } from '@hearthshelf/core'
-import type { QueueEntry } from '@hearthshelf/core'
+import type { HSClub, HSClubMember, QueueEntry } from '@hearthshelf/core'
 import { coverUrl } from '@/api/abs'
+import { getClub, getClubs } from '@/api/clubs'
 import { playItemById } from '@/player/playback'
 import { requestSeek } from '@/player/store'
 import { getQueueState, setQueueItems } from '@/player/queue'
@@ -26,6 +27,7 @@ import { SpringPressable } from '@/ui/motion'
 import { haptics } from '@/ui/haptics'
 import { radius, spacing, withAlpha, type Palette } from '@/ui/theme'
 import { useTheme } from '@/ui/ThemeProvider'
+import { CarouselBookClubStrip } from '@/player/CarouselBookClubStrip'
 
 // Gap between adjacent covers; also how much of each neighbor peeks past the
 // centered active cover at the screen edges.
@@ -51,6 +53,8 @@ export function PlayerCoverCarousel({
   /** Full width of the cover area; each page fills it so only the centered
    *  cover is visible (no neighbor peeking). */
   pageWidth,
+  /** Whether the Player setting allows club context over carousel books. */
+  clubOverlaysEnabled = true,
   /** Slot for the bookmark/zoom controls and club strip over the live card. */
   overlay,
   /** The live overlay is accepting text; freeze the deck and its cover gesture
@@ -80,6 +84,7 @@ export function PlayerCoverCarousel({
   coverWidth: number
   coverAspect: number
   pageWidth: number
+  clubOverlaysEnabled?: boolean
   overlay?: React.ReactNode
   overlayActive?: boolean
   skipFeedback?: React.ReactNode
@@ -114,6 +119,11 @@ export function PlayerCoverCarousel({
   const styles = useMemo(() => makeStyles(colors), [colors])
   const listRef = useRef<FlatList<DeckPage>>(null)
   const [index, setIndex] = useState(0)
+  const [clubs, setClubs] = useState<HSClub[]>([])
+  const [clubMembersByBook, setClubMembersByBook] = useState<Map<string, HSClubMember[]>>(
+    () => new Map(),
+  )
+  const requestedClubBooks = useRef(new Set<string>())
 
   const pages = useMemo<DeckPage[]>(() => {
     const live: DeckPage = {
@@ -132,6 +142,35 @@ export function PlayerCoverCarousel({
       }))
     return [live, ...rest]
   }, [liveItemId, liveTitle, liveAuthor, queue])
+  const pageIdsKey = useMemo(() => pages.map((page) => page.itemId).join('|'), [pages])
+
+  // Club summaries are enough to label every current/up-next club book without
+  // one request per page. Reload when the deck's membership changes so newly
+  // queued books acquire their club name while the player remains open.
+  useEffect(() => {
+    if (!clubOverlaysEnabled || pages.length <= 1) {
+      setClubs([])
+      return
+    }
+    let cancelled = false
+    void getClubs().then((response) => {
+      if (!cancelled) setClubs(response.enabled ? response.mine : [])
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [clubOverlaysEnabled, pageIdsKey, pages.length])
+
+  const clubByItem = useMemo(() => {
+    const mapped = new Map<string, HSClub>()
+    for (const page of pages) {
+      const current = clubs.find((club) => club.currentBook?.libraryItemId === page.itemId)
+      const queued = clubs.find((club) => club.queuedItemIds.includes(page.itemId))
+      const club = current ?? queued
+      if (club) mapped.set(page.itemId, club)
+    }
+    return mapped
+  }, [clubs, pages])
 
   // Each page fills the full cover-area width so neighbors sit fully offscreen -
   // only the centered cover shows; the dots signal that more can be swiped in.
@@ -177,6 +216,34 @@ export function PlayerCoverCarousel({
   // jump fn, and a play-this fn. `active` is clamped in case index outruns a
   // shrinking deck.
   const active = pages[Math.min(index, pages.length - 1)] ?? pages[0]
+  const focusedClub = clubByItem.get(active.itemId)
+  // Progress is heavier than the summary, so fetch it only for the focused
+  // ahead-book and cache it. The server resolves bookId against both timeline
+  // and Up next, allowing members who read ahead to appear at their real point.
+  useEffect(() => {
+    if (!clubOverlaysEnabled || active.isLive || !focusedClub) return
+    const key = `${focusedClub.id}:${active.itemId}`
+    if (clubMembersByBook.has(key) || requestedClubBooks.current.has(key)) return
+    // `index` ratchets across every page during a fast fling. Wait for a brief
+    // settle before loading so flying over five books does not fire five club
+    // detail requests.
+    const timer = setTimeout(() => {
+      requestedClubBooks.current.add(key)
+      void getClub(focusedClub.id, { bookId: active.itemId })
+        .then((detail) => {
+          if (!detail) return
+          setClubMembersByBook((previous) => {
+            const next = new Map(previous)
+            next.set(key, detail.members)
+            return next
+          })
+        })
+        .finally(() => {
+          requestedClubBooks.current.delete(key)
+        })
+    }, 220)
+    return () => clearTimeout(timer)
+  }, [active.isLive, active.itemId, clubMembersByBook, clubOverlaysEnabled, focusedClub])
   const playActive = useCallback(() => {
     if (active && !active.isLive) void switchTo(active)
   }, [active, switchTo])
@@ -209,6 +276,10 @@ export function PlayerCoverCarousel({
   const renderPage = ({ item, index: i }: ListRenderItemInfo<DeckPage>) => {
     const isFocus = i === index
     const pageHue = coverHue(item.itemId)
+    const pageClub = clubByItem.get(item.itemId)
+    const clubMembers = pageClub
+      ? clubMembersByBook.get(`${pageClub.id}:${item.itemId}`)
+      : undefined
     return (
       // Each page is one cover wide plus the inter-cover gap, so neighbors
       // peek at the screen edges (the deck advertises itself). Snap lands the
@@ -285,6 +356,13 @@ export function PlayerCoverCarousel({
                       Tap to play
                     </AppText>
                   </View>
+                )}
+                {pageClub && (
+                  <CarouselBookClubStrip
+                    clubName={pageClub.name}
+                    itemId={item.itemId}
+                    members={clubMembers}
+                  />
                 )}
               </>
             )}

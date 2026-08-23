@@ -1093,6 +1093,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                       coverWidth={coverWidth}
                       coverAspect={coverAspect}
                       pageWidth={width}
+                      clubOverlaysEnabled={settings.clubsEnabled && settings.clubPlayerButton}
                       overlay={coverOverlays}
                       overlayActive={clubComposing}
                       skipFeedback={<SkipFeedbackOverlay ref={skipFeedbackRef} />}

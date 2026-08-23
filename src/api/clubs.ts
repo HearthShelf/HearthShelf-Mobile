@@ -52,7 +52,8 @@ export async function getClubs(libraryItemId?: string): Promise<HSClubsResponse>
 }
 
 export interface GetClubParams {
-  /** Which book in the history to view; defaults to the current book. */
+  /** Which club book to view, including Up next read-ahead books; defaults to
+   *  the current book. */
   bookId?: string
   /** The caller's position in the viewed book, for the notes spoiler gate. */
   position?: number

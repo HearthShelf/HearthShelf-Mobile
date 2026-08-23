@@ -5,8 +5,8 @@
  * connect and torn down on sign-out.
  *
  * What it does:
- *  - Resolves whether the currently-playing book is a club's current book that
- *    the user is in. If so, fetches that book's locked stubs and feeds them to
+ *  - Resolves whether the currently-playing book is a club's current or queued
+ *    read-ahead book. If so, fetches that book's locked stubs and feeds them to
  *    notePops.setPopStubs so the watcher can fire pops (works screen-off during
  *    playback via the foreground service).
  *  - Polls on the house 15s cadence, but ONLY while the playing book is a club
@@ -97,10 +97,14 @@ async function resolveActiveClub(): Promise<void> {
     clearPopStubs()
     return
   }
-  // Find a club the user is in whose CURRENT book is the playing item.
+  // Prefer a club whose current book is playing, then accept an Up next book:
+  // members are allowed to read ahead and the live player should keep its club
+  // context when one of those books is promoted from the carousel.
   const res = await getClubs(itemId)
   if (generation !== resolveGeneration) return
-  const club = res.mine.find((c) => c.currentBook?.libraryItemId === itemId)
+  const club =
+    res.mine.find((c) => c.currentBook?.libraryItemId === itemId) ??
+    res.mine.find((c) => c.queuedItemIds.includes(itemId))
   if (!club) {
     setActiveClub(null)
     // Remember the resolved non-club item too, otherwise every position tick
