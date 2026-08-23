@@ -44,6 +44,7 @@ import {
   SETTINGS_CATALOG,
   normalizeAutoRules,
   normalizeHomeSections,
+  normalizeNotifyPrefs,
   validateSetting,
   READER_DEFAULTS,
   DEFAULT_NOTIFY_PREFS,
@@ -547,6 +548,10 @@ export function applyServerKeys(
       if (key === 'navItems') value = normalizeNavItems(value as NavItemPref[])
       if (key === 'queueAutoRules') value = normalizeAutoRules(value)
       if (key === 'homeSections') value = normalizeHomeSections(value)
+      // Same reason as the hydrate path: a prefs blob written by an older client
+      // (or another device on a older build) can be missing notification types
+      // this build renders, and the settings screen indexes them directly.
+      if (key === 'notifyPrefs') value = normalizeNotifyPrefs(value)
       patch[key] = value
       nextMeta[key] = remote.updatedAt
       changed = true
@@ -732,6 +737,15 @@ export function hydrateSettings(): Promise<void> {
             if (key === 'navItems') next = normalizeNavItems(next as NavItemPref[])
             if (key === 'queueAutoRules') next = normalizeAutoRules(next)
             if (key === 'homeSections') next = normalizeHomeSections(next)
+            // Fill in notification types added since this value was saved. Every
+            // other structured setting here is normalized on the way in; this one
+            // was not, so a prefs blob stored before a new type existed hydrated
+            // WITHOUT it - and the settings screen reads
+            // prefs.types.<type>.enabled directly, so the whole screen threw
+            // "Cannot read property 'enabled' of undefined" and the error
+            // boundary swallowed it. That is what made notification settings
+            // unreachable (HS-MOBILEAPP-18/19).
+            if (key === 'notifyPrefs') next = normalizeNotifyPrefs(next)
             patch[key] = next
           }
           meta = sanitizeTimestamps(saved.meta)
