@@ -13,7 +13,7 @@ import {
 import { releaseNotificationRoute } from '@/notifications/releaseRoute'
 import { RatingPromptActions } from '@/notifications/RatingPromptActions'
 import { RATING_NOTIFICATION_KIND, ratingSavedMessage } from '@hearthshelf/core'
-import { setRating } from '@/api/ratings'
+import { setRating, skipRatingPrompt } from '@/api/ratings'
 import { getSettingsState, setSetting } from '@/store/settings'
 import { AppText, Centered, IconButton, Loading, Screen, Touchable } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
@@ -286,7 +286,15 @@ export default function NotificationsScreen() {
                     <RatingPromptActions
                       bookTitle={dataString(notification, 'title') || 'this book'}
                       onRate={(value) => rate(notification, value)}
-                      onSkip={() => void dismiss(notification)}
+                      onSkip={() => {
+                        // Record the skip BEFORE clearing the row: the row is
+                        // what the prompt job dedupes against, so dismissing
+                        // alone would let the next hourly pass re-ask.
+                        const itemKey =
+                          dataString(notification, 'itemKey') || notification.entityId || ''
+                        if (itemKey) void skipRatingPrompt(itemKey)
+                        void dismiss(notification)
+                      }}
                       onStopAsking={() => void stopAskingForRatings(notification)}
                     />
                   ) : pending ? (
