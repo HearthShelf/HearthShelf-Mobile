@@ -604,6 +604,79 @@ export async function deleteDownload(itemId: string): Promise<void> {
   void removeCatalogItem(itemId)
 }
 
+/** True when two chapter lists differ in length, title, or bounds. */
+function chaptersDiffer(a: ABSChapter[], b: ABSChapter[]): boolean {
+  if (a.length !== b.length) return true
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i].title !== b[i].title || a[i].start !== b[i].start || a[i].end !== b[i].end) return true
+  }
+  return false
+}
+
+/**
+ * Re-read a downloaded book's metadata from the server and update the cached
+ * copy in place. Metadata only - no audio is re-fetched, so this is cheap
+ * enough to run on cellular.
+ *
+ * Chapters, title, and author are snapshotted once at download time, so an edit
+ * made on the server afterwards was invisible to this device forever: the
+ * download is a no-op once `done`, and playback prefers the local copy
+ * unconditionally. This is what closes that gap.
+ *
+ * Compares CONTENT rather than a timestamp on purpose. ABS's chapter endpoint
+ * (POST /api/items/:id/chapters) saves `libraryItem.media` and the metadata
+ * file but never marks the libraryItem row itself changed, so `updatedAt` does
+ * NOT move on a chapters-only edit - the exact case this exists to catch.
+ *
+ * Safe to call opportunistically: it no-ops when the book isn't a finished
+ * download, and any network failure leaves the cached copy untouched.
+ *
+ * @returns true when something actually changed on this device.
+ */
+export async function refreshDownloadMetadata(itemId: string): Promise<boolean> {
+  const cur = state.byId.get(itemId)
+  if (!cur || cur.status !== 'done') return false
+
+  let detail
+  try {
+    detail = await getItemDetail(itemId)
+  } catch {
+    // Offline or the server is unhappy: keep what we have.
+    return false
+  }
+
+  const meta = detail.media?.metadata
+  if (!meta) return false
+
+  const chapters = detail.media?.chapters ?? []
+  const title = meta.title || cur.title
+  const author = meta.authorName || cur.author
+
+  // Never let a book that legitimately has chapters get blanked by a response
+  // that arrived without them.
+  const chaptersChanged = chapters.length > 0 && chaptersDiffer(cur.chapters, chapters)
+  const changed = chaptersChanged || title !== cur.title || author !== cur.author
+
+  if (changed) {
+    patch(itemId, {
+      title,
+      author,
+      ...(chaptersChanged ? { chapters } : {}),
+    })
+  }
+
+  // Refresh the browse metadata (genres, series, narrator, published year) too,
+  // which is frozen at download time for the same reason. Keep the duration we
+  // already measured - the detail response has no top-level duration field.
+  try {
+    await saveCatalogItem(detail, cur.duration)
+  } catch {
+    // Catalog is a browse convenience; a failure here doesn't undo the above.
+  }
+
+  return changed
+}
+
 /**
  * Delete download folders with no entry in the index.
  *
