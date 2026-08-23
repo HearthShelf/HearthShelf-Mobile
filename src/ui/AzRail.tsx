@@ -14,7 +14,6 @@
  */
 import { useCallback, useRef, useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, {
   runOnJS,
@@ -30,7 +29,22 @@ import { haptics } from './haptics'
 const LETTERS = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')]
 // Reversed rail (Z on top, # at bottom) for descending name sorts.
 const LETTERS_DESC = [...LETTERS].reverse()
-const BUBBLE = 64
+/**
+ * Diameter of the preview bubble's round body.
+ *
+ * This used to be the `size` of a MaterialCommunityIcons "water" glyph, which is
+ * an EM box, not the shape: the visible droplet filled only part of it, so a
+ * nominal 64 rendered a circle closer to 40 with a 24px letter cramped on it -
+ * noticeably smaller than the platform launcher's A-Z preview, which is what it
+ * was compared against.
+ *
+ * Drawn as real views now (a circle plus a triangular pointer), so this number is
+ * the actual on-screen diameter and the letter can be scaled against it.
+ */
+const BUBBLE = 72
+/** The pointer that aims at the rail, sized off the body so the two stay in
+ *  proportion if BUBBLE changes. */
+const POINTER = 14
 
 export function AzRail({
   available,
@@ -124,16 +138,16 @@ export function AzRail({
   return (
     <View style={styles.zone} pointerEvents="box-none">
       <Animated.View style={[styles.bubbleWrap, bubbleStyle]} pointerEvents="none">
-        {/* A solid teardrop (water droplet - no hollow center) rotated so its
-            point aims right at the rail, with the current letter over its
-            round body. */}
-        <MaterialCommunityIcons
-          name="water"
-          size={BUBBLE}
-          color={colors.accent}
-          style={styles.bubblePin}
-        />
-        <Text style={styles.bubbleText}>{active}</Text>
+        {/* Drawn rather than an icon glyph so the circle is exactly BUBBLE
+            across and the letter can be centered on it properly. */}
+        <View style={styles.bubbleBody}>
+          <Text style={styles.bubbleText} numberOfLines={1} allowFontScaling={false}>
+            {active}
+          </Text>
+        </View>
+        {/* Triangle pointing right, at the rail. A right-angled border trick:
+            a zero-width box whose left border is the visible triangle. */}
+        <View style={styles.bubblePointer} />
       </Animated.View>
       <GestureDetector gesture={pan}>
         <View
@@ -162,7 +176,7 @@ export function AzRail({
 
 /** Width the rail reserves on the right edge; the grid pads by this so covers
  *  never sit under the letters. */
-export const AZ_RAIL_WIDTH = 28
+export const AZ_RAIL_WIDTH = 30
 
 const styles = StyleSheet.create({
   // Anchored strip down the right edge. The generous bottom inset keeps the rail
@@ -187,43 +201,72 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  // 27 letters have to fit a fixed-height column, so this is as large as the
+  // type can go before the rail needs to scroll. includeFontPadding:false drops
+  // Android's extra glyph padding, which buys back the line height that makes
+  // the larger size fit.
   letter: {
-    fontSize: 11,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 15,
     fontWeight: '700',
     fontFamily: fonts.mono,
     color: colors.textMuted,
+    includeFontPadding: false,
   },
   letterEmpty: { color: colors.textFaint, opacity: 0.35 },
   letterActive: { color: colors.accent, fontWeight: '800' },
   // Positioned + scaled as a unit; `top` tracks the finger (set via animated
-  // style) and the whole thing pops in/out with bubbleScale.
+  // style) and the whole thing pops in/out with bubbleScale. Sized to hold the
+  // body plus its pointer, and laid out right-to-left so the pointer ends up
+  // nearest the rail.
   bubbleWrap: {
     position: 'absolute',
-    right: AZ_RAIL_WIDTH + spacing.sm,
+    right: AZ_RAIL_WIDTH + spacing.xs,
+    width: BUBBLE + POINTER,
+    height: BUBBLE,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  // The round body: a real circle, so BUBBLE is its true diameter. The shadow
+  // lifts it off the list underneath (elevation for Android, shadow* for iOS).
+  bubbleBody: {
     width: BUBBLE,
     height: BUBBLE,
+    borderRadius: BUBBLE / 2,
+    backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
+    elevation: 8,
   },
-  // The droplet, rotated a quarter turn clockwise so its point aims right at
-  // the rail while the round body sits on the left. A drop shadow lifts it off
-  // the list underneath.
-  bubblePin: {
-    position: 'absolute',
-    transform: [{ rotate: '90deg' }],
-    textShadowColor: 'rgba(0,0,0,0.4)',
-    textShadowOffset: { width: 0, height: 6 },
-    textShadowRadius: 12,
+  // Zero-sized box whose LEFT border is the visible triangle - the standard
+  // CSS-triangle trick, which RN's border rendering supports. Pulled left by a
+  // hair so it meets the circle with no seam at the join.
+  bubblePointer: {
+    marginLeft: -1,
+    width: 0,
+    height: 0,
+    backgroundColor: 'transparent',
+    borderTopWidth: POINTER,
+    borderBottomWidth: POINTER,
+    borderLeftWidth: POINTER,
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderLeftColor: colors.accent,
   },
-  // The letter overlays the droplet's round body. With the droplet rotated 90deg
-  // clockwise the body sits left of center by roughly a quarter of the icon, so
-  // nudge the glyph to match.
+  // Scaled off the body so the glyph fills the circle the way the platform
+  // launcher's does. allowFontScaling is off at the call site: a large system
+  // font setting would otherwise overflow a fixed-diameter circle.
   bubbleText: {
-    marginRight: BUBBLE * 0.16,
-    fontSize: 24,
+    fontSize: BUBBLE * 0.5,
+    lineHeight: BUBBLE * 0.6,
     fontWeight: '800',
     fontFamily: fonts.mono,
     color: colors.onAccent,
+    textAlign: 'center',
+    includeFontPadding: false,
   },
 })
