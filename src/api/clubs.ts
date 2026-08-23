@@ -10,6 +10,16 @@ import { getSession } from './session'
 
 const DISABLED_CLUBS: HSClubsResponse = { enabled: false, mine: [], joinable: [] }
 
+export type ClubVisibility = 'closed' | 'public'
+export type ClubSummary = HSClub & {
+  visibility?: ClubVisibility
+  lastActivityAt?: number
+}
+export type ClubsDirectoryResponse = Omit<HSClubsResponse, 'mine' | 'joinable'> & {
+  mine: ClubSummary[]
+  joinable: ClubSummary[]
+}
+
 export interface ClubInvitee {
   userId: string
   username: string
@@ -24,28 +34,47 @@ export interface ClubInviteResult {
   emailSent?: boolean
 }
 
-function visibleClubs(res: HSClubsResponse): HSClubsResponse {
+export interface ClubDiscussionSettings {
+  allowCommentEditing: boolean
+  allowReplies: boolean
+}
+
+function visibleClubs(res: ClubsDirectoryResponse): ClubsDirectoryResponse {
   if (!res.enabled) return DISABLED_CLUBS
   return {
     enabled: true,
-    mine: res.mine.filter((club) => !club.archived),
-    joinable: res.joinable.filter((club) => !club.archived),
+    mine: res.mine.filter((club) => !club.archived).map(withDiscussionDefaults),
+    joinable: res.joinable.filter((club) => !club.archived).map(withDiscussionDefaults),
   }
 }
 
-/** The caller's clubs and (with libraryItemId) open clubs joinable for that item
- *  - open clubs whose current book is the item. Without the id, `mine` only. */
-export async function getClubs(libraryItemId?: string): Promise<HSClubsResponse> {
+function withDiscussionDefaults<T extends HSClub>(club: T): T {
+  return {
+    ...club,
+    allowCommentEditing: club.allowCommentEditing ?? true,
+    allowReplies: club.allowReplies ?? true,
+  }
+}
+
+/** The caller's clubs and public clubs they can join. A libraryItemId narrows
+ * the public directory to clubs currently reading that book. */
+export async function getClubs(
+  libraryItemId?: string,
+  includeDirectory = false,
+): Promise<ClubsDirectoryResponse> {
   const session = getSession()
   if (!session) return DISABLED_CLUBS
   const { serverUrl, token } = session
-  const q = libraryItemId ? `?libraryItemId=${encodeURIComponent(libraryItemId)}` : ''
+  const qs = new URLSearchParams()
+  if (libraryItemId) qs.set('libraryItemId', libraryItemId)
+  if (includeDirectory) qs.set('directory', '1')
+  const q = qs.toString() ? `?${qs.toString()}` : ''
   try {
     const res = await fetch(`${serverUrl}/hs/clubs${q}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!res.ok) return DISABLED_CLUBS
-    return visibleClubs((await res.json()) as HSClubsResponse)
+    return visibleClubs((await res.json()) as ClubsDirectoryResponse)
   } catch {
     return DISABLED_CLUBS
   }
@@ -81,6 +110,7 @@ export async function getClub(
     )
     if (!res.ok) return null
     const detail = (await res.json()) as HSClubDetail
+    detail.club = withDiscussionDefaults(detail.club)
     return detail.enabled ? detail : null
   } catch {
     return null
@@ -88,7 +118,11 @@ export async function getClub(
 }
 
 /** Create a club; the creator becomes owner. An optional first current book. */
-export async function createClub(name: string, libraryItemId?: string): Promise<HSClub | null> {
+export async function createClub(
+  name: string,
+  libraryItemId?: string,
+  visibility: ClubVisibility = 'public',
+): Promise<HSClub | null> {
   const session = getSession()
   if (!session) return null
   const { serverUrl, token } = session
@@ -96,12 +130,28 @@ export async function createClub(name: string, libraryItemId?: string): Promise<
     const res = await fetch(`${serverUrl}/hs/clubs`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, libraryItemId: libraryItemId ?? '' }),
+      body: JSON.stringify({ name, libraryItemId: libraryItemId ?? '', visibility }),
     })
     if (!res.ok) return null
     return (await res.json()) as HSClub
   } catch {
     return null
+  }
+}
+
+/** Owner-only visibility change. Closed clubs remain available by invitation. */
+export async function setClubVisibility(id: string, visibility: ClubVisibility): Promise<boolean> {
+  const session = getSession()
+  if (!session) return false
+  try {
+    const res = await fetch(`${session.serverUrl}/hs/clubs/${encodeURIComponent(id)}/visibility`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visibility }),
+    })
+    return res.ok
+  } catch {
+    return false
   }
 }
 
@@ -313,6 +363,25 @@ export async function markClubRead(id: string, lastReadAt: number): Promise<bool
     return res.ok
   } catch {
     return false
+  }
+}
+
+/** Owner/admin: update this club's discussion permissions. */
+export async function updateClubDiscussionSettings(
+  id: string,
+  settings: ClubDiscussionSettings,
+): Promise<ClubDiscussionSettings | null> {
+  const session = getSession()
+  if (!session) return null
+  try {
+    const res = await fetch(`${session.serverUrl}/hs/clubs/${encodeURIComponent(id)}/settings`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    })
+    return res.ok ? ((await res.json()) as ClubDiscussionSettings) : null
+  } catch {
+    return null
   }
 }
 

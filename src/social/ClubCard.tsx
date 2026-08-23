@@ -18,6 +18,7 @@ import {
   setClubMembership,
   setClubCurrentBook,
   enqueueClubBook,
+  type ClubVisibility,
 } from '@/api/clubs'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { getMeId } from '@/api/me'
@@ -47,6 +48,7 @@ export function ClubCard({
   const [joinable, setJoinable] = useState<HSClub[]>([])
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
+  const [visibility, setVisibility] = useState<ClubVisibility>('closed')
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
@@ -90,10 +92,11 @@ export function ClubCard({
     if (!trimmed || busy) return
     setBusy(true)
     haptics.success()
-    const club = await createClub(trimmed, libraryItemId)
+    const club = await createClub(trimmed, libraryItemId, visibility)
     setBusy(false)
     if (club) {
       setName('')
+      setVisibility('closed')
       setCreating(false)
       onToast?.(`Created ${club.name}`)
       openClub(club.id)
@@ -226,6 +229,24 @@ export function ClubCard({
               maxLength={80}
               onSubmitEditing={() => void create()}
             />
+            <View style={styles.visibilityRow}>
+              {(['closed', 'public'] as const).map((choice) => (
+                <Touchable
+                  key={choice}
+                  style={[styles.visibilityChip, visibility === choice && styles.visibilityChipOn]}
+                  onPress={() => setVisibility(choice)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: visibility === choice }}
+                >
+                  <Icon
+                    name={choice === 'closed' ? icons.lock : icons.club}
+                    size={14}
+                    color={visibility === choice ? colors.accent : colors.textMuted}
+                  />
+                  <AppText variant="caption">{choice === 'closed' ? 'Closed' : 'Public'}</AppText>
+                </Touchable>
+              ))}
+            </View>
             <Touchable
               style={[styles.pillBtn, (!name.trim() || busy) && { opacity: 0.5 }]}
               disabled={!name.trim() || busy}
@@ -296,7 +317,27 @@ const makeStyles = (colors: Palette) =>
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.accent,
     },
-    createRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    createRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm },
+    visibilityRow: {
+      flexDirection: 'row',
+      gap: spacing.xs,
+      width: '100%',
+    },
+    visibilityChip: {
+      minHeight: 44,
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.xs,
+      borderRadius: radius.pill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    visibilityChipOn: {
+      borderColor: colors.accent,
+      backgroundColor: colors.accentWash,
+    },
     input: {
       flex: 1,
       borderWidth: StyleSheet.hairlineWidth,

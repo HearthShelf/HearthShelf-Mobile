@@ -126,6 +126,84 @@ function raceContext(
   return 'Reading together here'
 }
 
+/** The same avatar progress rail used on the player, exposed for the club room.
+ * Tapping it is intentionally the only control: the room expands its richer
+ * "Where everyone is" card beneath it. */
+export function PlayerClubProgressStrip({
+  clubName,
+  members,
+  memberCount,
+  position,
+  duration,
+  onPress,
+  expanded,
+}: {
+  clubName: string
+  members: HSClubMember[]
+  memberCount: number
+  position: number
+  duration: number
+  onPress: () => void
+  expanded: boolean
+}) {
+  const { colors } = useTheme()
+  const styles = useMemo(() => makeStyles(colors), [colors])
+  const meId = getMeId()
+  const pips = useMemo(
+    () => racePips(members, meId, position, duration),
+    [duration, meId, members, position],
+  )
+  const raceFill =
+    pips.find((pip) => pip.me)?.fraction ??
+    (duration > 0 ? Math.max(0, Math.min(1, position / duration)) : 0)
+  const context = raceContext(members, meId, position, duration)
+  return (
+    <Touchable
+      onPress={onPress}
+      style={[styles.surface, styles.quietSurface]}
+      accessibilityRole="button"
+      accessibilityState={{ expanded }}
+      accessibilityLabel={`${clubName} reading progress. ${context}`}
+      accessibilityHint="Shows where everyone is"
+    >
+      <View style={styles.race}>
+        <View style={styles.raceHeader}>
+          <AppText variant="caption" color="#fff" numberOfLines={1} style={styles.clubName}>
+            {clubName}
+          </AppText>
+          <AppText variant="caption" color="rgba(255,255,255,0.6)">
+            {memberCount} {memberCount === 1 ? 'reader' : 'readers'}
+          </AppText>
+        </View>
+        <View style={styles.raceTrack}>
+          <View style={styles.raceLine} />
+          <View style={[styles.raceFill, { width: `${raceFill * 100}%` as `${number}%` }]} />
+          {pips.map((pip) => (
+            <View
+              key={pip.id}
+              style={[
+                styles.racePip,
+                { left: `${pip.fraction * 100}%` as `${number}%` },
+                pip.me && styles.racePipMe,
+              ]}
+            >
+              <Avatar uri={avatarUrl(pip.id)} size={18} name={pip.name} />
+            </View>
+          ))}
+        </View>
+        <View style={styles.raceFooter}>
+          <AppText variant="caption" color="rgba(255,255,255,0.62)" numberOfLines={1}>
+            {context}
+          </AppText>
+          <View style={{ transform: [{ rotate: expanded ? '0deg' : '180deg' }] }}>
+            <Icon name={icons.expandLess} size={18} color="rgba(255,255,255,0.62)" />
+          </View>
+        </View>
+      </View>
+    </Touchable>
+  )
+}
+
 export function PlayerClubStrip({
   club,
   itemId,

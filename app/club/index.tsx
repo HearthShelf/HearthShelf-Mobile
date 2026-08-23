@@ -12,12 +12,26 @@
  * Hidden behind the clubsEnabled setting: if the reader turned clubs off, this
  * route bounces back rather than showing an empty list.
  */
-import { forwardRef, useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import {
+  forwardRef,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react'
 import { ScrollView, StyleSheet, View } from 'react-native'
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
-import type { HSClub } from '@hearthshelf/core'
 import { coverHue } from '@hearthshelf/core'
-import { getClubs, getClub, createClub } from '@/api/clubs'
+import {
+  getClubs,
+  getClub,
+  createClub,
+  setClubMembership,
+  type ClubSummary,
+  type ClubVisibility,
+} from '@/api/clubs'
 import { coverUrl } from '@/api/abs'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
 import {
@@ -30,7 +44,7 @@ import {
   type SheetRef,
   Touchable,
 } from '@/ui/primitives'
-import { BottomSheetTextInput } from '@gorhom/bottom-sheet'
+import { BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet'
 import { Icon, icons } from '@/ui/icons'
 import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { EmptyState, Skeleton, SkeletonRow } from '@/ui/states'
@@ -39,6 +53,8 @@ import { haptics } from '@/ui/haptics'
 import { useContentInset } from '@/ui/useContentInset'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
+
+const QUIET_AFTER_MS = 30 * 24 * 60 * 60 * 1000
 
 export default function MyClubsScreen() {
   const router = useRouter()
@@ -50,50 +66,45 @@ export default function MyClubsScreen() {
   const { clubsEnabled } = useSyncExternalStore(subscribeSettings, getSettingsState)
   const newClubRef = useRef<SheetRef>(null)
 
-  const [clubs, setClubs] = useState<HSClub[] | null>(null)
+  const [clubs, setClubs] = useState<ClubSummary[] | null>(null)
+  const [joinable, setJoinable] = useState<ClubSummary[]>([])
   // Per-club unread counts, filled in after the list loads (best-effort).
   const [unread, setUnread] = useState<Record<string, number>>({})
 
-  useFocusEffect(
-    useCallback(() => {
-      let cancelled = false
-      void getClubs().then((res) => {
-        if (cancelled) return
-        const mine = res.enabled ? res.mine : []
-        // One club is not a list worth showing - go straight in. replace(), not
-        // push(), so Back leaves the club rather than bouncing to a list that
-        // would immediately redirect again.
-        if (mine.length === 1) {
-          router.replace(`/club/${encodeURIComponent(mine[0].id)}?from=${active}`)
-          return
-        }
-        setClubs(mine)
-        // Fetch each club's unread count in parallel. getClub() without a
-        // bookId/position is a plain read and does NOT advance the read cursor
-        // (that's a separate markClubRead PUT the room fires), so this is safe.
-        void Promise.all(
-          mine.map((c) =>
-            getClub(c.id)
-              .then((d) => [c.id, d?.unreadCount ?? 0] as const)
-              .catch(() => [c.id, 0] as const),
-          ),
-        ).then((pairs) => {
-          if (!cancelled) setUnread(Object.fromEntries(pairs))
-        })
+  const load = useCallback(() => {
+    let cancelled = false
+    void getClubs(undefined, true).then((res) => {
+      if (cancelled) return
+      const mine = res.enabled ? res.mine : []
+      setClubs(mine)
+      setJoinable(res.enabled ? res.joinable : [])
+      // Fetch each club's unread count in parallel. getClub() without a
+      // bookId/position is a plain read and does NOT advance the read cursor
+      // (that's a separate markClubRead PUT the room fires), so this is safe.
+      void Promise.all(
+        mine.map((c) =>
+          getClub(c.id)
+            .then((d) => [c.id, d?.unreadCount ?? 0] as const)
+            .catch(() => [c.id, 0] as const),
+        ),
+      ).then((pairs) => {
+        if (!cancelled) setUnread(Object.fromEntries(pairs))
       })
-      return () => {
-        cancelled = true
-      }
-    }, [router, active]),
-  )
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useFocusEffect(useCallback(() => load(), [load]))
 
   const goToTab = useGoToTab()
 
-  const createNewClub = async (name: string) => {
+  const createNewClub = async (name: string, visibility: ClubVisibility) => {
     const trimmed = name.trim()
     if (!trimmed) return
     haptics.success()
-    const club = await createClub(trimmed)
+    const club = await createClub(trimmed, undefined, visibility)
     newClubRef.current?.dismiss()
     if (club) {
       showToast(`Created ${club.name}`)
@@ -103,18 +114,42 @@ export default function MyClubsScreen() {
     }
   }
 
+  const joinPublicClub = async (club: ClubSummary) => {
+    const joined = await setClubMembership(club.id, true)
+    if (!joined) {
+      showToast('Could not join club')
+      return
+    }
+    haptics.success()
+    newClubRef.current?.dismiss()
+    showToast(`Joined ${club.name}`)
+    router.push(`/club/${encodeURIComponent(club.id)}?from=${active}`)
+  }
+
+  const needsYou = clubs?.filter((club) => (unread[club.id] ?? 0) > 0) ?? []
+  const quietCutoff = Date.now() - QUIET_AFTER_MS
+  const quiet = clubs?.filter((club) => (club.lastActivityAt ?? club.createdAt) < quietCutoff) ?? []
+  const quietIds = new Set(quiet.map((club) => club.id))
+  const activeClubs = clubs?.filter((club) => !quietIds.has(club.id)) ?? []
+
   return (
     <Screen tabBar={<AppTabBar activeName={active} onPressTab={goToTab} />}>
       <View style={styles.header}>
         <IconButton name={icons.back} onPress={() => router.back()} style={styles.headerBtn} />
-        <AppText variant="label" style={{ flex: 1, marginHorizontal: spacing.sm }}>
-          My Book Clubs
-        </AppText>
-        {clubsEnabled && (clubs?.length ?? 0) > 0 ? (
+        <View style={{ flex: 1, marginHorizontal: spacing.sm }}>
+          <AppText variant="label">My Book Clubs</AppText>
+          {clubs ? (
+            <AppText variant="caption" color={colors.textMuted}>
+              {clubs.length} {clubs.length === 1 ? 'club' : 'clubs'} · {needsYou.length} need you
+            </AppText>
+          ) : null}
+        </View>
+        {clubsEnabled ? (
           <IconButton
             name={icons.add}
             onPress={() => newClubRef.current?.present()}
             style={styles.headerBtn}
+            accessibilityLabel="Join or create a book club"
           />
         ) : null}
       </View>
@@ -132,8 +167,8 @@ export default function MyClubsScreen() {
         <EmptyState
           icon={icons.club}
           title="No clubs yet"
-          body="Start a club to read along with others, or open a book and start one from there."
-          cta="New club"
+          body="Join a public club on this server, or create one of your own."
+          cta="Join or create"
           onCta={() => newClubRef.current?.present()}
         />
       ) : (
@@ -144,21 +179,85 @@ export default function MyClubsScreen() {
             gap: spacing.sm,
           }}
         >
-          {clubs.map((c) => (
-            <ClubRow
-              key={c.id}
-              club={c}
-              unread={unread[c.id] ?? 0}
-              styles={styles}
-              colors={colors}
-              onPress={() => router.push(`/club/${encodeURIComponent(c.id)}?from=${active}`)}
-            />
-          ))}
+          {needsYou.length > 0 ? (
+            <ClubSection title="Needs you" accent styles={styles}>
+              {needsYou.map((c) => (
+                <ClubRow
+                  key={`needs-${c.id}`}
+                  club={c}
+                  unread={unread[c.id] ?? 0}
+                  styles={styles}
+                  colors={colors}
+                  compact
+                  onPress={() => router.push(`/club/${encodeURIComponent(c.id)}?from=${active}`)}
+                />
+              ))}
+            </ClubSection>
+          ) : null}
+          {activeClubs.length > 0 ? (
+            <ClubSection title="Your clubs" styles={styles}>
+              {activeClubs.map((c) => (
+                <ClubRow
+                  key={c.id}
+                  club={c}
+                  unread={unread[c.id] ?? 0}
+                  styles={styles}
+                  colors={colors}
+                  onPress={() => router.push(`/club/${encodeURIComponent(c.id)}?from=${active}`)}
+                />
+              ))}
+            </ClubSection>
+          ) : null}
+          {quiet.length > 0 ? (
+            <ClubSection title="Quiet for a while" quiet styles={styles}>
+              {quiet.map((c) => (
+                <ClubRow
+                  key={c.id}
+                  club={c}
+                  unread={unread[c.id] ?? 0}
+                  styles={styles}
+                  colors={colors}
+                  quiet
+                  onPress={() => router.push(`/club/${encodeURIComponent(c.id)}?from=${active}`)}
+                />
+              ))}
+            </ClubSection>
+          ) : null}
         </ScrollView>
       )}
 
-      <NewClubSheet ref={newClubRef} onCreate={createNewClub} styles={styles} colors={colors} />
+      <NewClubSheet
+        ref={newClubRef}
+        joinable={joinable}
+        onJoin={joinPublicClub}
+        onCreate={createNewClub}
+        styles={styles}
+        colors={colors}
+      />
     </Screen>
+  )
+}
+
+function ClubSection({
+  title,
+  accent,
+  quiet,
+  styles,
+  children,
+}: {
+  title: string
+  accent?: boolean
+  quiet?: boolean
+  styles: Styles
+  children: ReactNode
+}) {
+  return (
+    <View style={[styles.section, quiet && styles.quietSection]}>
+      <AppText variant="eyebrow" style={[styles.sectionTitle, accent && styles.sectionTitleAccent]}>
+        {title}
+      </AppText>
+      <View style={{ gap: spacing.sm }}>{children}</View>
+    </View>
   )
 }
 
@@ -167,12 +266,16 @@ function ClubRow({
   unread,
   styles,
   colors,
+  compact,
+  quiet,
   onPress,
 }: {
-  club: HSClub
+  club: ClubSummary
   unread: number
   styles: Styles
   colors: Palette
+  compact?: boolean
+  quiet?: boolean
   onPress: () => void
 }) {
   const members = `${club.memberCount} ${club.memberCount === 1 ? 'member' : 'members'}`
@@ -180,7 +283,12 @@ function ClubRow({
     ? `Reading ${club.currentBook.title || 'a book'}`
     : 'No current book'
   return (
-    <Touchable style={styles.row} onPress={onPress}>
+    <Touchable
+      style={[styles.row, compact && styles.compactRow, quiet && styles.quietRow]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${club.name}, ${members}`}
+    >
       {club.currentBook ? (
         <Cover
           uri={coverUrl(club.currentBook.libraryItemId)}
@@ -205,7 +313,7 @@ function ClubRow({
           {bookLine}
         </AppText>
         <AppText variant="caption" color={colors.textFaint} numberOfLines={1}>
-          {members}
+          {members} · {club.isOpen ? 'Public' : 'Closed'}
         </AppText>
       </View>
       {unread > 0 ? (
@@ -223,31 +331,107 @@ function ClubRow({
 
 const NewClubSheet = forwardRef<
   SheetRef,
-  { onCreate: (name: string) => void; styles: Styles; colors: Palette }
->(function NewClubSheet({ onCreate, styles, colors }, ref) {
+  {
+    joinable: ClubSummary[]
+    onJoin: (club: ClubSummary) => void
+    onCreate: (name: string, visibility: ClubVisibility) => void
+    styles: Styles
+    colors: Palette
+  }
+>(function NewClubSheet({ joinable, onJoin, onCreate, styles, colors }, ref) {
   const [name, setName] = useState('')
+  const [visibility, setVisibility] = useState<ClubVisibility>('closed')
   return (
-    <Sheet ref={ref} title="New club">
-      <AppText variant="caption" color={colors.textMuted} style={{ marginBottom: spacing.sm }}>
-        Name your club. You can pick a book to read together once it's created.
-      </AppText>
-      <BottomSheetTextInput
-        placeholder="Club name"
-        placeholderTextColor={colors.textFaint}
-        value={name}
-        onChangeText={setName}
-        style={styles.nameInput}
-        autoFocus
-      />
-      <PrimaryButton
-        label="Create club"
-        icon={icons.add}
-        onPress={() => {
-          onCreate(name)
-          setName('')
-        }}
-        style={{ marginTop: spacing.md }}
-      />
+    <Sheet ref={ref} title="Join or create" snapPoints={['85%']}>
+      <BottomSheetScrollView contentContainerStyle={styles.sheetScroll}>
+        {joinable.length > 0 ? (
+          <View style={styles.joinSection}>
+            <AppText variant="eyebrow" color={colors.textMuted}>
+              Public clubs
+            </AppText>
+            {joinable.map((club) => (
+              <View key={club.id} style={styles.joinRow}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <AppText variant="label" numberOfLines={1}>
+                    {club.name}
+                  </AppText>
+                  <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
+                    {club.currentBook?.title ?? 'Choosing a first book'} · {club.memberCount}{' '}
+                    {club.memberCount === 1 ? 'member' : 'members'}
+                  </AppText>
+                </View>
+                <Touchable
+                  style={styles.joinButton}
+                  onPress={() => onJoin(club)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Join ${club.name}`}
+                >
+                  <AppText variant="caption" color={colors.onAccent}>
+                    Join
+                  </AppText>
+                </Touchable>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <AppText variant="caption" color={colors.textMuted} style={styles.noPublicClubs}>
+            No public clubs are looking for members right now.
+          </AppText>
+        )}
+        <View style={styles.sheetDivider} />
+        <AppText variant="eyebrow" color={colors.textMuted} style={{ marginBottom: spacing.sm }}>
+          Create a club
+        </AppText>
+        <AppText variant="caption" color={colors.textMuted} style={{ marginBottom: spacing.sm }}>
+          Name your club. You can pick a book to read together once it's created.
+        </AppText>
+        <BottomSheetTextInput
+          placeholder="Club name"
+          placeholderTextColor={colors.textFaint}
+          value={name}
+          onChangeText={setName}
+          style={styles.nameInput}
+          autoFocus
+        />
+        <View style={styles.visibilityChoices}>
+          {(['closed', 'public'] as const).map((choice) => {
+            const selected = visibility === choice
+            return (
+              <Touchable
+                key={choice}
+                style={[styles.visibilityChoice, selected && styles.visibilityChoiceOn]}
+                onPress={() => setVisibility(choice)}
+                accessibilityRole="radio"
+                accessibilityState={{ selected }}
+              >
+                <Icon
+                  name={choice === 'closed' ? icons.lock : icons.club}
+                  size={18}
+                  color={selected ? colors.accent : colors.textMuted}
+                />
+                <View style={{ flex: 1 }}>
+                  <AppText variant="label">{choice === 'closed' ? 'Closed' : 'Public'}</AppText>
+                  <AppText variant="caption" color={colors.textMuted}>
+                    {choice === 'closed'
+                      ? 'Invite-only. Only members can see the club room.'
+                      : 'Anyone on this server can find and join.'}
+                  </AppText>
+                </View>
+              </Touchable>
+            )
+          })}
+        </View>
+        <PrimaryButton
+          label="Create club"
+          icon={icons.add}
+          onPress={() => {
+            onCreate(name, visibility)
+            setName('')
+            setVisibility('closed')
+          }}
+          style={{ marginTop: spacing.md }}
+        />
+      </BottomSheetScrollView>
     </Sheet>
   )
 })
@@ -296,6 +480,29 @@ const makeStyles = (colors: Palette) =>
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.hairline,
     },
+    compactRow: {
+      paddingVertical: spacing.sm,
+    },
+    quietRow: {
+      opacity: 0.62,
+      backgroundColor: 'transparent',
+    },
+    section: {
+      gap: spacing.sm,
+      marginBottom: spacing.md,
+    },
+    quietSection: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.hairline,
+      paddingTop: spacing.md,
+    },
+    sectionTitle: {
+      color: colors.textMuted,
+      marginBottom: spacing.xs,
+    },
+    sectionTitleAccent: {
+      color: colors.accent,
+    },
     noBook: {
       width: 46,
       height: 46,
@@ -321,5 +528,55 @@ const makeStyles = (colors: Palette) =>
       paddingVertical: spacing.md,
       color: colors.text,
       fontSize: 16,
+    },
+    joinSection: {
+      gap: spacing.sm,
+      marginBottom: spacing.md,
+    },
+    sheetScroll: {
+      paddingBottom: spacing.xxl,
+    },
+    joinRow: {
+      minHeight: 52,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingVertical: spacing.xs,
+    },
+    joinButton: {
+      minWidth: 56,
+      minHeight: 44,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.pill,
+      backgroundColor: colors.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    noPublicClubs: {
+      marginBottom: spacing.md,
+    },
+    sheetDivider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: colors.hairline,
+      marginBottom: spacing.md,
+    },
+    visibilityChoices: {
+      gap: spacing.sm,
+      marginTop: spacing.md,
+    },
+    visibilityChoice: {
+      minHeight: 56,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      padding: spacing.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      borderRadius: radius.card,
+      backgroundColor: colors.fill,
+    },
+    visibilityChoiceOn: {
+      borderColor: colors.accent,
+      backgroundColor: colors.accentWash,
     },
   })

@@ -10,6 +10,7 @@ import type {
   HSNote,
   HSNotesResponse,
   HSNoteReaction,
+  HSNoteReactionDetail,
   NoteReactionKind,
   NoteVisibility,
 } from '@hearthshelf/core'
@@ -68,6 +69,8 @@ export interface PostNoteParams {
   /** Author-declared spoiler-free: bypasses the position gate, shown to everyone.
    *  Top-level notes only; the server forces it false on replies. Default false. */
   safe?: boolean
+  /** Visually redact the text until the reader taps to reveal it. */
+  spoiler?: boolean
   body: string
   /** Club member ids the note @mentions. The server re-authorizes every id
    *  against club membership, so this is a request, never a grant. */
@@ -104,6 +107,47 @@ export async function reactToNote(
   }
 }
 
+/** Fetch the people behind each reaction chip for the reaction tray. */
+export async function getNoteReactionDetails(noteId: string): Promise<HSNoteReactionDetail[]> {
+  const session = getSession()
+  if (!session) return []
+  try {
+    const res = await fetch(
+      `${session.serverUrl}/hs/notes/${encodeURIComponent(noteId)}/reactions`,
+      {
+        headers: { Authorization: `Bearer ${session.token}` },
+      },
+    )
+    if (!res.ok) return []
+    const data = (await res.json()) as { reactions?: HSNoteReactionDetail[] }
+    return Array.isArray(data.reactions) ? data.reactions : []
+  } catch {
+    return []
+  }
+}
+
+export interface EditNoteParams {
+  body: string
+  spoiler: boolean
+  timeSec: number | null
+}
+
+/** Revise your own comment when its club permits member editing. */
+export async function editNote(id: string, params: EditNoteParams): Promise<HSNote | null> {
+  const session = getSession()
+  if (!session) return null
+  try {
+    const res = await fetch(`${session.serverUrl}/hs/notes/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    })
+    return res.ok ? ((await res.json()) as HSNote) : null
+  } catch {
+    return null
+  }
+}
+
 /** Post a note. Returns the created HSNote, or null on any failure (the caller
  *  surfaces a toast and re-fetches). */
 export async function postNote(params: PostNoteParams): Promise<HSNote | null> {
@@ -123,6 +167,7 @@ export async function postNote(params: PostNoteParams): Promise<HSNote | null> {
         // general posts. safe rides on every top-level post (default false).
         ...(params.visibility ? { visibility: params.visibility } : {}),
         safe: params.safe ?? false,
+        spoiler: params.spoiler ?? false,
         body: params.body,
         ...(params.mentions?.length ? { mentions: params.mentions } : {}),
       }),

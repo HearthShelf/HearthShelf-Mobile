@@ -8,7 +8,7 @@
  * Shared by the public NotesSheet and the Book Club room so both render chat the
  * same way.
  */
-import { useMemo } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Image, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
 import type { HSNote, NoteReactionKind } from '@hearthshelf/core'
 import { coverHue, formatTimestamp, reactionGlyph, reactionLabel } from '@hearthshelf/core'
@@ -36,6 +36,15 @@ export function stampLabel(timeSec: number | null, chapters: ChapterMark[]): str
   const ch = chapters.find((c) => timeSec >= c.start && timeSec < c.end)
   const ts = formatTimestamp(timeSec)
   return ch?.title ? `${ch.title} · ${ts}` : ts
+}
+
+function authoredLabel(createdAt: number): string {
+  return new Date(createdAt).toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
 }
 
 /** Escape a username for use inside a RegExp alternation. */
@@ -124,6 +133,7 @@ function NoteBubble({
   onDelete,
   onOpenUser,
   onReact,
+  onOpenReactions,
   onOpenActions,
   onLayout,
 }: {
@@ -141,6 +151,8 @@ function NoteBubble({
   onOpenUser?: (userId: string) => void
   /** Toggle one reaction kind. Omitted where reacting isn't offered. */
   onReact?: (note: HSNote, kind: NoteReactionKind, on: boolean) => void
+  /** Open the reactor tray, optionally focused on the tapped kind. */
+  onOpenReactions?: (note: HSNote, kind: NoteReactionKind) => void
   /** Open the caller's action menu for this note - reactions, reply, and the
    *  jump-to-this-moment playback actions. Wired to a plain tap as well as a
    *  long press: long-press alone is invisible, so nobody finds it. */
@@ -153,6 +165,7 @@ function NoteBubble({
   const mine = note.userId === meId
   const stamp = stampLabel(note.timeSec, chapters)
   const canDelete = (mine || canModerate) && !!onDelete
+  const [spoilerRevealed, setSpoilerRevealed] = useState(false)
   return (
     <Pressable
       style={[styles.bubble, isReply && styles.replyBubble, highlighted && styles.highlighted]}
@@ -192,6 +205,10 @@ function NoteBubble({
               {stamp}
             </AppText>
           ) : null}
+          <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
+            {authoredLabel(note.createdAt)}
+            {note.updatedAt ? ' · Edited' : ''}
+          </AppText>
           {/* A personal note is only ever the author's own; flag it so they know
               nobody else can see it. A safe note shows early to everyone. */}
           {note.visibility === 'personal' ? (
@@ -211,7 +228,21 @@ function NoteBubble({
             </View>
           ) : null}
         </View>
-        <NoteBody note={note} onOpenUser={onOpenUser} />
+        {note.spoiler && !spoilerRevealed ? (
+          <Touchable
+            style={styles.spoilerCover}
+            onPress={() => setSpoilerRevealed(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Reveal spoiler comment"
+          >
+            <Icon name={icons.hidden} size={15} color={colors.textMuted} />
+            <AppText variant="caption" color={colors.textMuted}>
+              Spoiler · tap to reveal
+            </AppText>
+          </Touchable>
+        ) : (
+          <NoteBody note={note} onOpenUser={onOpenUser} />
+        )}
         <View style={styles.actionsRow}>
           {/* A visible way in. Reacting used to be long-press only, which is an
               affordance nobody discovers, so the same menu gets a text link
@@ -253,8 +284,8 @@ function NoteBubble({
               <Touchable
                 key={r.kind}
                 style={[styles.reactChip, r.mine && styles.reactChipOn]}
-                disabled={!onReact}
-                onPress={() => onReact?.(note, r.kind, !r.mine)}
+                disabled={!onOpenReactions}
+                onPress={() => onOpenReactions?.(note, r.kind)}
                 accessibilityRole="button"
                 accessibilityState={{ selected: r.mine }}
                 accessibilityLabel={`${r.count} ${reactionLabel(r.kind)}${r.mine ? ', including you' : ''}`}
@@ -281,9 +312,12 @@ export function NoteThread({
   onDelete,
   onOpenUser,
   onReact,
+  onOpenReactions,
   onOpenActions,
   onNoteLayout,
   newSinceTs,
+  replyComposerFor,
+  replyComposer,
 }: {
   notes: HSNote[]
   chapters?: ChapterMark[]
@@ -298,6 +332,7 @@ export function NoteThread({
   onOpenUser?: (userId: string) => void
   /** Toggle one reaction kind on a note. Omitted where reacting isn't offered. */
   onReact?: (note: HSNote, kind: NoteReactionKind, on: boolean) => void
+  onOpenReactions?: (note: HSNote, kind: NoteReactionKind) => void
   /** Open the caller's action menu for a note (tap or long press). */
   onOpenActions?: (note: HSNote) => void
   /** Fires the highlighted note's y within the thread so the caller can scroll. */
@@ -305,6 +340,9 @@ export function NoteThread({
   /** When set, a "new since last visit" divider renders before the first
    *  top-level note created after this timestamp. */
   newSinceTs?: number
+  /** Render the reply field directly beneath the thread it will join. */
+  replyComposerFor?: string
+  replyComposer?: ReactNode
 }) {
   // Group replies under their parents; keep top-level notes in createdAt order.
   const { tops, repliesByParent } = useMemo(() => {
@@ -367,6 +405,7 @@ export function NoteThread({
               onDelete={onDelete}
               onOpenUser={onOpenUser}
               onReact={onReact}
+              onOpenReactions={onOpenReactions}
               onOpenActions={onOpenActions}
             />
             {replies.map((r) => (
@@ -381,9 +420,11 @@ export function NoteThread({
                 onDelete={onDelete}
                 onOpenUser={onOpenUser}
                 onReact={onReact}
+                onOpenReactions={onOpenReactions}
                 onOpenActions={onOpenActions}
               />
             ))}
+            {replyComposerFor === n.id ? replyComposer : null}
           </View>
         )
       })}
@@ -435,6 +476,16 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.fill,
     },
     reactChipOn: { borderColor: colors.accent, backgroundColor: colors.accentWash },
+    spoilerCover: {
+      minHeight: 44,
+      marginTop: spacing.xs,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.row,
+      backgroundColor: colors.fill,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
     // Sized to sit on the text baseline rather than the cap height, so the row
     // does not grow taller than an unmentioned line.
     mentionAvatar: { width: 14, height: 14, borderRadius: 7 },

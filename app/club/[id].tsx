@@ -17,7 +17,6 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
-  KeyboardAvoidingView,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -33,8 +32,9 @@ import type {
   HSClubMember,
   HSNote,
   NoteReactionKind,
+  HSNoteReactionDetail,
 } from '@hearthshelf/core'
-import { coverHue, formatTimestamp, sortMembersByProgress, quickReactions } from '@hearthshelf/core'
+import { coverHue, sortMembersByProgress, quickReactions } from '@hearthshelf/core'
 import {
   getClub,
   setClubMembership,
@@ -49,12 +49,12 @@ import {
   getClubInvitees,
   inviteClubUsers,
   revokeClubInvite,
+  setClubVisibility,
   type ClubInvitee,
 } from '@/api/clubs'
 import { holdClubPolling } from '@/player/clubSync'
-import { useMiniPlayerInset } from '@/ui/useContentInset'
 import { useSheetBackHandler } from '@/ui/useBackHandler'
-import { postNote, deleteNote, reactToNote } from '@/api/notes'
+import { postNote, deleteNote, reactToNote, getNoteReactionDetails, editNote } from '@/api/notes'
 import { getMeId } from '@/api/me'
 import * as Clipboard from 'expo-clipboard'
 import { coverUrl, avatarUrl, getLibraries } from '@/api/abs'
@@ -64,6 +64,7 @@ import {
   subscribe as subscribePlayer,
 } from '@/player/store'
 import { playItemById } from '@/player/playback'
+import { PlayerClubProgressStrip } from '@/player/PlayerClubStrip'
 import {
   NoteThread,
   reactionGlyph,
@@ -136,9 +137,6 @@ export default function ClubRoomScreen() {
   useEffect(() => {
     void hydrateReactionRecents()
   }, [])
-  // Clearance so the composer/join bar sits above the docked mini player.
-  const miniInset = useMiniPlayerInset()
-
   const [detail, setDetail] = useState<HSClubDetail | null>(null)
   // The library the add-books search runs against. Best-effort: a failure just
   // leaves the sheet saying no library is available, rather than blocking the room.
@@ -154,6 +152,10 @@ export default function ClubRoomScreen() {
   const [mentionPicks, setMentionPicks] = useState<HSClubMember[]>([])
   const [replyTo, setReplyTo] = useState<HSNote | null>(null)
   const [safe, setSafe] = useState(false)
+  const [spoiler, setSpoiler] = useState(false)
+  const [section, setSection] = useState<'discussion' | 'queue' | 'members'>('discussion')
+  const [progressExpanded, setProgressExpanded] = useState(false)
+  const [composingNew, setComposingNew] = useState(false)
   const [busy, setBusy] = useState(false)
   // Whether the next note carries a position stamp. Was implicit ("stamped iff
   // playing this book"); now an explicit, removable chip above the composer.
@@ -169,6 +171,14 @@ export default function ClubRoomScreen() {
   const addBooksSheetRef = useRef<SheetRef>(null)
   const noteActionsRef = useRef<SheetRef>(null)
   const emojiPickerRef = useRef<SheetRef>(null)
+  const reactionsSheetRef = useRef<SheetRef>(null)
+  const [reactionDetails, setReactionDetails] = useState<HSNoteReactionDetail[]>([])
+  const [reactionKind, setReactionKind] = useState<NoteReactionKind | null>(null)
+  const [reactionNote, setReactionNote] = useState<HSNote | null>(null)
+  const editSheetRef = useRef<SheetRef>(null)
+  const [editingNote, setEditingNote] = useState<HSNote | null>(null)
+  const [editBody, setEditBody] = useState('')
+  const [editSpoiler, setEditSpoiler] = useState(false)
   // The note a long-press opened the action menu for.
   const [actionNote, setActionNote] = useState<HSNote | null>(null)
   const ownerSheetRef = useRef<SheetRef>(null)
@@ -328,13 +338,13 @@ export default function ClubRoomScreen() {
       libraryItemId: viewedBook.libraryItemId,
       clubId: detail.club.id,
       parentId: replyTo?.id ?? '',
-      // Stamp the current position only when the player is on this book, we're
-      // not replying (a reply inherits its parent's gate), AND the user hasn't
-      // removed the timestamp chip.
-      timeSec: playingThisBook && !replyTo && stampEnabled ? Math.round(position) : null,
+      // Replies only carry the current position when the author explicitly
+      // opts in. Opening a reply composer starts this toggle off.
+      timeSec: playingThisBook && stampEnabled ? Math.round(position) : null,
       // Club posts are always club-scoped (no visibility toggle). Safe is a
       // top-level opt-in; a reply can't be safe.
       safe: replyTo ? false : safe,
+      spoiler,
       body: text,
       mentions: mentionPicks
         .filter((m) => text.toLowerCase().includes(`@${m.username.toLowerCase()}`))
@@ -346,7 +356,9 @@ export default function ClubRoomScreen() {
       setMentionPicks([])
       setReplyTo(null)
       setSafe(false)
+      setSpoiler(false)
       setStampEnabled(true)
+      setComposingNew(false)
       await load({ markRead: true })
     } else {
       show('Could not post')
@@ -377,6 +389,38 @@ export default function ClubRoomScreen() {
           }
         : prev,
     )
+  }
+
+  const openReactionDetails = async (note: HSNote, kind: NoteReactionKind) => {
+    setReactionNote(note)
+    setReactionKind(kind)
+    setReactionDetails([])
+    reactionsSheetRef.current?.present()
+    setReactionDetails(await getNoteReactionDetails(note.id))
+  }
+
+  const saveEdit = async () => {
+    if (!editingNote || busy || !editBody.trim()) return
+    setBusy(true)
+    const updated = await editNote(editingNote.id, {
+      body: editBody.trim(),
+      spoiler: editSpoiler,
+      timeSec: editingNote.timeSec,
+    })
+    setBusy(false)
+    if (!updated) return show('Could not edit that comment')
+    setDetail((prev) =>
+      prev
+        ? {
+            ...prev,
+            notes: {
+              ...prev.notes,
+              notes: prev.notes.notes.map((n) => (n.id === updated.id ? { ...n, ...updated } : n)),
+            },
+          }
+        : prev,
+    )
+    editSheetRef.current?.dismiss()
   }
 
   const openNoteActions = (note: HSNote) => {
@@ -427,7 +471,7 @@ export default function ClubRoomScreen() {
     if (
       !(await confirm({
         title: 'Leave club',
-        message: `Leave "${detail.club.name}"? You'll stop getting its updates and can rejoin later if it's open.`,
+        message: `Leave "${detail.club.name}"? You'll stop getting its updates${detail.club.isOpen ? ' and can find it again while it stays public' : ''}.`,
         confirmLabel: 'Leave',
       }))
     )
@@ -460,6 +504,19 @@ export default function ClubRoomScreen() {
     } else {
       show('Could not archive')
     }
+  }
+
+  const changeVisibility = async () => {
+    if (!detail) return
+    const next = detail.club.isOpen ? 'closed' : 'public'
+    const ok = await setClubVisibility(detail.club.id, next)
+    if (!ok) {
+      show('Could not change club visibility')
+      return
+    }
+    haptics.mode()
+    show(next === 'public' ? 'Club is now public' : 'Club is now closed')
+    await load()
   }
 
   const removeClub = async () => {
@@ -654,6 +711,138 @@ export default function ClubRoomScreen() {
     }
   }
 
+  const beginReply = (note: HSNote) => {
+    setReplyTo(note)
+    setComposingNew(false)
+    setBody('')
+    setMentionPicks([])
+    setSafe(false)
+    setSpoiler(false)
+    setStampEnabled(false)
+  }
+
+  const closeComposer = () => {
+    setReplyTo(null)
+    setComposingNew(false)
+    setBody('')
+    setMentionPicks([])
+    setSafe(false)
+    setSpoiler(false)
+    setStampEnabled(true)
+  }
+
+  const composer = (reply: boolean) => (
+    <View style={[styles.composer, styles.inlineComposer]}>
+      {reply && replyTo ? (
+        <View style={styles.replyBanner}>
+          <View style={styles.replyBar} />
+          <View style={{ flex: 1 }}>
+            <AppText variant="caption" color={colors.accent} numberOfLines={1}>
+              Replying to {replyTo.username}
+            </AppText>
+            <AppText variant="caption" color={colors.textMuted} numberOfLines={2}>
+              {replyTo.body}
+            </AppText>
+          </View>
+          <IconButton
+            name={icons.close}
+            size={16}
+            color={colors.textMuted}
+            onPress={closeComposer}
+            accessibilityLabel="Cancel reply"
+          />
+        </View>
+      ) : null}
+      {playingThisBook ? (
+        stampEnabled ? (
+          <View style={styles.stampChip}>
+            <Icon name={icons.schedule} size={14} color={colors.accent} />
+            <AppText variant="caption" color={colors.accent} style={{ flex: 1 }}>
+              {stampLabel(Math.round(position), chapters)}
+            </AppText>
+            <IconButton
+              name={icons.close}
+              size={14}
+              color={colors.accent}
+              onPress={() => setStampEnabled(false)}
+              accessibilityLabel="Remove attached position"
+            />
+          </View>
+        ) : (
+          <Touchable style={styles.stampAdd} onPress={() => setStampEnabled(true)}>
+            <Icon name={icons.schedule} size={14} color={colors.textMuted} />
+            <AppText variant="caption" color={colors.textMuted}>
+              Attach my position
+            </AppText>
+          </Touchable>
+        )
+      ) : null}
+      {mentionMatches.length > 0 ? (
+        <View style={styles.mentionList}>
+          {mentionMatches.map((m) => (
+            <Touchable key={m.userId} style={styles.mentionItem} onPress={() => pickMention(m)}>
+              <Avatar
+                uri={avatarUrl(m.userId)}
+                size={24}
+                name={m.username}
+                hue={coverHue(m.userId)}
+              />
+              <AppText variant="label" numberOfLines={1}>
+                {m.username}
+              </AppText>
+            </Touchable>
+          ))}
+        </View>
+      ) : null}
+      <TextInput
+        style={styles.input}
+        autoFocus
+        placeholder={reply && replyTo ? `Reply to ${replyTo.username}…` : 'Start a new thread…'}
+        placeholderTextColor={colors.textFaint}
+        value={body}
+        onChangeText={setBody}
+        multiline
+        maxLength={2000}
+      />
+      <View style={styles.composerTools}>
+        <Touchable
+          style={[styles.spoilerToggle, spoiler && styles.spoilerToggleOn]}
+          onPress={() => setSpoiler((value) => !value)}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: spoiler }}
+        >
+          <Icon
+            name={spoiler ? icons.hidden : icons.visible}
+            size={16}
+            color={spoiler ? colors.accent : colors.textMuted}
+          />
+          <AppText variant="caption" color={spoiler ? colors.accent : colors.textMuted}>
+            Spoiler
+          </AppText>
+        </Touchable>
+        {!reply ? <SafeSwitch on={safe} onChange={setSafe} /> : <View style={{ flex: 1 }} />}
+        <Touchable
+          style={styles.cancelComposerBtn}
+          onPress={closeComposer}
+          accessibilityRole="button"
+        >
+          <AppText variant="caption" color={colors.textMuted}>
+            Cancel
+          </AppText>
+        </Touchable>
+        <Touchable
+          style={[styles.sendBtn, (!body.trim() || busy) && { opacity: 0.5 }]}
+          disabled={!body.trim() || busy}
+          onPress={() => void submit()}
+          accessibilityRole="button"
+          accessibilityLabel={reply ? 'Post reply' : 'Post comment'}
+        >
+          <Icon name={icons.send} size={18} color={colors.onAccent} />
+        </Touchable>
+      </View>
+    </View>
+  )
+
   return (
     <Screen tabBar={<AppTabBar activeName={active} onPressTab={goToTab} />}>
       <Header
@@ -736,8 +925,34 @@ export default function ClubRoomScreen() {
           </View>
         )}
 
-        {/* Progress race for the viewed book. */}
+        {/* Exact avatar progress rail from the player. Tap to expand the richer
+            member card instead of spending permanent vertical space on it. */}
         {viewedBook ? (
+          <View style={styles.progressStripWrap}>
+            <PlayerClubProgressStrip
+              clubName={detail.club.name}
+              members={detail.members}
+              memberCount={detail.members.length}
+              position={
+                playingThisBook
+                  ? position
+                  : (detail.members.find((member) => member.userId === meId)?.currentTime ?? 0)
+              }
+              duration={
+                playingThisBook
+                  ? (player.nowPlaying?.duration ?? 0)
+                  : (detail.members.find((member) => member.userId === meId)?.duration ??
+                    sortedMembers.find((member) => member.duration)?.duration ??
+                    0)
+              }
+              expanded={progressExpanded}
+              onPress={() => setProgressExpanded((value) => !value)}
+            />
+          </View>
+        ) : null}
+
+        {/* Progress race for the viewed book. */}
+        {viewedBook && progressExpanded ? (
           <View style={styles.raceSection}>
             <AppText
               variant="eyebrow"
@@ -759,63 +974,92 @@ export default function ClubRoomScreen() {
           </View>
         ) : null}
 
-        {/* Chat thread. */}
-        <View
-          style={styles.chatSection}
-          onLayout={(e) => {
-            chatSectionYRef.current = e.nativeEvent.layout.y
-            tryScrollToDeepLink()
-          }}
-        >
-          <AppText variant="title" style={{ marginBottom: spacing.sm }}>
-            Discussion
-          </AppText>
-          {detail.notes.notes.length === 0 ? (
-            <AppText
-              variant="meta"
-              color={colors.textMuted}
-              style={{ paddingVertical: spacing.lg }}
+        <View style={styles.sectionTabs} accessibilityRole="tablist">
+          {(['discussion', 'queue', 'members'] as const).map((tab) => (
+            <Touchable
+              key={tab}
+              style={[styles.sectionTab, section === tab && styles.sectionTabOn]}
+              onPress={() => setSection(tab)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: section === tab }}
             >
-              No notes on this book yet.
-            </AppText>
-          ) : (
-            <NoteThread
-              notes={detail.notes.notes}
-              chapters={chapters}
-              meId={meId}
-              canModerate={isOwner}
-              highlightId={highlightId ?? undefined}
-              newSinceTs={newSinceTs}
-              onReply={isMember ? (n) => setReplyTo(n) : undefined}
-              onDelete={isMember ? removeNote : undefined}
-              onOpenUser={(userId) =>
-                router.push(`/user/${encodeURIComponent(userId)}?from=${active}`)
-              }
-              onReact={isMember ? (n, kind, on) => void toggleReaction(n, kind, on) : undefined}
-              onOpenActions={openNoteActions}
-              onNoteLayout={(_, y) => {
-                noteYRef.current = y
-                tryScrollToDeepLink()
-              }}
-            />
-          )}
-          {detail.notes.hiddenAhead > 0 ? (
-            <View style={styles.teaser}>
-              <Icon name={icons.notes} size={16} color={colors.textMuted} />
-              <AppText variant="caption" color={colors.textMuted}>
-                {detail.notes.hiddenAhead}{' '}
-                {detail.notes.hiddenAhead === 1 ? 'note is' : 'notes are'} ahead of you. Keep
-                listening to unlock them.
+              <AppText variant="caption" color={section === tab ? colors.accent : colors.textMuted}>
+                {tab === 'discussion' ? 'Discussion' : tab === 'queue' ? 'Queue' : 'Members'}
               </AppText>
-            </View>
-          ) : null}
+            </Touchable>
+          ))}
         </View>
+
+        {/* Chat thread. */}
+        {section === 'discussion' ? (
+          <View
+            style={styles.chatSection}
+            onLayout={(e) => {
+              chatSectionYRef.current = e.nativeEvent.layout.y
+              tryScrollToDeepLink()
+            }}
+          >
+            {isMember && isCurrentView && viewedBook && !replyTo ? (
+              composingNew ? (
+                composer(false)
+              ) : (
+                <Touchable
+                  style={styles.newThreadButton}
+                  onPress={() => {
+                    setComposingNew(true)
+                    setStampEnabled(playingThisBook)
+                    setSpoiler(false)
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Start a new discussion thread"
+                >
+                  <Icon name={icons.commentAdd} size={20} color={colors.onAccent} />
+                  <AppText variant="label" color={colors.onAccent}>
+                    Start a new thread
+                  </AppText>
+                </Touchable>
+              )
+            ) : null}
+            {detail.notes.notes.length === 0 ? (
+              <AppText
+                variant="meta"
+                color={colors.textMuted}
+                style={{ paddingVertical: spacing.lg }}
+              >
+                No notes on this book yet.
+              </AppText>
+            ) : (
+              <NoteThread
+                notes={detail.notes.notes}
+                chapters={chapters}
+                meId={meId}
+                canModerate={isOwner}
+                highlightId={highlightId ?? undefined}
+                newSinceTs={newSinceTs}
+                onReply={isMember && detail.club.allowReplies ? beginReply : undefined}
+                onDelete={isMember ? removeNote : undefined}
+                onOpenUser={(userId) =>
+                  router.push(`/user/${encodeURIComponent(userId)}?from=${active}`)
+                }
+                onReact={isMember ? (n, kind, on) => void toggleReaction(n, kind, on) : undefined}
+                onOpenReactions={(n, kind) => void openReactionDetails(n, kind)}
+                onOpenActions={openNoteActions}
+                replyComposerFor={replyTo?.id}
+                replyComposer={replyTo ? composer(true) : undefined}
+                onNoteLayout={(_, y) => {
+                  noteYRef.current = y
+                  tryScrollToDeepLink()
+                }}
+              />
+            )}
+          </View>
+        ) : null}
 
         {/* Up next queue. Everyone sees what's lined up; the owner can start the
             next book now, reorder, or remove one. Only shown on the current-book
             view. The owner still gets the section when the queue is empty - that
             is where "Add books" lives, so hiding it would hide the way in. */}
-        {isCurrentView && (detail.queue.length > 0 || isOwner) ? (
+        {section === 'queue' && isCurrentView && (detail.queue.length > 0 || isOwner) ? (
           <View style={styles.queueSection}>
             <View style={styles.queueHead}>
               <AppText variant="eyebrow" color={colors.textMuted}>
@@ -918,6 +1162,20 @@ export default function ClubRoomScreen() {
             ))}
           </View>
         ) : null}
+        {section === 'members' ? (
+          <View style={styles.queueSection}>
+            {sortedMembers.map((m) => (
+              <MemberRace
+                key={m.userId}
+                member={m}
+                isMe={m.userId === meId}
+                onOpenUser={(userId) =>
+                  router.push(`/user/${encodeURIComponent(userId)}?from=${active}`)
+                }
+              />
+            ))}
+          </View>
+        ) : null}
       </ScrollView>
 
       {/* Composer - members only, on the current book. Wrapped so the keyboard
@@ -926,135 +1184,28 @@ export default function ClubRoomScreen() {
           the window's adjustResize, but SDK 57 renders edge-to-edge and ignores
           it - so the composer sat behind the keyboard and you could not see what
           you were typing (HS-MOBILEAPP-17). */}
-      <KeyboardAvoidingView behavior="padding" style={{ paddingBottom: miniInset }}>
-        {isMember && isCurrentView && viewedBook ? (
-          <View style={styles.composer}>
-            {replyTo ? (
-              // Quote the comment being answered, not just its author's name. A
-              // one-line "Replying to X" is easy to miss above a full-width box,
-              // and gave no confirmation that the right comment was picked - the
-              // accent bar plus the quoted text make the destination obvious
-              // (HS-MOBILEAPP-17).
-              <View style={styles.replyBanner}>
-                <View style={styles.replyBar} />
-                <View style={{ flex: 1 }}>
-                  <AppText variant="caption" color={colors.accent} numberOfLines={1}>
-                    Replying to {replyTo.username}
-                  </AppText>
-                  <AppText variant="caption" color={colors.textMuted} numberOfLines={2}>
-                    {replyTo.body}
-                  </AppText>
-                </View>
-                <IconButton
-                  name={icons.close}
-                  size={16}
-                  color={colors.textMuted}
-                  onPress={() => setReplyTo(null)}
-                  accessibilityLabel="Cancel reply"
-                />
-              </View>
-            ) : null}
-            {/* Timestamp chip: shows exactly what will be attached, and its X
-                sends the note with no stamp. Only when playing this book and not
-                replying (a reply inherits its parent's gate). */}
-            {playingThisBook && !replyTo ? (
-              stampEnabled ? (
-                <View style={styles.stampChip}>
-                  <Icon name={icons.schedule} size={14} color={colors.accent} />
-                  <AppText variant="caption" color={colors.accent} style={{ flex: 1 }}>
-                    {stampLabel(Math.round(position), chapters)}
-                  </AppText>
-                  <IconButton
-                    name={icons.close}
-                    size={14}
-                    color={colors.accent}
-                    onPress={() => setStampEnabled(false)}
-                  />
-                </View>
-              ) : (
-                <Touchable style={styles.stampAdd} onPress={() => setStampEnabled(true)}>
-                  <Icon name={icons.schedule} size={14} color={colors.textMuted} />
-                  <AppText variant="caption" color={colors.textMuted}>
-                    Add timestamp
-                  </AppText>
-                </Touchable>
-              )
-            ) : null}
-            {mentionMatches.length > 0 ? (
-              <View style={styles.mentionList}>
-                {mentionMatches.map((m) => (
-                  <Touchable
-                    key={m.userId}
-                    style={styles.mentionItem}
-                    onPress={() => pickMention(m)}
-                    accessibilityLabel={`Mention ${m.username}`}
-                  >
-                    <Avatar
-                      uri={avatarUrl(m.userId)}
-                      size={24}
-                      name={m.username}
-                      hue={coverHue(m.userId)}
-                    />
-                    <AppText variant="label" numberOfLines={1}>
-                      {m.username}
-                    </AppText>
-                  </Touchable>
-                ))}
-              </View>
-            ) : null}
-            <View style={styles.composerRow}>
-              <TextInput
-                style={styles.input}
-                placeholder={
-                  // A reply never carries a timestamp of its own (it gates at its
-                  // parent's time), so offering "Note at 1:02:05" while the banner
-                  // above says "Replying to X" told the listener two different
-                  // things about where their text was going (HS-MOBILEAPP-17).
-                  replyTo
-                    ? `Reply to ${replyTo.username}…`
-                    : playingThisBook
-                      ? `Note at ${formatTimestamp(position)}…`
-                      : 'Leave a note (play the book to timestamp it)…'
-                }
-                placeholderTextColor={colors.textFaint}
-                value={body}
-                onChangeText={setBody}
-                multiline
-                maxLength={2000}
-              />
-              <Touchable
-                style={[styles.sendBtn, (!body.trim() || busy) && { opacity: 0.5 }]}
-                disabled={!body.trim() || busy}
-                onPress={() => void submit()}
-              >
-                <Icon name={icons.send} size={18} color={colors.onAccent} />
-              </Touchable>
-            </View>
-            {!replyTo ? <SafeSwitch on={safe} onChange={setSafe} /> : null}
-          </View>
-        ) : !isMember ? (
-          <View style={styles.joinBar}>
-            <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
-              Members see your progress in this club's books.
+      {!isMember ? (
+        <View style={styles.joinBar}>
+          <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
+            Members see your progress in this club&apos;s books.
+          </AppText>
+          <Touchable
+            style={styles.joinBtn}
+            disabled={busy}
+            onPress={async () => {
+              setBusy(true)
+              const ok = await setClubMembership(detail.club.id, true)
+              setBusy(false)
+              if (ok) await load({ markRead: true })
+              else show('Could not join')
+            }}
+          >
+            <AppText variant="label" color={colors.onAccent}>
+              Join club
             </AppText>
-            <Touchable
-              style={styles.joinBtn}
-              disabled={busy}
-              onPress={async () => {
-                setBusy(true)
-                const ok = await setClubMembership(detail.club.id, true)
-                setBusy(false)
-                if (ok) await load({ markRead: true })
-                else show('Could not join')
-              }}
-            >
-              <AppText variant="label" color={colors.onAccent}>
-                Join club
-              </AppText>
-            </Touchable>
-          </View>
-        ) : null}
-      </KeyboardAvoidingView>
+          </Touchable>
+        </View>
+      ) : null}
 
       {/* Members sheet (with kick for the owner). */}
       <Sheet ref={membersSheetRef} title="Members" snapPoints={['60%']}>
@@ -1251,6 +1402,38 @@ export default function ClubRoomScreen() {
       <Sheet ref={ownerSheetRef} title={detail.club.name}>
         {isOwner ? (
           <>
+            <Touchable
+              style={styles.sheetAction}
+              onPress={() => {
+                ownerSheetRef.current?.dismiss()
+                router.push(`/club/admin?id=${encodeURIComponent(detail.club.id)}&from=${active}`)
+              }}
+            >
+              <Icon name={icons.settings} size={20} color={colors.textMuted} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <AppText variant="body">Club admin</AppText>
+                <AppText variant="caption" color={colors.textMuted}>
+                  Discussion permissions and club controls
+                </AppText>
+              </View>
+            </Touchable>
+            <Touchable style={styles.sheetAction} onPress={() => void changeVisibility()}>
+              <Icon
+                name={detail.club.isOpen ? icons.lock : icons.club}
+                size={20}
+                color={colors.textMuted}
+              />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <AppText variant="body">
+                  {detail.club.isOpen ? 'Close this club' : 'Make this club public'}
+                </AppText>
+                <AppText variant="caption" color={colors.textMuted}>
+                  {detail.club.isOpen
+                    ? 'Only invited readers will be able to join.'
+                    : 'Anyone on this server will be able to find and join.'}
+                </AppText>
+              </View>
+            </Touchable>
             {/* Archive is reversible, so it reads neutral - not the same red as
                 Delete. The caption says the history can come back. */}
             <Touchable style={styles.sheetAction} onPress={() => void archive()}>
@@ -1360,16 +1543,31 @@ export default function ClubRoomScreen() {
                 </Touchable>
               </>
             ) : null}
-            {isMember && !actionNote.parentId ? (
+            {isMember && detail.club.allowReplies && !actionNote.parentId ? (
               <Touchable
                 style={styles.sheetAction}
                 onPress={() => {
                   noteActionsRef.current?.dismiss()
-                  setReplyTo(actionNote)
+                  beginReply(actionNote)
                 }}
               >
                 <Icon name={icons.chat} size={20} color={colors.textMuted} />
                 <AppText variant="body">Reply</AppText>
+              </Touchable>
+            ) : null}
+            {actionNote.userId === meId && (isOwner || detail.club.allowCommentEditing) ? (
+              <Touchable
+                style={styles.sheetAction}
+                onPress={() => {
+                  noteActionsRef.current?.dismiss()
+                  setEditingNote(actionNote)
+                  setEditBody(actionNote.body)
+                  setEditSpoiler(actionNote.spoiler)
+                  editSheetRef.current?.present()
+                }}
+              >
+                <Icon name={icons.edit} size={20} color={colors.textMuted} />
+                <AppText variant="body">Edit comment</AppText>
               </Touchable>
             ) : null}
             <Touchable
@@ -1408,6 +1606,94 @@ export default function ClubRoomScreen() {
             ) : null}
           </>
         ) : null}
+      </Sheet>
+
+      <Sheet ref={reactionsSheetRef} title="Reactions" snapPoints={['55%']}>
+        <View style={styles.reactionTabs}>
+          {reactionDetails.map((detailRow) => (
+            <Touchable
+              key={detailRow.kind}
+              style={[styles.reactionTab, reactionKind === detailRow.kind && styles.reactionTabOn]}
+              onPress={() => setReactionKind(detailRow.kind)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: reactionKind === detailRow.kind }}
+            >
+              <AppText variant="meta">
+                {reactionGlyph(detailRow.kind)} {detailRow.users.length}
+              </AppText>
+            </Touchable>
+          ))}
+        </View>
+        {reactionDetails.length === 0 ? (
+          <AppText variant="meta" color={colors.textMuted} style={{ paddingVertical: spacing.lg }}>
+            Loading reactions…
+          </AppText>
+        ) : (
+          (
+            reactionDetails.find((row) => row.kind === reactionKind) ?? reactionDetails[0]
+          ).users.map((user) => (
+            <Touchable
+              key={user.userId}
+              style={styles.memberRow}
+              onPress={() => {
+                reactionsSheetRef.current?.dismiss()
+                router.push(`/user/${encodeURIComponent(user.userId)}?from=${active}`)
+              }}
+            >
+              <Avatar
+                uri={avatarUrl(user.userId)}
+                size={36}
+                name={user.username}
+                hue={coverHue(user.userId)}
+              />
+              <AppText variant="label" style={{ flex: 1 }}>
+                {user.username}
+              </AppText>
+              {reactionNote?.reactions?.find((r) => r.kind === reactionKind)?.mine &&
+              user.userId === meId ? (
+                <AppText variant="caption" color={colors.textMuted}>
+                  You
+                </AppText>
+              ) : null}
+            </Touchable>
+          ))
+        )}
+      </Sheet>
+
+      <Sheet ref={editSheetRef} title="Edit comment">
+        <TextInput
+          style={styles.editInput}
+          value={editBody}
+          onChangeText={setEditBody}
+          multiline
+          maxLength={2000}
+          autoFocus
+          placeholderTextColor={colors.textFaint}
+        />
+        <Touchable
+          style={[styles.spoilerToggle, editSpoiler && styles.spoilerToggleOn]}
+          onPress={() => setEditSpoiler((value) => !value)}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: editSpoiler }}
+        >
+          <Icon
+            name={editSpoiler ? icons.hidden : icons.visible}
+            size={18}
+            color={editSpoiler ? colors.accent : colors.textMuted}
+          />
+          <AppText variant="meta" color={editSpoiler ? colors.accent : colors.textMuted}>
+            Mark as spoiler
+          </AppText>
+        </Touchable>
+        <Touchable
+          style={[styles.saveEditButton, (!editBody.trim() || busy) && { opacity: 0.5 }]}
+          disabled={!editBody.trim() || busy}
+          onPress={() => void saveEdit()}
+        >
+          <AppText variant="label" color={colors.onAccent}>
+            {busy ? 'Saving…' : 'Save changes'}
+          </AppText>
+        </Touchable>
       </Sheet>
 
       {/* Layered over the actions sheet, so picking an emoji (or backing out)
@@ -1610,6 +1896,23 @@ const makeStyles = (colors: Palette) =>
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.hairline,
     },
+    progressStripWrap: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
+    sectionTabs: {
+      flexDirection: 'row',
+      marginHorizontal: spacing.lg,
+      marginTop: spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
+    },
+    sectionTab: {
+      minHeight: 48,
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderBottomWidth: 2,
+      borderBottomColor: 'transparent',
+    },
+    sectionTabOn: { borderBottomColor: colors.accent },
     raceRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1696,6 +1999,16 @@ const makeStyles = (colors: Palette) =>
     },
     addBooksBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, padding: spacing.xs },
     chatSection: { paddingHorizontal: spacing.lg, marginTop: spacing.lg },
+    newThreadButton: {
+      minHeight: 48,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      marginBottom: spacing.md,
+      borderRadius: radius.pill,
+      backgroundColor: colors.accent,
+    },
     teaser: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1706,6 +2019,33 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.fill,
     },
     composer: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, gap: spacing.sm },
+    inlineComposer: {
+      paddingHorizontal: spacing.md,
+      paddingBottom: spacing.md,
+      marginBottom: spacing.md,
+      borderRadius: radius.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      backgroundColor: colors.card,
+    },
+    composerTools: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    spoilerToggle: {
+      minHeight: 44,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.pill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      backgroundColor: colors.fill,
+    },
+    spoilerToggleOn: { borderColor: colors.accent, backgroundColor: colors.accentWash },
+    cancelComposerBtn: {
+      minHeight: 44,
+      justifyContent: 'center',
+      paddingHorizontal: spacing.sm,
+    },
     stampChip: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1746,7 +2086,7 @@ const makeStyles = (colors: Palette) =>
     },
     composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm },
     // Sits in the composer stack above the input (like the reply banner) rather
-    // than floating over it - an absolute overlay fights KeyboardAvoidingView.
+    // than floating over it, so it stays attached to the exact thread target.
     mentionList: {
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.hairline,
@@ -1815,6 +2155,44 @@ const makeStyles = (colors: Palette) =>
       alignItems: 'center',
       gap: spacing.md,
       paddingVertical: spacing.md + 2,
+    },
+    reactionTabs: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.sm,
+      marginBottom: spacing.sm,
+    },
+    reactionTab: {
+      minHeight: 44,
+      justifyContent: 'center',
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+    },
+    reactionTabOn: {
+      backgroundColor: colors.accentWash,
+      borderWidth: 1,
+      borderColor: colors.accent,
+    },
+    editInput: {
+      minHeight: 120,
+      maxHeight: 240,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      borderRadius: radius.row,
+      padding: spacing.md,
+      color: colors.text,
+      fontSize: 16,
+      textAlignVertical: 'top',
+      marginBottom: spacing.md,
+    },
+    saveEditButton: {
+      minHeight: 48,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: spacing.md,
+      borderRadius: radius.pill,
+      backgroundColor: colors.accent,
     },
     inviteHelp: { marginBottom: spacing.md, lineHeight: 20 },
     inviteList: { paddingBottom: spacing.md },
