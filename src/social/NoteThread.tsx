@@ -11,12 +11,17 @@
 import { useMemo } from 'react'
 import { Image, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
 import type { HSNote, NoteReactionKind } from '@hearthshelf/core'
-import { coverHue, formatTimestamp } from '@hearthshelf/core'
+import { coverHue, formatTimestamp, reactionGlyph, reactionLabel } from '@hearthshelf/core'
 import { avatarUrl } from '@/api/abs'
 import { AppText, Avatar, IconButton, Touchable } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
+
+// Re-exported so callers keep importing reaction rendering from the component
+// that draws it, even though the glyph table now lives in core next to the
+// validation that decides which kinds may exist at all.
+export { reactionGlyph, reactionLabel }
 
 export interface ChapterMark {
   title: string
@@ -31,28 +36,6 @@ export function stampLabel(timeSec: number | null, chapters: ChapterMark[]): str
   const ch = chapters.find((c) => timeSec >= c.start && timeSec < c.end)
   const ts = formatTimestamp(timeSec)
   return ch?.title ? `${ch.title} · ${ts}` : ts
-}
-
-/**
- * How each reaction kind is drawn and described.
- *
- * Keyed loosely rather than by an exhaustive Record<NoteReactionKind, ...>: the
- * server stores any well-formed kind, so a newer client's reaction can reach an
- * older build. Those fall back to a neutral glyph and still show their count,
- * which is the whole point of storing kinds as strings.
- */
-const REACTIONS: Record<string, { glyph: string; label: string }> = {
-  up: { glyph: '\u{1F44D}', label: 'thumbs up' },
-  heart: { glyph: '\u{2764}\u{FE0F}', label: 'heart' },
-  laugh: { glyph: '\u{1F602}', label: 'laugh' },
-}
-
-export function reactionGlyph(kind: string): string {
-  return REACTIONS[kind]?.glyph ?? '\u{2B50}'
-}
-
-export function reactionLabel(kind: string): string {
-  return REACTIONS[kind]?.label ?? kind
 }
 
 /** Escape a username for use inside a RegExp alternation. */
@@ -141,7 +124,7 @@ function NoteBubble({
   onDelete,
   onOpenUser,
   onReact,
-  onLongPress,
+  onOpenActions,
   onLayout,
 }: {
   note: HSNote
@@ -158,8 +141,10 @@ function NoteBubble({
   onOpenUser?: (userId: string) => void
   /** Toggle one reaction kind. Omitted where reacting isn't offered. */
   onReact?: (note: HSNote, kind: NoteReactionKind, on: boolean) => void
-  /** Long-press this note (opens the caller's action menu). */
-  onLongPress?: (note: HSNote) => void
+  /** Open the caller's action menu for this note - reactions, reply, and the
+   *  jump-to-this-moment playback actions. Wired to a plain tap as well as a
+   *  long press: long-press alone is invisible, so nobody finds it. */
+  onOpenActions?: (note: HSNote) => void
   /** Fires with this note's row layout so the parent can scroll it into view. */
   onLayout?: (e: LayoutChangeEvent) => void
 }) {
@@ -172,10 +157,11 @@ function NoteBubble({
     <Pressable
       style={[styles.bubble, isReply && styles.replyBubble, highlighted && styles.highlighted]}
       onLayout={onLayout}
-      disabled={!onLongPress}
-      onLongPress={() => onLongPress?.(note)}
+      disabled={!onOpenActions}
+      onPress={() => onOpenActions?.(note)}
+      onLongPress={() => onOpenActions?.(note)}
       delayLongPress={300}
-      accessibilityHint={onLongPress ? 'Long press for comment actions' : undefined}
+      accessibilityHint={onOpenActions ? 'Opens comment actions' : undefined}
     >
       <Touchable
         disabled={!onOpenUser || !note.userId}
@@ -227,6 +213,21 @@ function NoteBubble({
         </View>
         <NoteBody note={note} onOpenUser={onOpenUser} />
         <View style={styles.actionsRow}>
+          {/* A visible way in. Reacting used to be long-press only, which is an
+              affordance nobody discovers, so the same menu gets a text link
+              beside Reply. */}
+          {onOpenActions && onReact ? (
+            <Touchable
+              hitSlop={6}
+              onPress={() => onOpenActions(note)}
+              accessibilityRole="button"
+              accessibilityLabel="React to this comment"
+            >
+              <AppText variant="caption" color={colors.accent}>
+                React
+              </AppText>
+            </Touchable>
+          ) : null}
           {onReply && !isReply ? (
             <Touchable hitSlop={6} onPress={() => onReply(note)}>
               <AppText variant="caption" color={colors.accent}>
@@ -280,7 +281,7 @@ export function NoteThread({
   onDelete,
   onOpenUser,
   onReact,
-  onLongPress,
+  onOpenActions,
   onNoteLayout,
   newSinceTs,
 }: {
@@ -297,8 +298,8 @@ export function NoteThread({
   onOpenUser?: (userId: string) => void
   /** Toggle one reaction kind on a note. Omitted where reacting isn't offered. */
   onReact?: (note: HSNote, kind: NoteReactionKind, on: boolean) => void
-  /** Long-press a note, for the caller's action menu. */
-  onLongPress?: (note: HSNote) => void
+  /** Open the caller's action menu for a note (tap or long press). */
+  onOpenActions?: (note: HSNote) => void
   /** Fires the highlighted note's y within the thread so the caller can scroll. */
   onNoteLayout?: (id: string, y: number) => void
   /** When set, a "new since last visit" divider renders before the first
@@ -366,7 +367,7 @@ export function NoteThread({
               onDelete={onDelete}
               onOpenUser={onOpenUser}
               onReact={onReact}
-              onLongPress={onLongPress}
+              onOpenActions={onOpenActions}
             />
             {replies.map((r) => (
               <NoteBubble
@@ -380,7 +381,7 @@ export function NoteThread({
                 onDelete={onDelete}
                 onOpenUser={onOpenUser}
                 onReact={onReact}
-                onLongPress={onLongPress}
+                onOpenActions={onOpenActions}
               />
             ))}
           </View>

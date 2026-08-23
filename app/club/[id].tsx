@@ -34,12 +34,7 @@ import type {
   HSNote,
   NoteReactionKind,
 } from '@hearthshelf/core'
-import {
-  coverHue,
-  formatTimestamp,
-  sortMembersByProgress,
-  NOTE_REACTION_KINDS,
-} from '@hearthshelf/core'
+import { coverHue, formatTimestamp, sortMembersByProgress, quickReactions } from '@hearthshelf/core'
 import {
   getClub,
   setClubMembership,
@@ -63,7 +58,12 @@ import { postNote, deleteNote, reactToNote } from '@/api/notes'
 import { getMeId } from '@/api/me'
 import * as Clipboard from 'expo-clipboard'
 import { coverUrl, avatarUrl, getLibraries } from '@/api/abs'
-import { getState as getPlayerState, subscribe as subscribePlayer } from '@/player/store'
+import {
+  getState as getPlayerState,
+  requestSeek,
+  subscribe as subscribePlayer,
+} from '@/player/store'
+import { playItemById } from '@/player/playback'
 import {
   NoteThread,
   reactionGlyph,
@@ -71,6 +71,13 @@ import {
   stampLabel,
   type ChapterMark,
 } from '@/social/NoteThread'
+import { EmojiPickerSheet } from '@/social/EmojiPickerSheet'
+import {
+  getReactionRecents,
+  hydrateReactionRecents,
+  noteReactionUsed,
+  subscribeReactionRecents,
+} from '@/store/reactionRecents'
 import { SafeSwitch } from '@/social/NoteComposerControls'
 import { AddClubBooksSheet } from '@/social/AddClubBooksSheet'
 import {
@@ -122,6 +129,13 @@ export default function ClubRoomScreen() {
   const meId = getMeId()
 
   const player = useSyncExternalStore(subscribePlayer, getPlayerState)
+  // The quick-pick row: three pinned reactions plus this reader's most recent
+  // other choices. Purely local - see store/reactionRecents.
+  const reactionRecents = useSyncExternalStore(subscribeReactionRecents, getReactionRecents)
+  const quickPicks = useMemo(() => quickReactions(reactionRecents), [reactionRecents])
+  useEffect(() => {
+    void hydrateReactionRecents()
+  }, [])
   // Clearance so the composer/join bar sits above the docked mini player.
   const miniInset = useMiniPlayerInset()
 
@@ -154,6 +168,7 @@ export default function ClubRoomScreen() {
   const historySheetRef = useRef<SheetRef>(null)
   const addBooksSheetRef = useRef<SheetRef>(null)
   const noteActionsRef = useRef<SheetRef>(null)
+  const emojiPickerRef = useRef<SheetRef>(null)
   // The note a long-press opened the action menu for.
   const [actionNote, setActionNote] = useState<HSNote | null>(null)
   const ownerSheetRef = useRef<SheetRef>(null)
@@ -348,6 +363,9 @@ export default function ClubRoomScreen() {
       show('Could not save that reaction')
       return
     }
+    // Only a reaction that actually landed earns a place in the quick row, so a
+    // failed send does not reshuffle it. Removing one is not "using" it either.
+    if (on) noteReactionUsed(kind)
     setDetail((prev) =>
       prev
         ? {
@@ -365,6 +383,29 @@ export default function ClubRoomScreen() {
     haptics.select()
     setActionNote(note)
     noteActionsRef.current?.present()
+  }
+
+  /**
+   * Jump to the moment a comment is about, turning the comment into a bookmark.
+   *
+   * `rewindSec` backs up from the stamp so you hear the run-up rather than
+   * landing mid-sentence on the thing being discussed.
+   *
+   * When the comment is on the book already loaded, this is a plain seek. When
+   * it is not, the position is passed INTO the load rather than seeked after it:
+   * a seek issued after a load races the load's own resume and can lose, which
+   * is what once froze the scrubber for hours on the car handback path.
+   */
+  const playFromNote = async (note: HSNote, rewindSec: number) => {
+    const itemId = note.libraryItemId
+    if (note.timeSec == null || !itemId) return
+    const target = Math.max(0, note.timeSec - rewindSec)
+    haptics.transport()
+    if (player.nowPlaying?.itemId === itemId) {
+      requestSeek(target)
+      return
+    }
+    await playItemById(itemId, true, { resumeAt: target })
   }
 
   const removeNote = async (note: HSNote) => {
@@ -751,7 +792,7 @@ export default function ClubRoomScreen() {
                 router.push(`/user/${encodeURIComponent(userId)}?from=${active}`)
               }
               onReact={isMember ? (n, kind, on) => void toggleReaction(n, kind, on) : undefined}
-              onLongPress={openNoteActions}
+              onOpenActions={openNoteActions}
               onNoteLayout={(_, y) => {
                 noteYRef.current = y
                 tryScrollToDeepLink()
@@ -1253,14 +1294,15 @@ export default function ClubRoomScreen() {
         onMessage={show}
       />
 
-      {/* Long-press actions for one comment. Reactions live here rather than as
-          a permanent row of buttons under every note, which would crowd the
-          thread; the tallies under a note stay tappable for a quick re-toggle. */}
+      {/* Actions for one comment, opened by a tap or a long press. Reactions live
+          here rather than as a permanent row under every note, which would crowd
+          the thread; the tallies under a note stay tappable for a quick
+          re-toggle. */}
       <Sheet ref={noteActionsRef} title={actionNote?.username || 'Comment'}>
         {actionNote ? (
           <>
             <View style={styles.reactPickRow}>
-              {NOTE_REACTION_KINDS.map((kind: NoteReactionKind) => {
+              {quickPicks.map((kind: NoteReactionKind) => {
                 const mine = actionNote.reactions?.some((r) => r.kind === kind && r.mine) ?? false
                 return (
                   <Touchable
@@ -1279,7 +1321,45 @@ export default function ClubRoomScreen() {
                   </Touchable>
                 )
               })}
+              {/* Anything outside the quick row. Pushed OVER this sheet rather
+                  than replacing it, so dismissing the picker returns here. */}
+              <Touchable
+                style={styles.reactPick}
+                disabled={!isMember}
+                onPress={() => emojiPickerRef.current?.present()}
+                accessibilityRole="button"
+                accessibilityLabel="More reactions"
+              >
+                <Icon name={icons.add} size={20} color={colors.textMuted} />
+              </Touchable>
             </View>
+            {/* Turn a comment into a bookmark: jump to the moment being talked
+                about. Only for a timestamped comment - a general note marks no
+                spot to jump to. */}
+            {actionNote.timeSec != null ? (
+              <>
+                <Touchable
+                  style={styles.sheetAction}
+                  onPress={() => {
+                    noteActionsRef.current?.dismiss()
+                    void playFromNote(actionNote, 0)
+                  }}
+                >
+                  <Icon name={icons.play} size={20} color={colors.textMuted} />
+                  <AppText variant="body">Play from here</AppText>
+                </Touchable>
+                <Touchable
+                  style={styles.sheetAction}
+                  onPress={() => {
+                    noteActionsRef.current?.dismiss()
+                    void playFromNote(actionNote, 60)
+                  }}
+                >
+                  <Icon name={icons.replay} size={20} color={colors.textMuted} />
+                  <AppText variant="body">Play from a minute before</AppText>
+                </Touchable>
+              </>
+            ) : null}
             {isMember && !actionNote.parentId ? (
               <Touchable
                 style={styles.sheetAction}
@@ -1329,6 +1409,18 @@ export default function ClubRoomScreen() {
           </>
         ) : null}
       </Sheet>
+
+      {/* Layered over the actions sheet, so picking an emoji (or backing out)
+          returns to the comment it belongs to. */}
+      <EmojiPickerSheet
+        sheetRef={emojiPickerRef}
+        onPick={(emoji) => {
+          if (!actionNote) return
+          const mine = actionNote.reactions?.some((r) => r.kind === emoji && r.mine) ?? false
+          noteActionsRef.current?.dismiss()
+          void toggleReaction(actionNote, emoji, !mine)
+        }}
+      />
 
       <Toast message={message} />
     </Screen>
