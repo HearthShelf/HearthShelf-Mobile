@@ -11,11 +11,19 @@ import {
   type HSNotification,
 } from '@/api/notifications'
 import { releaseNotificationRoute } from '@/notifications/releaseRoute'
+import { RatingPromptActions } from '@/notifications/RatingPromptActions'
+import { RATING_NOTIFICATION_KIND, ratingSavedMessage } from '@hearthshelf/core'
+import { setRating } from '@/api/ratings'
+import { getSettingsState, setSetting } from '@/store/settings'
 import { AppText, Centered, IconButton, Loading, Screen, Touchable } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
 import { Toast, useToast } from '@/ui/Toast'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
+
+/** How long the "Rated 4 stars" confirmation stays before the row clears. Long
+ *  enough to read, short enough that it never feels stuck. */
+const RATING_DISMISS_MS = 900
 
 function dataString(notification: HSNotification, key: string): string {
   const value = notification.data[key]
@@ -122,6 +130,40 @@ export default function NotificationsScreen() {
     if (accept) router.replace(`/club/${encodeURIComponent(clubId)}`)
   }
 
+  // Save a rating from the tray, then clear the row: the question has been
+  // answered, so leaving it behind would just be one more thing to dismiss. The
+  // component shows a brief "Rated 4 stars" first, which is what makes the row
+  // disappearing read as saved rather than lost.
+  const rate = async (notification: HSNotification, value: number): Promise<boolean> => {
+    const itemKey = dataString(notification, 'itemKey') || notification.entityId || ''
+    if (!itemKey) return false
+    try {
+      await setRating(itemKey, value)
+    } catch {
+      // setRating throws rather than swallowing, precisely so the row can stay
+      // put instead of claiming a score the server never stored.
+      show("Couldn't save that rating")
+      return false
+    }
+    show(ratingSavedMessage(value))
+    // Let the confirmation land before the row goes.
+    setTimeout(() => void dismiss(notification), RATING_DISMISS_MS)
+    return true
+  }
+
+  // "Don't ask again": silence the whole category, then clear this row. Writing
+  // the same notifyPrefs key the Notifications settings panel writes, so the
+  // toggle there reflects it and it syncs across devices.
+  const stopAskingForRatings = async (notification: HSNotification) => {
+    const prefs = getSettingsState().notifyPrefs
+    setSetting('notifyPrefs', {
+      ...prefs,
+      types: { ...prefs.types, rating: { ...prefs.types.rating, enabled: false } },
+    })
+    show('You won’t be asked to rate books')
+    await dismiss(notification)
+  }
+
   return (
     <Screen edges={['top', 'bottom']}>
       <View style={styles.header}>
@@ -188,28 +230,39 @@ export default function NotificationsScreen() {
           {notifications.map((notification) => {
             const pending =
               notification.kind === 'club_invite' && notification.actionStatus === 'pending'
+            // A rating prompt is answered in place, so tapping the row must not
+            // navigate away mid-answer - it only marks the row read.
+            const isRating = notification.kind === RATING_NOTIFICATION_KIND
             return (
               <Touchable
                 key={notification.id}
                 style={[styles.row, !notification.readAt && styles.unread]}
-                onPress={() => void open(notification)}
+                onPress={() => {
+                  if (isRating) {
+                    if (!notification.readAt) void markNotificationRead(notification.id)
+                    return
+                  }
+                  void open(notification)
+                }}
                 accessibilityRole="button"
                 accessibilityLabel={`${notification.title}. ${notification.body}`}
               >
                 <View style={styles.kind}>
                   <Icon
                     name={
-                      notification.kind === 'club_invite'
-                        ? icons.people
-                        : notification.kind === 'release'
-                          ? icons.newRelease
-                          : notification.kind === 'mention'
-                            ? icons.mention
-                            : notification.kind === 'reaction'
-                              ? icons.thumbUp
-                              : notification.kind === 'reply'
-                                ? icons.chat
-                                : icons.bell
+                      notification.kind === RATING_NOTIFICATION_KIND
+                        ? icons.star
+                        : notification.kind === 'club_invite'
+                          ? icons.people
+                          : notification.kind === 'release'
+                            ? icons.newRelease
+                            : notification.kind === 'mention'
+                              ? icons.mention
+                              : notification.kind === 'reaction'
+                                ? icons.thumbUp
+                                : notification.kind === 'reply'
+                                  ? icons.chat
+                                  : icons.bell
                     }
                     size={21}
                     color={colors.accent}
@@ -229,7 +282,14 @@ export default function NotificationsScreen() {
                       {notification.body}
                     </AppText>
                   ) : null}
-                  {pending ? (
+                  {isRating ? (
+                    <RatingPromptActions
+                      bookTitle={dataString(notification, 'title') || 'this book'}
+                      onRate={(value) => rate(notification, value)}
+                      onSkip={() => void dismiss(notification)}
+                      onStopAsking={() => void stopAskingForRatings(notification)}
+                    />
+                  ) : pending ? (
                     <View style={styles.actions}>
                       <Touchable
                         style={styles.accept}

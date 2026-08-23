@@ -176,6 +176,17 @@ export default function NotificationsPanel() {
               onChange={(value) => setTypeEnabled('reply', value)}
             />
           }
+        />
+        <SettingsRow
+          icon={icons.star}
+          title="Rate a finished book"
+          desc="Ask how it was when you finish a book. Shows in your tray only."
+          control={
+            <SettingsToggle
+              on={prefs.types.rating.enabled}
+              onChange={(value) => setTypeEnabled('rating', value)}
+            />
+          }
           last
         />
       </SettingsGroup>
