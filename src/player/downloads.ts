@@ -725,12 +725,24 @@ export function cancelMetadataSweep(): void {
   }
 }
 
-async function runMetadataSweep(): Promise<void> {
+/**
+ * Refresh every downloaded book's metadata right now, ignoring the throttle.
+ *
+ * This is the pull-to-refresh path: the gesture means "make this current", so
+ * it must not be silently swallowed by the 6-hour interval the background sweep
+ * uses. Still serialized against a sweep already running.
+ */
+export async function refreshAllDownloadMetadata(): Promise<void> {
+  cancelMetadataSweep()
+  await runMetadataSweep(true)
+}
+
+async function runMetadataSweep(force = false): Promise<void> {
   if (sweeping) return
   sweeping = true
   try {
     const last = Number((await AsyncStorage.getItem(SWEEP_KEY)) ?? 0)
-    if (Number.isFinite(last) && Date.now() - last < METADATA_SWEEP_INTERVAL_MS) return
+    if (!force && Number.isFinite(last) && Date.now() - last < METADATA_SWEEP_INTERVAL_MS) return
 
     // Snapshot the ids first: refreshing mutates the store, and a download
     // finishing mid-sweep would otherwise change what we're iterating.
@@ -741,7 +753,9 @@ async function runMetadataSweep(): Promise<void> {
     for (const id of ids) {
       // The entry can disappear mid-sweep (deleted from the UI); refresh no-ops.
       if (await refreshDownloadMetadata(id)) changed += 1
-      await new Promise((r) => setTimeout(r, METADATA_SWEEP_GAP_MS))
+      // Space the background sweep out so it stays off the critical path. A
+      // forced sweep is the user waiting on a spinner, so it runs flat out.
+      if (!force) await new Promise((r) => setTimeout(r, METADATA_SWEEP_GAP_MS))
     }
     await AsyncStorage.setItem(SWEEP_KEY, String(Date.now()))
     if (changed > 0) breadcrumb('downloads', `metadata sweep updated ${changed}/${ids.length}`)

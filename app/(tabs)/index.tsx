@@ -70,6 +70,7 @@ import {
   setAutoDownloadContinueListening,
   getDownloadsState,
   subscribeDownloads,
+  refreshAllDownloadMetadata,
 } from '@/player/downloads'
 import { catalogHomeShelves } from '@/player/offlineCatalog'
 import { publishHomeShelves } from '@/store/homeShelves'
@@ -517,8 +518,14 @@ export default function HomeScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true)
     try {
-      if (connected) await loadHome({ silent: true })
-      else loadHomeOffline()
+      if (connected) {
+        // Pull-to-refresh means "make this current", so it also re-reads the
+        // metadata of downloaded books - whose chapters/title/series are
+        // otherwise frozen at download time. Forced, so it ignores the
+        // background sweep's throttle. Runs alongside the home load rather than
+        // before it, so the shelves still appear at their usual speed.
+        await Promise.all([loadHome({ silent: true }), refreshAllDownloadMetadata()])
+      } else loadHomeOffline()
     } finally {
       setRefreshing(false)
     }

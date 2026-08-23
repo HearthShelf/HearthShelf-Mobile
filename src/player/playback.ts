@@ -457,6 +457,12 @@ export async function playItemById(
   setActiveSession(opened)
   syncStateStartSession(itemId, opened.startedAt, startAt)
 
+  // The session carried live chapters, so the player is already correct - but the
+  // downloaded copy on disk is still the snapshot taken at download time. Re-sync
+  // it now so the next OFFLINE listen (and the browse screens) match what was
+  // just shown, instead of reverting to the stale titles.
+  if (local) void refreshOpenBookMetadata(itemId)
+
   // Auto-download the book you just started (and prefetch the queue), per prefs.
   applyAutoDownloads({
     nowPlaying: { itemId, title: np.title, author: np.author },
@@ -523,6 +529,9 @@ async function loadPreview(
       false,
     )
     breadcrumb('play', `${itemId} preview (local) @${Math.round(startAt)}s`)
+    // Loaded from the frozen download snapshot; correct it in place if the
+    // server has since changed the chapters. No-ops offline.
+    void refreshOpenBookMetadata(itemId)
     return
   }
 
@@ -698,11 +707,8 @@ async function playFromDownloadOffline(itemId: string, autoPlay = true): Promise
   // Offline downloaded book: it's banked locally, not on the server yet.
   syncStateFailed()
 
-  // The chapters just loaded came from the download snapshot, which is frozen at
-  // download time - so a rename made on the server afterwards is not reflected.
-  // Re-check now that audio is playing (never before: this must not delay the
-  // start), and correct the list in place if it moved. No-ops offline.
-  void refreshOpenBookMetadata(itemId)
+  // No refresh here: this branch runs only when no server is reachable, so
+  // there is nothing to refresh against. The online paths handle it.
 }
 
 /**
