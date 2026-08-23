@@ -249,20 +249,24 @@ export const PlayerNotesSheet = forwardRef<
       {enabled ? (
         <View style={styles.composer}>
           {replyTo ? (
+            // Quote what is being answered so the destination is unmistakable
+            // (see the club screen's composer - same change, HS-MOBILEAPP-17).
             <View style={styles.replyBanner}>
-              <AppText
-                variant="caption"
-                color={colors.textMuted}
-                numberOfLines={1}
-                style={{ flex: 1 }}
-              >
-                Replying to {replyTo.username}
-              </AppText>
+              <View style={styles.replyBar} />
+              <View style={{ flex: 1 }}>
+                <AppText variant="caption" color={colors.accent} numberOfLines={1}>
+                  Replying to {replyTo.username}
+                </AppText>
+                <AppText variant="caption" color={colors.textMuted} numberOfLines={2}>
+                  {replyTo.body}
+                </AppText>
+              </View>
               <IconButton
                 name={icons.close}
                 size={16}
                 color={colors.textMuted}
                 onPress={() => setReplyTo(null)}
+                accessibilityLabel="Cancel reply"
               />
             </View>
           ) : null}
@@ -272,7 +276,9 @@ export const PlayerNotesSheet = forwardRef<
           <View style={styles.composerRow}>
             <TextInput
               style={styles.input}
-              placeholder={replyTo ? 'Write a reply…' : `Note at ${formatTimestamp(position)}…`}
+              placeholder={
+                replyTo ? `Reply to ${replyTo.username}…` : `Note at ${formatTimestamp(position)}…`
+              }
               placeholderTextColor={colors.textFaint}
               value={body}
               onChangeText={setBody}
@@ -332,7 +338,21 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.fill,
     },
     composer: { paddingTop: spacing.sm, gap: spacing.sm },
-    replyBanner: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    replyBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      backgroundColor: colors.accentWash,
+      borderRadius: radius.row,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.sm,
+    },
+    replyBar: {
+      width: 3,
+      alignSelf: 'stretch',
+      borderRadius: radius.pill,
+      backgroundColor: colors.accent,
+    },
     composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm },
     input: {
       flex: 1,

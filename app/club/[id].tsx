@@ -18,7 +18,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -882,27 +881,35 @@ export default function ClubRoomScreen() {
 
       {/* Composer - members only, on the current book. Wrapped so the keyboard
           lifts it and it clears the docked mini player above the tab bar. */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ paddingBottom: miniInset }}
-      >
+      {/* `padding` on BOTH platforms. Android used to pass undefined and rely on
+          the window's adjustResize, but SDK 57 renders edge-to-edge and ignores
+          it - so the composer sat behind the keyboard and you could not see what
+          you were typing (HS-MOBILEAPP-17). */}
+      <KeyboardAvoidingView behavior="padding" style={{ paddingBottom: miniInset }}>
         {isMember && isCurrentView && viewedBook ? (
           <View style={styles.composer}>
             {replyTo ? (
+              // Quote the comment being answered, not just its author's name. A
+              // one-line "Replying to X" is easy to miss above a full-width box,
+              // and gave no confirmation that the right comment was picked - the
+              // accent bar plus the quoted text make the destination obvious
+              // (HS-MOBILEAPP-17).
               <View style={styles.replyBanner}>
-                <AppText
-                  variant="caption"
-                  color={colors.textMuted}
-                  numberOfLines={1}
-                  style={{ flex: 1 }}
-                >
-                  Replying to {replyTo.username}
-                </AppText>
+                <View style={styles.replyBar} />
+                <View style={{ flex: 1 }}>
+                  <AppText variant="caption" color={colors.accent} numberOfLines={1}>
+                    Replying to {replyTo.username}
+                  </AppText>
+                  <AppText variant="caption" color={colors.textMuted} numberOfLines={2}>
+                    {replyTo.body}
+                  </AppText>
+                </View>
                 <IconButton
                   name={icons.close}
                   size={16}
                   color={colors.textMuted}
                   onPress={() => setReplyTo(null)}
+                  accessibilityLabel="Cancel reply"
                 />
               </View>
             ) : null}
@@ -958,9 +965,15 @@ export default function ClubRoomScreen() {
               <TextInput
                 style={styles.input}
                 placeholder={
-                  playingThisBook
-                    ? `Note at ${formatTimestamp(position)}…`
-                    : 'Leave a note (play the book to timestamp it)…'
+                  // A reply never carries a timestamp of its own (it gates at its
+                  // parent's time), so offering "Note at 1:02:05" while the banner
+                  // above says "Replying to X" told the listener two different
+                  // things about where their text was going (HS-MOBILEAPP-17).
+                  replyTo
+                    ? `Reply to ${replyTo.username}…`
+                    : playingThisBook
+                      ? `Note at ${formatTimestamp(position)}…`
+                      : 'Leave a note (play the book to timestamp it)…'
                 }
                 placeholderTextColor={colors.textFaint}
                 value={body}
@@ -1622,7 +1635,23 @@ const makeStyles = (colors: Palette) =>
       borderRadius: radius.pill,
       backgroundColor: colors.fill,
     },
-    replyBanner: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    // Quoted context for the comment being replied to. Tinted and bar-marked so
+    // it reads as "this is what you're answering" rather than a stray caption.
+    replyBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      backgroundColor: colors.accentWash,
+      borderRadius: radius.row,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.sm,
+    },
+    replyBar: {
+      width: 3,
+      alignSelf: 'stretch',
+      borderRadius: radius.pill,
+      backgroundColor: colors.accent,
+    },
     composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm },
     // Sits in the composer stack above the input (like the reply banner) rather
     // than floating over it - an absolute overlay fights KeyboardAvoidingView.

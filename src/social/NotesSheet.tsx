@@ -194,19 +194,22 @@ export const NotesSheet = forwardRef<SheetHandle, NotesSheetProps>(function Note
                 name={replyTo.username}
                 hue={coverHue(replyTo.userId)}
               />
-              <AppText
-                variant="caption"
-                color={colors.textMuted}
-                numberOfLines={1}
-                style={{ flex: 1 }}
-              >
-                Replying to {replyTo.username}
-              </AppText>
+              <View style={{ flex: 1 }}>
+                <AppText variant="caption" color={colors.accent} numberOfLines={1}>
+                  Replying to {replyTo.username}
+                </AppText>
+                {/* Quote the comment itself, so it is clear which one this
+                    answers (HS-MOBILEAPP-17). */}
+                <AppText variant="caption" color={colors.textMuted} numberOfLines={2}>
+                  {replyTo.body}
+                </AppText>
+              </View>
               <IconButton
                 name={icons.close}
                 size={16}
                 color={colors.textMuted}
                 onPress={() => setReplyTo(null)}
+                accessibilityLabel="Cancel reply"
               />
             </View>
           ) : null}
@@ -249,10 +252,14 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.fill,
     },
     composer: { paddingTop: spacing.sm, gap: spacing.sm },
+    // Tinted so it reads as the comment being answered, not a stray caption.
     replyBanner: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.sm,
+      backgroundColor: colors.accentWash,
+      borderRadius: radius.row,
+      paddingVertical: spacing.sm,
       paddingHorizontal: spacing.sm,
     },
     composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm },
