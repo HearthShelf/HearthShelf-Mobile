@@ -7,7 +7,7 @@
 import { useSyncExternalStore } from 'react'
 import { usePathname } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { getState, subscribe } from '@/player/store'
+import { getHasTrack, subscribe } from '@/player/store'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { MINI_PLAYER_HEIGHT } from '@/player/MiniPlayer'
 import { miniPlayerHiddenOn, hasBottomTabBar } from '@/player/MiniPlayerDock'
@@ -17,14 +17,17 @@ import { spacing } from './theme'
 export function useContentInset(): number {
   const pathname = usePathname()
   const insets = useSafeAreaInsets()
-  const { nowPlaying } = useSyncExternalStore(subscribe, getState)
+  // Presence only, NOT the whole state: getState() returns a new object every
+  // position tick, which re-rendered all 54 screens that call this hook once a
+  // second during playback. See getHasTrack.
+  const hasTrack = useSyncExternalStore(subscribe, getHasTrack)
   const hideMiniPlayer = useSyncExternalStore(
     subscribeSettings,
     () => getSettingsState().hideMiniPlayer,
   )
   const mode = useNavMode()
   const onTabScreen = hasBottomTabBar(pathname)
-  const miniVisible = nowPlaying !== null && !hideMiniPlayer && !miniPlayerHiddenOn(pathname)
+  const miniVisible = hasTrack && !hideMiniPlayer && !miniPlayerHiddenOn(pathname)
 
   // Classic reserves its bar via the navigator (scene is already inset), so
   // content only adds a comfortable margin + mini-player clearance. Floating
@@ -49,13 +52,13 @@ export function useContentInset(): number {
 export function useMiniPlayerInset(): number {
   const pathname = usePathname()
   const insets = useSafeAreaInsets()
-  const { nowPlaying } = useSyncExternalStore(subscribe, getState)
+  const hasTrack = useSyncExternalStore(subscribe, getHasTrack)
   const hideMiniPlayer = useSyncExternalStore(
     subscribeSettings,
     () => getSettingsState().hideMiniPlayer,
   )
   const mode = useNavMode()
-  const miniVisible = nowPlaying !== null && !hideMiniPlayer && !miniPlayerHiddenOn(pathname)
+  const miniVisible = hasTrack && !hideMiniPlayer && !miniPlayerHiddenOn(pathname)
   // These routes mount their own AppTabBar sibling. Classic reserves a laid-out
   // band (already stops the scroll); floating modes float over content, so clear
   // the safe area + the horizontal pill's footprint here.

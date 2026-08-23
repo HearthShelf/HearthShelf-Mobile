@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { TAB_BAR_HEIGHT, VNAV_WIDTH } from '@/ui/AppTabBar'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { spacing } from '@/ui/theme'
-import { getState, subscribe } from './store'
+import { getHasTrack, subscribe } from './store'
 import { getImmersive, subscribeImmersive } from './immersive'
 import { MiniPlayer } from './MiniPlayer'
 
@@ -47,7 +47,9 @@ export function hasBottomTabBar(pathname: string): boolean {
 export function MiniPlayerDock() {
   const pathname = usePathname()
   const insets = useSafeAreaInsets()
-  const { nowPlaying } = useSyncExternalStore(subscribe, getState)
+  // Presence only - the MiniPlayer child subscribes for its own content, so this
+  // wrapper must not re-render on every position tick (see getHasTrack).
+  const hasTrack = useSyncExternalStore(subscribe, getHasTrack)
   const immersive = useSyncExternalStore(subscribeImmersive, getImmersive)
   const floatingNav = useSyncExternalStore(subscribeSettings, () => getSettingsState().floatingNav)
   const hideMiniPlayer = useSyncExternalStore(
@@ -58,7 +60,7 @@ export function MiniPlayerDock() {
     subscribeSettings,
     () => getSettingsState().floatingNavOrientation,
   )
-  if (!nowPlaying || immersive || hideMiniPlayer || miniPlayerHiddenOn(pathname)) return null
+  if (!hasTrack || immersive || hideMiniPlayer || miniPlayerHiddenOn(pathname)) return null
   const hasTabBar = hasBottomTabBar(pathname)
   // With a vertical floating column, the nav hugs the bottom-right instead of
   // spanning the width, so the mini player drops to the bottom and only insets

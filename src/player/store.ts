@@ -125,6 +125,31 @@ export function subscribe(fn: () => void): () => void {
   return () => listeners.delete(fn)
 }
 
+/**
+ * Snapshot of "is a book loaded", for consumers that only care about presence.
+ *
+ * `getState()` returns a NEW object on every `set()`, and `set()` runs on every
+ * ~1Hz position tick while audio plays. So every
+ * `useSyncExternalStore(subscribe, getState)` consumer re-renders once a second
+ * during playback, whether or not it reads `position` - and most do not. That
+ * included useContentInset, which 54 screens call, so nearly the whole app was
+ * re-rendering at 1Hz while a book played (HS-MOBILEAPP-13).
+ *
+ * useSyncExternalStore bails out when the snapshot is REFERENTIALLY equal to the
+ * last one, so returning a stable primitive here collapses those ticks to zero
+ * renders until the book actually changes. Must return a primitive (or a cached
+ * object) - a fresh object literal would defeat the very check it relies on.
+ */
+export function getHasTrack(): boolean {
+  return state.nowPlaying !== null
+}
+
+/** The loaded book's id, or null. Stable across position ticks (see
+ *  getHasTrack), so consumers keyed on "which book" don't re-render at 1Hz. */
+export function getTrackId(): string | null {
+  return state.nowPlaying?.itemId ?? null
+}
+
 function set(patch: Partial<PlayerState>): void {
   const leftCar = state.carActive && patch.carActive === false
   state = { ...state, ...patch }
