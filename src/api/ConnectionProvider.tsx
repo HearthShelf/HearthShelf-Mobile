@@ -45,6 +45,7 @@ import {
   getDownloadsState,
   subscribeDownloads,
   applyAutoDownloadsOnReconnect,
+  startMetadataSweep,
 } from '@/player/downloads'
 import { getQueueState } from '@/player/queue'
 import { hydrateCatalog, backfillCatalog } from '@/player/offlineCatalog'
@@ -504,6 +505,11 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         // neighbors; autoDownload() already skips anything done/in-flight and
         // honors the storage cap, so re-running on every connect is free.
         applyAutoDownloadsOnReconnect(() => getQueueState().items)
+        // Refresh the cached metadata of downloaded books. Chapters, title and
+        // series are snapshotted at download time, so a correction made on the
+        // server was previously invisible on this device forever. Self-throttled
+        // and delayed well past launch; metadata only, no audio.
+        startMetadataSweep()
         // The picker path (SplashServer) has no role; only linked-server objects
         // carry it. Fall back to 'user' so admin UI stays hidden when unknown.
         setActiveRole('role' in server && server.role === 'admin' ? 'admin' : 'user')

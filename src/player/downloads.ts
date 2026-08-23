@@ -39,6 +39,7 @@ import {
   backfillFromDownloads,
 } from './offlineCatalog'
 import { subscribeQueue } from './queue'
+import { breadcrumb } from '@/lib/crashLog'
 
 export interface DownloadedTrack {
   index: number
@@ -663,6 +664,9 @@ export async function refreshDownloadMetadata(itemId: string): Promise<boolean> 
       author,
       ...(chaptersChanged ? { chapters } : {}),
     })
+    // patch() only updates memory; without this the corrected titles are lost
+    // on the next launch, which is the very bug this function exists to fix.
+    persist()
   }
 
   // Refresh the browse metadata (genres, series, narrator, published year) too,
@@ -675,6 +679,77 @@ export async function refreshDownloadMetadata(itemId: string): Promise<boolean> 
   }
 
   return changed
+}
+
+/** How long to wait before the startup metadata sweep begins. */
+const METADATA_SWEEP_DELAY_MS = 20_000
+/** Random extra delay on top, so many devices don't all sweep at once. */
+const METADATA_SWEEP_JITTER_MS = 40_000
+/** Gap between books, to keep the sweep off the critical path. */
+const METADATA_SWEEP_GAP_MS = 1_500
+/** Don't re-sweep more often than this (ms). */
+const METADATA_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000
+
+const SWEEP_KEY = 'hs.downloads.metaSweptAt.v1'
+
+let sweepTimer: ReturnType<typeof setTimeout> | null = null
+let sweeping = false
+
+/**
+ * Refresh the cached metadata of every downloaded book, a few seconds after the
+ * app settles.
+ *
+ * Without this, a metadata fix made on the server only ever reached a device if
+ * the listener happened to open that exact book - so a corrected title or series
+ * stayed wrong on the library and series screens indefinitely. Sweeping on
+ * launch means edits land everywhere on their own.
+ *
+ * Deliberately lazy: it starts well after launch, spaces the books out, and
+ * skips entirely if it ran recently, so it never competes with playback start
+ * or the progress flush. Metadata only - no audio is fetched.
+ */
+export function startMetadataSweep(): void {
+  if (sweepTimer || sweeping) return
+  const delay = METADATA_SWEEP_DELAY_MS + Math.random() * METADATA_SWEEP_JITTER_MS
+  sweepTimer = setTimeout(() => {
+    sweepTimer = null
+    void runMetadataSweep()
+  }, delay)
+}
+
+/** Cancel a scheduled sweep (e.g. the server went away before it fired). */
+export function cancelMetadataSweep(): void {
+  if (sweepTimer) {
+    clearTimeout(sweepTimer)
+    sweepTimer = null
+  }
+}
+
+async function runMetadataSweep(): Promise<void> {
+  if (sweeping) return
+  sweeping = true
+  try {
+    const last = Number((await AsyncStorage.getItem(SWEEP_KEY)) ?? 0)
+    if (Number.isFinite(last) && Date.now() - last < METADATA_SWEEP_INTERVAL_MS) return
+
+    // Snapshot the ids first: refreshing mutates the store, and a download
+    // finishing mid-sweep would otherwise change what we're iterating.
+    const ids = [...state.byId.values()].filter((e) => e.status === 'done').map((e) => e.itemId)
+    if (ids.length === 0) return
+
+    let changed = 0
+    for (const id of ids) {
+      // The entry can disappear mid-sweep (deleted from the UI); refresh no-ops.
+      if (await refreshDownloadMetadata(id)) changed += 1
+      await new Promise((r) => setTimeout(r, METADATA_SWEEP_GAP_MS))
+    }
+    await AsyncStorage.setItem(SWEEP_KEY, String(Date.now()))
+    if (changed > 0) breadcrumb('downloads', `metadata sweep updated ${changed}/${ids.length}`)
+  } catch {
+    // Best-effort: a failed sweep just means the next launch tries again.
+  } finally {
+    sweeping = false
+  }
 }
 
 /**

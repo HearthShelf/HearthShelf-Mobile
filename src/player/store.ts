@@ -218,6 +218,22 @@ export function attachSessionId(sessionId: string): void {
   set({ nowPlaying: { ...np, sessionId } })
 }
 
+/**
+ * Replace the chapter marks of the book already loaded, without touching the
+ * track or playhead.
+ *
+ * Used when a downloaded book's cached metadata turns out to be stale: the
+ * listener is mid-chapter and the titles are wrong, so the list should correct
+ * itself in place rather than wait for the next launch. Safe for the same
+ * reason attachSessionId is - PlayerHost keys its native (re)load on the book
+ * and audio URL, so changing chapters never reloads audio.
+ */
+export function updateChapters(itemId: string, chapters: ChapterMark[]): void {
+  const np = state.nowPlaying
+  if (!np || np.itemId !== itemId) return
+  set({ nowPlaying: { ...np, chapters } })
+}
+
 export function setPlaying(isPlaying: boolean): void {
   if (!state.nowPlaying) return
   // A transient audio-focus duck (call, nav prompt) reaches us as an ordinary

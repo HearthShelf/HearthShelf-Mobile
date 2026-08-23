@@ -23,8 +23,15 @@ import {
 import { getSession } from '@/api/session'
 import type { ABSMediaProgress } from '@hearthshelf/core'
 import { progressFor, recordLocalProgress, serverProgressUpdatedAt } from '@/store/progress'
-import { loadTrack, getState, attachSessionId, type NowPlaying, type ChapterMark } from './store'
-import { localSourceFor, applyAutoDownloads } from './downloads'
+import {
+  loadTrack,
+  getState,
+  attachSessionId,
+  updateChapters,
+  type NowPlaying,
+  type ChapterMark,
+} from './store'
+import { localSourceFor, applyAutoDownloads, refreshDownloadMetadata } from './downloads'
 import {
   recordLocalSession,
   setStreamingPending,
@@ -690,6 +697,31 @@ async function playFromDownloadOffline(itemId: string, autoPlay = true): Promise
   syncStateStartSession(itemId, offline.startedAt, startAt)
   // Offline downloaded book: it's banked locally, not on the server yet.
   syncStateFailed()
+
+  // The chapters just loaded came from the download snapshot, which is frozen at
+  // download time - so a rename made on the server afterwards is not reflected.
+  // Re-check now that audio is playing (never before: this must not delay the
+  // start), and correct the list in place if it moved. No-ops offline.
+  void refreshOpenBookMetadata(itemId)
+}
+
+/**
+ * Re-read a downloaded book's metadata while it is open, and push corrected
+ * chapters into the live player.
+ *
+ * Fire-and-forget by design: playback has already started, so a slow or failed
+ * request costs nothing. Runs only when a server is actually reachable.
+ */
+async function refreshOpenBookMetadata(itemId: string): Promise<void> {
+  if (!getSession() || isOfflineMode()) return
+  try {
+    const changed = await refreshDownloadMetadata(itemId)
+    if (!changed) return
+    const fresh = localSourceFor(itemId)
+    if (fresh) updateChapters(itemId, sanitizeChapters(fresh.chapters))
+  } catch {
+    // Cached copy stands; the startup sweep will try again.
+  }
 }
 
 /** Wall-clock ms; isolated so the one Date.now() call is easy to reason about. */
