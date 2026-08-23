@@ -319,7 +319,8 @@ export function PlayerCoverCarousel({
         renderItem={renderPage}
         horizontal
         scrollEnabled={!overlayActive}
-        style={{ width: pageW }}
+        removeClippedSubviews={!overlayActive}
+        style={{ width: pageW, overflow: 'visible' }}
         contentContainerStyle={{ paddingHorizontal: sidePad }}
         showsHorizontalScrollIndicator={false}
         // Momentum ratchet: a fling carries across the deck (each book a detent),
@@ -344,7 +345,9 @@ export function PlayerCoverCarousel({
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
     wrap: { alignSelf: 'stretch', alignItems: 'center' },
-    card: { borderRadius: radius.card, overflow: 'hidden', position: 'relative' },
+    // The cover itself clips in pressTarget; this outer layer stays visible so
+    // the keyboard-aware inline composer can rise beyond the art bounds.
+    card: { borderRadius: radius.card, overflow: 'visible', position: 'relative' },
     pressTarget: { borderRadius: radius.card, overflow: 'hidden' },
     dim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: radius.card },
     liveTag: {

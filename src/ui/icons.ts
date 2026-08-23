@@ -99,6 +99,7 @@ export const icons = {
   mention: 'alternate-email',
   personAdd: 'person-add',
   chat: 'forum',
+  commentAdd: 'add-comment',
   bookmarks: 'bookmarks',
   visible: 'visibility',
   hidden: 'visibility-off',

@@ -1014,7 +1014,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                     </View>
                   </Animated.View>
                 )}
-                {!immersive && showInspectHint && (
+                {!immersive && !showClubStrip && showInspectHint && (
                   <Animated.View
                     entering={FadeIn.duration(DUR.base)}
                     exiting={FadeOut.duration(DUR.fast)}
@@ -1071,7 +1071,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
             return (
               <GestureDetector gesture={swipe}>
                 <View
-                  style={styles.coverArea}
+                  style={[styles.coverArea, clubComposing && styles.coverAreaComposing]}
                   onLayout={(e) => {
                     const h = e.nativeEvent.layout.height
                     setCoverAreaH((prev) => (Math.abs(prev - h) > 1 ? h : prev))
@@ -2270,6 +2270,10 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       // coverWidth, and Focus view's single cover is likewise well within the
       // screen, so neither needs page padding here.
     },
+    // The keyboard-aware inline club composer may need to rise beyond the
+    // measured artwork slot at large display/text scales. Let it float over the
+    // player chrome while composing; the artwork itself remains size-capped.
+    coverAreaComposing: { overflow: 'visible', zIndex: 30, elevation: 30 },
     // Full-strength art, shown on its own with no scrim over it.
     hearthBg: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
     coverTap: { position: 'relative' },
