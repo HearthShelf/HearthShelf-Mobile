@@ -51,8 +51,11 @@ export function PlayerCoverCarousel({
   /** Full width of the cover area; each page fills it so only the centered
    *  cover is visible (no neighbor peeking). */
   pageWidth,
-  /** Slot for the bookmark/club buttons that overlay the live card. */
+  /** Slot for the bookmark/zoom controls and club strip over the live card. */
   overlay,
+  /** The live overlay is accepting text; freeze the deck and its cover gesture
+   *  until composition ends so swipes/holds cannot steal keyboard touches. */
+  overlayActive = false,
   /** Onscreen skip feedback overlay (only meaningful on the live card). */
   skipFeedback,
   /** Double-tap skip hotspots for the live card's left/right margins. Rendered
@@ -78,6 +81,7 @@ export function PlayerCoverCarousel({
   coverAspect: number
   pageWidth: number
   overlay?: React.ReactNode
+  overlayActive?: boolean
   skipFeedback?: React.ReactNode
   hotspots?: React.ReactNode
   onLivePress: () => void
@@ -210,83 +214,92 @@ export function PlayerCoverCarousel({
       // peek at the screen edges (the deck advertises itself). Snap lands the
       // active cover centered.
       <View style={{ width: coverWidth + PAGE_GAP, alignItems: 'center' }}>
-        <SpringPressable
-          scaleTo={0.98}
-          onPress={() =>
-            item.isLive
-              ? onLivePress()
-              : isFocus
-                ? switchTo(item)
-                : listRef.current?.scrollToOffset({
-                    offset: i * (coverWidth + PAGE_GAP),
-                    animated: true,
-                  })
-          }
-          // Holding the LIVE cover fast-forwards (boost on long-press, restore on
-          // release); holding an up-next cover opens the book actions sheet.
-          // onPressOut also fires when the press is cancelled (the touch turns
-          // into a horizontal page swipe), so the boost can't outlive the finger.
-          onLongPress={
-            item.isLive
-              ? onLiveHoldStart
-              : onLongPressPage
-                ? () => onLongPressPage(item)
-                : undefined
-          }
-          onPressOut={item.isLive ? onLiveHoldEnd : undefined}
-          delayLongPress={300}
-          style={[styles.card, { width: coverWidth }]}
-        >
-          <Cover
-            uri={item.isLive ? liveArtworkUrl : coverUrl(item.itemId)}
-            itemId={item.itemId}
-            width={coverWidth}
-            aspectRatio={coverAspect}
-            radius={radius.card}
-            fallback={{
-              hue: pageHue,
-              initial: item.title.charAt(0).toUpperCase(),
-              title: item.title,
-            }}
-            style={{ backgroundColor: colors.high }}
-          />
+        <View style={[styles.card, { width: coverWidth }]}>
+          <SpringPressable
+            scaleTo={0.98}
+            disabled={item.isLive && overlayActive}
+            onPress={() =>
+              item.isLive
+                ? onLivePress()
+                : isFocus
+                  ? switchTo(item)
+                  : listRef.current?.scrollToOffset({
+                      offset: i * (coverWidth + PAGE_GAP),
+                      animated: true,
+                    })
+            }
+            // Holding the LIVE cover fast-forwards (boost on long-press, restore on
+            // release); holding an up-next cover opens the book actions sheet.
+            // onPressOut also fires when the press is cancelled (the touch turns
+            // into a horizontal page swipe), so the boost can't outlive the finger.
+            onLongPress={
+              item.isLive
+                ? onLiveHoldStart
+                : onLongPressPage
+                  ? () => onLongPressPage(item)
+                  : undefined
+            }
+            onPressOut={item.isLive ? onLiveHoldEnd : undefined}
+            delayLongPress={300}
+            style={styles.pressTarget}
+          >
+            <Cover
+              uri={item.isLive ? liveArtworkUrl : coverUrl(item.itemId)}
+              itemId={item.itemId}
+              width={coverWidth}
+              aspectRatio={coverAspect}
+              radius={radius.card}
+              fallback={{
+                hue: pageHue,
+                initial: item.title.charAt(0).toUpperCase(),
+                title: item.title,
+              }}
+              style={{ backgroundColor: colors.high }}
+            />
 
-          {/* Non-live pages dim and carry a slim UP NEXT kicker; tap the focused
+            {/* Non-live pages dim and carry a slim UP NEXT kicker; tap the focused
               one to play it. No separate play button/label - a single tap on
               the focused up-next cover switches to it (less busy). */}
-          {!item.isLive && (
-            <>
-              <View
-                style={[
-                  styles.dim,
-                  { backgroundColor: withAlpha('#0a0806', isFocus ? 0.28 : 0.5) },
-                ]}
-                pointerEvents="none"
-              />
-              <View style={styles.upNextTag} pointerEvents="none">
-                <AppText variant="caption" color="rgba(255,255,255,0.85)" style={styles.upNextText}>
-                  {`UP NEXT · ${i} OF ${pages.length - 1}`}
-                </AppText>
-              </View>
-              {isFocus && (
-                <View style={styles.playHint} pointerEvents="none">
-                  <Icon name={icons.play} size={26} color={colors.onAccent} />
-                  <AppText variant="caption" color="#fff" style={{ fontWeight: '700' }}>
-                    Tap to play
+            {!item.isLive && (
+              <>
+                <View
+                  style={[
+                    styles.dim,
+                    { backgroundColor: withAlpha('#0a0806', isFocus ? 0.28 : 0.5) },
+                  ]}
+                  pointerEvents="none"
+                />
+                <View style={styles.upNextTag} pointerEvents="none">
+                  <AppText
+                    variant="caption"
+                    color="rgba(255,255,255,0.85)"
+                    style={styles.upNextText}
+                  >
+                    {`UP NEXT · ${i} OF ${pages.length - 1}`}
                   </AppText>
                 </View>
-              )}
-            </>
-          )}
+                {isFocus && (
+                  <View style={styles.playHint} pointerEvents="none">
+                    <Icon name={icons.play} size={26} color={colors.onAccent} />
+                    <AppText variant="caption" color="#fff" style={{ fontWeight: '700' }}>
+                      Tap to play
+                    </AppText>
+                  </View>
+                )}
+              </>
+            )}
+          </SpringPressable>
 
-          {/* Live overlays (bookmark/club/skip feedback) only over page 0. */}
+          {/* Live overlays are siblings of the cover press target. Text inputs
+              and strip controls can now own their touches instead of bubbling
+              into tap-to-play / hold-to-boost. */}
           {item.isLive && (
             <>
               {skipFeedback}
               {overlay}
             </>
           )}
-        </SpringPressable>
+        </View>
       </View>
     )
   }
@@ -305,6 +318,7 @@ export function PlayerCoverCarousel({
         keyExtractor={(p) => p.itemId}
         renderItem={renderPage}
         horizontal
+        scrollEnabled={!overlayActive}
         style={{ width: pageW }}
         contentContainerStyle={{ paddingHorizontal: sidePad }}
         showsHorizontalScrollIndicator={false}
@@ -331,6 +345,7 @@ const makeStyles = (colors: Palette) =>
   StyleSheet.create({
     wrap: { alignSelf: 'stretch', alignItems: 'center' },
     card: { borderRadius: radius.card, overflow: 'hidden', position: 'relative' },
+    pressTarget: { borderRadius: radius.card, overflow: 'hidden' },
     dim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: radius.card },
     liveTag: {
       position: 'absolute',

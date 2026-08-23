@@ -15,9 +15,10 @@
  *  - Pulls on AppState 'active' (foreground), like queueSync.
  */
 import { AppState, type AppStateStatus } from 'react-native'
+import type { HSClubMember, HSNote, HSNoteStub } from '@hearthshelf/core'
 import { getState as getPlayerState, subscribe as subscribePlayer } from './store'
 import { setPopStubs, clearPopStubs, startNotePops, stopNotePops } from './notePops'
-import { getClubs } from '@/api/clubs'
+import { getClub, getClubs } from '@/api/clubs'
 import { getNotes } from '@/api/notes'
 
 const POLL_MS = 15_000
@@ -31,10 +32,10 @@ let appStateSub: { remove: () => void } | null = null
 let unsubPlayer: (() => void) | null = null
 // The club whose current book is the playing item (or '' when none).
 let activeClubId = ''
-let activeClubName = ''
 let activeItemId = ''
+let resolveGeneration = 0
 
-// Subscribers (e.g. the player's open-club button) notified when the playing
+// Subscribers (e.g. the player's artwork club strip) notified when the playing
 // book's club changes. Kept tiny - the useSyncExternalStore convention the app
 // uses elsewhere.
 const clubListeners = new Set<() => void>()
@@ -45,6 +46,11 @@ function emitClub(): void {
 export interface ActiveClub {
   id: string
   name: string
+  memberCount: number
+  members: HSClubMember[]
+  notes: HSNote[]
+  locked: HSNoteStub[]
+  unreadCount: number
 }
 
 // getActiveClub() is read via useSyncExternalStore, which requires a STABLE
@@ -52,6 +58,7 @@ export interface ActiveClub {
 // call reads as "changed" on every render and infinite-loops the player
 // screen. Cache it and only rebuild on a real setActiveClub() change.
 let activeClub: ActiveClub | null = null
+let activeClubSignature = ''
 
 /** The club whose current book is the now-playing item, or null. Reactive via
  *  subscribeActiveClub. */
@@ -66,11 +73,15 @@ export function subscribeActiveClub(fn: () => void): () => void {
   }
 }
 
-function setActiveClub(id: string, name: string): void {
-  if (id === activeClubId && name === activeClubName) return
-  activeClubId = id
-  activeClubName = name
-  activeClub = id ? { id, name } : null
+function setActiveClub(next: ActiveClub | null): void {
+  // Club detail refreshes on a 15s cadence. Keep the external-store snapshot
+  // stable when the server returned the same data or React will treat every
+  // poll as a fresh state change.
+  const signature = next ? JSON.stringify(next) : ''
+  if (signature === activeClubSignature) return
+  activeClubSignature = signature
+  activeClubId = next?.id ?? ''
+  activeClub = next
   emitClub()
 }
 // A caller (open club/notes surface) can force polling on even when the playing
@@ -78,31 +89,78 @@ function setActiveClub(id: string, name: string): void {
 let surfaceOpen = 0
 
 async function resolveActiveClub(): Promise<void> {
+  const generation = ++resolveGeneration
   const itemId = getPlayerState().nowPlaying?.itemId ?? ''
   if (!itemId) {
-    setActiveClub('', '')
+    setActiveClub(null)
     activeItemId = ''
     clearPopStubs()
     return
   }
   // Find a club the user is in whose CURRENT book is the playing item.
   const res = await getClubs(itemId)
+  if (generation !== resolveGeneration) return
   const club = res.mine.find((c) => c.currentBook?.libraryItemId === itemId)
   if (!club) {
-    setActiveClub('', '')
-    activeItemId = ''
+    setActiveClub(null)
+    // Remember the resolved non-club item too, otherwise every position tick
+    // retries the same lookup until another book starts.
+    activeItemId = itemId
     clearPopStubs()
     return
   }
-  setActiveClub(club.id, club.name)
   activeItemId = itemId
-  // Pull this book's locked stubs at the reader's position and feed the watcher.
-  const notes = await getNotes({
-    libraryItemId: itemId,
-    clubId: club.id,
-    position: getPlayerState().position,
-  })
-  setPopStubs(club.id, itemId, notes.locked)
+  const position = getPlayerState().position
+
+  // Publish the summary immediately when the playing club changes. On routine
+  // polls, retain the last useful detail until the fresh request completes.
+  if (activeClub?.id !== club.id) {
+    setActiveClub({
+      id: club.id,
+      name: club.name,
+      memberCount: club.memberCount,
+      members: [],
+      notes: [],
+      locked: [],
+      unreadCount: 0,
+    })
+  }
+
+  // The club detail already contains the progress race and the gated note set,
+  // so it is the single source for both the artwork strip and the pop watcher.
+  const detail = await getClub(club.id, { bookId: itemId, position })
+  if (generation !== resolveGeneration) return
+  if (detail) {
+    setActiveClub({
+      id: detail.club.id,
+      name: detail.club.name,
+      memberCount: detail.club.memberCount,
+      members: detail.members,
+      notes: detail.notes.notes,
+      locked: detail.notes.locked,
+      unreadCount: detail.unreadCount,
+    })
+    setPopStubs(club.id, itemId, detail.notes.locked)
+    return
+  }
+
+  // Older servers or a transient detail failure still get the existing locked
+  // note behavior. Preserve cached members instead of flashing an empty race.
+  const notes = await getNotes({ libraryItemId: itemId, clubId: club.id, position })
+  if (generation !== resolveGeneration) return
+  if (notes.enabled) {
+    const previous = activeClub?.id === club.id ? activeClub : null
+    setActiveClub({
+      id: club.id,
+      name: club.name,
+      memberCount: club.memberCount,
+      members: previous?.members ?? [],
+      notes: notes.notes,
+      locked: notes.locked,
+      unreadCount: previous?.unreadCount ?? 0,
+    })
+    setPopStubs(club.id, itemId, notes.locked)
+  }
 }
 
 async function pull(): Promise<void> {
@@ -111,6 +169,11 @@ async function pull(): Promise<void> {
   } catch {
     // Backend unreachable - keep whatever stubs we last had.
   }
+}
+
+/** Refresh the playing club after a player-local mutation such as a new note. */
+export function refreshActiveClub(): void {
+  void pull().then(ensurePolling)
 }
 
 // Poll only while there's a reason to (a club book playing, or an open surface)
@@ -177,13 +240,15 @@ export function startClubSync(): void {
 /** Call on sign-out / session clear. */
 export function stopClubSync(): void {
   started = false
+  // Invalidate any request that was already in flight at sign-out.
+  resolveGeneration++
   if (pollTimer) clearInterval(pollTimer)
   pollTimer = null
   unsubPlayer?.()
   appStateSub?.remove()
   unsubPlayer = null
   appStateSub = null
-  setActiveClub('', '')
+  setActiveClub(null)
   activeItemId = ''
   surfaceOpen = 0
   stopNotePops()

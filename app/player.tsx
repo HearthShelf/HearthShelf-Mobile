@@ -110,6 +110,7 @@ import {
 import { Scrubber } from '@/player/Scrubber'
 import { Marquee } from '@/ui/Marquee'
 import { PlayerCoverCarousel } from '@/player/PlayerCoverCarousel'
+import { PlayerClubStrip } from '@/player/PlayerClubStrip'
 import { SkipFeedbackOverlay, type SkipFeedbackHandle } from '@/player/SkipFeedbackOverlay'
 import { SkipButton } from '@/player/SkipButton'
 import {
@@ -333,6 +334,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // play", and otherwise does nothing (the cover is the biggest target on the
   // screen and shouldn't be a hair-trigger).
   const [lightbox, setLightbox] = useState(false)
+  const [clubComposing, setClubComposing] = useState(false)
   const tapTogglesPlay = settings.tapArtworkTogglesPlay
   const onCoverTap = useCallback(() => {
     if (showInspectHint) dismissInspectHint()
@@ -377,9 +379,9 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // it too. Reset on unmount so leaving the player never strands the nav hidden.
   const immersive = useSyncExternalStore(subscribeImmersive, getImmersive)
   const navMode = useNavMode()
-  // The club whose current book is playing (if any), for the open-club shortcut.
+  // The club whose current book is playing (if any), for the artwork strip.
   const activeClub = useSyncExternalStore(subscribeActiveClub, getActiveClub)
-  const showClubButton =
+  const showClubStrip =
     settings.clubsEnabled && settings.clubPlayerButton && !!activeClub && !immersive
   const enter = useCallback(() => {
     haptics.mode()
@@ -430,6 +432,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // carousel (activeOffsetY makes it wait for clear vertical motion before
   // claiming the gesture; the FlatList keeps horizontal drags).
   const swipe = Gesture.Pan()
+    .enabled(!clubComposing)
     .activeOffsetY([-14, 14])
     .failOffsetX([-16, 16])
     .onUpdate((e) => {
@@ -462,7 +465,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // simultaneously with the cover swipe so the two never cancel each other -
   // over the cover both write the same displacement.
   const reject = Gesture.Pan()
-    .enabled(!reduceMotion)
+    .enabled(!reduceMotion && !clubComposing)
     .activeOffsetY(14)
     .failOffsetY(-14)
     .failOffsetX([-16, 16])
@@ -965,7 +968,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
           )}
 
           {/* Cover fills the space between header and the pinned controls. The
-          cover-tap overlays (zoom/bookmark/club) and the skip hotspots are shared
+          cover-tap overlays (zoom/bookmark/club strip) and the skip hotspots are shared
           between the plain cover and the carousel. */}
           {(() => {
             const coverOverlays = (
@@ -977,17 +980,6 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                     color="#fff"
                     onPress={onBookmark}
                     style={styles.bookmarkBtn}
-                  />
-                )}
-                {showClubButton && (
-                  <IconButton
-                    name={icons.club}
-                    size={19}
-                    color="#fff"
-                    onPress={() =>
-                      router.push(`/club/${encodeURIComponent(activeClub!.id)}?from=now`)
-                    }
-                    style={styles.clubBtn}
                   />
                 )}
                 {/* Zoom lives in the cover's top-left corner now that a tap no
@@ -1037,6 +1029,21 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                     </View>
                   </Animated.View>
                 )}
+                {showClubStrip && activeClub && nowPlaying && (
+                  <View style={styles.clubStrip}>
+                    <PlayerClubStrip
+                      club={activeClub}
+                      itemId={nowPlaying.itemId}
+                      position={position}
+                      duration={duration}
+                      onOpenClub={() =>
+                        router.push(`/club/${encodeURIComponent(activeClub.id)}?from=now`)
+                      }
+                      onToast={toast.show}
+                      onComposingChange={setClubComposing}
+                    />
+                  </View>
+                )}
               </>
             )
             const carouselOn = !immersive && settings.carouselPlayer
@@ -1047,7 +1054,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
             // minimum and overlay the cover's edge when the margin is thin.
             const hotspotWidth = Math.max(HOTSPOT_MIN_WIDTH, carouselHotspotWidth)
             const hotspots =
-              settings.skipHotspots && (!carouselOn || deck.index === 0) ? (
+              settings.skipHotspots && !clubComposing && (!carouselOn || deck.index === 0) ? (
                 <>
                   <Pressable
                     onPress={() => onHotspotTap(-1)}
@@ -1081,6 +1088,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                       coverAspect={coverAspect}
                       pageWidth={width}
                       overlay={coverOverlays}
+                      overlayActive={clubComposing}
                       skipFeedback={<SkipFeedbackOverlay ref={skipFeedbackRef} />}
                       hotspots={hotspots}
                       onLivePress={onCoverTap}
@@ -1096,29 +1104,32 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                     // cover press target and drawn after it, so margin taps reach
                     // them instead of being swallowed by the cover.
                     <>
-                      <Pressable
-                        onPress={onCoverTap}
-                        onLongPress={onCoverHoldStart}
-                        onPressOut={onCoverHoldEnd}
-                        delayLongPress={300}
-                        style={styles.coverTap}
-                      >
-                        <Cover
-                          uri={nowPlaying.artworkUrl}
-                          itemId={nowPlaying.itemId}
-                          width={coverWidth}
-                          aspectRatio={coverAspect}
-                          radius={radius.card}
-                          fallback={{
-                            hue,
-                            initial: nowPlaying.title.charAt(0).toUpperCase(),
-                            title: nowPlaying.title,
-                          }}
-                          style={styles.cover}
-                        />
-                        <SkipFeedbackOverlay ref={skipFeedbackRef} />
+                      <View style={styles.coverTap}>
+                        <Pressable
+                          disabled={clubComposing}
+                          onPress={onCoverTap}
+                          onLongPress={onCoverHoldStart}
+                          onPressOut={onCoverHoldEnd}
+                          delayLongPress={300}
+                          style={styles.coverPressTarget}
+                        >
+                          <Cover
+                            uri={nowPlaying.artworkUrl}
+                            itemId={nowPlaying.itemId}
+                            width={coverWidth}
+                            aspectRatio={coverAspect}
+                            radius={radius.card}
+                            fallback={{
+                              hue,
+                              initial: nowPlaying.title.charAt(0).toUpperCase(),
+                              title: nowPlaying.title,
+                            }}
+                            style={styles.cover}
+                          />
+                          <SkipFeedbackOverlay ref={skipFeedbackRef} />
+                        </Pressable>
                         {coverOverlays}
-                      </Pressable>
+                      </View>
                       {hotspots}
                     </>
                   )}
@@ -2262,6 +2273,7 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
     // Full-strength art, shown on its own with no scrim over it.
     hearthBg: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
     coverTap: { position: 'relative' },
+    coverPressTarget: { borderRadius: radius.card, overflow: 'hidden' },
     // Skip hotspots fill the margins beside the artwork (edge to cover). Top/
     // bottom are inset so they don't overlap the header or the controls.
     hotspotLeft: { position: 'absolute', left: 0, top: 0, bottom: 0 },
@@ -2278,18 +2290,12 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-    // The club shortcut sits under the bookmark on the right edge; the cover's
-    // top-left corner belongs to Zoom.
-    clubBtn: {
+    clubStrip: {
       position: 'absolute',
-      top: 54,
+      left: 10,
       right: 10,
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: 'rgba(20,17,15,0.5)',
-      alignItems: 'center',
-      justifyContent: 'center',
+      bottom: 10,
+      zIndex: 20,
     },
     zoomBtn: {
       position: 'absolute',
