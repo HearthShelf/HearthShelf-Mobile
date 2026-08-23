@@ -346,7 +346,31 @@ export function installCrashHandler(): void {
   const origError = console.error.bind(console)
   console.error = (...args: unknown[]) => {
     try {
-      breadcrumb('console.error', args.map(safeStr).join(' '))
+      const text = args.map(safeStr).join(' ')
+      // Some library errors name a SYMPTOM with no clue who caused it. The worst
+      // offender is expo-router's "navigation object hasn't been initialized",
+      // which every ref-backed method (canGoBack/getState/isFocused, not just
+      // navigate) logs when the navigator is not mounted - so the message alone
+      // cannot say which call site fired it, and it is console-only, meaning no
+      // Sentry event carries a stack either. It has been reported repeatedly and
+      // could not be traced from the text (HS-MOBILEAPP-11/13).
+      //
+      // A synthetic Error captures the JS stack at the call, which names the
+      // caller. Only for messages we cannot otherwise attribute: a stack per
+      // console.error would flood the ring and bury the messages it is meant to
+      // preserve.
+      if (text.includes("navigation' object hasn't been initialized")) {
+        const frames = (new Error().stack ?? '')
+          .split(String.fromCharCode(10))
+          // Drop this wrapper's own frames; keep the first few real callers.
+          .filter((l) => !l.includes('crashLog'))
+          .slice(1, 5)
+          .map((l) => l.trim())
+          .join(' <- ')
+        breadcrumb('console.error', `navigation-not-initialized via ${frames}`)
+      } else {
+        breadcrumb('console.error', text)
+      }
     } catch {
       // ignore
     }
