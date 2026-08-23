@@ -29,6 +29,7 @@ import type {
   ABSLibrary,
   ABSLibraryItem,
   ABSLibraryAuthor,
+  ABSMediaProgress,
   ABSNarrator,
   ABSSeries,
   LibrarySort,
@@ -1216,6 +1217,9 @@ interface GroupRow {
   /** Number of books/titles in the group; drives the "# of books" sort. */
   count: number
   covers: ABSLibraryItem[]
+  /** Every book id in the group, for counting how many are finished. Only set
+   *  for series - authors/narrators show a title count, not progress. */
+  bookIds?: string[]
   /** Single avatar image (authors/narrators); series use stacked covers instead. */
   avatarUri?: string
 }
@@ -1233,6 +1237,8 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
   // Re-run the load when the offline catalog changes (hydrate finishing, a new
   // download), so offline groups appear once the catalog is populated.
   const catalogVersion = useSyncExternalStore(subscribeCatalog, getCatalogState)
+  // Finished state, so a series row can show how far through it you are.
+  const progress = useSyncExternalStore(subscribeProgress, getProgressState).byId
   // Sort name-ascending by default; tapping the active sort flips its direction.
   const [sort, setSort] = useState<GroupSort>('name')
   const [desc, setDesc] = useState(false)
@@ -1425,7 +1431,14 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
                 {item.name}
               </AppText>
               <AppText variant="caption" color={colors.textMuted}>
-                {item.sub}
+                {/* Owned-only progress: "3 of 7 finished" counts the books in
+                    YOUR library, not the full Audible roster. Deliberate - the
+                    roster is only available when the Audible catalog is turned
+                    on, so a roster-based number would change meaning with a
+                    server setting, and would read as a smaller percentage than
+                    the shelf in front of you. The series detail page still shows
+                    the fuller picture including missing books. */}
+                {seriesProgressLabel(item, progress) ?? item.sub}
               </AppText>
             </View>
             <IconButton name={icons.chevronRight} color={colors.textMuted} />
@@ -1460,6 +1473,25 @@ function GroupSortBtn({
   )
 }
 
+/**
+ * "3 of 7 finished" for a series row, or null when there is nothing useful to
+ * say (not a series, or no book in it has been finished) - the caller then falls
+ * back to the plain book count.
+ *
+ * Counts only books in the user's own library. See the note at the call site.
+ */
+function seriesProgressLabel(
+  row: GroupRow,
+  progress: ReadonlyMap<string, ABSMediaProgress>,
+): string | null {
+  const ids = row.bookIds
+  if (!ids || ids.length === 0) return null
+  let finished = 0
+  for (const id of ids) if (progress.get(id)?.isFinished) finished += 1
+  if (finished === 0) return null
+  return `${finished} of ${ids.length} finished`
+}
+
 function seriesToRow(s: ABSSeries): GroupRow {
   const count = s.books.length
   return {
@@ -1468,6 +1500,7 @@ function seriesToRow(s: ABSSeries): GroupRow {
     sub: `${count} ${count === 1 ? 'book' : 'books'}`,
     count,
     covers: s.books,
+    bookIds: s.books.map((b) => b.id),
   }
 }
 
@@ -1482,6 +1515,7 @@ function offlineGroups(mode: ViewMode): GroupRow[] {
       sub: `${s.books.length} ${s.books.length === 1 ? 'book' : 'books'}`,
       count: s.books.length,
       covers: s.books,
+      bookIds: s.books.map((b) => b.id),
     }))
   }
   const groups = mode === 'authors' ? catalogAuthors() : catalogNarrators()
