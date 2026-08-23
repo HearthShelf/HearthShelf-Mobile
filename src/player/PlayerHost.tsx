@@ -563,12 +563,37 @@ export function PlayerHost() {
         if (!getState().carActive) return
         breadcrumb('car', 'no car attached but carActive was set; clearing stale car ownership')
         carBook.current = null
-        setCarActive(false)
-        // The phone player has been stood down while this was wrong, so its
-        // loaded-track markers describe a player that is no longer driving. Drop
-        // them and let sync() rebuild from the store at the live position.
+        // Clear the flag through leaveCar(), NOT setCarActive(false).
+        //
+        // A car-mirrored track carries url:'' - only the car could play it. This
+        // handler used to drop the flag directly, which left that URL-less track
+        // loaded with no car to play it and no phone source to fall back to: the
+        // store's own guard then refused every transport tap, so the play button
+        // was permanently dead and reported one dead_transport per press (38 of
+        // them in 86 seconds in HS-MOBILEAPP-1N, carActive false the whole time).
+        //
+        // leaveCar() is the one place that spots a mirror needing a real url and
+        // says so, and it is already what the disconnect edge uses.
+        const resume = leaveCar()
         loadedKey.current = null
         lastPlaying.current = null
+        if (resume && Platform.OS === 'android') {
+          // Re-resolve at the mirrored position, loaded PAUSED - the same call
+          // the handback makes. Paused because we do not know whether audio is
+          // still running: this path exists precisely because the car went away
+          // without telling us, so starting playback here could be unexpected.
+          breadcrumb('car', `stale car ownership: re-resolve ${resume.itemId}`)
+          void playItemById(resume.itemId, false, { resumeAt: resume.position })
+            .then(() => ensureSessionForPlayback().catch(() => {}))
+            .catch((err) => {
+              breadcrumb('car', `stale-car re-resolve failed: ${err?.message ?? 'unknown'}`)
+              reportCarHandbackFailure(resume.itemId, err)
+              showToast('Tap play to resume on your phone')
+            })
+          return
+        }
+        // Nothing to re-resolve (a real phone track was already loaded) - just
+        // let sync() rebuild from the store at the live position.
         syncNative.current?.()
       }),
       emitter.addListener('onCarNeedsBook', () => {
