@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FlatList, StyleSheet, View } from 'react-native'
 import type { ListRenderItemInfo } from 'react-native'
 import { coverHue } from '@hearthshelf/core'
-import type { HSClub, HSClubMember, QueueEntry } from '@hearthshelf/core'
+import type { HSClub, HSClubMember, QueueBookClubRef, QueueEntry } from '@hearthshelf/core'
 import { coverUrl } from '@/api/abs'
 import { getClub, getClubs } from '@/api/clubs'
 import { playItemById } from '@/player/playback'
@@ -40,6 +40,8 @@ interface DeckPage {
   author: string
   /** true for the currently-playing book (page 0). */
   isLive: boolean
+  /** Server-carried club context survives Auto-rule de-duplication. */
+  bookClubs?: QueueBookClubRef[]
 }
 
 export function PlayerCoverCarousel({
@@ -139,6 +141,7 @@ export function PlayerCoverCarousel({
         title: q.title,
         author: q.author,
         isLive: false,
+        bookClubs: q.bookClubs,
       }))
     return [live, ...rest]
   }, [liveItemId, liveTitle, liveAuthor, queue])
@@ -162,12 +165,22 @@ export function PlayerCoverCarousel({
   }, [clubOverlaysEnabled, pageIdsKey, pages.length])
 
   const clubByItem = useMemo(() => {
-    const mapped = new Map<string, HSClub>()
+    const mapped = new Map<string, QueueBookClubRef>()
     for (const page of pages) {
+      // New queue responses carry this directly. That is the authoritative
+      // path for a book matched by both Finish-series and Book-club: Core keeps
+      // the first rule's position while merging the later club provenance.
+      const carried = page.bookClubs?.[0]
+      if (carried) {
+        mapped.set(page.itemId, carried)
+        continue
+      }
+      // Older stored queues have no provenance, so retain the summary lookup
+      // until they are recomputed by a server with the newer Core contract.
       const current = clubs.find((club) => club.currentBook?.libraryItemId === page.itemId)
       const queued = clubs.find((club) => club.queuedItemIds.includes(page.itemId))
       const club = current ?? queued
-      if (club) mapped.set(page.itemId, club)
+      if (club) mapped.set(page.itemId, { id: club.id, name: club.name })
     }
     return mapped
   }, [clubs, pages])
