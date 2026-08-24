@@ -557,9 +557,21 @@ export async function setItemFinished(
 }
 
 /** Remove an item's media-progress row entirely. A PATCH with zero values still
- * leaves a real progress record in ABS, which surfaces as a bogus 0% state. */
+ * leaves a real progress record in ABS, which surfaces as a bogus 0% state.
+ * DELETE takes the progress row ID (not the library item ID), so resolve it
+ * first. This is a current-user route and does not use the library-delete
+ * permission. */
 export async function resetItemProgress(itemId: string): Promise<void> {
-  await absRequest<void>(`/api/me/progress/${encodeURIComponent(itemId)}`, {
+  let progress: { id?: string }
+  try {
+    progress = await absRequest<{ id?: string }>(`/api/me/progress/${encodeURIComponent(itemId)}`)
+  } catch (e) {
+    // No row already means never-started, so reset is idempotent.
+    if (e instanceof ABSRequestError && e.status === 404) return
+    throw e
+  }
+  if (!progress.id) throw new Error('media_progress_id_missing')
+  await absRequest<void>(`/api/me/progress/${encodeURIComponent(progress.id)}`, {
     method: 'DELETE',
   })
 }
