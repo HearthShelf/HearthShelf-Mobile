@@ -152,11 +152,23 @@ class HearthShelfAutoService : MediaLibraryService() {
   // Holds the item id currently being loaded (or loaded); cleared on disconnect.
   @Volatile private var loadingItemId: String? = null
 
+  // The driver's latest play/pause intent while an asynchronous car load is in
+  // flight. The load used to end with playWhenReady=true unconditionally, so a
+  // pause pressed while resolveBook was on the network got overwritten as soon
+  // as preparation finished and the audiobook resumed by itself.
+  @Volatile private var carWantsPlayback = false
+
   // The JS-transport -> car-player bridge, registered on the module while a car
   // controller is connected. ExoPlayer is main-thread-only, so hop first.
   private val carPlayerImpl = object : HearthShelfAutoModule.CarPlayer {
-    override fun play() = runOnMain { rawPlayer?.playWhenReady = true }
-    override fun pause() = runOnMain { rawPlayer?.playWhenReady = false }
+    override fun play() {
+      carWantsPlayback = true
+      runOnMain { rawPlayer?.playWhenReady = true }
+    }
+    override fun pause() {
+      carWantsPlayback = false
+      runOnMain { rawPlayer?.playWhenReady = false }
+    }
     override fun seekTo(sec: Double) = runOnMain {
       rawPlayer?.let { seekToAbsolute(it, (sec * 1000).toLong()) }
     }
@@ -254,6 +266,9 @@ class HearthShelfAutoService : MediaLibraryService() {
       if (loadingItemId == itemId) return
       loadingItemId = itemId
     }
+    // A JS handoff only calls this for a real play intent. A pause arriving while
+    // resolveBook runs changes this back to false through either bridge below.
+    carWantsPlayback = true
     submitIo("loadBookIntoCar") {
       val loaded = resolveBook(itemId)
       if (loaded == null) {
@@ -282,7 +297,7 @@ class HearthShelfAutoService : MediaLibraryService() {
         // is the slow path, and it also let the player reach STATE_ENDED.
         player.setMediaItems(loaded.items, startIndex, startMs)
         player.prepare()
-        player.playWhenReady = true
+        player.playWhenReady = carWantsPlayback
       }
     }
   }
@@ -1579,6 +1594,24 @@ class HearthShelfAutoService : MediaLibraryService() {
     override fun seekTo(positionMs: Long) {
       val c = ch()
       seekToAbsolute(wrappedPlayer, if (c != null) (c.start * 1000).toLong() + positionMs else positionMs)
+    }
+
+    // MediaSession commands from Android Auto hit this wrapper, including while
+    // the raw player is still empty. Remember them independently of ExoPlayer's
+    // isPlaying callback so an in-flight load cannot resurrect a paused book.
+    override fun play() {
+      carWantsPlayback = true
+      super.play()
+    }
+
+    override fun pause() {
+      carWantsPlayback = false
+      super.pause()
+    }
+
+    override fun setPlayWhenReady(playWhenReady: Boolean) {
+      carWantsPlayback = playWhenReady
+      super.setPlayWhenReady(playWhenReady)
     }
 
     /**

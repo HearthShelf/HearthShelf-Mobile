@@ -229,7 +229,9 @@ export function PlayerHost() {
   // Stable identity (empty deps): it reads live state via getState() and refs
   // rather than closing over render values, so the mount-once listener effect
   // can capture it safely.
-  const recoverLostPlayback = useCallback((cause: 'native' | 'stall') => {
+  const recoverLostPlayback = useCallback(function recoverLostPlaybackAttempt(
+    cause: 'native' | 'stall',
+  ): void {
     const now = Date.now()
     // Open a fresh window if the last reclaim is old enough that this one is
     // a genuinely new incident rather than the same bounce continuing.
@@ -333,6 +335,19 @@ export function PlayerHost() {
       // Only judge it a failure when the user actually wanted audio. If they
       // hit play and we are still not playing, the reload did not take.
       const recovered = !wantedPlaying || after.isPlaying || advanced
+      if (!recovered && reclaimAttempts.current < RECLAIM_MAX_ATTEMPTS) {
+        breadcrumb(
+          'player',
+          `reclaim reload did not take; retrying (${reclaimAttempts.current + 1}/${RECLAIM_MAX_ATTEMPTS})`,
+        )
+        recoverLostPlaybackAttempt(cause)
+        return
+      }
+      if (!recovered) {
+        lastPlaying.current = false
+        setPlaying(false)
+        showToast('Playback stopped. Tap play to start again.')
+      }
       reportPlaybackLost(recovered, {
         cause,
         itemId: s.nowPlaying?.itemId ?? null,
@@ -347,6 +362,7 @@ export function PlayerHost() {
         // A file:// source rules out an expired stream token as the cause of
         // a failed reload, which is the first thing to suspect otherwise.
         localSource: !!s.nowPlaying?.url?.startsWith('file://'),
+        attempts: reclaimAttempts.current,
       })
     }, RECLAIM_CONFIRM_MS)
   }, [])
