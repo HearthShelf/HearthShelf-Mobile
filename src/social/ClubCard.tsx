@@ -18,6 +18,7 @@ import {
   setClubMembership,
   setClubCurrentBook,
   enqueueClubBook,
+  removeClubQueued,
   type ClubVisibility,
 } from '@/api/clubs'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
@@ -133,6 +134,20 @@ export function ClubCard({
     }
   }
 
+  const dequeue = async (club: HSClub) => {
+    if (busy) return
+    setBusy(true)
+    haptics.mode()
+    const ok = await removeClubQueued(club.id, libraryItemId)
+    setBusy(false)
+    if (ok) {
+      onToast?.(`Removed from ${club.name}`)
+      void load()
+    } else {
+      onToast?.('Could not remove the book')
+    }
+  }
+
   // The reader opted out locally: hide the whole surface.
   if (!clubsEnabled) return null
 
@@ -141,7 +156,14 @@ export function ClubCard({
   // is every club the reader is in, unfiltered by book, so we split here.
   const meId = getMeId()
   const readingThis = mine.filter((c) => c.currentBook?.libraryItemId === libraryItemId)
-  const otherClubs = mine.filter((c) => c.currentBook?.libraryItemId !== libraryItemId)
+  const queuedThis = mine.filter(
+    (c) =>
+      c.currentBook?.libraryItemId !== libraryItemId && c.queuedItemIds?.includes(libraryItemId),
+  )
+  const otherClubs = mine.filter(
+    (c) =>
+      c.currentBook?.libraryItemId !== libraryItemId && !c.queuedItemIds?.includes(libraryItemId),
+  )
   // Only the owner can set/queue a book. If we don't know our id yet, show the
   // controls (the server still gates the write) rather than hiding a real option.
   const ownedOther = otherClubs.filter((c) => !meId || c.createdBy === meId)
@@ -171,6 +193,39 @@ export function ClubCard({
           <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />
         </Touchable>
       ))}
+
+      {queuedThis.map((c) => {
+        const canRemove = !meId || c.createdBy === meId
+        return (
+          <View key={c.id} style={styles.clubRow}>
+            <Touchable style={{ flex: 1, minWidth: 0 }} onPress={() => openClub(c.id)}>
+              <AppText variant="label" numberOfLines={1}>
+                {c.name}
+              </AppText>
+              <AppText variant="caption" color={colors.textMuted}>
+                {memberLabel(c)} · in up next
+              </AppText>
+            </Touchable>
+            {canRemove ? (
+              <Touchable
+                style={styles.ghostBtn}
+                disabled={busy}
+                onPress={() => void dequeue(c)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: true }}
+                accessibilityLabel={`Remove this book from ${c.name} up next`}
+              >
+                <Icon name={icons.check} size={15} color={colors.accent} />
+                <AppText variant="caption" color={colors.accent}>
+                  Added
+                </AppText>
+              </Touchable>
+            ) : (
+              <Icon name={icons.chevronRight} size={20} color={colors.textMuted} />
+            )}
+          </View>
+        )
+      })}
 
       {joinable.map((c) => (
         <View key={c.id} style={styles.clubRow}>
@@ -308,6 +363,7 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.accent,
     },
     ghostBtn: {
+      minHeight: 48,
       flexDirection: 'row',
       alignItems: 'center',
       gap: 4,
