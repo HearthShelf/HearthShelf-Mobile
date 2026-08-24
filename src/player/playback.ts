@@ -339,6 +339,10 @@ export async function playItemById(
   opts: { armRecompute?: boolean; resumeAt?: number } = {},
 ): Promise<void> {
   const local = localSourceFor(itemId)
+  const resumeAt =
+    typeof opts.resumeAt === 'number' && Number.isFinite(opts.resumeAt)
+      ? Math.max(0, opts.resumeAt)
+      : undefined
   // A session object surviving into offline mode does NOT mean the server is
   // reachable - entering offline mode keeps the last session around. Ask the
   // connection layer, or a resume tap in offline mode tries the dead server first
@@ -360,7 +364,7 @@ export async function playItemById(
   // Deferred to the first play (see ensureSessionForPlayback), which every
   // transport path already funnels through.
   if (!autoPlay) {
-    await loadPreview(itemId, local, online, opts.resumeAt)
+    await loadPreview(itemId, local, online, resumeAt)
     return
   }
 
@@ -376,7 +380,7 @@ export async function playItemById(
   // Downloaded + offline: no server reachable, so play locally and accrue a
   // local session to replay on reconnect.
   if (local && !online) {
-    await playFromDownloadOffline(itemId, autoPlay)
+    await playFromDownloadOffline(itemId, autoPlay, resumeAt)
     return
   }
 
@@ -389,7 +393,7 @@ export async function playItemById(
     // Server unreachable mid-attempt: fall back to a local-only session if the
     // book is downloaded, otherwise surface the error.
     if (local) {
-      await playFromDownloadOffline(itemId, autoPlay)
+      await playFromDownloadOffline(itemId, autoPlay, resumeAt)
       return
     }
     throw e
@@ -407,17 +411,21 @@ export async function playItemById(
   offline = null
   lastTickTime = null
 
-  // Resume position. The play-session's currentTime is a STARTING POINT, not the
-  // answer: it can be 0 on a freshly-opened session even when media progress is
-  // well into the book (a cold reload), and it can be stale when this device left
-  // a session behind and listening continued elsewhere. resolveResumePosition
-  // reconciles it against the media-progress row and our own local writes.
-  let startAt = session.currentTime > 0 ? session.currentTime : 0
-  const sessionSaid = startAt
-  if (startAt === 0) startAt = resumePositionFor(progressFor(itemId))
-  else startAt = resolveResumePosition(itemId, startAt)
+  // An explicit position is an instruction (for example, a timestamped club
+  // comment), so it wins over every saved/session position. Otherwise the play-
+  // session's currentTime is only a STARTING POINT: it can be 0 on a freshly-
+  // opened session even when media progress is well into the book (a cold
+  // reload), and it can be stale when this device left a session behind and
+  // listening continued elsewhere. resolveResumePosition reconciles it against
+  // the media-progress row and our own local writes.
+  const sessionSaid = session.currentTime > 0 ? session.currentTime : 0
+  let startAt = resumeAt ?? sessionSaid
+  if (resumeAt === undefined) {
+    if (startAt === 0) startAt = resumePositionFor(progressFor(itemId))
+    else startAt = resolveResumePosition(itemId, startAt)
+  }
   const resolved = startAt
-  startAt = preferLivePlayhead(itemId, startAt)
+  if (resumeAt === undefined) startAt = preferLivePlayhead(itemId, startAt)
   // Where a resume actually landed, and which input won. The reset reports are
   // ultimately "this number was too small", so record the candidates that
   // produced it.
@@ -618,7 +626,11 @@ export async function ensureSessionForPlayback(): Promise<boolean> {
  * replays to ABS via /api/session/local once we reconnect, so a fully-offline
  * listen still lands in recent listens and stats with the right listened-time.
  */
-async function playFromDownloadOffline(itemId: string, autoPlay = true): Promise<void> {
+async function playFromDownloadOffline(
+  itemId: string,
+  autoPlay = true,
+  resumeAt?: number,
+): Promise<void> {
   const local = localSourceFor(itemId)
   if (!local) throw new Error('not_downloaded')
   const first = local.tracks[0]
@@ -664,7 +676,8 @@ async function playFromDownloadOffline(itemId: string, autoPlay = true): Promise
   // ahead of the saved spot (it is what recordLocalProgress has been writing), and
   // deferring to it means a retry can't drag the listener backwards - which is the
   // backwards-hopping positions seen in the shattered rows.
-  const startAt = resumed ? resumed.currentTime : resumePositionFor(progressFor(itemId))
+  const startAt =
+    resumeAt ?? (resumed ? resumed.currentTime : resumePositionFor(progressFor(itemId)))
 
   const np: NowPlaying = {
     itemId,
