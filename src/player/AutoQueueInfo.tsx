@@ -27,7 +27,6 @@ export function AutoQueueInfo() {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const [open, setOpen] = useState(false)
-  const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<QueueStatus | null>(null)
 
   const load = useCallback(async () => {
@@ -49,24 +48,6 @@ export function AutoQueueInfo() {
 
   const updated = formatQueueUpdated(status?.updatedAt ?? null)
   const next = formatNextRebuild(status?.nextRebuildAt ?? null)
-
-  const refreshNow = async () => {
-    if (busy) return
-    setBusy(true)
-    try {
-      const server = await recomputeServerQueue()
-      // Adopt without re-pushing (bump=false), same as a pull - see recompute.ts.
-      setQueueItems(server.items, false)
-      setQueueManual(server.manual, false)
-      setQueuePlaylistId(server.playlistId, false)
-      await load()
-      showToast('Queue refreshed')
-    } catch {
-      showToast('Could not refresh')
-    } finally {
-      setBusy(false)
-    }
-  }
 
   return (
     <View style={styles.card}>
@@ -111,21 +92,50 @@ export function AutoQueueInfo() {
             {AUTO_QUEUE_NIGHTLY_NOTE}
             {next ? ` Next catch-up ${next}.` : ''}
           </AppText>
-
-          <Touchable
-            style={styles.refreshBtn}
-            onPress={() => void refreshNow()}
-            disabled={busy}
-            accessibilityRole="button"
-          >
-            <Icon name={icons.retry} size={16} color={colors.accent} />
-            <AppText variant="caption" color={colors.accent}>
-              {busy ? 'Refreshing...' : 'Refresh now'}
-            </AppText>
-          </Touchable>
         </View>
       )}
+
+      <RecomputeQueueButton onRecomputed={load} />
     </View>
+  )
+}
+
+export function RecomputeQueueButton({ onRecomputed }: { onRecomputed?: () => void }) {
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
+  const [busy, setBusy] = useState(false)
+
+  const recompute = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const server = await recomputeServerQueue()
+      // Adopt without re-pushing (bump=false), same as a pull - see recompute.ts.
+      setQueueItems(server.items, false)
+      setQueueManual(server.manual, false)
+      setQueuePlaylistId(server.playlistId, false)
+      onRecomputed?.()
+      showToast('Auto Queue recomputed')
+    } catch {
+      showToast('Could not recompute Auto Queue')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Touchable
+      style={styles.refreshBtn}
+      onPress={() => void recompute()}
+      disabled={busy}
+      accessibilityRole="button"
+      accessibilityLabel="Recompute Auto Queue"
+    >
+      <Icon name={icons.retry} size={16} color={colors.accent} />
+      <AppText variant="caption" color={colors.accent}>
+        {busy ? 'Recomputing...' : 'Recompute Auto Queue'}
+      </AppText>
+    </Touchable>
   )
 }
 
@@ -151,6 +161,7 @@ const makeStyles = (colors: Palette) =>
       justifyContent: 'center',
       gap: spacing.sm,
       alignSelf: 'flex-start',
+      marginTop: spacing.sm,
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.xs,
       borderRadius: radius.pill,

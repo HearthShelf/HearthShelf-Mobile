@@ -47,6 +47,7 @@ import { showToast } from '@/ui/Toast'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import type { SheetHandle } from './sheets'
+import { RecomputeQueueButton } from './AutoQueueInfo'
 
 const MODES = QUEUE_MODES
 const MODE_SUB = QUEUE_MODE_SUB
@@ -347,6 +348,7 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
           <AppText variant="caption" color={colors.textFaint} style={styles.rulesHint}>
             Changes rebuild the queue immediately.
           </AppText>
+          <RecomputeQueueButton />
         </Sheet>
 
         <AddBooksSheet ref={addBooksRef} />
