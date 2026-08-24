@@ -37,8 +37,25 @@ const listeners = new Set<() => void>()
 
 // Recent local writes the server may not reflect yet. A refresh keeps these
 // values until the server agrees or the write is old enough to distrust.
-const overrides = new Map<string, { isFinished: boolean; atMs: number }>()
+interface ProgressOverride {
+  isFinished: boolean
+  atMs: number
+  /** A reset protects the whole zeroed row, not only the finished flag. A live
+   *  session or racing /api/me refresh may still carry the old playhead. */
+  resetPosition?: boolean
+}
+
+const overrides = new Map<string, ProgressOverride>()
 const OVERRIDE_TTL_MS = 20_000
+
+/** Progress changes feed several Auto Queue rules. Rebuild only after ABS has
+ * accepted the mutation so the server computes from the new progress row. The
+ * dynamic import keeps this leaf store out of the player/sync import graph. */
+function requestAutoQueueRecompute(): void {
+  void import('@/player/queueSync')
+    .then(({ requestQueueRecompute }) => requestQueueRecompute())
+    .catch(() => {})
+}
 
 // The server's own lastUpdate per item, as of the last refresh. Kept apart from
 // the row because recordLocalProgress restamps `lastUpdate` on every tick - so
@@ -215,13 +232,17 @@ export async function refreshProgress(): Promise<ABSMeResponse> {
       continue
     }
     const server = next.get(id)
-    if (server?.isFinished === o.isFinished) {
+    const serverReflectsOverride =
+      server?.isFinished === o.isFinished &&
+      (!o.resetPosition || (server.currentTime <= 0 && server.progress <= 0))
+    if (serverReflectsOverride) {
       overrides.delete(id)
     } else if (server) {
       next.set(id, {
         ...server,
         isFinished: o.isFinished,
-        progress: o.isFinished ? 1 : server.progress,
+        currentTime: o.resetPosition ? 0 : server.currentTime,
+        progress: o.resetPosition ? 0 : o.isFinished ? 1 : server.progress,
       })
     } else {
       next.set(id, stub(id, o.isFinished))
@@ -381,6 +402,7 @@ export async function markItemsFinished(
   items: { id: string; duration?: number }[],
   finished: boolean,
   finishedAt?: number,
+  options: { recomputeQueue?: boolean } = {},
 ): Promise<void> {
   if (!items.length) return
   const prev = items.map((it) => [it.id, state.byId.get(it.id)] as const)
@@ -428,6 +450,7 @@ export async function markItemsFinished(
     emit(rollback)
     throw lastErr instanceof Error ? lastErr : new Error('mark_finished_failed')
   }
+  if (options.recomputeQueue !== false) requestAutoQueueRecompute()
   void refreshProgress().catch(() => {})
 }
 
@@ -437,23 +460,44 @@ export async function markItemsFinished(
  * Continue-Listening "Reset progress" action (which also dismisses the book).
  */
 export async function resetItemProgress(itemId: string): Promise<void> {
+  // If this is the loaded book, close its session at the old position first.
+  // Otherwise that still-live session can sync after the reset and resurrect
+  // the accidental partial playhead. Keep the track loaded, paused at 0, so a
+  // later Play simply opens a fresh session from the reset position.
+  const playerStore = await import('@/player/store')
+  const loaded = playerStore.getState().nowPlaying?.itemId === itemId
+  if (loaded) {
+    playerStore.setPlaying(false)
+    const { stopPlayback } = await import('@/player/playback')
+    await stopPlayback()
+  }
+
   const prev = state.byId.get(itemId)
   const next = new Map(state.byId)
-  if (prev) next.set(itemId, { ...prev, progress: 0, currentTime: 0, isFinished: false })
-  // Record an override so a racing refresh doesn't restore the old position.
-  overrides.set(itemId, { isFinished: false, atMs: Date.now() })
+  const resetAt = Date.now()
+  next.set(itemId, {
+    ...(prev ?? stub(itemId, false)),
+    progress: 0,
+    currentTime: 0,
+    isFinished: false,
+    lastUpdate: resetAt,
+  })
+  // Protect the zeroed playhead as well as isFinished. A flag-only override let
+  // a stale partial row repaint the Series page while still reading unfinished.
+  overrides.set(itemId, { isFinished: false, atMs: resetAt, resetPosition: true })
   emit(next)
   try {
     await resetItemProgressApi(itemId)
   } catch (e) {
-    if (prev) {
-      const rollback = new Map(state.byId)
-      rollback.set(itemId, prev)
-      emit(rollback)
-    }
+    const rollback = new Map(state.byId)
+    if (prev) rollback.set(itemId, prev)
+    else rollback.delete(itemId)
+    emit(rollback)
     overrides.delete(itemId)
     throw e instanceof Error ? e : new Error('reset_progress_failed')
   }
+  if (loaded) playerStore.requestSeek(0)
+  requestAutoQueueRecompute()
   void refreshProgress().catch(() => {})
 }
 
@@ -462,8 +506,9 @@ export async function markFinished(
   finished: boolean,
   duration?: number,
   finishedAt?: number,
+  options?: { recomputeQueue?: boolean },
 ): Promise<void> {
-  await markItemsFinished([{ id: itemId, duration }], finished, finishedAt)
+  await markItemsFinished([{ id: itemId, duration }], finished, finishedAt, options)
 }
 
 /**

@@ -54,7 +54,11 @@ export async function finishBook(): Promise<void> {
   setPlaying(false)
   // Optimistic + rolled back on failure inside the progress store, so a dead
   // network still flips the UI and reconciles later.
-  await markFinished(np.itemId, true, np.duration).catch(() => {})
+  // Keep the deterministic end-of-book path below: rebuilding here can race
+  // nextInQueue(), then adopt a list that still contains the book we just began.
+  await markFinished(np.itemId, true, np.duration, undefined, { recomputeQueue: false }).catch(
+    () => {},
+  )
   await advanceQueueOnEnd()
 }
 
