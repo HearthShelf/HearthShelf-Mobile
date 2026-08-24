@@ -556,15 +556,11 @@ export async function setItemFinished(
   })
 }
 
-/**
- * Reset an item's progress to the very start (ABS PATCH /api/me/progress/:id).
- * Sets currentTime/progress to 0 and clears the finished flag, so the book looks
- * un-started again. Used by the Continue-Listening "Reset progress" action.
- */
+/** Remove an item's media-progress row entirely. A PATCH with zero values still
+ * leaves a real progress record in ABS, which surfaces as a bogus 0% state. */
 export async function resetItemProgress(itemId: string): Promise<void> {
   await absRequest<void>(`/api/me/progress/${encodeURIComponent(itemId)}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ currentTime: 0, progress: 0, isFinished: false }),
+    method: 'DELETE',
   })
 }
 

@@ -40,9 +40,9 @@ const listeners = new Set<() => void>()
 interface ProgressOverride {
   isFinished: boolean
   atMs: number
-  /** A reset protects the whole zeroed row, not only the finished flag. A live
-   *  session or racing /api/me refresh may still carry the old playhead. */
-  resetPosition?: boolean
+  /** A reset removes the row. A live session or racing /api/me refresh may
+   *  still return the old playhead briefly, so absence needs protection too. */
+  removeProgress?: boolean
 }
 
 const overrides = new Map<string, ProgressOverride>()
@@ -159,7 +159,14 @@ export async function hydrateProgress(): Promise<void> {
  */
 export function recordLocalProgress(itemId: string, currentTime: number, duration: number): void {
   if (!itemId) return
+  // A reset owns this row until ABS confirms it is gone. Native may emit one
+  // last progress tick while its seek-to-zero settles; accepting that tick
+  // would immediately recreate the row we just deleted.
+  if (overrides.get(itemId)?.removeProgress) return
   const prev = state.byId.get(itemId)
+  // Loading an untouched book at its initial position is not listening and must
+  // not manufacture a 0% progress row.
+  if (!prev && currentTime <= 0) return
   const next = new Map(state.byId)
   const total = duration || prev?.duration || 0
   next.set(itemId, {
@@ -232,17 +239,18 @@ export async function refreshProgress(): Promise<ABSMeResponse> {
       continue
     }
     const server = next.get(id)
-    const serverReflectsOverride =
-      server?.isFinished === o.isFinished &&
-      (!o.resetPosition || (server.currentTime <= 0 && server.progress <= 0))
+    const serverReflectsOverride = o.removeProgress ? !server : server?.isFinished === o.isFinished
     if (serverReflectsOverride) {
       overrides.delete(id)
+    } else if (o.removeProgress) {
+      // Reset means never-started, represented by no progress row. Do not turn
+      // a racing stale server row into a synthetic 0% row.
+      next.delete(id)
     } else if (server) {
       next.set(id, {
         ...server,
         isFinished: o.isFinished,
-        currentTime: o.resetPosition ? 0 : server.currentTime,
-        progress: o.resetPosition ? 0 : o.isFinished ? 1 : server.progress,
+        progress: o.isFinished ? 1 : server.progress,
       })
     } else {
       next.set(id, stub(id, o.isFinished))
@@ -455,7 +463,7 @@ export async function markItemsFinished(
 }
 
 /**
- * Reset a book's progress to the start: currentTime/progress 0, not finished.
+ * Reset a book to never-started by deleting its ABS media-progress row.
  * Optimistic with rollback, same shape as markItemsFinished. Used by the
  * Continue-Listening "Reset progress" action (which also dismisses the book).
  */
@@ -473,18 +481,12 @@ export async function resetItemProgress(itemId: string): Promise<void> {
   }
 
   const prev = state.byId.get(itemId)
-  const next = new Map(state.byId)
   const resetAt = Date.now()
-  next.set(itemId, {
-    ...(prev ?? stub(itemId, false)),
-    progress: 0,
-    currentTime: 0,
-    isFinished: false,
-    lastUpdate: resetAt,
-  })
-  // Protect the zeroed playhead as well as isFinished. A flag-only override let
-  // a stale partial row repaint the Series page while still reading unfinished.
-  overrides.set(itemId, { isFinished: false, atMs: resetAt, resetPosition: true })
+  const next = new Map(state.byId)
+  next.delete(itemId)
+  // Protect absence until ABS reflects the DELETE. A zero-valued stub is still
+  // a progress record and makes detail surfaces render the abnormal "0%" state.
+  overrides.set(itemId, { isFinished: false, atMs: resetAt, removeProgress: true })
   emit(next)
   try {
     await resetItemProgressApi(itemId)
@@ -496,6 +498,7 @@ export async function resetItemProgress(itemId: string): Promise<void> {
     overrides.delete(itemId)
     throw e instanceof Error ? e : new Error('reset_progress_failed')
   }
+  serverUpdatedAt.delete(itemId)
   if (loaded) playerStore.requestSeek(0)
   requestAutoQueueRecompute()
   void refreshProgress().catch(() => {})
