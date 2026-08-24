@@ -8,7 +8,7 @@
  * src/store/settings.ts / /hs/settings, same as the WebApp.
  */
 import type { QueueEntry, QueueMode, AutoRuleId } from '@hearthshelf/core'
-import { getSettingsState } from '@/store/settings'
+import { getSettingsState, subscribeSettings } from '@/store/settings'
 
 export type { QueueEntry } from '@hearthshelf/core'
 
@@ -74,6 +74,13 @@ let state: QueueState = {
   updatedAt: 0,
 }
 
+// `items` is the active playback list, so Manual mode must mirror the durable
+// hand-picked list immediately. Keep the last server-owned list aside while
+// Manual is active; switching back to Auto/Playlist can restore it without
+// relabeling those generated rows as hand-picked while the server refreshes.
+let activeMode = getSettingsState().queueMode
+let serverOwnedItems: QueueEntry[] = []
+
 const listeners = new Set<() => void>()
 
 export function getQueueState(): QueueState {
@@ -90,10 +97,37 @@ function set(patch: Partial<QueueState>): void {
   listeners.forEach((l) => l())
 }
 
-// True when Manual mode is active - the active `items` list then mirrors the
-// durable `manual` list so an edit shows up in the player immediately.
+function syncMode(): void {
+  const nextMode = getSettingsState().queueMode
+  if (nextMode === activeMode) return
+
+  if (nextMode === 'manual') {
+    // Save Auto/Playlist's active list before replacing it. `updatedAt` does
+    // not move: changing mode is a settings edit, not a queue-content edit.
+    serverOwnedItems = state.items
+    activeMode = nextMode
+    set({ items: state.manual })
+    return
+  }
+
+  if (activeMode === 'manual') {
+    activeMode = nextMode
+    set({ items: serverOwnedItems })
+    return
+  }
+
+  activeMode = nextMode
+}
+
+// Settings can change from the player, Settings, local hydration, or a server
+// pull. Observe the store once here so every path keeps the active queue in the
+// same mode, rather than relying on individual screens to remember to mirror it.
+subscribeSettings(syncMode)
+
+// True when Manual mode is active - the active `items` list mirrors the durable
+// `manual` list so edits and end-of-book advancement use the same order.
 function manualMode(): boolean {
-  return getSettingsState().queueMode === 'manual'
+  return activeMode === 'manual'
 }
 
 export function addToQueue(entry: QueueEntry): void {
@@ -128,12 +162,20 @@ export function setManual(manual: QueueEntry[]): void {
 // sync pull adopts a remote queue). bump=false skips the updatedAt stamp, for
 // pulls that shouldn't be echoed straight back to the server as a write.
 export function setQueueItems(items: QueueEntry[], bump = true): void {
-  set({ items, updatedAt: bump ? Date.now() : state.updatedAt })
+  serverOwnedItems = items
+  set({
+    items: manualMode() ? state.manual : items,
+    updatedAt: bump ? Date.now() : state.updatedAt,
+  })
 }
 
 // Replace the durable manual list from a server pull. bump=false as above.
 export function setQueueManual(manual: QueueEntry[], bump = true): void {
-  set({ manual, updatedAt: bump ? Date.now() : state.updatedAt })
+  set({
+    manual,
+    items: manualMode() ? manual : state.items,
+    updatedAt: bump ? Date.now() : state.updatedAt,
+  })
 }
 
 /** Pop and return the next queued entry, or null when empty. */

@@ -207,6 +207,45 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
                 />
               </GestureHandlerRootView>
             )
+          ) : settings.queueMode === 'manual' ? (
+            // Manual is only the durable hand-picked list. The active Auto list
+            // is kept separately while this mode is open; generated rows must
+            // never become removable/reorderable just because the mode changed.
+            queue.manual.length === 0 ? (
+              <AppText
+                variant="meta"
+                color={colors.textMuted}
+                style={{ textAlign: 'center', marginTop: spacing.xl }}
+              >
+                Nothing queued yet.
+              </AppText>
+            ) : (
+              <GestureHandlerRootView style={{ flex: 1 }}>
+                <DraggableFlatList
+                  data={queue.manual}
+                  keyExtractor={(item) => item.libraryItemId}
+                  onDragBegin={() => setDragActive(true)}
+                  onDragEnd={({ from, to }) => {
+                    setDragActive(false)
+                    if (from !== to) reorderQueue(from, to)
+                  }}
+                  renderItem={(params: RenderItemParams<QueueEntry>) => (
+                    <QueueRow
+                      {...params}
+                      canDrag
+                      canRemove
+                      showBolt={false}
+                      dragActive={dragActive}
+                      onJump={() => {
+                        sheetRef.current?.dismiss()
+                        onJump(params.item.libraryItemId)
+                      }}
+                      onRemove={() => removeFromQueue(params.item.libraryItemId)}
+                    />
+                  )}
+                />
+              </GestureHandlerRootView>
+            )
           ) : queue.items.length === 0 ? (
             <AppText
               variant="meta"
@@ -226,14 +265,11 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
                   if (from !== to) reorderQueue(from, to)
                 }}
                 renderItem={(params: RenderItemParams<QueueEntry>) => {
-                  // Manual is the only hand-edited mode; Playlist is server-owned,
-                  // so reorder + remove are read-only there.
-                  const editable = settings.queueMode === 'manual'
                   return (
                     <QueueRow
                       {...params}
-                      canDrag={editable}
-                      canRemove={editable}
+                      canDrag={false}
+                      canRemove={false}
                       showBolt={false}
                       dragActive={dragActive}
                       onJump={() => {
