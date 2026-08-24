@@ -851,8 +851,6 @@ export default function ClubRoomScreen() {
         title={detail.club.name}
         subtitle={`${detail.members.length} ${detail.members.length === 1 ? 'member' : 'members'}`}
         onBack={() => router.back()}
-        onInvite={isOwner ? () => void openInvites() : undefined}
-        onMembers={() => membersSheetRef.current?.present()}
         onOverflow={isMember ? () => ownerSheetRef.current?.present() : undefined}
       />
 
@@ -1167,6 +1165,30 @@ export default function ClubRoomScreen() {
         ) : null}
         {section === 'members' ? (
           <View style={styles.queueSection}>
+            {isOwner ? (
+              <View style={styles.memberActions}>
+                <Touchable
+                  style={styles.memberAction}
+                  onPress={() => void openInvites()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Invite readers"
+                >
+                  <Icon name={icons.personAdd} size={18} color={colors.accent} />
+                  <AppText variant="label" color={colors.accent}>
+                    Invite readers
+                  </AppText>
+                </Touchable>
+                <Touchable
+                  style={styles.memberAction}
+                  onPress={() => membersSheetRef.current?.present()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Manage members"
+                >
+                  <Icon name={icons.people} size={18} color={colors.textMuted} />
+                  <AppText variant="label">Manage members</AppText>
+                </Touchable>
+              </View>
+            ) : null}
             {sortedMembers.map((m) => (
               <MemberRace
                 key={m.userId}
@@ -1865,15 +1887,11 @@ function Header({
   title,
   subtitle,
   onBack,
-  onInvite,
-  onMembers,
   onOverflow,
 }: {
   title: string
   subtitle?: string
   onBack: () => void
-  onInvite?: () => void
-  onMembers?: () => void
   onOverflow?: () => void
 }) {
   const colors = useColors()
@@ -1891,18 +1909,6 @@ function Header({
           </AppText>
         ) : null}
       </View>
-      {onInvite ? (
-        <IconButton
-          name={icons.personAdd}
-          size={21}
-          onPress={onInvite}
-          style={styles.headerBtn}
-          accessibilityLabel="Invite readers"
-        />
-      ) : null}
-      {onMembers ? (
-        <IconButton name={icons.people} size={22} onPress={onMembers} style={styles.headerBtn} />
-      ) : null}
       {onOverflow ? (
         <IconButton name={icons.more} onPress={onOverflow} style={styles.headerBtn} />
       ) : null}
@@ -2207,6 +2213,22 @@ const makeStyles = (colors: Palette) =>
       paddingVertical: spacing.md,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.hairline,
+    },
+    memberActions: {
+      gap: spacing.sm,
+      marginBottom: spacing.md,
+    },
+    memberAction: {
+      minHeight: 48,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.lg,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.fill,
     },
     historyRow: {
       flexDirection: 'row',
