@@ -176,13 +176,17 @@ export function WhatsNewModal({ visible, onClose }: { visible: boolean; onClose:
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      {/* Backdrop tap closes - the standard escape from a centered modal. */}
-      <Pressable style={styles.backdrop} onPress={onClose}>
+      <View style={styles.backdrop}>
+        {/* Keep the dismiss target behind the card instead of wrapping it. A
+            parent Pressable can win the responder negotiation from a nested
+            ScrollView on Android and leave long release notes unscrollable. */}
         <Pressable
-          style={[styles.card, { width: width * 0.8, height: height * 0.7 }]}
-          // Swallow taps so they don't reach the dismissing backdrop.
-          onPress={() => {}}
-        >
+          style={styles.backdropDismiss}
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel="Close release notes"
+        />
+        <View style={[styles.card, { width: width * 0.8, height: height * 0.7 }]}>
           <View style={styles.cardHeader}>
             <View style={styles.cardHeaderText}>
               <AppText variant="caption" color={colors.textMuted}>
@@ -242,8 +246,8 @@ export function WhatsNewModal({ visible, onClose }: { visible: boolean; onClose:
               ))}
             </ScrollView>
           )}
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   )
 }
@@ -379,6 +383,7 @@ const makeStyles = (colors: Palette) =>
       justifyContent: 'center',
       backgroundColor: 'rgba(0,0,0,0.55)',
     },
+    backdropDismiss: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
     card: {
       borderRadius: radius.sheet,
       backgroundColor: colors.sheet,
@@ -398,9 +403,9 @@ const makeStyles = (colors: Palette) =>
     },
     cardHeaderText: { flex: 1, minWidth: 0 },
     closeBtn: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
+      width: 44,
+      height: 44,
+      borderRadius: 22,
       backgroundColor: colors.fill,
       alignItems: 'center',
       justifyContent: 'center',
