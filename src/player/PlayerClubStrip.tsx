@@ -273,7 +273,10 @@ export function PlayerClubStrip({
           Animated.timing(keyboardLift, {
             toValue: capped,
             duration: Math.max(120, duration),
-            useNativeDriver: true,
+            // Animate layout rather than a transform. Android's visual transform
+            // moved the input above the keyboard but left text-selection handles
+            // and hit testing at its old coordinates.
+            useNativeDriver: false,
           }).start()
         })
       })
@@ -293,7 +296,7 @@ export function PlayerClubStrip({
       Animated.timing(keyboardLift, {
         toValue: 0,
         duration: Math.max(120, event.duration),
-        useNativeDriver: true,
+        useNativeDriver: false,
       }).start()
     })
     return () => {
@@ -374,10 +377,7 @@ export function PlayerClubStrip({
     return (
       <Animated.View
         ref={composerRef}
-        style={[
-          styles.keyboardAvoider,
-          { transform: [{ translateY: Animated.multiply(keyboardLift, -1) }] },
-        ]}
+        style={[styles.keyboardAvoider, { bottom: keyboardLift }]}
         onLayout={() => {
           const metrics = Keyboard.metrics()
           if (metrics) positionAboveKeyboard(metrics.screenY)
