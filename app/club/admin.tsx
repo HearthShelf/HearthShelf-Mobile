@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ScrollView, StyleSheet, Switch, View } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { getClub, updateClubDiscussionSettings } from '@/api/clubs'
+import { getClub, updateClubPolicySettings } from '@/api/clubs'
 import { AppText, IconButton, Loading, Screen, Touchable, icons } from '@/ui/primitives'
 import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { Toast, useToast } from '@/ui/Toast'
@@ -19,6 +19,7 @@ export default function ClubAdminScreen() {
   const [name, setName] = useState('Club admin')
   const [editing, setEditing] = useState(true)
   const [replies, setReplies] = useState(true)
+  const [autoAdvance, setAutoAdvance] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -29,6 +30,7 @@ export default function ClubAdminScreen() {
         setName(detail.club.name)
         setEditing(detail.club.allowCommentEditing)
         setReplies(detail.club.allowReplies)
+        setAutoAdvance(detail.club.autoAdvanceOnAllFinished)
       }
       setLoaded(true)
     })
@@ -37,9 +39,10 @@ export default function ClubAdminScreen() {
   const save = async () => {
     if (!id || busy) return
     setBusy(true)
-    const result = await updateClubDiscussionSettings(id, {
+    const result = await updateClubPolicySettings(id, {
       allowCommentEditing: editing,
       allowReplies: replies,
+      autoAdvanceOnAllFinished: autoAdvance,
     })
     setBusy(false)
     if (!result) return show('Could not save club settings')
@@ -89,6 +92,23 @@ export default function ClubAdminScreen() {
           </View>
           <AppText variant="caption" color={colors.textMuted} style={styles.help}>
             These settings apply only to this club and are enforced by the server for every write.
+          </AppText>
+          <AppText variant="eyebrow" color={colors.textMuted} style={styles.section}>
+            Reading pace
+          </AppText>
+          <View style={styles.card}>
+            <SettingRow
+              title="Move on when everyone has finished"
+              description="Once everyone who started the book has finished it, the club marks it read and starts the next book in Up next. Anyone who never started it will not hold the club up."
+              value={autoAdvance}
+              onChange={setAutoAdvance}
+              colors={colors}
+            />
+          </View>
+          <AppText variant="caption" color={colors.textMuted} style={styles.help}>
+            {autoAdvance
+              ? 'HearthShelf checks every hour. With nothing in Up next, the club finishes the book and waits for you to pick what is next.'
+              : 'You choose when this club starts its next book.'}
           </AppText>
           <Touchable
             style={[styles.save, busy && { opacity: 0.55 }]}
@@ -166,6 +186,7 @@ const makeStyles = (colors: Palette) =>
       borderColor: colors.hairline,
     },
     help: { marginTop: spacing.md, lineHeight: 18 },
+    section: { marginTop: spacing.xl },
     save: {
       minHeight: 48,
       alignItems: 'center',

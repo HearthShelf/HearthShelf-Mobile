@@ -252,7 +252,8 @@ export default function NotificationsScreen() {
                     name={
                       notification.kind === RATING_NOTIFICATION_KIND
                         ? icons.star
-                        : notification.kind === 'club_invite'
+                        : notification.kind === 'club_invite' ||
+                            notification.kind === 'club_advance'
                           ? icons.people
                           : notification.kind === 'release'
                             ? icons.newRelease

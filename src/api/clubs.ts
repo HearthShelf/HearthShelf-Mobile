@@ -34,25 +34,30 @@ export interface ClubInviteResult {
   emailSent?: boolean
 }
 
-export interface ClubDiscussionSettings {
+/** The owner-controlled policy switches for one club. */
+export interface ClubPolicySettings {
   allowCommentEditing: boolean
   allowReplies: boolean
+  /** Move on to the next book by itself once everyone who started the current
+   *  book has finished it. Off unless the owner turns it on. */
+  autoAdvanceOnAllFinished: boolean
 }
 
 function visibleClubs(res: ClubsDirectoryResponse): ClubsDirectoryResponse {
   if (!res.enabled) return DISABLED_CLUBS
   return {
     enabled: true,
-    mine: res.mine.filter((club) => !club.archived).map(withDiscussionDefaults),
-    joinable: res.joinable.filter((club) => !club.archived).map(withDiscussionDefaults),
+    mine: res.mine.filter((club) => !club.archived).map(withPolicyDefaults),
+    joinable: res.joinable.filter((club) => !club.archived).map(withPolicyDefaults),
   }
 }
 
-function withDiscussionDefaults<T extends HSClub>(club: T): T {
+function withPolicyDefaults<T extends HSClub>(club: T): T {
   return {
     ...club,
     allowCommentEditing: club.allowCommentEditing ?? true,
     allowReplies: club.allowReplies ?? true,
+    autoAdvanceOnAllFinished: club.autoAdvanceOnAllFinished ?? false,
   }
 }
 
@@ -110,7 +115,7 @@ export async function getClub(
     )
     if (!res.ok) return null
     const detail = (await res.json()) as HSClubDetail
-    detail.club = withDiscussionDefaults(detail.club)
+    detail.club = withPolicyDefaults(detail.club)
     return detail.enabled ? detail : null
   } catch {
     return null
@@ -367,10 +372,10 @@ export async function markClubRead(id: string, lastReadAt: number): Promise<bool
 }
 
 /** Owner/admin: update this club's discussion permissions. */
-export async function updateClubDiscussionSettings(
+export async function updateClubPolicySettings(
   id: string,
-  settings: ClubDiscussionSettings,
-): Promise<ClubDiscussionSettings | null> {
+  settings: ClubPolicySettings,
+): Promise<ClubPolicySettings | null> {
   const session = getSession()
   if (!session) return null
   try {
@@ -379,7 +384,7 @@ export async function updateClubDiscussionSettings(
       headers: { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(settings),
     })
-    return res.ok ? ((await res.json()) as ClubDiscussionSettings) : null
+    return res.ok ? ((await res.json()) as ClubPolicySettings) : null
   } catch {
     return null
   }

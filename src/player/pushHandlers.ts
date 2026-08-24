@@ -32,6 +32,10 @@ function handleResponse(response: unknown): void {
       // lands on what was said rather than the top of the club.
       const q = data.noteId ? `?note=${encodeURIComponent(data.noteId)}` : ''
       router.push(`/club/${encodeURIComponent(data.clubId)}${q}`)
+    } else if (data?.kind === 'club_advance' && data.clubId) {
+      // The club moved to a new book; open the club so the new book is right
+      // there rather than making the reader find it.
+      router.push(`/club/${encodeURIComponent(data.clubId)}`)
     } else if (data?.kind === 'club_invite' || data?.kind === 'club-invite') {
       // The server and the inbox both use 'club_invite'; the hyphenated form is
       // only kept so a push already queued on a device still routes.
