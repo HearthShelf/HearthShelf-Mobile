@@ -25,6 +25,8 @@ import {
   getLibraryCollections,
   getLibraryPlaylists,
 } from '@/api/abs'
+import { enqueueClubBook, getClubs, type ClubSummary } from '@/api/clubs'
+import { getMeId } from '@/api/me'
 import { addToQueue, getQueueState, subscribeQueue } from './queue'
 import { AppText, IconButton, Sheet, type SheetRef } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
@@ -32,7 +34,7 @@ import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import type { SheetHandle } from './sheets'
 
-type Tab = 'queue' | 'collection' | 'playlist'
+type Tab = 'queue' | 'collection' | 'playlist' | 'club'
 
 export const AddToListSheet = forwardRef<
   SheetHandle,
@@ -67,8 +69,10 @@ export const AddToListSheet = forwardRef<
   const queuedIds = useMemo(() => new Set(queue.manual.map((m) => m.libraryItemId)), [queue.manual])
   const [collections, setCollections] = useState<ABSCollection[] | null>(null)
   const [playlists, setPlaylists] = useState<ABSPlaylist[] | null>(null)
+  const [clubs, setClubs] = useState<ClubSummary[] | null>(null)
   const [newName, setNewName] = useState('')
   const [busy, setBusy] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
     getLibraryCollections(libraryId)
@@ -77,6 +81,14 @@ export const AddToListSheet = forwardRef<
     getLibraryPlaylists(libraryId)
       .then(setPlaylists)
       .catch(() => setPlaylists([]))
+    void getClubs()
+      .then((response) => {
+        const meId = getMeId()
+        // Adding a club book is owner-only. Keep clubs where ownership is known;
+        // if identity has not hydrated yet, let the server remain the final gate.
+        setClubs(response.mine.filter((club) => !meId || club.createdBy === meId))
+      })
+      .catch(() => setClubs([]))
   }, [libraryId])
 
   const finish = (message: string) => {
@@ -121,6 +133,30 @@ export const AddToListSheet = forwardRef<
       setBusy(false)
     }
   }
+  const addToClub = async (club: ClubSummary) => {
+    if (!ids.length) return
+    setBusy(true)
+    setErrorMessage('')
+    let added = 0
+    try {
+      // The server derives queue order from the current maximum, so preserve the
+      // selected order and wait for each insertion before sending the next.
+      for (const libraryItemId of ids) {
+        if (await enqueueClubBook(club.id, libraryItemId)) added += 1
+      }
+      if (added === ids.length) {
+        finish(`Added to ${club.name}${suffix}`)
+      } else if (added > 0) {
+        finish(`Added ${added} of ${ids.length} to ${club.name}`)
+      } else {
+        setErrorMessage(`Could not add to ${club.name}`)
+      }
+    } catch {
+      setErrorMessage(`Could not add to ${club.name}`)
+    } finally {
+      setBusy(false)
+    }
+  }
   const createNew = async () => {
     const name = newName.trim()
     if (!name || !ids.length) return
@@ -146,9 +182,13 @@ export const AddToListSheet = forwardRef<
   return (
     <Sheet ref={sheetRef} title="Add to list" snapPoints={['70%']}>
       <View style={styles.segFull}>
-        {(canQueue
-          ? (['queue', 'collection', 'playlist'] as Tab[])
-          : (['collection', 'playlist'] as Tab[])
+        {(
+          [
+            ...(canQueue ? (['queue'] as Tab[]) : []),
+            'collection',
+            'playlist',
+            ...((clubs?.length ?? 0) > 0 ? (['club'] as Tab[]) : []),
+          ] as Tab[]
         ).map((t) => (
           <Pressable
             key={t}
@@ -160,7 +200,7 @@ export const AddToListSheet = forwardRef<
               color={tab === t ? colors.text : colors.textMuted}
               style={{ textTransform: 'capitalize' }}
             >
-              {t === 'queue' ? 'Queue' : `${t}s`}
+              {t === 'queue' ? 'Queue' : t === 'club' ? 'Book Clubs' : `${t}s`}
             </AppText>
           </Pressable>
         ))}
@@ -182,6 +222,40 @@ export const AddToListSheet = forwardRef<
               Add to up next
             </AppText>
           </Pressable>
+        </View>
+      ) : tab === 'club' ? (
+        <View>
+          <AppText variant="meta" color={colors.textMuted} style={{ marginBottom: spacing.md }}>
+            Add {ids.length > 1 ? `these ${ids.length} books` : 'this book'} to a club&apos;s
+            up-next list.
+          </AppText>
+          {clubs === null ? (
+            <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.xl }} />
+          ) : (
+            clubs.map((club) => (
+              <Pressable
+                key={club.id}
+                style={styles.row}
+                disabled={busy}
+                onPress={() => void addToClub(club)}
+                accessibilityRole="button"
+                accessibilityLabel={`Add to ${club.name}`}
+              >
+                <View style={styles.rowIcon}>
+                  <Icon name={icons.club} size={18} color={colors.textMuted} />
+                </View>
+                <AppText variant="body" style={{ flex: 1 }} numberOfLines={1}>
+                  {club.name}
+                </AppText>
+                <Icon name={icons.add} size={20} color={colors.textMuted} />
+              </Pressable>
+            ))
+          )}
+          {errorMessage ? (
+            <AppText variant="meta" color={colors.destructive} style={styles.errorMessage}>
+              {errorMessage}
+            </AppText>
+          ) : null}
         </View>
       ) : (
         <>
@@ -296,6 +370,7 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.accent,
     },
     row: {
+      minHeight: 48,
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.md,
@@ -311,4 +386,5 @@ const makeStyles = (colors: Palette) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
+    errorMessage: { marginTop: spacing.md, textAlign: 'center' },
   })
