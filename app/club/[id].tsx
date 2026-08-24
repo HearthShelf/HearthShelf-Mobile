@@ -300,6 +300,24 @@ export default function ClubRoomScreen() {
   const isOwner = detail?.members.some((m) => m.userId === meId && m.role === 'owner') ?? false
   const isMember = detail?.members.some((m) => m.userId === meId) ?? false
 
+  // Pending invitations belong in the Members tab, not only in the invite
+  // picker. Load the owner-only roster when that tab opens so the room shows
+  // who has not accepted yet without requiring a second sheet.
+  useEffect(() => {
+    if (section !== 'members' || !isOwner || !detail?.club.id) return
+    let cancelled = false
+    void getClubInvitees(detail.club.id)
+      .then((rows) => {
+        if (!cancelled) setInvitees(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setInvitees([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [detail?.club.id, isOwner, section])
+
   // The "@…" being typed at the end of the draft, if any. Anchored to the end
   // rather than the caret: RN's TextInput needs explicit selection tracking for
   // mid-string editing, and typing a mention as you go is the real case.
@@ -698,6 +716,7 @@ export default function ClubRoomScreen() {
   }
 
   const sortedMembers = sortMembersByProgress(detail.members)
+  const pendingInvitees = (invitees ?? []).filter((invitee) => invitee.pendingInviteId)
   // Books that have left the current slot, whether the club finished them or set
   // them aside. Both belong in the history sheet - a set aside book is the one
   // most likely to be brought back, so hiding it would strand it.
@@ -807,40 +826,45 @@ export default function ClubRoomScreen() {
         maxLength={2000}
       />
       <View style={styles.composerTools}>
-        <Touchable
-          style={[styles.spoilerToggle, spoiler && styles.spoilerToggleOn]}
-          onPress={() => setSpoiler((value) => !value)}
-          accessibilityRole="switch"
-          accessibilityState={{ checked: spoiler }}
-        >
-          <Icon
-            name={spoiler ? icons.hidden : icons.visible}
-            size={16}
-            color={spoiler ? colors.accent : colors.textMuted}
-          />
-          <AppText variant="caption" color={spoiler ? colors.accent : colors.textMuted}>
-            Spoiler
-          </AppText>
-        </Touchable>
-        {!reply ? <SafeSwitch on={safe} onChange={setSafe} /> : <View style={{ flex: 1 }} />}
-        <Touchable
-          style={styles.cancelComposerBtn}
-          onPress={closeComposer}
-          accessibilityRole="button"
-        >
-          <AppText variant="caption" color={colors.textMuted}>
-            Cancel
-          </AppText>
-        </Touchable>
-        <Touchable
-          style={[styles.sendBtn, (!body.trim() || busy) && { opacity: 0.5 }]}
-          disabled={!body.trim() || busy}
-          onPress={() => void submit()}
-          accessibilityRole="button"
-          accessibilityLabel={reply ? 'Post reply' : 'Post comment'}
-        >
-          <Icon name={icons.send} size={18} color={colors.onAccent} />
-        </Touchable>
+        <View style={styles.composerOptions}>
+          <Touchable
+            style={[styles.spoilerToggle, spoiler && styles.spoilerToggleOn]}
+            onPress={() => setSpoiler((value) => !value)}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: spoiler }}
+          >
+            <Icon
+              name={spoiler ? icons.hidden : icons.visible}
+              size={16}
+              color={spoiler ? colors.accent : colors.textMuted}
+            />
+            <AppText variant="caption" color={spoiler ? colors.accent : colors.textMuted}>
+              Spoiler
+            </AppText>
+          </Touchable>
+          {!reply ? <SafeSwitch on={safe} onChange={setSafe} /> : null}
+        </View>
+        <View style={styles.composerActions}>
+          <Touchable
+            style={styles.cancelComposerBtn}
+            onPress={closeComposer}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel comment"
+          >
+            <AppText variant="caption" color={colors.textMuted}>
+              Cancel
+            </AppText>
+          </Touchable>
+          <Touchable
+            style={[styles.sendBtn, (!body.trim() || busy) && { opacity: 0.5 }]}
+            disabled={!body.trim() || busy}
+            onPress={() => void submit()}
+            accessibilityRole="button"
+            accessibilityLabel={reply ? 'Post reply' : 'Post comment'}
+          >
+            <Icon name={icons.send} size={18} color={colors.onAccent} />
+          </Touchable>
+        </View>
       </View>
     </View>
   )
@@ -1187,6 +1211,42 @@ export default function ClubRoomScreen() {
                   <Icon name={icons.people} size={18} color={colors.textMuted} />
                   <AppText variant="label">Manage members</AppText>
                 </Touchable>
+              </View>
+            ) : null}
+            {isOwner && pendingInvitees.length > 0 ? (
+              <View style={styles.pendingInvites}>
+                <AppText variant="eyebrow" color={colors.textMuted}>
+                  Pending invites
+                </AppText>
+                {pendingInvitees.map((invitee) => (
+                  <View key={invitee.pendingInviteId} style={styles.pendingInviteRow}>
+                    <Avatar
+                      uri={avatarUrl(invitee.userId)}
+                      size={36}
+                      name={invitee.username}
+                      hue={coverHue(invitee.userId)}
+                    />
+                    <View style={styles.pendingInviteCopy}>
+                      <AppText variant="label" numberOfLines={1}>
+                        {invitee.username}
+                      </AppText>
+                      <AppText variant="caption" color={colors.textMuted}>
+                        Waiting to join
+                      </AppText>
+                    </View>
+                    <Touchable
+                      style={styles.cancelInviteButton}
+                      disabled={busy}
+                      onPress={() => void cancelInvite(invitee)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Cancel invitation to ${invitee.username}`}
+                    >
+                      <AppText variant="caption" color={colors.textMuted}>
+                        Cancel
+                      </AppText>
+                    </Touchable>
+                  </View>
+                ))}
               </View>
             ) : null}
             {sortedMembers.map((m) => (
@@ -2100,7 +2160,15 @@ const makeStyles = (colors: Palette) =>
       borderColor: colors.hairline,
       backgroundColor: colors.card,
     },
-    composerTools: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    composerTools: { gap: spacing.sm },
+    composerOptions: { gap: spacing.sm },
+    composerActions: {
+      minHeight: 44,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+      gap: spacing.sm,
+    },
     spoilerToggle: {
       minHeight: 44,
       flexDirection: 'row',
@@ -2215,19 +2283,42 @@ const makeStyles = (colors: Palette) =>
       borderBottomColor: colors.hairline,
     },
     memberActions: {
+      flexDirection: 'row',
       gap: spacing.sm,
       marginBottom: spacing.md,
     },
     memberAction: {
+      flex: 1,
       minHeight: 48,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       gap: spacing.sm,
-      paddingHorizontal: spacing.lg,
+      paddingHorizontal: spacing.sm,
       borderRadius: radius.pill,
       borderWidth: 1,
       borderColor: colors.border,
+      backgroundColor: colors.fill,
+    },
+    pendingInvites: {
+      gap: spacing.xs,
+      marginBottom: spacing.md,
+    },
+    pendingInviteRow: {
+      minHeight: 56,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingVertical: spacing.xs,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.hairline,
+    },
+    pendingInviteCopy: { flex: 1, minWidth: 0 },
+    cancelInviteButton: {
+      minHeight: 44,
+      justifyContent: 'center',
+      paddingHorizontal: spacing.sm,
+      borderRadius: radius.pill,
       backgroundColor: colors.fill,
     },
     historyRow: {
