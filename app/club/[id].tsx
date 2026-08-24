@@ -1109,6 +1109,7 @@ export default function ClubRoomScreen() {
                       {b.author}
                     </AppText>
                   ) : null}
+                  <QueuedBookReaders members={detail.members} book={b} />
                 </View>
                 {isOwner ? (
                   <>
@@ -1715,6 +1716,57 @@ export default function ClubRoomScreen() {
   )
 }
 
+function QueuedBookReaders({ members, book }: { members: HSClubMember[]; book: HSClubBook }) {
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
+  const readers = members.filter(
+    (member) =>
+      member.reach?.aheadOfClub === true && member.reach.libraryItemId === book.libraryItemId,
+  )
+  if (!readers.length) return null
+
+  const first = readers[0]
+  const allFinished = readers.every((reader) => reader.reach?.isFinished === true)
+  const readerLabel =
+    readers.length === 1
+      ? `${first.username} ${allFinished ? 'finished' : 'is on'} this book`
+      : `${first.username} + ${readers.length - 1} ${
+          readers.length === 2 ? 'reader' : 'readers'
+        } ${allFinished ? 'finished' : 'are on'} this book`
+
+  return (
+    <View
+      style={styles.queueReaders}
+      accessible
+      accessibilityLabel={readers
+        .map(
+          (reader) =>
+            `${reader.username} ${reader.reach?.isFinished ? 'finished' : 'is on'} this book`,
+        )
+        .join('. ')}
+    >
+      <View style={styles.queueReaderAvatars}>
+        {readers.slice(0, 3).map((reader, index) => (
+          <View
+            key={reader.userId}
+            style={[styles.queueReaderAvatar, index > 0 && { marginLeft: -6 }]}
+          >
+            <Avatar
+              uri={avatarUrl(reader.userId)}
+              size={18}
+              name={reader.username}
+              hue={coverHue(reader.userId)}
+            />
+          </View>
+        ))}
+      </View>
+      <AppText variant="caption" color={colors.accent} numberOfLines={1} style={{ flex: 1 }}>
+        {readerLabel}
+      </AppText>
+    </View>
+  )
+}
+
 // ---- Member progress race row ----
 
 function MemberRace({
@@ -1956,6 +2008,18 @@ const makeStyles = (colors: Palette) =>
       alignItems: 'center',
       gap: spacing.md,
       paddingVertical: spacing.sm,
+    },
+    queueReaders: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      marginTop: 4,
+    },
+    queueReaderAvatars: { flexDirection: 'row', alignItems: 'center' },
+    queueReaderAvatar: {
+      borderWidth: 1,
+      borderColor: colors.card,
+      borderRadius: 10,
     },
     queueStartBtn: {
       paddingHorizontal: spacing.md,
