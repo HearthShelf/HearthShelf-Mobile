@@ -7,15 +7,16 @@
  * call; the server no-ops a book the club already has, so re-adding is safe and
  * the sheet just reports what actually landed.
  *
- * Series books come from the search response itself (ABS embeds them in each
- * series hit), so picking a series costs no second request.
+ * Search identifies the series, then a targeted series request supplies its
+ * books in ABS reading order. The embedded search books remain the fallback
+ * when that focused request is unavailable.
  */
-import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { StyleSheet, View } from 'react-native'
 import { BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet'
 import type { ABSLibraryItem, HSClubBook } from '@hearthshelf/core'
 import { coverHue, seriesSeqFromName } from '@hearthshelf/core'
-import { coverUrl, searchLibraryAll } from '@/api/abs'
+import { coverUrl, getSeriesWithBooks, searchLibraryAll } from '@/api/abs'
 import { enqueueClubBook } from '@/api/clubs'
 import { AppText, Centered, Cover, Loading, Sheet, type SheetRef, Touchable } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
@@ -74,7 +75,9 @@ export const AddClubBooksSheet = forwardRef<SheetRef, AddClubBooksSheetProps>(
     const [searching, setSearching] = useState(false)
     const [failed, setFailed] = useState(false)
     const [series, setSeries] = useState<SeriesHit | null>(null)
+    const [seriesLoading, setSeriesLoading] = useState(false)
     const [busy, setBusy] = useState(false)
+    const seriesRequest = useRef(0)
 
     const inClub = useMemo(() => new Set(existing.map((b) => b.libraryItemId)), [existing])
 
@@ -124,7 +127,42 @@ export const AddClubBooksSheet = forwardRef<SheetRef, AddClubBooksSheetProps>(
       setBooks([])
       setSeriesHits([])
       setSeries(null)
+      setSeriesLoading(false)
+      seriesRequest.current += 1
       setFailed(false)
+    }, [])
+
+    const openSeries = useCallback(
+      async (hit: SeriesHit) => {
+        const request = ++seriesRequest.current
+        setSeries({ ...hit, books: [] })
+        setSeriesLoading(true)
+        try {
+          // Search hits do not guarantee that embedded books are ordered for
+          // this selected series. The targeted endpoint filters by the series id
+          // and asks ABS for sort=sequence, so multi-series books and missing
+          // flattened sequence names cannot scramble the tray.
+          const resolved = libraryId ? await getSeriesWithBooks(libraryId, hit.id) : null
+          if (request !== seriesRequest.current) return
+          setSeries({
+            ...hit,
+            books: resolved?.books.length ? resolved.books : bySeriesSequence(hit.books),
+          })
+        } catch {
+          if (request === seriesRequest.current) {
+            setSeries({ ...hit, books: bySeriesSequence(hit.books) })
+          }
+        } finally {
+          if (request === seriesRequest.current) setSeriesLoading(false)
+        }
+      },
+      [libraryId],
+    )
+
+    const closeSeries = useCallback(() => {
+      seriesRequest.current += 1
+      setSeriesLoading(false)
+      setSeries(null)
     }, [])
 
     /**
@@ -158,7 +196,7 @@ export const AddClubBooksSheet = forwardRef<SheetRef, AddClubBooksSheetProps>(
       [busy, inClub, clubId, onAdded, onMessage],
     )
 
-    const seriesBooks = series ? bySeriesSequence(series.books) : []
+    const seriesBooks = series?.books ?? []
     const seriesFresh = seriesBooks.filter((b) => !inClub.has(b.id))
 
     return (
@@ -171,7 +209,7 @@ export const AddClubBooksSheet = forwardRef<SheetRef, AddClubBooksSheetProps>(
       >
         {series ? (
           <>
-            <Touchable style={styles.backRow} onPress={() => setSeries(null)}>
+            <Touchable style={styles.backRow} onPress={closeSeries}>
               <Icon name={icons.chevronLeft} size={16} color={colors.textMuted} />
               <AppText variant="caption" color={colors.textMuted}>
                 Back to search
@@ -179,10 +217,11 @@ export const AddClubBooksSheet = forwardRef<SheetRef, AddClubBooksSheetProps>(
             </Touchable>
             <View style={styles.seriesHead}>
               <AppText variant="caption" color={colors.textMuted}>
-                {seriesBooks.length} {seriesBooks.length === 1 ? 'book' : 'books'} ·{' '}
-                {seriesFresh.length} not in this club
+                {seriesLoading
+                  ? 'Loading reading order…'
+                  : `${seriesBooks.length} ${seriesBooks.length === 1 ? 'book' : 'books'} · ${seriesFresh.length} not in this club`}
               </AppText>
-              {seriesFresh.length > 0 ? (
+              {!seriesLoading && seriesFresh.length > 0 ? (
                 <Touchable
                   style={styles.addAllBtn}
                   disabled={busy}
@@ -196,18 +235,22 @@ export const AddClubBooksSheet = forwardRef<SheetRef, AddClubBooksSheetProps>(
                 </Touchable>
               ) : null}
             </View>
-            <BottomSheetScrollView contentContainerStyle={styles.listPad}>
-              {seriesBooks.map((b, i) => (
-                <ResultRow
-                  key={b.id}
-                  item={b}
-                  index={i + 1}
-                  already={inClub.has(b.id)}
-                  busy={busy}
-                  onAdd={() => void addMany([b.id])}
-                />
-              ))}
-            </BottomSheetScrollView>
+            {seriesLoading ? (
+              <Loading label="Loading series…" />
+            ) : (
+              <BottomSheetScrollView contentContainerStyle={styles.listPad}>
+                {seriesBooks.map((b, i) => (
+                  <ResultRow
+                    key={b.id}
+                    item={b}
+                    index={i + 1}
+                    already={inClub.has(b.id)}
+                    busy={busy}
+                    onAdd={() => void addMany([b.id])}
+                  />
+                ))}
+              </BottomSheetScrollView>
+            )}
           </>
         ) : (
           <>
@@ -260,7 +303,7 @@ export const AddClubBooksSheet = forwardRef<SheetRef, AddClubBooksSheetProps>(
                         <Touchable
                           key={s.id}
                           style={styles.seriesRow}
-                          onPress={() => setSeries(s)}
+                          onPress={() => void openSeries(s)}
                           accessibilityRole="button"
                           accessibilityLabel={`Open series ${s.name}`}
                         >
@@ -402,6 +445,7 @@ const makeStyles = (colors: Palette) =>
       paddingBottom: spacing.sm,
     },
     seriesRow: {
+      minHeight: 48,
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.md,
@@ -416,12 +460,16 @@ const makeStyles = (colors: Palette) =>
     rowText: { flex: 1, minWidth: 0 },
     indexBadge: { width: 18, textAlign: 'center' },
     addBtn: {
+      minHeight: 48,
+      justifyContent: 'center',
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.xs,
       borderRadius: radius.pill,
       backgroundColor: colors.accent,
     },
     addAllBtn: {
+      minHeight: 48,
+      justifyContent: 'center',
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.xs,
       borderRadius: radius.pill,
