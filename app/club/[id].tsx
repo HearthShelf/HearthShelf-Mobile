@@ -53,6 +53,7 @@ import {
   type ClubInvitee,
 } from '@/api/clubs'
 import { holdClubPolling } from '@/player/clubSync'
+import { useMiniPlayerInset } from '@/ui/useContentInset'
 import { useSheetBackHandler } from '@/ui/useBackHandler'
 import { postNote, deleteNote, reactToNote, getNoteReactionDetails, editNote } from '@/api/notes'
 import { getMeId } from '@/api/me'
@@ -137,6 +138,7 @@ export default function ClubRoomScreen() {
   useEffect(() => {
     void hydrateReactionRecents()
   }, [])
+  const miniPlayerInset = useMiniPlayerInset()
   const [detail, setDetail] = useState<HSClubDetail | null>(null)
   // The library the add-books search runs against. Best-effort: a failure just
   // leaves the sheet saying no library is available, rather than blocking the room.
@@ -857,7 +859,7 @@ export default function ClubRoomScreen() {
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: spacing.xxl }}
+        contentContainerStyle={{ paddingBottom: miniPlayerInset + spacing.xl }}
         showsVerticalScrollIndicator={false}
         onScroll={onScroll}
         scrollEventThrottle={200}
