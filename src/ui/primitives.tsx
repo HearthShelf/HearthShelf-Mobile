@@ -24,7 +24,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BlurTargetView } from 'expo-blur'
 import {
   BottomSheetModal,
@@ -659,6 +659,7 @@ export const Sheet = forwardRef<
 ) {
   const colors = useColors()
   const styles = useStyles()
+  const insets = useSafeAreaInsets()
   const header = (kicker || title) && (
     <View style={styles.sheetHeader}>
       {kicker ? (
@@ -678,6 +679,7 @@ export const Sheet = forwardRef<
     <BottomSheetModal
       ref={ref}
       snapPoints={snapPoints}
+      topInset={insets.top}
       enableDynamicSizing={dynamic}
       maxDynamicContentSize={dynamic ? maxDynamicContentSize : undefined}
       stackBehavior={stackBehavior}

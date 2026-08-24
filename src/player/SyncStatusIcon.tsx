@@ -71,8 +71,6 @@ export function SyncStatusIcon() {
   const sync = useSyncExternalStore(subscribeSyncState, getSyncState)
   const sheetRef = useRef<SyncStatusSheetHandle>(null)
 
-  if (sync.status === 'idle') return null
-
   const { look } = resolve(sync, conn, colors)
 
   return (
@@ -83,6 +81,7 @@ export function SyncStatusIcon() {
           sheetRef.current?.present()
         }}
         hitSlop={10}
+        accessibilityRole="button"
         accessibilityLabel="Sync status"
       >
         <Icon name={look.name} size={22} color={look.color} />

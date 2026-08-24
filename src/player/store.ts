@@ -87,6 +87,9 @@ export interface PlayerState {
   position: number
   /** A seek request the <Video> host should honor once, then clear. */
   seekTo: number | null
+  /** The live spot before a large backwards jump. Kept separately so progress
+   *  ticks at the older position cannot erase the one-tap return target. */
+  returnPosition: number | null
   /** Active sleep timer, or null. */
   sleepTimer: SleepTimer
   sleepBehavior: SleepBehavior
@@ -107,6 +110,7 @@ let state: PlayerState = {
   buffering: false,
   position: 0,
   seekTo: null,
+  returnPosition: null,
   sleepTimer: null,
   sleepBehavior: { rewindSec: 30, chapterBarrier: true, fade: true, fadeLen: 20 },
   rate: 1,
@@ -186,6 +190,7 @@ export function loadTrack(track: NowPlaying, autoPlay = true): void {
     // honored reliably, so without this playback starts at 0 and the first
     // progress tick syncs 0 back over the real position (resetting progress).
     seekTo: track.startPosition > 0 ? track.startPosition : null,
+    returnPosition: null,
     rate: s.defaultSpeed,
     sleepBehavior: {
       rewindSec: s.sleepRewindSec,
@@ -330,6 +335,7 @@ export function mirrorCarTrack(track: NowPlaying): void {
     isPlaying: true,
     carActive: true,
     seekTo: null,
+    returnPosition: null,
   })
 }
 
@@ -374,12 +380,20 @@ const SEEK_SETTLE_TOLERANCE_SEC = 2
  *  the position readout. Matches PlayerHost's own 1.5s seek transient window,
  *  plus headroom for an unbuffered region. */
 const SEEK_SETTLE_TIMEOUT_MS = 4000
+/** Ordinary skip-back and auto-rewind should not create a return pill. */
+const RETURN_JUMP_MIN_SEC = 60
 /** The seek we are waiting for the engine to land (see reportPosition). */
 let pendingSeek: { target: number; until: number } | null = null
 
 export function requestSeek(seconds: number): void {
   if (!state.nowPlaying) return
   const target = Math.max(0, seconds)
+  const returnPosition =
+    state.position - target >= RETURN_JUMP_MIN_SEC
+      ? Math.max(state.returnPosition ?? 0, state.position)
+      : state.returnPosition !== null && target >= state.returnPosition - SEEK_SETTLE_TOLERANCE_SEC
+        ? null
+        : state.returnPosition
   // Seeking while paused picks the spot deliberately - resuming must start
   // exactly there, not a few seconds earlier. (applyAutoRewind calls this too,
   // but only after consuming the pending pause, so it can't suppress itself.)
@@ -387,7 +401,7 @@ export function requestSeek(seconds: number): void {
   // Optimistically move `position` so the UI (scrubber, time labels, chapter)
   // updates instantly - even while paused, where the native progress callback
   // won't fire to confirm the seek for a while. The host still applies seekTo.
-  set({ seekTo: target, position: target })
+  set({ seekTo: target, position: target, returnPosition })
   // Hold native progress ticks until the engine reports back near this target,
   // so an in-flight seek can't be rolled back by a tick describing the old spot
   // (and a rapid second skip measures from where the first one put us).
@@ -396,6 +410,13 @@ export function requestSeek(seconds: number): void {
   // listened-time: mark sync dirty so the header icon goes orange and a tap can
   // push this spot. syncState is a leaf store (no deps back into here).
   syncStateSeeked(target)
+}
+
+/** Return from a large backwards seek to the live spot that preceded it. */
+export function jumpToReturnPosition(): void {
+  const target = state.returnPosition
+  if (target === null) return
+  requestSeek(target)
 }
 
 export function jumpBy(delta: number): void {
@@ -804,7 +825,13 @@ export function reportPosition(position: number): void {
     }
   }
 
-  set({ position })
+  set({
+    position,
+    returnPosition:
+      state.returnPosition !== null && position >= state.returnPosition - SEEK_SETTLE_TOLERANCE_SEC
+        ? null
+        : state.returnPosition,
+  })
 }
 
 /** Internal: chapter containing an arbitrary position (used by the sleep tick). */
@@ -828,6 +855,7 @@ export function clearTrack(): void {
     buffering: false,
     position: 0,
     seekTo: null,
+    returnPosition: null,
     sleepTimer: null,
     rate: 1,
     volume: 1,
