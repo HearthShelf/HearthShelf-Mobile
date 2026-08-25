@@ -89,6 +89,13 @@ export interface PlayerSnapshot {
   localPosition: number | null
   localAgeSeconds: number | null
   downloaded: boolean
+  /** The armed sleep timer, or null. Captured because a sleep timer is the one
+   *  thing that STOPS playback without any failure to report: an "it stopped"
+   *  report otherwise arrives with a perfectly healthy trail and nothing to
+   *  distinguish a bug from the timer doing its job (HS-MOBILEAPP-28). */
+  sleepTimer: string | null
+  /** Seconds of playback left on that timer, for the countdown kinds. */
+  sleepRemainingSec: number | null
 }
 
 /**
@@ -143,6 +150,11 @@ function playerSnapshot(): PlayerSnapshot {
     carActive: s.carActive,
     sessionId: np?.sessionId || null,
     syncStatus: sync.status,
+    sleepTimer: s.sleepTimer ? s.sleepTimer.kind : null,
+    sleepRemainingSec:
+      s.sleepTimer && s.sleepTimer.kind !== 'endOfChapter'
+        ? Math.round(s.sleepTimer.remainingSec)
+        : null,
     secondsSinceSync: sync.lastSyncedAt ? Math.round((now - sync.lastSyncedAt) / 1000) : null,
     localPosition: sec(saved?.currentTime),
     localAgeSeconds: saved?.lastUpdate ? Math.round((now - saved.lastUpdate) / 1000) : null,
@@ -195,6 +207,9 @@ export function buildFeedbackDiagnostics(): FeedbackDiagnostics {
       player_car: String(snap.carActive),
       player_downloaded: String(snap.downloaded),
       player_active: String(snap.itemId !== null),
+      // Searchable, so "did a sleep timer stop it?" is one query rather than
+      // opening each report.
+      player_sleep: snap.sleepTimer ?? 'off',
       prior_run_unclean: String(didPriorRunEndUncleanly()),
     }
 
