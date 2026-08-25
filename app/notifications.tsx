@@ -25,6 +25,10 @@ import { useColors } from '@/ui/ThemeProvider'
  *  enough to read, short enough that it never feels stuck. */
 const RATING_DISMISS_MS = 900
 
+/** Notification kinds that point at ONE comment, and so should open the club
+ *  scrolled to it rather than at the top. */
+const NOTE_ANCHORED_KINDS = new Set(['mention', 'reaction', 'reply', 'lateNote'])
+
 function dataString(notification: HSNotification, key: string): string {
   const value = notification.data[key]
   return typeof value === 'string' ? value : ''
@@ -77,8 +81,11 @@ export default function NotificationsScreen() {
       router.push(await releaseNotificationRoute(asin, dataString(notification, 'signal')))
       return
     }
-    if (notification.kind === 'mention' && clubId) {
-      // ?note= scrolls the room to the comment and highlights it.
+    // Anything anchored to a specific comment opens ON that comment: ?note=
+    // scrolls the room to it and highlights it. Landing at the top of a busy
+    // club and hunting for the line someone is talking about is the whole
+    // problem these alerts exist to solve.
+    if (NOTE_ANCHORED_KINDS.has(notification.kind) && clubId) {
       const noteId = dataString(notification, 'noteId')
       const q = noteId ? `?note=${encodeURIComponent(noteId)}` : ''
       router.push(`/club/${encodeURIComponent(clubId)}${q}`)
@@ -261,7 +268,7 @@ export default function NotificationsScreen() {
                               ? icons.mention
                               : notification.kind === 'reaction'
                                 ? icons.thumbUp
-                                : notification.kind === 'reply'
+                                : notification.kind === 'reply' || notification.kind === 'lateNote'
                                   ? icons.chat
                                   : icons.bell
                     }

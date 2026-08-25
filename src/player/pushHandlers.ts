@@ -12,6 +12,10 @@
 import { router } from 'expo-router'
 import { releaseNotificationRoute } from '@/notifications/releaseRoute'
 
+/** Push kinds that point at ONE comment, and so open the club scrolled to it.
+ *  Mirrors the same set in app/notifications.tsx. */
+const NOTE_ANCHORED_KINDS = new Set(['mention', 'reaction', 'reply', 'lateNote'])
+
 let mounted = false
 
 /** Route a tapped server notification to the relevant in-app surface. */
@@ -27,9 +31,9 @@ function handleResponse(response: unknown): void {
       // upcoming page (see releaseNotificationRoute). Async because resolving
       // the owned copy needs a lookup; it falls back to the upcoming page.
       void releaseNotificationRoute(asin, data.signal).then((path) => router.push(path))
-    } else if (data?.kind === 'mention' && data.clubId) {
-      // ?note= scrolls the room to the comment and highlights it, so a mention
-      // lands on what was said rather than the top of the club.
+    } else if (NOTE_ANCHORED_KINDS.has(data?.kind ?? '') && data?.clubId) {
+      // ?note= scrolls the room to the comment and highlights it, so the tap
+      // lands on what was actually said rather than the top of the club.
       const q = data.noteId ? `?note=${encodeURIComponent(data.noteId)}` : ''
       router.push(`/club/${encodeURIComponent(data.clubId)}${q}`)
     } else if (data?.kind === 'club_advance' && data.clubId) {

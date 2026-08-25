@@ -204,6 +204,53 @@ export function PlayerClubProgressStrip({
   )
 }
 
+/**
+ * A soft orange breathing outline on the club box while there is club activity
+ * you have not read.
+ *
+ * This is the ONLY signal for a whole class of comment. Note-pops fire as
+ * playback CROSSES a timestamp, so a comment posted at a point you already
+ * passed - or a reply on your own note - has nothing left to trigger it and is
+ * otherwise invisible until you happen to open the club.
+ *
+ * `unreadCount` is exactly the right input and needs no extra plumbing: the
+ * server counts only notes you can already READ (unlocked, i.e. at or behind
+ * your position) that are newer than your last visit. Locked notes ahead of you
+ * are excluded by construction, so the pulse can never hint that discussion
+ * exists somewhere you have not reached - the same spoiler rule the rest of the
+ * club UI follows.
+ *
+ * Returns an opacity to drive a highlight overlay. Loops while unread, and
+ * settles back to 0 when there is nothing left to announce.
+ */
+function useUnreadPulse(unreadCount: number): Animated.Value {
+  const pulse = useRef(new Animated.Value(0)).current
+
+  useEffect(() => {
+    if (unreadCount <= 0) {
+      // Fade out rather than snapping, so clearing the badge doesn't flicker.
+      Animated.timing(pulse, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }).start()
+      return
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.25, duration: 900, useNativeDriver: true }),
+      ]),
+    )
+    loop.start()
+    return () => {
+      loop.stop()
+    }
+  }, [pulse, unreadCount])
+
+  return pulse
+}
+
 export function PlayerClubStrip({
   club,
   itemId,
@@ -233,6 +280,7 @@ export function PlayerClubStrip({
   const [frozenPosition, setFrozenPosition] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [optimisticNote, setOptimisticNote] = useState<HSNote | null>(null)
+  const unreadPulse = useUnreadPulse(club.unreadCount)
 
   useEffect(() => {
     setComposing(false)
@@ -504,8 +552,22 @@ export function PlayerClubStrip({
         onPress={onOpenClub}
         style={[styles.surface, note ? styles.commentSurface : styles.quietSurface]}
         accessibilityRole="button"
-        accessibilityLabel={`Open ${club.name}`}
+        accessibilityLabel={
+          club.unreadCount > 0
+            ? `Open ${club.name}. ${club.unreadCount} new ${club.unreadCount === 1 ? 'comment' : 'comments'}.`
+            : `Open ${club.name}`
+        }
       >
+        {/* Breathing outline for unread club activity. pointerEvents none so it
+            never intercepts the tap that opens the club. */}
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.unreadPulse,
+            note ? styles.unreadPulseComment : styles.unreadPulseQuiet,
+            { opacity: unreadPulse },
+          ]}
+        />
         {note ? (
           <View style={styles.noteRow}>
             <View style={[styles.noteIcon, note.kind === 'locked' && styles.lockedNoteIcon]}>
@@ -602,6 +664,19 @@ const makeStyles = (colors: Palette) =>
       elevation: 8,
     },
     quietSurface: { flex: 1, minHeight: 92, justifyContent: 'center', overflow: 'hidden' },
+    // Sits on top of the surface, matching its radius, and only ever draws a
+    // border - the box's own contents stay exactly as legible as before.
+    unreadPulse: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      borderWidth: 1.5,
+      borderColor: colors.accent,
+    },
+    unreadPulseQuiet: { borderRadius: radius.card },
+    unreadPulseComment: { borderRadius: radius.pill },
     commentSurface: {
       flex: 1,
       minHeight: 70,
