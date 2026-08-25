@@ -27,7 +27,7 @@ import { coverHue } from '@hearthshelf/core'
 import { coverUrl, itemAuthor, itemTitle } from '@/api/abs'
 import { markItemsFinished } from '@/store/progress'
 import { playItemById } from '@/player/playback'
-import { addToQueue, getQueueState, setManual, type QueueEntry } from '@/player/queue'
+import { addToQueue, getQueueState, queueEntryFor, setManual } from '@/player/queue'
 import {
   getDownloadsState,
   subscribeDownloads,
@@ -125,11 +125,7 @@ export const BookActionsSheet = forwardRef<
     router.push('/player')
   }
 
-  const entryFor = (it: ABSLibraryItem): QueueEntry => ({
-    libraryItemId: it.id,
-    title: itemTitle(it),
-    author: itemAuthor(it),
-  })
+  const entryFor = queueEntryFor
 
   const playNext = () => {
     if (!item) return

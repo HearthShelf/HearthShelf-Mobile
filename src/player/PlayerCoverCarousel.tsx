@@ -48,6 +48,7 @@ export function PlayerCoverCarousel({
   liveItemId,
   liveTitle,
   liveAuthor,
+  liveDuration,
   liveArtworkUrl,
   queue,
   coverWidth,
@@ -81,6 +82,9 @@ export function PlayerCoverCarousel({
   liveItemId: string
   liveTitle: string
   liveAuthor: string
+  /** Runtime of the live book, carried onto its queue entry when a swipe puts it
+   *  back at the head of up-next, so the queue headers can still total it. */
+  liveDuration: number
   liveArtworkUrl?: string
   queue: QueueEntry[]
   coverWidth: number
@@ -209,7 +213,12 @@ export function PlayerCoverCarousel({
       // on the next pull - the outgoing in-progress book is kept by the
       // in-progress rule), so we must NOT push this reorder back, or the stored
       // queue would inflate one prepended book per swipe.
-      const outgoing = { libraryItemId: liveItemId, title: liveTitle, author: liveAuthor }
+      const outgoing = {
+        libraryItemId: liveItemId,
+        title: liveTitle,
+        author: liveAuthor,
+        duration: liveDuration || undefined,
+      }
       const rest = getQueueState().items.filter(
         (q) => q.libraryItemId !== page.itemId && q.libraryItemId !== liveItemId,
       )
@@ -222,7 +231,7 @@ export function PlayerCoverCarousel({
       listRef.current?.scrollToOffset({ offset: 0, animated: false })
       setIndex(0)
     },
-    [liveItemId, liveTitle, liveAuthor],
+    [liveItemId, liveTitle, liveAuthor, liveDuration],
   )
 
   // Report deck state up: dots, the browsed book (header + its transport), a

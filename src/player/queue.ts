@@ -7,7 +7,8 @@
  * Queue MODE and auto-rules are NOT here - they're preferences and live in
  * src/store/settings.ts / /hs/settings, same as the WebApp.
  */
-import type { QueueEntry, QueueMode, AutoRuleId } from '@hearthshelf/core'
+import type { ABSLibraryItem, QueueEntry, QueueMode, AutoRuleId } from '@hearthshelf/core'
+import { itemAuthor, itemTitle } from '@/api/abs'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
 
 export type { QueueEntry } from '@hearthshelf/core'
@@ -128,6 +129,22 @@ subscribeSettings(syncMode)
 // `manual` list so edits and end-of-book advancement use the same order.
 function manualMode(): boolean {
   return activeMode === 'manual'
+}
+
+/** Build a queue entry from a library item. The single place a hand-added book
+ *  becomes a QueueEntry, so every "add to queue" surface snapshots the same
+ *  fields - notably `duration`, which lets the queue headers total their runtime
+ *  without a lookup per book. Server-built Auto entries get theirs from Core's
+ *  buildAutoQueue, which snapshots the same value. */
+export function queueEntryFor(item: ABSLibraryItem): QueueEntry {
+  return {
+    libraryItemId: item.id,
+    title: itemTitle(item),
+    author: itemAuthor(item),
+    // Omitted rather than 0 when the list shape didn't carry it, so an unknown
+    // length stays distinguishable from a zero one.
+    duration: item.media.duration || undefined,
+  }
 }
 
 export function addToQueue(entry: QueueEntry): void {

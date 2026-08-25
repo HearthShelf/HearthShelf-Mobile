@@ -1100,6 +1100,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                       liveItemId={nowPlaying.itemId}
                       liveTitle={nowPlaying.title}
                       liveAuthor={nowPlaying.author}
+                      liveDuration={nowPlaying.duration}
                       liveArtworkUrl={nowPlaying.artworkUrl}
                       queue={queue.items}
                       coverWidth={coverWidth}

@@ -18,7 +18,7 @@ import { Pressable, StyleSheet, View } from 'react-native'
 import { BottomSheetFlatList, BottomSheetTextInput } from '@gorhom/bottom-sheet'
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
-import { coverHue } from '@hearthshelf/core'
+import { coverHue, queueLengthLabel } from '@hearthshelf/core'
 import type { QueueEntry, ABSLibraryItem, AutoRulePref } from '@hearthshelf/core'
 import {
   getQueueState,
@@ -30,6 +30,7 @@ import {
   QUEUE_MODES,
   QUEUE_MODE_SUB,
   AUTO_RULE_COPY,
+  queueEntryFor,
 } from './queue'
 import {
   getSettingsState,
@@ -48,13 +49,6 @@ import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import type { SheetHandle } from './sheets'
 import { RecomputeQueueButton } from './AutoQueueInfo'
-import {
-  ensureQueueDurations,
-  queueLength,
-  queueLengthLabel,
-  queueDurationsVersion,
-  subscribeQueueDurations,
-} from './queueDurations'
 
 const MODES = QUEUE_MODES
 const MODE_SUB = QUEUE_MODE_SUB
@@ -86,19 +80,14 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
     )
 
     // Header line: how many books are queued and how long they run. Manual mode
-    // shows the durable hand-picked list; every other mode shows the active
-    // list the player pops from. Off queues nothing, so it gets no line.
-    const shownIds = useMemo(() => {
-      if (settings.queueMode === 'off') return []
+    // shows the durable hand-picked list; every other mode shows the active list
+    // the player pops from. Off queues nothing, so it gets no line. Entries
+    // carry their own duration, so this is a plain sum - no lookups.
+    const lengthLabel = useMemo(() => {
+      if (settings.queueMode === 'off') return undefined
       const list = settings.queueMode === 'manual' ? queue.manual : queue.items
-      return list.map((e) => e.libraryItemId)
+      return list.length > 0 ? queueLengthLabel(list) : undefined
     }, [settings.queueMode, queue.manual, queue.items])
-    // Re-read the totals as book lengths resolve in the background.
-    useSyncExternalStore(subscribeQueueDurations, queueDurationsVersion)
-    useEffect(() => {
-      ensureQueueDurations(shownIds)
-    }, [shownIds])
-    const lengthLabel = shownIds.length > 0 ? queueLengthLabel(queueLength(shownIds)) : undefined
 
     // A drag inside the merged Auto list reorders the MANUAL rows among
     // themselves. Take the post-drag merged order, pull out just the manual
@@ -474,11 +463,7 @@ const AddBooksSheet = forwardRef<SheetHandle>(function AddBooksSheet(_props, ref
               style={styles.addRow}
               disabled={already}
               onPress={() => {
-                addToQueue({
-                  libraryItemId: item.id,
-                  title: itemTitle(item),
-                  author: itemAuthor(item),
-                })
+                addToQueue(queueEntryFor(item))
                 haptics.success()
                 showToast(`Added ${itemTitle(item)} to queue`)
               }}

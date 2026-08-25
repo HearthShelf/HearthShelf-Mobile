@@ -30,6 +30,7 @@ import {
   ignoredItemIds,
   GENERAL_REC_SECTIONS,
   isGeneratedRecShelf,
+  queueLengthLabel,
 } from '@hearthshelf/core'
 import { setSessionExpiredHandler } from '@/api/controlPlane'
 import { breadcrumb } from '@/lib/crashLog'
@@ -95,13 +96,6 @@ import {
   QUEUE_MODES,
 } from '@/player/queue'
 import { QueueSheet } from '@/player/QueueSheet'
-import {
-  ensureQueueDurations,
-  queueLength,
-  queueLengthLabel,
-  queueDurationsVersion,
-  subscribeQueueDurations,
-} from '@/player/queueDurations'
 import type { SheetHandle } from '@/player/sheets'
 import {
   hydrateDismissals,
@@ -1185,13 +1179,6 @@ function DashboardRow({
   const { queueMode } = useSyncExternalStore(subscribeSettings, getSettingsState)
   const modeLabel = QUEUE_MODES.find((m) => m.v === queueMode)?.label ?? 'Off'
   const preview = queue.items.slice(0, 3)
-  // Same count + total length line as the queue tray header, so the card and the
-  // sheet never disagree about how much is queued.
-  const queuedIds = useMemo(() => queue.items.map((e) => e.libraryItemId), [queue.items])
-  useSyncExternalStore(subscribeQueueDurations, queueDurationsVersion)
-  useEffect(() => {
-    ensureQueueDurations(queuedIds)
-  }, [queuedIds])
   // Streak nudge: today has no listening yet but there's a streak to protect.
   const streakAtRisk = stats != null && stats.todaySec === 0 && stats.dayStreak > 0
   return (
@@ -1225,11 +1212,9 @@ function DashboardRow({
           numberOfLines={1}
           style={styles.dashCaption}
         >
-          {queuedIds.length > 0
-            ? queueLengthLabel(queueLength(queuedIds))
-            : `Nothing queued · ${modeLabel}`}
+          {queue.items.length > 0 ? queueLengthLabel(queue.items) : `Nothing queued · ${modeLabel}`}
         </AppText>
-        {queuedIds.length > 0 ? (
+        {queue.items.length > 0 ? (
           <AppText variant="caption" color={colors.textFaint}>
             {modeLabel}
           </AppText>

@@ -11,7 +11,7 @@
 import { useMemo, useRef, useSyncExternalStore } from 'react'
 import { StyleSheet, View } from 'react-native'
 import type { ABSLibraryItem } from '@hearthshelf/core'
-import { addToQueue } from '@/player/queue'
+import { addToQueue, queueEntryFor } from '@/player/queue'
 import { downloadItem, downloadsAllowed } from '@/player/downloads'
 import { AddToListSheet } from '@/player/AddToListSheet'
 import type { SheetHandle } from '@/player/sheets'
@@ -85,7 +85,7 @@ export function BookSelectionToolbar({
   const addToQueueAll = () => {
     const selectedBooks = books.filter((b) => selection.isSelected(b.id))
     for (const b of selectedBooks) {
-      addToQueue({ libraryItemId: b.id, title: itemTitle(b), author: itemAuthor(b) })
+      addToQueue(queueEntryFor(b))
     }
     haptics.success()
     onToast?.(`Added ${selectedBooks.length} to queue`)
