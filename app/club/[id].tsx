@@ -17,10 +17,12 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
+  Keyboard,
   ScrollView,
   StyleSheet,
   TextInput,
   View,
+  type KeyboardEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native'
@@ -196,6 +198,65 @@ export default function ClubRoomScreen() {
   // whichever of the two fires last triggers the scroll.
   const chatSectionYRef = useRef(0)
   const noteYRef = useRef<number | null>(null)
+
+  // Keyboard-aware composer. The reply/edit composer renders INLINE, at the note
+  // it belongs to, inside this ScrollView - so replying to the last comment in a
+  // long thread put the input directly behind the keyboard. Android on SDK 57 is
+  // always edge-to-edge and ignores adjustResize, so the OS will not move it for
+  // us (see the edge-to-edge keyboard note in the app's docs); the scroll view
+  // has to make the room itself.
+  //
+  // Two parts: pad the content by the keyboard's height so the bottom-most
+  // composer CAN be scrolled clear of it, then scroll it into view.
+  const [keyboardHeight, setKeyboardHeight] = useState(0)
+  const composerRef = useRef<View>(null)
+
+  // Scroll the composer clear of the keyboard. measureLayout is ASYNC, so the
+  // scroll happens inside its callback - reading the ref straight after the call
+  // would use the previous measurement and land in the wrong place.
+  //
+  // Measured against the ScrollView rather than summed from section/note
+  // offsets, because the composer renders several levels deep inside whichever
+  // note it belongs to.
+  const scrollComposerIntoView = useCallback((clearance: number) => {
+    const node = scrollRef.current as unknown as View | null
+    if (!node || !composerRef.current) return
+    composerRef.current.measureLayout(
+      node as never,
+      (_x, y, _width, height) => {
+        const bottom = y + height
+        // Land the composer's bottom edge above the keyboard, with a little air.
+        scrollRef.current?.scrollTo({
+          y: Math.max(0, bottom - clearance + 40),
+          animated: true,
+        })
+      },
+      () => {
+        // Measure can fail mid-unmount; the composer just won't auto-scroll.
+      },
+    )
+  }, [])
+
+  useEffect(() => {
+    const onShow = (event: KeyboardEvent) => setKeyboardHeight(event.endCoordinates?.height ?? 0)
+    const onHide = () => setKeyboardHeight(0)
+    const showSub = Keyboard.addListener('keyboardDidShow', onShow)
+    const hideSub = Keyboard.addListener('keyboardDidHide', onHide)
+    return () => {
+      showSub.remove()
+      hideSub.remove()
+    }
+  }, [])
+
+  // Once the keyboard is up AND we know where the composer sits, bring it into
+  // view. Depends on both so it re-runs whichever arrives second.
+  useEffect(() => {
+    if (keyboardHeight <= 0) return
+    // A frame of delay lets the keyboard padding land first, so there is room to
+    // scroll into by the time we measure.
+    const frame = requestAnimationFrame(() => scrollComposerIntoView(keyboardHeight))
+    return () => cancelAnimationFrame(frame)
+  }, [keyboardHeight, scrollComposerIntoView, replyTo?.id, editingNote?.id, composingNew])
 
   const tryScrollToDeepLink = useCallback(() => {
     if (!deepLinkNoteId || scrolledForRef.current === deepLinkNoteId) return
@@ -762,7 +823,17 @@ export default function ClubRoomScreen() {
   }
 
   const composer = (reply: boolean, editing?: HSNote) => (
-    <View style={[styles.composer, styles.inlineComposer]}>
+    <View
+      ref={composerRef}
+      style={[styles.composer, styles.inlineComposer]}
+      // Nudge the keyboard effect to re-measure once this composer has laid out.
+      // Its own layout y is relative to the note that owns it, several levels
+      // down, so it is measured against the ScrollView instead (see
+      // measureComposer) rather than summed from section offsets.
+      onLayout={() => {
+        if (keyboardHeight > 0) scrollComposerIntoView(keyboardHeight)
+      }}
+    >
       {editing ? (
         <View style={styles.replyBanner}>
           <View style={styles.replyBar} />
@@ -906,9 +977,7 @@ export default function ClubRoomScreen() {
             disabled={!body.trim() || busy}
             onPress={() => void (editing ? saveEdit() : submit())}
             accessibilityRole="button"
-            accessibilityLabel={
-              editing ? 'Save changes' : reply ? 'Post reply' : 'Post comment'
-            }
+            accessibilityLabel={editing ? 'Save changes' : reply ? 'Post reply' : 'Post comment'}
           >
             <Icon name={editing ? icons.check : icons.send} size={18} color={colors.onAccent} />
           </Touchable>
@@ -929,7 +998,12 @@ export default function ClubRoomScreen() {
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: miniPlayerInset + spacing.xl }}
+        contentContainerStyle={{
+          // The keyboard's height is added so a composer at the very bottom of
+          // the thread can actually be scrolled above it - without this there is
+          // simply no content left to scroll to.
+          paddingBottom: miniPlayerInset + spacing.xl + keyboardHeight,
+        }}
         showsVerticalScrollIndicator={false}
         onScroll={onScroll}
         scrollEventThrottle={200}
