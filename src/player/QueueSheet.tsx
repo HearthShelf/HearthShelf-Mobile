@@ -48,6 +48,13 @@ import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import type { SheetHandle } from './sheets'
 import { RecomputeQueueButton } from './AutoQueueInfo'
+import {
+  ensureQueueDurations,
+  queueLength,
+  queueLengthLabel,
+  queueDurationsVersion,
+  subscribeQueueDurations,
+} from './queueDurations'
 
 const MODES = QUEUE_MODES
 const MODE_SUB = QUEUE_MODE_SUB
@@ -78,6 +85,21 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
       [queue.manual],
     )
 
+    // Header line: how many books are queued and how long they run. Manual mode
+    // shows the durable hand-picked list; every other mode shows the active
+    // list the player pops from. Off queues nothing, so it gets no line.
+    const shownIds = useMemo(() => {
+      if (settings.queueMode === 'off') return []
+      const list = settings.queueMode === 'manual' ? queue.manual : queue.items
+      return list.map((e) => e.libraryItemId)
+    }, [settings.queueMode, queue.manual, queue.items])
+    // Re-read the totals as book lengths resolve in the background.
+    useSyncExternalStore(subscribeQueueDurations, queueDurationsVersion)
+    useEffect(() => {
+      ensureQueueDurations(shownIds)
+    }, [shownIds])
+    const lengthLabel = shownIds.length > 0 ? queueLengthLabel(queueLength(shownIds)) : undefined
+
     // A drag inside the merged Auto list reorders the MANUAL rows among
     // themselves. Take the post-drag merged order, pull out just the manual
     // rows in their new relative order, and persist that as the manual list.
@@ -90,7 +112,13 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
 
     return (
       <>
-        <Sheet ref={sheetRef} title="Up next" kicker="On the hearth" snapPoints={['80%']}>
+        <Sheet
+          ref={sheetRef}
+          title="Up next"
+          kicker="On the hearth"
+          subtitle={lengthLabel}
+          snapPoints={['80%']}
+        >
           <View style={styles.segFull}>
             {MODES.map((m) => (
               <Touchable

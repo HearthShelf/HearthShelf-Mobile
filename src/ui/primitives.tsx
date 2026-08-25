@@ -643,6 +643,8 @@ export const Sheet = forwardRef<
     children: React.ReactNode
     title?: string
     kicker?: string
+    /** Optional line under the title (e.g. a queue's book count + total length). */
+    subtitle?: string
     snapPoints?: BottomSheetModalProps['snapPoints']
     /** Caps a dynamic-sizing sheet's height (ignored when snapPoints is set).
      *  Needed when a child scroll view's maxHeight can't bound the measured
@@ -654,13 +656,22 @@ export const Sheet = forwardRef<
     onDismiss?: () => void
   }
 >(function Sheet(
-  { children, title, kicker, snapPoints, maxDynamicContentSize, stackBehavior, onDismiss },
+  {
+    children,
+    title,
+    kicker,
+    subtitle,
+    snapPoints,
+    maxDynamicContentSize,
+    stackBehavior,
+    onDismiss,
+  },
   ref,
 ) {
   const colors = useColors()
   const styles = useStyles()
   const insets = useSafeAreaInsets()
-  const header = (kicker || title) && (
+  const header = (kicker || title || subtitle) && (
     <View style={styles.sheetHeader}>
       {kicker ? (
         <AppText variant="caption" color={colors.textMuted}>
@@ -668,6 +679,11 @@ export const Sheet = forwardRef<
         </AppText>
       ) : null}
       {title ? <AppText variant="title">{title}</AppText> : null}
+      {subtitle ? (
+        <AppText variant="caption" color={colors.textMuted}>
+          {subtitle}
+        </AppText>
+      ) : null}
     </View>
   )
   // No snapPoints -> dynamic sizing, which must measure a BottomSheetView. With
