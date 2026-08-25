@@ -419,6 +419,16 @@ export function jumpToReturnPosition(): void {
   requestSeek(target)
 }
 
+/**
+ * Throw away the return target without seeking. The furthest spot was reached
+ * by playback the listener wasn't there for (asleep with no sleep timer), so
+ * where they are now becomes the real furthest point.
+ */
+export function dismissReturnPosition(): void {
+  if (state.returnPosition === null) return
+  set({ returnPosition: null })
+}
+
 export function jumpBy(delta: number): void {
   if (!state.nowPlaying) return
   haptics.transport()

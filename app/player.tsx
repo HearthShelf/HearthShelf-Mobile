@@ -41,7 +41,6 @@ import {
   getState,
   subscribe,
   togglePlay,
-  jumpToReturnPosition,
   jumpBy,
   requestSeek,
   currentChapter,
@@ -49,6 +48,7 @@ import {
   endRateBoost,
 } from '@/player/store'
 import { skipChapterOrFinish } from '@/player/advance'
+import { ReturnPositionPill } from '@/player/ReturnPositionPill'
 import { getQueueState, subscribeQueue } from '@/player/queue'
 import { getProgressState, subscribeProgress } from '@/store/progress'
 import { BookActionsSheet, type BookActionsHandle } from '@/ui/BookActionsSheet'
@@ -998,17 +998,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                   />
                 )}
                 {!immersive && returnPosition !== null && (
-                  <Touchable
-                    style={styles.returnPosition}
-                    onPress={jumpToReturnPosition}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Jump to furthest position, ${formatTimestamp(returnPosition)}`}
-                  >
-                    <Icon name={icons.recent} size={15} color="#fff" />
-                    <AppText variant="caption" color="#fff" style={{ fontWeight: '700' }}>
-                      Jump to furthest
-                    </AppText>
-                  </Touchable>
+                  <ReturnPositionPill position={returnPosition} />
                 )}
                 {/* Zoom lives in the cover's top-left corner now that a tap no
                     longer opens the lightbox. */}
@@ -2346,21 +2336,6 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
       backgroundColor: 'rgba(20,17,15,0.5)',
       alignItems: 'center',
       justifyContent: 'center',
-    },
-    returnPosition: {
-      position: 'absolute',
-      top: 10,
-      left: 56,
-      right: 56,
-      minHeight: 44,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: spacing.xs,
-      paddingHorizontal: spacing.md,
-      borderRadius: radius.pill,
-      backgroundColor: withAlpha(colors.accent, 0.94),
-      zIndex: 24,
     },
     // Speed readout while the artwork is held down (hold-to-fast-forward).
     boostBadge: {

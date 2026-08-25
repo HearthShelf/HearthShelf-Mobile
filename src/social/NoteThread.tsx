@@ -243,8 +243,30 @@ function NoteBubble({
               </AppText>
             </View>
           ) : null}
+          {/* Your own comment renders un-gated for you, so without these chips
+              you can't tell what anyone else sees: whether it's held back until
+              they reach this moment, and whether it's blurred until tapped. */}
+          {mine && !note.safe && note.visibility !== 'personal' && note.timeSec != null ? (
+            <View style={styles.chip}>
+              <Icon name={icons.hidden} size={11} color={colors.textMuted} />
+              <AppText variant="caption" color={colors.textMuted}>
+                Hidden until here
+              </AppText>
+            </View>
+          ) : null}
+          {mine && note.spoiler ? (
+            <View style={styles.chip}>
+              <Icon name={icons.hidden} size={11} color={colors.textMuted} />
+              <AppText variant="caption" color={colors.textMuted}>
+                Spoiler
+              </AppText>
+            </View>
+          ) : null}
         </View>
-        {note.spoiler && !spoilerRevealed ? (
+        {/* Your own spoiler stays readable - the chip above already tells you
+            it's blurred for everyone else, and covering it hid the flag so well
+            that editing was the only way to find out. */}
+        {note.spoiler && !spoilerRevealed && !mine ? (
           <Touchable
             style={styles.spoilerCover}
             onPress={() => setSpoilerRevealed(true)}
@@ -335,6 +357,8 @@ export function NoteThread({
   newSinceTs,
   replyComposerFor,
   replyComposer,
+  editComposerFor,
+  editComposer,
 }: {
   notes: HSNote[]
   chapters?: ChapterMark[]
@@ -361,6 +385,11 @@ export function NoteThread({
   /** Render the reply field directly beneath the thread it will join. */
   replyComposerFor?: string
   replyComposer?: ReactNode
+  /** Editing replaces the comment in place rather than opening a second
+   *  surface, so the one composer that already handles the keyboard is the
+   *  only text field in the thread. */
+  editComposerFor?: string
+  editComposer?: ReactNode
 }) {
   // Group replies under their parents; keep top-level notes in createdAt order.
   const { tops, repliesByParent } = useMemo(() => {
@@ -413,36 +442,44 @@ export function NoteThread({
                 <View style={[newStyles.newLine, { backgroundColor: colors.accent }]} />
               </View>
             ) : null}
-            <NoteBubble
-              note={n}
-              chapters={chapters}
-              durationSec={durationSec}
-              meId={meId}
-              canModerate={canModerate}
-              highlighted={n.id === highlightId}
-              onReply={onReply}
-              onDelete={onDelete}
-              onOpenUser={onOpenUser}
-              onReact={onReact}
-              onOpenReactions={onOpenReactions}
-              onOpenActions={onOpenActions}
-            />
-            {replies.map((r) => (
+            {editComposerFor === n.id ? (
+              editComposer
+            ) : (
               <NoteBubble
-                key={r.id}
-                note={r}
+                note={n}
                 chapters={chapters}
+                durationSec={durationSec}
                 meId={meId}
-                isReply
                 canModerate={canModerate}
-                highlighted={r.id === highlightId}
+                highlighted={n.id === highlightId}
+                onReply={onReply}
                 onDelete={onDelete}
                 onOpenUser={onOpenUser}
                 onReact={onReact}
                 onOpenReactions={onOpenReactions}
                 onOpenActions={onOpenActions}
               />
-            ))}
+            )}
+            {replies.map((r) =>
+              editComposerFor === r.id ? (
+                <View key={r.id}>{editComposer}</View>
+              ) : (
+                <NoteBubble
+                  key={r.id}
+                  note={r}
+                  chapters={chapters}
+                  meId={meId}
+                  isReply
+                  canModerate={canModerate}
+                  highlighted={r.id === highlightId}
+                  onDelete={onDelete}
+                  onOpenUser={onOpenUser}
+                  onReact={onReact}
+                  onOpenReactions={onOpenReactions}
+                  onOpenActions={onOpenActions}
+                />
+              ),
+            )}
             {replyComposerFor === n.id ? replyComposer : null}
           </View>
         )

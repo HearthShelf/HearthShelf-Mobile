@@ -177,10 +177,7 @@ export default function ClubRoomScreen() {
   const [reactionDetails, setReactionDetails] = useState<HSNoteReactionDetail[]>([])
   const [reactionKind, setReactionKind] = useState<NoteReactionKind | null>(null)
   const [reactionNote, setReactionNote] = useState<HSNote | null>(null)
-  const editSheetRef = useRef<SheetRef>(null)
   const [editingNote, setEditingNote] = useState<HSNote | null>(null)
-  const [editBody, setEditBody] = useState('')
-  const [editSpoiler, setEditSpoiler] = useState(false)
   // The note a long-press opened the action menu for.
   const [actionNote, setActionNote] = useState<HSNote | null>(null)
   const ownerSheetRef = useRef<SheetRef>(null)
@@ -420,12 +417,15 @@ export default function ClubRoomScreen() {
   }
 
   const saveEdit = async () => {
-    if (!editingNote || busy || !editBody.trim()) return
+    const text = body.trim()
+    if (!editingNote || busy || !text) return
     setBusy(true)
     const updated = await editNote(editingNote.id, {
-      body: editBody.trim(),
-      spoiler: editSpoiler,
-      timeSec: editingNote.timeSec,
+      body: text,
+      spoiler,
+      // A stamp can be dropped while editing, but not re-pointed at wherever
+      // you happen to be listening now - the comment stays where it was made.
+      timeSec: stampEnabled ? editingNote.timeSec : null,
     })
     setBusy(false)
     if (!updated) return show('Could not edit that comment')
@@ -440,7 +440,7 @@ export default function ClubRoomScreen() {
           }
         : prev,
     )
-    editSheetRef.current?.dismiss()
+    closeComposer()
   }
 
   const openNoteActions = (note: HSNote) => {
@@ -752,6 +752,7 @@ export default function ClubRoomScreen() {
 
   const closeComposer = () => {
     setReplyTo(null)
+    setEditingNote(null)
     setComposingNew(false)
     setBody('')
     setMentionPicks([])
@@ -760,8 +761,23 @@ export default function ClubRoomScreen() {
     setStampEnabled(true)
   }
 
-  const composer = (reply: boolean) => (
+  const composer = (reply: boolean, editing?: HSNote) => (
     <View style={[styles.composer, styles.inlineComposer]}>
+      {editing ? (
+        <View style={styles.replyBanner}>
+          <View style={styles.replyBar} />
+          <AppText variant="caption" color={colors.accent} style={{ flex: 1 }}>
+            Editing your comment
+          </AppText>
+          <IconButton
+            name={icons.close}
+            size={16}
+            color={colors.textMuted}
+            onPress={closeComposer}
+            accessibilityLabel="Cancel edit"
+          />
+        </View>
+      ) : null}
       {reply && replyTo ? (
         <View style={styles.replyBanner}>
           <View style={styles.replyBar} />
@@ -782,7 +798,23 @@ export default function ClubRoomScreen() {
           />
         </View>
       ) : null}
-      {playingThisBook ? (
+      {editing ? (
+        editing.timeSec != null && stampEnabled ? (
+          <View style={styles.stampChip}>
+            <Icon name={icons.schedule} size={14} color={colors.accent} />
+            <AppText variant="caption" color={colors.accent} style={{ flex: 1 }}>
+              {stampLabel(editing.timeSec, chapters)}
+            </AppText>
+            <IconButton
+              name={icons.close}
+              size={14}
+              color={colors.accent}
+              onPress={() => setStampEnabled(false)}
+              accessibilityLabel="Remove attached position"
+            />
+          </View>
+        ) : null
+      ) : playingThisBook ? (
         stampEnabled ? (
           <View style={styles.stampChip}>
             <Icon name={icons.schedule} size={14} color={colors.accent} />
@@ -826,7 +858,13 @@ export default function ClubRoomScreen() {
       <TextInput
         style={styles.input}
         autoFocus
-        placeholder={reply && replyTo ? `Reply to ${replyTo.username}…` : 'Start a new thread…'}
+        placeholder={
+          editing
+            ? 'Edit your comment…'
+            : reply && replyTo
+              ? `Reply to ${replyTo.username}…`
+              : 'Start a new thread…'
+        }
         placeholderTextColor={colors.textFaint}
         value={body}
         onChangeText={setBody}
@@ -850,7 +888,7 @@ export default function ClubRoomScreen() {
               Spoiler
             </AppText>
           </Touchable>
-          {!reply ? <SafeSwitch on={safe} onChange={setSafe} /> : null}
+          {!reply && !editing ? <SafeSwitch on={safe} onChange={setSafe} /> : null}
         </View>
         <View style={styles.composerActions}>
           <Touchable
@@ -866,11 +904,13 @@ export default function ClubRoomScreen() {
           <Touchable
             style={[styles.sendBtn, (!body.trim() || busy) && { opacity: 0.5 }]}
             disabled={!body.trim() || busy}
-            onPress={() => void submit()}
+            onPress={() => void (editing ? saveEdit() : submit())}
             accessibilityRole="button"
-            accessibilityLabel={reply ? 'Post reply' : 'Post comment'}
+            accessibilityLabel={
+              editing ? 'Save changes' : reply ? 'Post reply' : 'Post comment'
+            }
           >
-            <Icon name={icons.send} size={18} color={colors.onAccent} />
+            <Icon name={editing ? icons.check : icons.send} size={18} color={colors.onAccent} />
           </Touchable>
         </View>
       </View>
@@ -1073,6 +1113,10 @@ export default function ClubRoomScreen() {
                 onOpenActions={openNoteActions}
                 replyComposerFor={replyTo?.id}
                 replyComposer={replyTo ? composer(true) : undefined}
+                editComposerFor={editingNote?.id}
+                editComposer={
+                  editingNote ? composer(!!editingNote.parentId, editingNote) : undefined
+                }
                 onNoteLayout={(_, y) => {
                   noteYRef.current = y
                   tryScrollToDeepLink()
@@ -1648,10 +1692,12 @@ export default function ClubRoomScreen() {
                 style={styles.sheetAction}
                 onPress={() => {
                   noteActionsRef.current?.dismiss()
+                  setReplyTo(null)
+                  setComposingNew(false)
                   setEditingNote(actionNote)
-                  setEditBody(actionNote.body)
-                  setEditSpoiler(actionNote.spoiler)
-                  editSheetRef.current?.present()
+                  setBody(actionNote.body)
+                  setSpoiler(actionNote.spoiler)
+                  setStampEnabled(actionNote.timeSec != null)
                 }}
               >
                 <Icon name={icons.edit} size={20} color={colors.textMuted} />
@@ -1746,42 +1792,6 @@ export default function ClubRoomScreen() {
             </Touchable>
           ))
         )}
-      </Sheet>
-
-      <Sheet ref={editSheetRef} title="Edit comment">
-        <TextInput
-          style={styles.editInput}
-          value={editBody}
-          onChangeText={setEditBody}
-          multiline
-          maxLength={2000}
-          autoFocus
-          placeholderTextColor={colors.textFaint}
-        />
-        <Touchable
-          style={[styles.spoilerToggle, editSpoiler && styles.spoilerToggleOn]}
-          onPress={() => setEditSpoiler((value) => !value)}
-          accessibilityRole="switch"
-          accessibilityState={{ checked: editSpoiler }}
-        >
-          <Icon
-            name={editSpoiler ? icons.hidden : icons.visible}
-            size={18}
-            color={editSpoiler ? colors.accent : colors.textMuted}
-          />
-          <AppText variant="meta" color={editSpoiler ? colors.accent : colors.textMuted}>
-            Mark as spoiler
-          </AppText>
-        </Touchable>
-        <Touchable
-          style={[styles.saveEditButton, (!editBody.trim() || busy) && { opacity: 0.5 }]}
-          disabled={!editBody.trim() || busy}
-          onPress={() => void saveEdit()}
-        >
-          <AppText variant="label" color={colors.onAccent}>
-            {busy ? 'Saving…' : 'Save changes'}
-          </AppText>
-        </Touchable>
       </Sheet>
 
       {/* Layered over the actions sheet, so picking an emoji (or backing out)
@@ -2360,26 +2370,6 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.accentWash,
       borderWidth: 1,
       borderColor: colors.accent,
-    },
-    editInput: {
-      minHeight: 120,
-      maxHeight: 240,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.hairline,
-      borderRadius: radius.row,
-      padding: spacing.md,
-      color: colors.text,
-      fontSize: 16,
-      textAlignVertical: 'top',
-      marginBottom: spacing.md,
-    },
-    saveEditButton: {
-      minHeight: 48,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginTop: spacing.md,
-      borderRadius: radius.pill,
-      backgroundColor: colors.accent,
     },
     inviteHelp: { marginBottom: spacing.md, lineHeight: 20 },
     inviteList: { paddingBottom: spacing.md },
