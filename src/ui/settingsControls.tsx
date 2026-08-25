@@ -395,6 +395,61 @@ export function ChipRow<T extends number>({
   )
 }
 
+/**
+ * Multi-select chips for choosing WHICH delivery channels one notification type
+ * uses. Unlike ChipRow (pick one of N) every chip toggles independently, because
+ * these are not alternatives - a reaction can reasonably be push + in-app but
+ * not email, which is the whole point of having this control.
+ *
+ * `disabled` chips still render, greyed: a channel switched off globally should
+ * be visibly unavailable here rather than silently missing, so the reason a
+ * notification isn't arriving stays discoverable.
+ */
+export function ChannelChips<T extends string>({
+  options,
+  selected,
+  disabled,
+  onToggle,
+}: {
+  options: { id: T; label: string }[]
+  selected: Record<string, boolean>
+  /** Channel ids that cannot be toggled here, with why (shown as a hint). */
+  disabled?: Partial<Record<T, string>>
+  onToggle: (id: T, next: boolean) => void
+}) {
+  const colors = useColors()
+  const styles = useStyles()
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+      {options.map((option) => {
+        const on = Boolean(selected[option.id])
+        const lock = disabled?.[option.id]
+        return (
+          <Pressable
+            key={option.id}
+            onPress={() => !lock && onToggle(option.id, !on)}
+            disabled={Boolean(lock)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: on, disabled: Boolean(lock) }}
+            accessibilityLabel={lock ? `${option.label}. ${lock}` : option.label}
+            android_ripple={lock ? undefined : { color: colors.fillStrong }}
+            style={({ pressed }) => [
+              styles.chip,
+              on && !lock && styles.chipOn,
+              pressed && !lock && styles.pressed,
+              lock ? { opacity: 0.4 } : null,
+            ]}
+          >
+            <AppText variant="label" color={on && !lock ? colors.onAccent : colors.text}>
+              {option.label}
+            </AppText>
+          </Pressable>
+        )
+      })}
+    </View>
+  )
+}
+
 // ---- Accent colour swatch picker ----
 
 /** The accent presets, matching the web/WebApp palette. */

@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { AppState, Linking, Pressable, View } from 'react-native'
 import { useRouter } from 'expo-router'
-import { coverHue, countdownLabel } from '@hearthshelf/core'
+import { coverHue, countdownLabel, resolveChannels } from '@hearthshelf/core'
 import type { HSSubscription, NotifyChannel, NotifyType } from '@hearthshelf/core'
 import { getSettingsState, subscribeSettings, setSetting } from '@/store/settings'
 import {
@@ -23,12 +23,21 @@ import {
   SettingsRow,
   SettingsToggle,
   SettingsSlider,
+  ChannelChips,
 } from '@/ui/settingsControls'
 import { AppText, Cover, IconButton, Loading, icons } from '@/ui/primitives'
+import type { IconName } from '@/ui/icons'
 import { EAS_PROJECT_ID } from '@/lib/config'
 import { getPushStatus, subscribePushStatus } from '@/player/pushRegister'
 import { spacing } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
+
+/** The three delivery channels, in the order they appear under Delivery. */
+const CHANNEL_OPTIONS: { id: NotifyChannel; label: string }[] = [
+  { id: 'inApp', label: 'In app' },
+  { id: 'push', label: 'Push' },
+  { id: 'email', label: 'Email' },
+]
 
 export default function NotificationsPanel() {
   const s = useSyncExternalStore(subscribeSettings, getSettingsState)
@@ -94,6 +103,71 @@ export default function NotificationsPanel() {
     })
   }
 
+  // Per-type channel choice. The stored shape is an OVERRIDE of `global`, and a
+  // type with no override inherits it - so the first edit has to materialize the
+  // currently-resolved set, otherwise flipping one channel off would silently
+  // re-pin the other two to today's global values.
+  const setTypeChannel = (type: NotifyType, channel: NotifyChannel, on: boolean) => {
+    const current = resolveChannels(prefs, type)
+    const channels = { ...current, [channel]: on }
+    setSetting('notifyPrefs', {
+      ...prefs,
+      types: { ...prefs.types, [type]: { ...prefs.types[type], channels } },
+    })
+  }
+
+  // A channel switched off globally can't be turned on for one type - the global
+  // row is the master. Say so on the chip instead of hiding it, so "why is this
+  // not arriving" stays answerable from this screen.
+  const lockedChannels = (type: NotifyType): Partial<Record<NotifyChannel, string>> => {
+    const locks: Partial<Record<NotifyChannel, string>> = {}
+    if (!prefs.global.inApp) locks.inApp = 'Turn on In app under Delivery first.'
+    if (!prefs.global.push) locks.push = 'Turn on Mobile push under Delivery first.'
+    if (!prefs.global.email) locks.email = 'Turn on Email under Delivery first.'
+    // An invite you cannot see is an invite you cannot accept, which strands
+    // both you and whoever sent it. The server floors this on regardless, so the
+    // chip must not offer a choice it will not honour.
+    if (type === 'clubInvite') locks.inApp = 'Invites always show in the app.'
+    return locks
+  }
+
+  /** One notification type: its on/off switch plus which channels it uses. */
+  const typeRow = (
+    type: NotifyType,
+    opts: { icon: IconName; title: string; desc: string; last?: boolean; note?: string },
+  ) => {
+    const enabled = prefs.types[type].enabled
+    const channels = { ...resolveChannels(prefs, type) }
+    // Mirror the server's floor so the chip shows what will actually happen.
+    if (type === 'clubInvite') channels.inApp = true
+    return (
+      <SettingsRow
+        icon={opts.icon}
+        title={opts.title}
+        desc={opts.desc}
+        stacked
+        last={opts.last}
+        control={<SettingsToggle on={enabled} onChange={(value) => setTypeEnabled(type, value)} />}
+      >
+        {enabled ? (
+          <View style={{ gap: spacing.xs }}>
+            <ChannelChips
+              options={CHANNEL_OPTIONS}
+              selected={{ ...channels }}
+              disabled={lockedChannels(type)}
+              onToggle={(channel, next) => setTypeChannel(type, channel, next)}
+            />
+            {opts.note ? (
+              <AppText variant="caption" color={colors.textMuted}>
+                {opts.note}
+              </AppText>
+            ) : null}
+          </View>
+        ) : null}
+      </SettingsRow>
+    )
+  }
+
   const setRelease = (patch: Partial<typeof release>) => {
     setSetting('notifyPrefs', {
       ...prefs,
@@ -151,51 +225,38 @@ export default function NotificationsPanel() {
             />
           }
         />
-        <SettingsRow
-          icon={icons.bell}
-          title="Club mentions"
-          desc="When someone @mentions you in a book club discussion."
-          control={
-            <SettingsToggle
-              on={prefs.types.mention.enabled}
-              onChange={(value) => setTypeEnabled('mention', value)}
-            />
-          }
-        />
-        <SettingsRow
-          icon={icons.bell}
-          title="Comment reactions"
-          desc="When someone reacts to one of your club comments."
-          control={
-            <SettingsToggle
-              on={prefs.types.reaction.enabled}
-              onChange={(value) => setTypeEnabled('reaction', value)}
-            />
-          }
-        />
-        <SettingsRow
-          icon={icons.bell}
-          title="Comment replies"
-          desc="When someone replies to one of your club comments."
-          control={
-            <SettingsToggle
-              on={prefs.types.reply.enabled}
-              onChange={(value) => setTypeEnabled('reply', value)}
-            />
-          }
-        />
-        <SettingsRow
-          icon={icons.star}
-          title="Rate a finished book"
-          desc="Ask how it was when you finish a book. Shows in your tray only."
-          control={
-            <SettingsToggle
-              on={prefs.types.rating.enabled}
-              onChange={(value) => setTypeEnabled('rating', value)}
-            />
-          }
-          last
-        />
+        {typeRow('clubInvite', {
+          icon: icons.people,
+          title: 'Book club invites',
+          desc: 'When someone invites you to join their book club.',
+          note: 'Invites always appear in the app so you can accept them.',
+        })}
+        {typeRow('mention', {
+          icon: icons.mention,
+          title: 'Club mentions',
+          desc: 'When someone @mentions you in a book club discussion.',
+        })}
+        {typeRow('reply', {
+          icon: icons.chat,
+          title: 'Comment replies',
+          desc: 'When someone replies to one of your club comments.',
+        })}
+        {typeRow('lateNote', {
+          icon: icons.chat,
+          title: 'Comments on parts you’ve heard',
+          desc: 'When someone comments on a spot you already listened past.',
+        })}
+        {typeRow('reaction', {
+          icon: icons.thumbUp,
+          title: 'Comment reactions',
+          desc: 'When someone reacts to one of your club comments.',
+        })}
+        {typeRow('rating', {
+          icon: icons.star,
+          title: 'Rate a finished book',
+          desc: 'Ask how it was when you finish a book.',
+          last: true,
+        })}
       </SettingsGroup>
 
       {release.enabled ? (
