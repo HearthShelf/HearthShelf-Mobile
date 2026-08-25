@@ -433,14 +433,18 @@ export function ChannelChips<T extends string>({
             accessibilityState={{ checked: on, disabled: Boolean(lock) }}
             accessibilityLabel={lock ? `${option.label}. ${lock}` : option.label}
             android_ripple={lock ? undefined : { color: colors.fillStrong }}
+            // `on` and `lock` are independent: a locked chip may be locked
+            // because it is forced ON (club invites always reach the tray) or
+            // forced OFF (the channel is disabled globally). Showing every
+            // locked chip as off would misreport what actually happens.
             style={({ pressed }) => [
               styles.chip,
-              on && !lock && styles.chipOn,
+              on && styles.chipOn,
               pressed && !lock && styles.pressed,
               lock ? { opacity: 0.4 } : null,
             ]}
           >
-            <AppText variant="label" color={on && !lock ? colors.onAccent : colors.text}>
+            <AppText variant="label" color={on ? colors.onAccent : colors.text}>
               {option.label}
             </AppText>
           </Pressable>
