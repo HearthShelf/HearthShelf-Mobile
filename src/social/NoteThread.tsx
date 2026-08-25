@@ -29,13 +29,26 @@ export interface ChapterMark {
   end: number
 }
 
-/** "Chapter 3 - 1:02:05" for a timestamped note, or just the timestamp when no
- *  chapter list is available. null for a general (ungated) note. */
-export function stampLabel(timeSec: number | null, chapters: ChapterMark[]): string | null {
+/** "Chapter 3 - 1:02:05 - 42%" for a timestamped note, dropping whichever parts
+ *  aren't known: no chapter list, or no duration to compute a percentage from.
+ *  null for a general (ungated) note.
+ *
+ *  The percentage exists so a comment can be read against the member-progress
+ *  list, which shows how far through everyone is. Previously a comment gave only
+ *  a time and the progress list gave only a percent, so neither could be
+ *  compared with the other (HS-MOBILEAPP-25). */
+export function stampLabel(
+  timeSec: number | null,
+  chapters: ChapterMark[],
+  durationSec?: number,
+): string | null {
   if (timeSec == null) return null
   const ch = chapters.find((c) => timeSec >= c.start && timeSec < c.end)
-  const ts = formatTimestamp(timeSec)
-  return ch?.title ? `${ch.title} · ${ts}` : ts
+  const parts = [ch?.title, formatTimestamp(timeSec)].filter(Boolean) as string[]
+  if (durationSec && durationSec > 0) {
+    parts.push(`${Math.round(Math.max(0, Math.min(1, timeSec / durationSec)) * 100)}%`)
+  }
+  return parts.join(' · ')
 }
 
 function authoredLabel(createdAt: number): string {
@@ -125,6 +138,7 @@ function NoteBody({ note, onOpenUser }: { note: HSNote; onOpenUser?: (userId: st
 function NoteBubble({
   note,
   chapters,
+  durationSec,
   meId,
   isReply,
   canModerate,
@@ -139,6 +153,8 @@ function NoteBubble({
 }: {
   note: HSNote
   chapters: ChapterMark[]
+  /** Book length, so the stamp can show how far through the book it is. */
+  durationSec?: number
   meId: string
   isReply?: boolean
   /** Club owner / admin may delete any note; otherwise only own notes. */
@@ -163,7 +179,7 @@ function NoteBubble({
   const colors = useColors()
   const styles = useStyles()
   const mine = note.userId === meId
-  const stamp = stampLabel(note.timeSec, chapters)
+  const stamp = stampLabel(note.timeSec, chapters, durationSec)
   const canDelete = (mine || canModerate) && !!onDelete
   const [spoilerRevealed, setSpoilerRevealed] = useState(false)
   return (
@@ -305,6 +321,7 @@ function NoteBubble({
 export function NoteThread({
   notes,
   chapters = [],
+  durationSec,
   meId,
   canModerate,
   highlightId,
@@ -321,6 +338,7 @@ export function NoteThread({
 }: {
   notes: HSNote[]
   chapters?: ChapterMark[]
+  durationSec?: number
   meId: string
   canModerate?: boolean
   /** Note id to highlight + report layout for (deep-link from a note-pop). */
@@ -398,6 +416,7 @@ export function NoteThread({
             <NoteBubble
               note={n}
               chapters={chapters}
+              durationSec={durationSec}
               meId={meId}
               canModerate={canModerate}
               highlighted={n.id === highlightId}

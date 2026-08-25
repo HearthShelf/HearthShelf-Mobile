@@ -34,7 +34,7 @@ import type {
   NoteReactionKind,
   HSNoteReactionDetail,
 } from '@hearthshelf/core'
-import { coverHue, sortMembersByProgress, quickReactions } from '@hearthshelf/core'
+import { coverHue, formatTimestamp, sortMembersByProgress, quickReactions } from '@hearthshelf/core'
 import {
   getClub,
   setClubMembership,
@@ -716,6 +716,14 @@ export default function ClubRoomScreen() {
   }
 
   const sortedMembers = sortMembersByProgress(detail.members)
+  // One resolution of the book's length, shared by the progress bar and the
+  // note stamps: the live player when this book is loaded, else whatever length
+  // a member's progress row reports.
+  const bookDurationSec = playingThisBook
+    ? (player.nowPlaying?.duration ?? 0)
+    : (detail.members.find((member) => member.userId === meId)?.duration ??
+      sortedMembers.find((member) => member.duration)?.duration ??
+      0)
   const pendingInvitees = (invitees ?? []).filter((invitee) => invitee.pendingInviteId)
   // Books that have left the current slot, whether the club finished them or set
   // them aside. Both belong in the history sheet - a set aside book is the one
@@ -962,13 +970,7 @@ export default function ClubRoomScreen() {
                   ? position
                   : (detail.members.find((member) => member.userId === meId)?.currentTime ?? 0)
               }
-              duration={
-                playingThisBook
-                  ? (player.nowPlaying?.duration ?? 0)
-                  : (detail.members.find((member) => member.userId === meId)?.duration ??
-                    sortedMembers.find((member) => member.duration)?.duration ??
-                    0)
-              }
+              duration={bookDurationSec}
               expanded={progressExpanded}
               onPress={() => setProgressExpanded((value) => !value)}
             />
@@ -1056,6 +1058,7 @@ export default function ClubRoomScreen() {
               <NoteThread
                 notes={detail.notes.notes}
                 chapters={chapters}
+                durationSec={bookDurationSec}
                 meId={meId}
                 canModerate={isOwner}
                 highlightId={highlightId ?? undefined}
@@ -1898,8 +1901,13 @@ function MemberRace({
           {finished ? (
             <Icon name={icons.checkCircle} size={15} color={colors.success} />
           ) : (
+            // Percent AND timestamp. A percentage alone can't be compared with a
+            // comment, which is stamped at a time - so "42%" and "1:02:05" were
+            // two units for the same thing and neither could be read against the
+            // other (HS-MOBILEAPP-25).
             <AppText variant="caption" color={colors.textMuted}>
               {Math.round(fraction * 100)}%
+              {member.currentTime != null ? ` · ${formatTimestamp(member.currentTime)}` : ''}
             </AppText>
           )}
         </View>
