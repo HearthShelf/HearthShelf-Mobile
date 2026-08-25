@@ -251,35 +251,44 @@ export function PlayerClubStrip({
     [onComposingChange],
   )
 
+  // The composer's resting bottom edge in window coords, captured while the
+  // keyboard is closed. Measuring only at rest means the lift never feeds back
+  // into its own measurement - the old measure-per-frame loop re-entered through
+  // onLayout and overshot wildly before settling.
+  const restingBottom = useRef(0)
+
+  const measureResting = useCallback(() => {
+    composerRef.current?.measureInWindow((_x, y, _width, height) => {
+      restingBottom.current = y + currentLift.current + height
+    })
+  }, [])
+
   useEffect(() => {
     if (!composing) return
-    const frame = requestAnimationFrame(() => inputRef.current?.focus())
+    // Measure the resting box before focusing, so the first keyboard event has
+    // real geometry to work from instead of a zero default.
+    const frame = requestAnimationFrame(() => {
+      measureResting()
+      inputRef.current?.focus()
+    })
     return () => cancelAnimationFrame(frame)
-  }, [composing])
+  }, [composing, measureResting])
 
   const positionAboveKeyboard = useCallback(
     (keyboardTop: number, duration = 180) => {
-      requestAnimationFrame(() => {
-        composerRef.current?.measureInWindow((_x, y, _width, height) => {
-          // measureInWindow includes the current transform. Add the current lift
-          // back to recover the composer's resting artwork position, then move
-          // only by the actual overlap. This stays correct when font/display
-          // scale changes while the keyboard is already open.
-          const restingY = y + currentLift.current
-          const restingBottom = restingY + height
-          const desired = Math.max(0, restingBottom + spacing.md - keyboardTop)
-          const capped = Math.min(desired, Math.max(0, restingY - spacing.md))
-          currentLift.current = capped
-          Animated.timing(keyboardLift, {
-            toValue: capped,
-            duration: Math.max(120, duration),
-            // Animate layout rather than a transform. Android's visual transform
-            // moved the input above the keyboard but left text-selection handles
-            // and hit testing at its old coordinates.
-            useNativeDriver: false,
-          }).start()
-        })
-      })
+      // Derived from the keyboard's own reported top edge, not from a re-measure
+      // of the moving composer, so this is a single settled target - no bounce.
+      const overlap = restingBottom.current + spacing.md - keyboardTop
+      const next = Math.max(0, overlap)
+      if (Math.abs(next - currentLift.current) < 1) return
+      currentLift.current = next
+      Animated.timing(keyboardLift, {
+        toValue: next,
+        duration: Math.max(120, duration),
+        // Layout, not transform: an Android transform moves the pixels but
+        // leaves hit testing and text-selection handles at the old coordinates.
+        useNativeDriver: false,
+      }).start()
     },
     [keyboardLift],
   )
@@ -377,8 +386,12 @@ export function PlayerClubStrip({
     return (
       <Animated.View
         ref={composerRef}
-        style={[styles.keyboardAvoider, { bottom: keyboardLift }]}
+        style={[styles.keyboardAvoider, { marginBottom: keyboardLift }]}
         onLayout={() => {
+          // Re-measure the resting geometry only (cheap, and correct when text
+          // scale or composer height changes), then re-derive the lift from the
+          // keyboard's reported position rather than from the moving composer.
+          measureResting()
           const metrics = Keyboard.metrics()
           if (metrics) positionAboveKeyboard(metrics.screenY)
         }}
@@ -685,6 +698,9 @@ const makeStyles = (colors: Palette) =>
       gap: 5,
     },
     openClubCopy: { fontWeight: '800' },
+    // Stays in flow so it contributes height to its bottom-anchored parent.
+    // Going absolute here collapsed the parent to zero height, which put the
+    // composer outside its parent's bounds - where Android delivers no touches.
     keyboardAvoider: { width: '100%', overflow: 'visible' },
     composer: {
       width: '100%',
