@@ -26,6 +26,7 @@ import {
 } from '@/ui/settingsControls'
 import { AppText, Cover, IconButton, Loading, icons } from '@/ui/primitives'
 import { EAS_PROJECT_ID } from '@/lib/config'
+import { getPushStatus, subscribePushStatus } from '@/player/pushRegister'
 import { spacing } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 
@@ -59,6 +60,12 @@ export default function NotificationsPanel() {
       }
     })()
   }, [])
+
+  // The permission check above only catches a phone that REFUSED alerts. It says
+  // nothing about the other way push dies: permission granted, but the build
+  // could never mint a token, so the app looks correctly configured and nothing
+  // ever arrives. pushStatus is the registration's own account of what happened.
+  const pushStatus = useSyncExternalStore(subscribePushStatus, getPushStatus)
   useEffect(() => {
     checkPermission()
     const sub = AppState.addEventListener('change', (st) => {
@@ -238,6 +245,43 @@ export default function NotificationsPanel() {
       ) : null}
 
       {/* Actionable permission row: push is on, but the OS denied it. */}
+      {prefs.global.push && !osDenied && pushStatus === 'active' ? (
+        <SettingsGroup>
+          <SettingsRow
+            icon={icons.bell}
+            title="Push is active on this device"
+            desc="This phone is registered, so alerts can reach you even when HearthShelf is closed."
+            last
+          />
+        </SettingsGroup>
+      ) : null}
+
+      {prefs.global.push &&
+      !osDenied &&
+      (pushStatus === 'unsupported' || pushStatus === 'unconfigured') ? (
+        <SettingsGroup>
+          <SettingsRow
+            icon="notifications-off"
+            title="Push isn't available on this device"
+            desc="Your phone allows alerts, but this copy of the app can't receive them. Everything still shows up in the app and by email. Reinstalling the latest version from the store usually fixes it."
+            danger
+            last
+          />
+        </SettingsGroup>
+      ) : null}
+
+      {prefs.global.push && !osDenied && pushStatus === 'server-error' ? (
+        <SettingsGroup>
+          <SettingsRow
+            icon="notifications-off"
+            title="Couldn't finish setting up push"
+            desc="This phone is ready, but your server didn't accept it. It'll try again next time the app connects."
+            danger
+            last
+          />
+        </SettingsGroup>
+      ) : null}
+
       {prefs.global.push && osDenied ? (
         <Pressable onPress={() => void Linking.openSettings()}>
           <SettingsGroup>

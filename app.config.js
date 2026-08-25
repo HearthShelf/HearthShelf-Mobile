@@ -10,6 +10,9 @@
 // New Architecture is the only architecture on SDK 57, so there is no
 // `newArchEnabled` field - it is always on.
 
+const fs = require('fs')
+const path = require('path')
+
 // All values here are PUBLIC by design (see .env.example). The Google client
 // SECRET is never here - it lives only in the Clerk dashboard.
 // EAS project id for the HearthShelf org project. Public identifier (safe to
@@ -40,6 +43,36 @@ const GOOGLE_IOS_CLIENT_ID =
 const GOOGLE_IOS_URL_SCHEME =
   process.env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME ||
   'com.googleusercontent.apps.177026646968-rprkhf1i7dbdcfqgf717dgp0d7g06f4l'
+
+// Android FCM credentials (google-services.json), needed for Expo push tokens to
+// mint at all. Unlike the public ids above this file is NOT committed - it is
+// gitignored - so it cannot simply be baked as a default. It has to reach a
+// build one of two ways:
+//   1. GOOGLE_SERVICES_JSON - a path, or (on EAS) a file-type environment
+//      variable, which EAS materializes on disk and exposes as that path. This
+//      is how CI and every release build must get it.
+//   2. ./google-services.json sitting in the repo root - the local dev case.
+// Anything else means the build ships with no FCM sender, no push token ever
+// mints, and every push-delivered notification is dropped in silence while the
+// in-app tray and email keep working. That combination is precisely what hid
+// this for a full release cycle, so a missing file WARNS here rather than
+// failing quietly at runtime. See docs/push-setup.md.
+function resolveGoogleServices() {
+  const fromEnv = process.env.GOOGLE_SERVICES_JSON
+  if (fromEnv && fs.existsSync(fromEnv)) return fromEnv
+  if (fromEnv) {
+    console.warn(
+      `[hearthshelf] GOOGLE_SERVICES_JSON is set to "${fromEnv}" but no file is there. Android push is DISABLED for this build.`,
+    )
+  }
+  const local = path.join(__dirname, 'google-services.json')
+  if (fs.existsSync(local)) return local
+  console.warn(
+    '[hearthshelf] No google-services.json (checked GOOGLE_SERVICES_JSON and the repo root). Android push notifications are DISABLED for this build: no FCM sender means no push token mints, so replies, reactions and mentions will never reach the phone. See docs/push-setup.md.',
+  )
+  return null
+}
+const GOOGLE_SERVICES_FILE = resolveGoogleServices()
 
 // Sentry DSN. PUBLIC by design (it only permits writing events, and ships in
 // every client bundle) - so it's a committed default like the keys above, NOT an
@@ -172,13 +205,12 @@ module.exports = {
   android: {
     package: 'com.hearthshelf.mobile',
     versionCode,
-    // FCM credentials for Expo push (release notifications). Optional: point
-    // GOOGLE_SERVICES_JSON at a Firebase google-services.json to enable Android
-    // push. Without it the build has no FCM sender and push tokens won't mint;
-    // the in-app countdown still works. See docs/push-setup.md.
-    ...(process.env.GOOGLE_SERVICES_JSON
-      ? { googleServicesFile: process.env.GOOGLE_SERVICES_JSON }
-      : {}),
+    // FCM credentials for Expo push. Without a google-services.json the build
+    // has no FCM sender, so no push token ever mints and EVERY push-delivered
+    // notification is silently dropped - the in-app tray and email still work,
+    // which is exactly what made this hard to spot. resolveGoogleServices()
+    // warns loudly when that is about to happen.
+    ...(GOOGLE_SERVICES_FILE ? { googleServicesFile: GOOGLE_SERVICES_FILE } : {}),
     adaptiveIcon: {
       backgroundColor: '#1B1A18',
       foregroundImage: './assets/android-icon-foreground.png',
