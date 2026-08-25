@@ -1002,11 +1002,11 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                     style={styles.returnPosition}
                     onPress={jumpToReturnPosition}
                     accessibilityRole="button"
-                    accessibilityLabel={`Jump to latest position, ${formatTimestamp(returnPosition)}`}
+                    accessibilityLabel={`Jump to furthest position, ${formatTimestamp(returnPosition)}`}
                   >
                     <Icon name={icons.recent} size={15} color="#fff" />
                     <AppText variant="caption" color="#fff" style={{ fontWeight: '700' }}>
-                      Jump to latest
+                      Jump to furthest
                     </AppText>
                   </Touchable>
                 )}
