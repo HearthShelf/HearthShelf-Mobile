@@ -33,6 +33,7 @@ import type {
   HSClubDetail,
   HSClubMember,
   HSNote,
+  HSNoteStub,
   NoteReactionKind,
   HSNoteReactionDetail,
 } from '@hearthshelf/core'
@@ -361,7 +362,10 @@ export default function ClubRoomScreen() {
   const goToTab = useGoToTab()
 
   const isOwner = detail?.members.some((m) => m.userId === meId && m.role === 'owner') ?? false
-  const isMember = detail?.members.some((m) => m.userId === meId) ?? false
+  // The server decides this, not the member list: on a public club it answers a
+  // non-member with a PREVIEW (books, members, progress - no comment bodies),
+  // and says so. Falling back to the roster keeps older servers working.
+  const isMember = detail?.isMember ?? detail?.members.some((m) => m.userId === meId) ?? false
 
   // Pending invitations belong in the Members tab, not only in the invite
   // picker. Load the owner-only roster when that tab opens so the room shows
@@ -1152,7 +1156,15 @@ export default function ClubRoomScreen() {
                 </Touchable>
               )
             ) : null}
-            {detail.notes.notes.length === 0 ? (
+            {!isMember ? (
+              <LockedDiscussion
+                stubs={detail.notes.locked}
+                total={detail.notes.hiddenAhead}
+                durationSec={bookDurationSec}
+                colors={colors}
+                styles={styles}
+              />
+            ) : detail.notes.notes.length === 0 ? (
               <AppText
                 variant="meta"
                 color={colors.textMuted}
@@ -1392,7 +1404,7 @@ export default function ClubRoomScreen() {
       {!isMember ? (
         <View style={styles.joinBar}>
           <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
-            Members see your progress in this club&apos;s books.
+            Join to read the discussion. Members see your progress in this club&apos;s books.
           </AppText>
           <Touchable
             style={styles.joinBtn}
@@ -2017,6 +2029,72 @@ function MemberRace({
 
 // ---- Header ----
 
+/** The discussion as seen from OUTSIDE a public club.
+ *
+ * There is nothing to un-blur here: the server sends no comment bodies to a
+ * non-member, so each row is a stub carrying only who wrote it and where in the
+ * book they were. The blur is honest rather than decorative - tapping does
+ * nothing, because the text does not exist on this device. */
+function LockedDiscussion({
+  stubs,
+  total,
+  durationSec,
+  colors,
+  styles,
+}: {
+  stubs: HSNoteStub[]
+  total: number
+  durationSec: number
+  colors: Palette
+  styles: ReturnType<typeof makeStyles>
+}) {
+  if (total === 0) {
+    return (
+      <AppText variant="meta" color={colors.textMuted} style={{ paddingVertical: spacing.lg }}>
+        No comments on this book yet.
+      </AppText>
+    )
+  }
+  return (
+    <View>
+      <View style={styles.lockedBanner}>
+        <Icon name={icons.lock} size={16} color={colors.textMuted} />
+        <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
+          {total === 1 ? '1 comment is' : `${total} comments are`} hidden. Join this club to read
+          the discussion.
+        </AppText>
+      </View>
+      {stubs.map((stub) => (
+        <View key={stub.id} style={styles.lockedRow}>
+          <Avatar
+            uri={stub.userId ? avatarUrl(stub.userId) : undefined}
+            size={30}
+            name={stub.username ?? ''}
+            hue={coverHue(stub.userId ?? stub.id)}
+          />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <View style={styles.lockedMeta}>
+              <AppText variant="caption" numberOfLines={1}>
+                {stub.username || 'A member'}
+              </AppText>
+              {stub.timeSec != null ? (
+                <AppText variant="caption" color={colors.textMuted}>
+                  {durationSec > 0 ? formatTimestamp(stub.timeSec) : ''}
+                </AppText>
+              ) : null}
+            </View>
+            {/* Fixed-width bars, not the real text - the body never reached us. */}
+            <View style={styles.lockedBars}>
+              <View style={[styles.lockedBar, { width: '92%' }]} />
+              <View style={[styles.lockedBar, { width: '64%' }]} />
+            </View>
+          </View>
+        </View>
+      ))}
+    </View>
+  )
+}
+
 function Header({
   title,
   subtitle,
@@ -2336,6 +2414,36 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.accent,
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    lockedBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      padding: spacing.md,
+      marginBottom: spacing.md,
+      borderRadius: radius.card,
+      backgroundColor: colors.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+    lockedRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing.md,
+      paddingVertical: spacing.md,
+      opacity: 0.55,
+    },
+    lockedMeta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.sm,
+    },
+    lockedBars: { marginTop: spacing.sm, gap: 6 },
+    lockedBar: {
+      height: 9,
+      borderRadius: radius.pill,
+      backgroundColor: colors.hairline,
     },
     joinBar: {
       flexDirection: 'row',

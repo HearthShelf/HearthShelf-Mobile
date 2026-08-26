@@ -116,6 +116,10 @@ export async function getClub(
     if (!res.ok) return null
     const detail = (await res.json()) as HSClubDetail
     detail.club = withPolicyDefaults(detail.club)
+    // A server from before club previews existed only ever answers members, so
+    // a missing flag means "member". Defaulting the other way would hide the
+    // composer from real members on an older server.
+    detail.isMember = detail.isMember !== false
     return detail.enabled ? detail : null
   } catch {
     return null

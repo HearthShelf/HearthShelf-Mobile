@@ -126,6 +126,13 @@ export default function MyClubsScreen() {
     router.push(`/club/${encodeURIComponent(club.id)}?from=${active}`)
   }
 
+  // Open a public club WITHOUT joining. The room renders its preview: books,
+  // members and progress, with every comment blurred behind a Join prompt.
+  const previewPublicClub = (club: ClubSummary) => {
+    newClubRef.current?.dismiss()
+    router.push(`/club/${encodeURIComponent(club.id)}?from=${active}`)
+  }
+
   const needsYou = clubs?.filter((club) => (unread[club.id] ?? 0) > 0) ?? []
   const quietCutoff = Date.now() - QUIET_AFTER_MS
   const quiet = clubs?.filter((club) => (club.lastActivityAt ?? club.createdAt) < quietCutoff) ?? []
@@ -230,6 +237,7 @@ export default function MyClubsScreen() {
         ref={newClubRef}
         joinable={joinable}
         onJoin={joinPublicClub}
+        onPreview={previewPublicClub}
         onCreate={createNewClub}
         styles={styles}
         colors={colors}
@@ -334,11 +342,12 @@ const NewClubSheet = forwardRef<
   {
     joinable: ClubSummary[]
     onJoin: (club: ClubSummary) => void
+    onPreview: (club: ClubSummary) => void
     onCreate: (name: string, visibility: ClubVisibility) => void
     styles: Styles
     colors: Palette
   }
->(function NewClubSheet({ joinable, onJoin, onCreate, styles, colors }, ref) {
+>(function NewClubSheet({ joinable, onJoin, onPreview, onCreate, styles, colors }, ref) {
   const [name, setName] = useState('')
   const [visibility, setVisibility] = useState<ClubVisibility>('closed')
   return (
@@ -351,7 +360,14 @@ const NewClubSheet = forwardRef<
             </AppText>
             {joinable.map((club) => (
               <View key={club.id} style={styles.joinRow}>
-                <View style={{ flex: 1, minWidth: 0 }}>
+                {/* Tapping the row looks inside first - a public club shows its
+                    books and members to anyone, with the discussion withheld. */}
+                <Touchable
+                  style={{ flex: 1, minWidth: 0 }}
+                  onPress={() => onPreview(club)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Look inside ${club.name}`}
+                >
                   <AppText variant="label" numberOfLines={1}>
                     {club.name}
                   </AppText>
@@ -359,7 +375,7 @@ const NewClubSheet = forwardRef<
                     {club.currentBook?.title ?? 'Choosing a first book'} · {club.memberCount}{' '}
                     {club.memberCount === 1 ? 'member' : 'members'}
                   </AppText>
-                </View>
+                </Touchable>
                 <Touchable
                   style={styles.joinButton}
                   onPress={() => onJoin(club)}
