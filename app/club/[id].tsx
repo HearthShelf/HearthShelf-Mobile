@@ -57,7 +57,6 @@ import {
   getClubInvitees,
   inviteClubUsers,
   revokeClubInvite,
-  setClubVisibility,
   type ClubInvitee,
 } from '@/api/clubs'
 import { holdClubPolling } from '@/player/clubSync'
@@ -591,19 +590,6 @@ export default function ClubRoomScreen() {
     } else {
       show('Could not archive')
     }
-  }
-
-  const changeVisibility = async () => {
-    if (!detail) return
-    const next = detail.club.isOpen ? 'closed' : 'public'
-    const ok = await setClubVisibility(detail.club.id, next)
-    if (!ok) {
-      show('Could not change club visibility')
-      return
-    }
-    haptics.mode()
-    show(next === 'public' ? 'Club is now public' : 'Club is now closed')
-    await load()
   }
 
   const removeClub = async () => {
@@ -1632,24 +1618,7 @@ export default function ClubRoomScreen() {
               <View style={{ flex: 1, minWidth: 0 }}>
                 <AppText variant="body">Club admin</AppText>
                 <AppText variant="caption" color={colors.textMuted}>
-                  Discussion permissions and club controls
-                </AppText>
-              </View>
-            </Touchable>
-            <Touchable style={styles.sheetAction} onPress={() => void changeVisibility()}>
-              <Icon
-                name={detail.club.isOpen ? icons.lock : icons.club}
-                size={20}
-                color={colors.textMuted}
-              />
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <AppText variant="body">
-                  {detail.club.isOpen ? 'Close this club' : 'Make this club public'}
-                </AppText>
-                <AppText variant="caption" color={colors.textMuted}>
-                  {detail.club.isOpen
-                    ? 'Only invited readers will be able to join.'
-                    : 'Anyone on this server will be able to find and join.'}
+                  Who can join, discussion permissions, and reading pace
                 </AppText>
               </View>
             </Touchable>

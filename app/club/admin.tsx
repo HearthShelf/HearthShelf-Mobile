@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ScrollView, StyleSheet, Switch, View } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { getClub, updateClubPolicySettings } from '@/api/clubs'
+import { getClub, setClubVisibility, updateClubPolicySettings } from '@/api/clubs'
 import { AppText, IconButton, Loading, Screen, Touchable, icons } from '@/ui/primitives'
 import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { Toast, useToast } from '@/ui/Toast'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
+import { haptics } from '@/ui/haptics'
 
 export default function ClubAdminScreen() {
   const router = useRouter()
@@ -20,6 +21,7 @@ export default function ClubAdminScreen() {
   const [editing, setEditing] = useState(true)
   const [replies, setReplies] = useState(true)
   const [autoAdvance, setAutoAdvance] = useState(false)
+  const [isPublic, setIsPublic] = useState(true)
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -31,10 +33,24 @@ export default function ClubAdminScreen() {
         setEditing(detail.club.allowCommentEditing)
         setReplies(detail.club.allowReplies)
         setAutoAdvance(detail.club.autoAdvanceOnAllFinished)
+        setIsPublic(detail.club.isOpen)
       }
       setLoaded(true)
     })
   }, [id])
+
+  // Visibility has its own endpoint, so it saves the moment it is flipped
+  // rather than waiting for Save changes. Revert the switch if the server says no.
+  const changeVisibility = async (next: boolean) => {
+    setIsPublic(next)
+    const ok = await setClubVisibility(id, next ? 'public' : 'closed')
+    if (!ok) {
+      setIsPublic(!next)
+      return show('Could not change who can join')
+    }
+    haptics.mode()
+    show(next ? 'Anyone on this server can join' : 'People can only join by invitation')
+  }
 
   const save = async () => {
     if (!id || busy) return
@@ -72,6 +88,23 @@ export default function ClubAdminScreen() {
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
           <AppText variant="eyebrow" color={colors.textMuted}>
+            Who can join
+          </AppText>
+          <View style={styles.card}>
+            <SettingRow
+              title="Let anyone on this server join"
+              description="Your club is listed so people can find it and join on their own."
+              value={isPublic}
+              onChange={(next) => void changeVisibility(next)}
+              colors={colors}
+            />
+          </View>
+          <AppText variant="caption" color={colors.textMuted} style={styles.help}>
+            {isPublic
+              ? 'Turn this off and people can only join if you invite them. Members already in the club stay in it.'
+              : 'People can only join if you invite them.'}
+          </AppText>
+          <AppText variant="eyebrow" color={colors.textMuted} style={styles.section}>
             Discussion permissions
           </AppText>
           <View style={styles.card}>
