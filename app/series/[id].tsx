@@ -244,6 +244,9 @@ export default function SeriesDetailScreen() {
   // would permanently cap a fully-caught-up series below 100% and mark a phantom
   // segment on the track.
   const missingReleased = missing.filter((b) => !(b.upcoming ?? isUpcoming(b, Date.now())))
+  // Books in the series that aren't out yet. Kept out of the completion math
+  // above, but still worth saying so the count matches what the list shows.
+  const upcomingCount = missing.length - missingReleased.length
   const completion = seriesCompletion({
     ownedProgressSum: sum,
     ownedCount: books.length,
@@ -356,6 +359,7 @@ export default function SeriesDetailScreen() {
               {done} of {completion.totalCount} finished · {listenedHours.toFixed(0)}h of{' '}
               {totalHours.toFixed(0)}h
               {completion.missingCount > 0 ? ` · ${completion.missingCount} not in library` : ''}
+              {upcomingCount > 0 ? ` · ${upcomingCount} coming soon` : ''}
             </AppText>
           </View>
           <SegmentTrack

@@ -385,8 +385,13 @@ export async function getSeriesWithBooks(
   const books = data.results ?? []
   if (!books.length) return null
   // The filtered item list carries no series NAME, so take it from the books'
-  // own series metadata (every item in the result belongs to this series).
-  const name = books.map((b) => b.media?.metadata?.seriesName).find((n): n is string => !!n) ?? ''
+  // own series metadata (every item in the result belongs to this series). That
+  // field is DENORMALIZED and carries the book's own sequence ("1-800-Starship
+  // #1"), so strip it - the bare name is what the header shows and what the
+  // Audible roster lookup matches on (a name with "#1" resolves nothing, which
+  // silently dropped the unowned and coming-soon rows from this screen).
+  const raw = books.map((b) => b.media?.metadata?.seriesName).find((n): n is string => !!n) ?? ''
+  const name = raw.replace(/\s*#\s*[\d.]+\s*$/, '')
   return {
     id: seriesId,
     name,
