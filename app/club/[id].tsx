@@ -36,7 +36,13 @@ import type {
   NoteReactionKind,
   HSNoteReactionDetail,
 } from '@hearthshelf/core'
-import { coverHue, formatTimestamp, sortMembersByProgress, quickReactions } from '@hearthshelf/core'
+import {
+  coverHue,
+  formatTimestamp,
+  queueLengthLabel,
+  sortMembersByProgress,
+  quickReactions,
+} from '@hearthshelf/core'
 import {
   getClub,
   setClubMembership,
@@ -1207,9 +1213,16 @@ export default function ClubRoomScreen() {
         {section === 'queue' && isCurrentView && (detail.queue.length > 0 || isOwner) ? (
           <View style={styles.queueSection}>
             <View style={styles.queueHead}>
-              <AppText variant="eyebrow" color={colors.textMuted}>
-                Up next
-              </AppText>
+              <View style={styles.queueHeadLabel}>
+                <AppText variant="eyebrow" color={colors.textMuted}>
+                  Up next
+                </AppText>
+                {detail.queue.length > 0 ? (
+                  <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
+                    {queueLengthLabel(detail.queue)}
+                  </AppText>
+                ) : null}
+              </View>
               {isOwner ? (
                 <Touchable
                   style={styles.addBooksBtn}
@@ -2221,6 +2234,10 @@ const makeStyles = (colors: Palette) =>
       gap: spacing.sm,
       marginBottom: spacing.sm,
     },
+    // Eyebrow + queue summary sit together on the left so "Add books" stays
+    // pinned right; the summary shrinks first when a long total meets a narrow
+    // screen.
+    queueHeadLabel: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexShrink: 1 },
     addBooksBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, padding: spacing.xs },
     chatSection: { paddingHorizontal: spacing.lg, marginTop: spacing.lg },
     newThreadButton: {
