@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ScrollView, StyleSheet, Switch, View } from 'react-native'
+import { ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { getClub, setClubVisibility, updateClubPolicySettings } from '@/api/clubs'
+import { getClub, renameClub, setClubVisibility, updateClubPolicySettings } from '@/api/clubs'
 import { AppText, IconButton, Loading, Screen, Touchable, icons } from '@/ui/primitives'
 import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { Toast, useToast } from '@/ui/Toast'
@@ -18,6 +18,7 @@ export default function ClubAdminScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors])
   const { message, show } = useToast()
   const [name, setName] = useState('Club admin')
+  const [draftName, setDraftName] = useState('')
   const [editing, setEditing] = useState(true)
   const [replies, setReplies] = useState(true)
   const [autoAdvance, setAutoAdvance] = useState(false)
@@ -30,6 +31,7 @@ export default function ClubAdminScreen() {
     void getClub(id).then((detail) => {
       if (detail) {
         setName(detail.club.name)
+        setDraftName(detail.club.name)
         setEditing(detail.club.allowCommentEditing)
         setReplies(detail.club.allowReplies)
         setAutoAdvance(detail.club.autoAdvanceOnAllFinished)
@@ -38,6 +40,26 @@ export default function ClubAdminScreen() {
       setLoaded(true)
     })
   }, [id])
+
+  // Rename has its own endpoint too, and unlike the switches it needs an
+  // explicit confirm - you do not want a club renamed on every keystroke.
+  const trimmedName = draftName.trim()
+  const nameDirty = trimmedName.length > 0 && trimmedName !== name
+
+  const saveName = async () => {
+    if (!id || busy || !nameDirty) return
+    setBusy(true)
+    const stored = await renameClub(id, trimmedName)
+    setBusy(false)
+    if (!stored) {
+      setDraftName(name)
+      return show('Could not rename the club')
+    }
+    setName(stored)
+    setDraftName(stored)
+    haptics.success()
+    show(`Renamed to ${stored}`)
+  }
 
   // Visibility has its own endpoint, so it saves the moment it is flipped
   // rather than waiting for Save changes. Revert the switch if the server says no.
@@ -88,6 +110,36 @@ export default function ClubAdminScreen() {
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
           <AppText variant="eyebrow" color={colors.textMuted}>
+            Club name
+          </AppText>
+          <View style={styles.nameRow}>
+            <TextInput
+              style={styles.input}
+              value={draftName}
+              onChangeText={setDraftName}
+              placeholder="Club name"
+              placeholderTextColor={colors.textFaint}
+              maxLength={120}
+              returnKeyType="done"
+              onSubmitEditing={() => void saveName()}
+              accessibilityLabel="Club name"
+            />
+            <Touchable
+              style={[styles.renameBtn, (!nameDirty || busy) && { opacity: 0.5 }]}
+              disabled={!nameDirty || busy}
+              onPress={() => void saveName()}
+              accessibilityRole="button"
+              accessibilityLabel="Save the club name"
+            >
+              <AppText variant="label" color={colors.onAccent}>
+                Rename
+              </AppText>
+            </Touchable>
+          </View>
+          <AppText variant="caption" color={colors.textMuted} style={styles.help}>
+            Everyone in the club sees the new name right away.
+          </AppText>
+          <AppText variant="eyebrow" color={colors.textMuted} style={styles.section}>
             Who can join
           </AppText>
           <View style={styles.card}>
@@ -219,6 +271,31 @@ const makeStyles = (colors: Palette) =>
       borderColor: colors.hairline,
     },
     help: { marginTop: spacing.md, lineHeight: 18 },
+    nameRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      marginTop: spacing.sm,
+    },
+    input: {
+      flex: 1,
+      minHeight: 48,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.row,
+      backgroundColor: colors.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      color: colors.text,
+      fontSize: 15,
+    },
+    renameBtn: {
+      minHeight: 48,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: spacing.lg,
+      borderRadius: radius.pill,
+      backgroundColor: colors.accent,
+    },
     section: { marginTop: spacing.xl },
     save: {
       minHeight: 48,

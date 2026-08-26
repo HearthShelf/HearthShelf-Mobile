@@ -148,6 +148,25 @@ export async function createClub(
   }
 }
 
+/** Owner-only rename. Returns the stored name, or null if the server refused
+ * (not the owner, archived club, or a name that is empty or too long). */
+export async function renameClub(id: string, name: string): Promise<string | null> {
+  const session = getSession()
+  if (!session) return null
+  try {
+    const res = await fetch(`${session.serverUrl}/hs/clubs/${encodeURIComponent(id)}/name`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    if (!res.ok) return null
+    const value = (await res.json()) as { name?: string }
+    return typeof value.name === 'string' ? value.name : null
+  } catch {
+    return null
+  }
+}
+
 /** Owner-only visibility change. Closed clubs remain available by invitation. */
 export async function setClubVisibility(id: string, visibility: ClubVisibility): Promise<boolean> {
   const session = getSession()

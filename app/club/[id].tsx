@@ -26,7 +26,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native'
-import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import type {
   HSClubBook,
@@ -354,6 +354,15 @@ export default function ClubRoomScreen() {
     const t = setInterval(() => void loadRef.current(), ROOM_POLL_MS)
     return () => clearInterval(t)
   }, [])
+
+  // Coming back from Club admin, the club may have been renamed or its
+  // visibility changed. Waiting up to a poll interval for that to appear reads
+  // as the change not having taken, so refresh on focus.
+  useFocusEffect(
+    useCallback(() => {
+      void loadRef.current()
+    }, []),
+  )
 
   // While the room is open, force the club/notes background poll on so the pop
   // watcher's stubs stay fresh even if the playing book isn't this club's book.
