@@ -1033,7 +1033,9 @@ export default function ClubRoomScreen() {
                 </AppText>
               ) : null}
             </View>
-            {pastBooks.length > 0 || !isCurrentView ? (
+            {/* Members only: a preview is pinned to the club's current book by
+                the server, so a history switcher would do nothing. */}
+            {isMember && (pastBooks.length > 0 || !isCurrentView) ? (
               <Touchable
                 style={styles.historyBtn}
                 onPress={() => historySheetRef.current?.present()}
