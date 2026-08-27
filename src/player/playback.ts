@@ -22,7 +22,14 @@ import {
 } from '@/api/abs'
 import { getSession } from '@/api/session'
 import type { ABSMediaProgress } from '@hearthshelf/core'
-import { progressFor, recordLocalProgress, serverProgressUpdatedAt } from '@/store/progress'
+import {
+  progressFor,
+  recordLocalProgress,
+  serverProgressUpdatedAt,
+  isFinished,
+  markFinished,
+} from '@/store/progress'
+import { endOfListenVerdict } from './completion'
 import {
   loadTrack,
   getState,
@@ -403,7 +410,7 @@ export async function playItemById(
   if (!track && !local) throw new Error('no_audio_track')
 
   // Close any prior ABS session first.
-  if (active) await safeClose()
+  if (active) await safeClose(true)
   // An offline session being replaced by a real one has its accrued time on disk
   // already (every tick banks it), but bank once more so the row carries the true
   // position at handoff rather than the position at the last tick.
@@ -512,7 +519,7 @@ async function loadPreview(
 ): Promise<void> {
   // Close whatever was live: loading a different book into the player ends the
   // previous listen, exactly as the session-opening path does.
-  if (active) await safeClose()
+  if (active) await safeClose(true)
   if (offline) bankOffline(offline, getState().position)
   offline = null
   lastTickTime = null
@@ -636,7 +643,7 @@ async function playFromDownloadOffline(
   const first = local.tracks[0]
   if (!first) throw new Error('no_local_track')
 
-  if (active) await safeClose()
+  if (active) await safeClose(true)
   lastTickTime = null
 
   // Re-entry for the SAME book continues the SAME banked session instead of
@@ -1047,10 +1054,48 @@ export async function handOffToCar(): Promise<void> {
   await safeClose()
 }
 
-async function safeClose(): Promise<void> {
+/**
+ * Mark a book finished when the listener moved on from inside the end buffer.
+ *
+ * Runs after the session close so the server already holds the true final
+ * position; this only promotes the row to finished. Failures are swallowed - the
+ * launch sweep re-evaluates the same row later, so a dead network costs nothing
+ * but a delay. Never awaited by the close path: nothing downstream depends on
+ * the verdict, and a slow write must not hold up loading the next book.
+ */
+async function completeIfDone(
+  itemId: string,
+  position: number,
+  duration: number,
+  chapters?: { start: number; end: number }[],
+): Promise<void> {
+  if (isFinished(itemId)) return
+  const v = endOfListenVerdict({ currentTime: position, duration, chapters })
+  if (!v.isFinished) return
+  breadcrumb('finish', `${itemId} auto-finished on leave (${v.reason})`)
+  await markFinished(itemId, true, duration).catch(() => {})
+}
+
+/**
+ * Close the live ABS session.
+ *
+ * `judgeFinish` asks whether this close also ENDS the listen for good - moving
+ * on to another book, or stopping. Those are the moments a listener has decided
+ * they are done, so a position inside the finish buffer (or past the trailing
+ * credits) should complete the book rather than leave it at 99%.
+ *
+ * It is opt-in because not every close is a goodbye: handOffToCar() closes the
+ * session while playback CONTINUES in the car, and finishing the book there
+ * would end a listen that is still going.
+ */
+async function safeClose(judgeFinish = false): Promise<void> {
   if (!active) return
   const { sessionId, itemId, duration, pendingListened } = active
   const pos = getState().position
+  // Read chapters before setActiveSession(null) - the verdict wants the live
+  // book's marks, and a later caller may have already loaded the next book.
+  const chapters =
+    getState().nowPlaying?.itemId === itemId ? getState().nowPlaying?.chapters : undefined
   setActiveSession(null)
   lastTickTime = null
   // The close below carries the final position, so a queued settle-push would be
@@ -1070,6 +1115,7 @@ async function safeClose(): Promise<void> {
     // The close banked everything outstanding, so the safety buffer is spent.
     clearStreamingPending(itemId)
     if (pendingListened > 0) syncStateSynced(startedNow())
+    if (judgeFinish) void completeIfDone(itemId, pos, duration, chapters)
   } catch {
     // Close failed - leave the buffer alone so the next launch replays the time.
     if (pendingListened > 0) syncStateFailed()
@@ -1084,6 +1130,6 @@ export async function stopPlayback(): Promise<void> {
     offline = null
     lastTickTime = null
   }
-  await safeClose()
+  await safeClose(true)
   syncStateClear()
 }

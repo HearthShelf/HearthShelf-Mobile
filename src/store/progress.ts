@@ -18,6 +18,10 @@ import { breadcrumb } from '@/lib/crashLog'
 import { reportProgressDrop } from '@/store/progressResetReport'
 import { getSettingsState } from '@/store/settings'
 import { isDownloaded, deleteDownload } from '@/player/downloads'
+// Leaf imports: player/store holds no reference back to this store, and
+// player/completion only reads settings - so neither closes an import cycle.
+import { getState as getPlayerState } from '@/player/store'
+import { sweepVerdict } from '@/player/completion'
 import { finishDatePrompt } from '@/ui/FinishDatePrompt'
 
 export interface ProgressState {
@@ -258,7 +262,42 @@ export async function refreshProgress(): Promise<ABSMeResponse> {
   }
   cleanupFinishedDownloads(prev, next)
   emit(next)
+  void sweepAbandonedNearEnd(next)
   return me
+}
+
+/**
+ * Finish books the listener walked away from inside the end buffer.
+ *
+ * A pause is not a decision, so the close path can't catch everyone: pause 40
+ * seconds from the end, come back tomorrow and open a DIFFERENT book, and the
+ * first one never passes through a close with its chapters loaded. It would sit
+ * at 99% forever - the "never finishes anything" profile this feature exists to
+ * fix. This is the catch-up pass, run on the refresh that already reconciles
+ * server state.
+ *
+ * Deliberately conservative, because it acts with nobody watching:
+ *  - the row must be past halfway and inside the buffer (see sweepVerdict),
+ *  - the currently-loaded book is skipped entirely: it isn't abandoned, it's
+ *    open, and the listener may be about to resume it,
+ *  - it only ever promotes to finished, never the reverse.
+ *
+ * Progress rows carry no chapter data, so only the flat time buffer applies -
+ * the chapter-aware rules stay with the close path, which has the live marks.
+ * Fire-and-forget: the writes are optimistic in markItemsFinished, and anything
+ * that fails is simply re-evaluated on the next refresh.
+ */
+function sweepAbandonedNearEnd(rows: ReadonlyMap<string, ABSMediaProgress>): void {
+  const openItemId = getPlayerState().nowPlaying?.itemId
+  const due: { id: string; duration: number }[] = []
+  for (const [id, p] of rows) {
+    if (id === openItemId) continue
+    if (overrides.has(id)) continue
+    if (sweepVerdict(p)) due.push({ id, duration: p.duration })
+  }
+  if (due.length === 0) return
+  breadcrumb('finish', `sweep auto-finishing ${due.length} abandoned book(s)`)
+  void markItemsFinished(due, true, undefined, { recomputeQueue: false }).catch(() => {})
 }
 
 /**

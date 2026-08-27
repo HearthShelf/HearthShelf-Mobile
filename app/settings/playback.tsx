@@ -246,6 +246,39 @@ export default function PlaybackPanel() {
         </SettingsRow>
       </SettingsGroup>
 
+      <SettingsLabel
+        onReset={() => resetSection('Finishing', ['finishBufferSec', 'finishSkipEndMatter'])}
+      >
+        Finishing
+      </SettingsLabel>
+      <SettingsGroup>
+        <SettingsRow
+          title="Count as finished near the end"
+          desc="Most books end with credits or an outro nobody listens to. Move on with less than this left and the book counts as finished instead of sitting just short."
+          stacked
+        >
+          <SettingsSlider
+            value={s.finishBufferSec}
+            min={0}
+            max={300}
+            step={5}
+            ticks={[0, 60, 120]}
+            onChange={(v) => setSetting('finishBufferSec', v)}
+            formatLabel={(v) => (v === 0 ? 'Off' : v < 60 ? `${v}s` : `${Math.round(v / 60)} min`)}
+          />
+        </SettingsRow>
+        <SettingsRow
+          title="Skip end credits and bloopers"
+          desc="Treats the last chapter as the ending, however long it runs. Turn this off if you listen to bloopers and author interviews."
+          control={
+            <SettingsToggle
+              on={s.finishSkipEndMatter}
+              onChange={(v) => setSetting('finishSkipEndMatter', v)}
+            />
+          }
+        />
+      </SettingsGroup>
+
       <SettingsLabel>Queue</SettingsLabel>
       <SettingsGroup>
         <SettingsRow

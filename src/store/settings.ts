@@ -224,6 +224,10 @@ export interface SettingsState {
   // Delete a book's local download automatically once you finish it, to free up
   // space. Applies to any download (manual or auto). Account-scoped.
   removeDownloadOnFinish: boolean
+  /** Seconds of audio that may remain and still count as finished. 0 = off. */
+  finishBufferSec: number
+  /** Treat the final chapter (credits/bloopers) as the end, whatever its length. */
+  finishSkipEndMatter: boolean
   haptics: HapticLevel
   hapticIntensity: HapticIntensity
   carMode: CarMode
@@ -340,6 +344,8 @@ let state: SettingsState = {
   carouselPlayer: true,
   hideMiniPlayer: false,
   removeDownloadOnFinish: true,
+  finishBufferSec: 60,
+  finishSkipEndMatter: true,
   haptics: 'minimal',
   hapticIntensity: 'light',
   carMode: 'auto',
