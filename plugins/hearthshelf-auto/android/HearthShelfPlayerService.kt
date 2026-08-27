@@ -82,6 +82,10 @@ class HearthShelfPlayerService : MediaSessionService() {
   private val CMD_REWIND = "com.hearthshelf.REWIND"
   private val CMD_FORWARD = "com.hearthshelf.FORWARD"
 
+  /** How close to the end counts as "played to the end" when STATE_ENDED fires.
+   *  Matches the car service's guard so both surfaces finish a book alike. */
+  private val END_TOLERANCE_MS = 5000L
+
   // ---- shake-to-extend the sleep timer ----
   //
   // Runs in the always-alive foreground service (not JS) so a shake registers even
@@ -433,8 +437,26 @@ class HearthShelfPlayerService : MediaSessionService() {
       }
       override fun onPlaybackStateChanged(state: Int) {
         if (state == Player.STATE_ENDED && HearthShelfAutoModule.carPlayer == null) {
+          // Only a book that actually PLAYED to its end may advance the queue.
+          //
+          // STATE_ENDED is not by itself proof of completion: an over-the-end
+          // seek reaches it too (a 30s skip taken with 2s left), and an EMPTY
+          // player prepares straight to ENDED with no loaded item and duration
+          // C.TIME_UNSET. Reporting either as onEnded marks the book finished
+          // and swaps the phone to the next queue item - a real user report
+          // (finished-and-skipped from a Bluetooth skip near the end), and the
+          // same shape as Sentry HS-MOBILEAPP-F on the car side.
+          //
+          // Positions here are ABSOLUTE book time: this listener is on the raw
+          // ExoPlayer, not the chapter-relative ChapterForwardingPlayer the
+          // MediaSession sees. The car service guards this identically - keep
+          // the two in step.
+          val posMs = player.currentPosition
+          val durMs = player.duration
+          val hasBook = player.currentMediaItem != null
+          val nearEnd = hasBook && durMs > 0 && posMs >= durMs - END_TOLERANCE_MS
           HearthShelfAutoModule.emitState(false)
-          HearthShelfAutoModule.emitEnded()
+          if (nearEnd) HearthShelfAutoModule.emitEnded()
         }
         // Real rebuffer signal for the UI ring: the engine ran out of data while
         // it intends to play. Cleared on any other state (READY resumes, IDLE and
@@ -679,6 +701,47 @@ class HearthShelfPlayerService : MediaSessionService() {
       if (c != null) super.seekTo((c.start * 1000).toLong() + positionMs)
       else super.seekTo(positionMs)
     }
+
+    // Bluetooth headsets and car stereos send SEEK_FORWARD / SEEK_BACK (and
+    // next/previous-item) rather than the custom REWIND/FORWARD buttons, which
+    // only exist in our own notification layout. Left to ForwardingPlayer's
+    // defaults those go straight to the wrapped ExoPlayer in ABSOLUTE time,
+    // which is wrong twice over:
+    //
+    //  1. They bypass JS, so the store never learns the position moved - the
+    //     in-app scrubber and the ABS sync both keep reporting the old spot.
+    //  2. They use Media3's default increment, not the user's skip setting, and
+    //     nothing bounds them, so a skip near the end runs past the final sample
+    //     and lands on STATE_ENDED -> book marked finished, queue advanced.
+    //
+    // Route them through the same emitJump channel the custom buttons use: JS
+    // owns the position, clamps it inside the book (requestSeek), and commands
+    // the player back. seekToNext/Previous mean chapter navigation here, which
+    // is likewise JS's call - a single-file book has no next media item, so the
+    // default would otherwise be a silent no-op or an unintended stop.
+    override fun seekForward() = HearthShelfAutoModule.emitJump(FORWARD_SEC.toDouble())
+    override fun seekBack() = HearthShelfAutoModule.emitJump(-REWIND_SEC.toDouble())
+    override fun seekToNext() = HearthShelfAutoModule.emitSkipChapter(1)
+    override fun seekToPrevious() = HearthShelfAutoModule.emitSkipChapter(-1)
+    override fun seekToNextMediaItem() = seekToNext()
+    override fun seekToPreviousMediaItem() = seekToPrevious()
+
+    // Media3 gates transport commands on what the player advertises. The wrapped
+    // ExoPlayer holds ONE media item, so it advertises neither next nor previous
+    // and a headset's track buttons arrive disabled - the reason chapter skip
+    // never worked from Bluetooth. Advertise them (plus the seek increments) so
+    // the overrides above are actually reachable.
+    override fun getAvailableCommands(): Player.Commands =
+      super.getAvailableCommands()
+        .buildUpon()
+        .add(Player.COMMAND_SEEK_FORWARD)
+        .add(Player.COMMAND_SEEK_BACK)
+        .add(Player.COMMAND_SEEK_TO_NEXT)
+        .add(Player.COMMAND_SEEK_TO_PREVIOUS)
+        .build()
+
+    override fun isCommandAvailable(command: Int): Boolean =
+      availableCommands.contains(command)
   }
 
   // ---- custom command buttons (circular skip icons) ----

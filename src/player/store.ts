@@ -385,9 +385,22 @@ const RETURN_JUMP_MIN_SEC = 60
 /** The seek we are waiting for the engine to land (see reportPosition). */
 let pendingSeek: { target: number; until: number } | null = null
 
+/** Keep a seek target inside the book.
+ *
+ *  Without the upper bound, a skip-forward taken near the end (30s skip with 2s
+ *  left) targets past the final sample. ExoPlayer answers an over-the-end seek
+ *  with STATE_ENDED, which the phone service reports as onEnded - so the book is
+ *  marked finished and the queue advances, from what the listener meant as a
+ *  skip. Landing ON the end instead is the same audible result with no false
+ *  completion. SEEK_END_EPSILON_SEC keeps the target a hair inside the media so
+ *  the engine still treats it as a seek rather than the end of playback. */
+const SEEK_END_EPSILON_SEC = 0.25
+
 export function requestSeek(seconds: number): void {
   if (!state.nowPlaying) return
-  const target = Math.max(0, seconds)
+  const duration = state.nowPlaying.duration
+  const ceiling = duration > 0 ? Math.max(0, duration - SEEK_END_EPSILON_SEC) : Infinity
+  const target = Math.min(Math.max(0, seconds), ceiling)
   const returnPosition =
     state.position - target >= RETURN_JUMP_MIN_SEC
       ? Math.max(state.returnPosition ?? 0, state.position)

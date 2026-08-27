@@ -639,6 +639,18 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
       val map = Arguments.createMap().apply { putDouble("delta", deltaSec) }
       emitter?.invoke("onJump", map)
     }
+    /** Chapter skip requested from a Bluetooth headset / car stereo's
+     *  next-or-previous-track button on the PHONE session. JS owns chapter
+     *  navigation (it holds the marks and decides that "next" from the last
+     *  chapter finishes the book), so this only reports the intent.
+     *
+     *  Reuses the existing onCarChapter event, which JS already routes to
+     *  skipChapterOrFinish - the Android Auto service does this natively in-car,
+     *  so nothing was emitting it until now. */
+    fun emitSkipChapter(direction: Int) {
+      val map = Arguments.createMap().apply { putInt("direction", direction) }
+      emitter?.invoke("onCarChapter", map)
+    }
     /** A shake was detected while a sleep timer is winding down. JS adds the
      *  minutes to the live timer and shows the confirmation toast. */
     fun emitShakeExtend(minutes: Int) {
