@@ -145,3 +145,44 @@ export function audibleStoreUrl(book: { asin?: string; title: string; author: st
     'https://www.audible.com/search?keywords=' + encodeURIComponent(`${book.title} ${book.author}`)
   )
 }
+
+/** Owned/total counts for one series, as the library list reads them. */
+export interface SeriesGapSummary {
+  seriesId: string
+  /** Books in the series after phantom/duplicate filtering, released or not. */
+  total: number
+  /** Released books the library doesn't hold. Excludes unreleased ones - nobody
+   *  could own those, and counting them would leave a caught-up series
+   *  permanently incomplete. */
+  missing: number
+  /** Books announced but not out yet. */
+  upcoming: number
+  resolvedAt: number
+}
+
+/**
+ * Gap counts for every series the nightly sweep has resolved, in ONE request.
+ *
+ * The series list needs one fact per row for hundreds of rows, so this returns
+ * counts only - fetching the rosters themselves would be megabytes to render a
+ * badge, and one request per row would be worse. Series the sweep hasn't reached
+ * are simply absent, and those rows render as they did before.
+ *
+ * Degrades to an empty list on any failure (offline, slim deploy, Audible turned
+ * off): the counts are decoration, and the library must still render without
+ * them.
+ */
+export async function fetchSeriesGapSummaries(): Promise<SeriesGapSummary[]> {
+  const s = getSession()
+  if (!s) return []
+  try {
+    const res = await fetch(`${s.serverUrl}/hs/audible/series-summary`, {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${s.token}` },
+    })
+    if (!res.ok) return []
+    const body = (await res.json()) as { series?: SeriesGapSummary[] }
+    return body.series ?? []
+  } catch {
+    return []
+  }
+}

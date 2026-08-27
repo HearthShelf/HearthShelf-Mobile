@@ -76,6 +76,7 @@ import { BookTile } from '@/ui/BookTile'
 import { EmptyState, SkeletonTile } from '@/ui/states'
 import { playItemById } from '@/player/playback'
 import { useConnection } from '@/api/ConnectionProvider'
+import { fetchSeriesGapSummaries, type SeriesGapSummary } from '@/api/absAudible'
 import { BookSelectionToolbar } from '@/ui/BookSelectionToolbar'
 import { getProgressState, subscribeProgress, refreshProgress } from '@/store/progress'
 import {
@@ -1233,6 +1234,10 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
   const contentInset = useContentInset()
   const [groups, setGroups] = useState<GroupRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Gap counts for every swept series, in ONE request rather than one per row.
+  // Empty offline or when the Audible catalog is off, which just means no
+  // badges - see fetchSeriesGapSummaries.
+  const [gaps, setGaps] = useState<ReadonlyMap<string, SeriesGapSummary>>(new Map())
   const [refreshing, setRefreshing] = useState(false)
   // Re-run the load when the offline catalog changes (hydrate finishing, a new
   // download), so offline groups appear once the catalog is populated.
@@ -1253,6 +1258,20 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
       setDesc(next === 'count')
     }
   }
+
+  useEffect(() => {
+    if (mode !== 'series') return
+    let cancelled = false
+    void fetchSeriesGapSummaries()
+      .then((list) => {
+        if (cancelled) return
+        setGaps(new Map(list.map((g) => [g.seriesId, g])))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [mode, libraryId])
 
   const sorted = useMemo(() => {
     if (!groups) return groups
@@ -1440,6 +1459,14 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
                     the fuller picture including missing books. */}
                 {seriesProgressLabel(item, progress) ?? item.sub}
               </AppText>
+              {/* Books the library doesn't hold, on their own line so the label
+                  above keeps its owned-only meaning. Absent when the roster
+                  hasn't been swept - unknown must not read as complete. */}
+              {gapLabel(gaps.get(item.key)) ? (
+                <AppText variant="caption" color={colors.accent}>
+                  {gapLabel(gaps.get(item.key))}
+                </AppText>
+              ) : null}
             </View>
             <IconButton name={icons.chevronRight} color={colors.textMuted} />
           </Touchable>
@@ -1490,6 +1517,16 @@ function seriesProgressLabel(
   for (const id of ids) if (progress.get(id)?.isFinished) finished += 1
   if (finished === 0) return null
   return `${finished} of ${ids.length} finished`
+}
+
+/** "3 not in library · 1 coming soon" for a series row, or null when there is
+ *  nothing to say (no roster, or the library holds everything released). */
+function gapLabel(gap: SeriesGapSummary | undefined): string | null {
+  if (!gap) return null
+  const parts: string[] = []
+  if (gap.missing > 0) parts.push(`${gap.missing} not in library`)
+  if (gap.upcoming > 0) parts.push(`${gap.upcoming} coming soon`)
+  return parts.length ? parts.join(' · ') : null
 }
 
 function seriesToRow(s: ABSSeries): GroupRow {
