@@ -26,6 +26,7 @@ import {
   seriesCompletion,
   countdownLabel,
   isUpcoming,
+  qgSeriesTarget,
   type OwnedSeriesBook,
 } from '@hearthshelf/core'
 import { coverUrl, getSeriesWithBooks, itemAuthor, itemNarrator, itemTitle } from '@/api/abs'
@@ -67,6 +68,7 @@ import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { NotOwnedSheet } from '@/ui/NotOwnedSheet'
 import { CoverGlow } from '@/ui/CoverGlow'
 import { BookSelectionToolbar } from '@/ui/BookSelectionToolbar'
+import { QuestGiverAssessment } from '@/ui/questgiver/QuestGiverAssessment'
 import { useBookSelection } from '@/ui/useBookSelection'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useMiniPlayerInset } from '@/ui/useContentInset'
@@ -403,6 +405,12 @@ export default function SeriesDetailScreen() {
             />
           ) : null}
         </View>
+        <QuestGiverAssessment
+          libraryId={libraryId}
+          target={qgSeriesTarget(series.name, books)}
+          progressById={progressById}
+        />
+
         {/* List head / selection toolbar. Long-press a book to start selecting. */}
         {selection.selecting ? (
           <BookSelectionToolbar selection={selection} books={books} libraryId={libraryId} />

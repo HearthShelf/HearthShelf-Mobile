@@ -39,6 +39,8 @@ import {
 import { recentSessionsFor } from '@/player/sessionCache'
 import { breadcrumb } from '@/lib/crashLog'
 import { getFinishedBy, getListeningNow } from '@/api/social'
+import { QuestGiverAssessment } from '@/ui/questgiver/QuestGiverAssessment'
+import { qgBookTarget } from '@hearthshelf/core'
 import { getNotes } from '@/api/notes'
 import { NotesSheet } from '@/social/NotesSheet'
 import { ClubCard } from '@/social/ClubCard'
@@ -114,6 +116,7 @@ type SectionKey =
   | 'status'
   | 'cta'
   | 'about'
+  | 'fit'
   | 'finishedBy'
   | 'listeningNow'
   | 'notes'
@@ -466,6 +469,7 @@ export default function ItemDetailScreen() {
     'chapters',
     'series',
     'about',
+    'fit',
     'listeningNow',
     'finishedBy',
     'notes',
@@ -525,6 +529,14 @@ export default function ItemDetailScreen() {
           onPress={downloadBook}
         />
       </View>
+    ),
+    fit: (
+      <QuestGiverAssessment
+        key="fit"
+        libraryId={detail.libraryId}
+        target={qgBookTarget(detail)}
+        progressById={progressById}
+      />
     ),
     about: (
       <AboutSection

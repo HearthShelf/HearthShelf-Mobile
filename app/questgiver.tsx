@@ -166,10 +166,7 @@ export default function QuestGiverScreen() {
     }
   }, [])
 
-  const books = useMemo(
-    () => (items ? qgBooks(items, new Map(progressById)) : []),
-    [items, progressById],
-  )
+  const books = useMemo(() => (items ? qgBooks(items, progressById) : []), [items, progressById])
 
   // Profile recomputes from history OR the hand-picked list.
   const profile = useMemo(() => {

@@ -22,6 +22,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import {
   qgHeuristic,
   qgCraftPrompt,
+  qgAssessHeuristic,
+  qgCraftAssessmentPrompt,
+  type QgAssessment,
+  type QgAssessmentContext,
   type QgProfile,
   type QgAnswers,
   type QgCandidate,
@@ -126,6 +130,40 @@ export async function qgRecommend(
     }
   } catch {
     return { ...qgHeuristic(profile, answers, candidates), engine: 'heuristic' }
+  }
+}
+
+/**
+ * "Would I like this?" - judge one book or series against the listener's own
+ * history. AI-powered whenever the server has a provider configured; the
+ * deterministic heuristic is the fallback, never the default.
+ *
+ * Identical cascade to both web apps:
+ *  - Heuristic first. A verdict of 'unknown' means there is too little history
+ *    to judge fairly, so return it WITHOUT spending an AI call or a rate slot.
+ *  - Otherwise ask the server, which answers 503 when no provider is set up;
+ *    that and any other failure degrade to the heuristic.
+ *  - Confidence is capped by how much history backs it, so AI cannot overclaim
+ *    on a thin library.
+ */
+export async function qgAssess(context: QgAssessmentContext): Promise<QgAssessment> {
+  const fallback = qgAssessHeuristic(context)
+  if (fallback.verdict === 'unknown') return fallback
+  try {
+    const data = await qgFetch<Omit<QgAssessment, 'engine'>>('/assess', {
+      method: 'POST',
+      body: JSON.stringify({ prompt: qgCraftAssessmentPrompt(context) }),
+    })
+    const historyCount = context.finishedBooks + context.startedBooks
+    const confidence =
+      historyCount < 4
+        ? 'low'
+        : historyCount < 8 && data.confidence === 'high'
+          ? 'medium'
+          : data.confidence
+    return { ...data, confidence, engine: 'ai' }
+  } catch {
+    return fallback
   }
 }
 
