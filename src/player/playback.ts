@@ -28,6 +28,7 @@ import {
   serverProgressUpdatedAt,
   isFinished,
   markFinished,
+  refreshProgress,
 } from '@/store/progress'
 import { endOfListenVerdict } from './completion'
 import {
@@ -1132,4 +1133,123 @@ export async function stopPlayback(): Promise<void> {
   }
   await safeClose(true)
   syncStateClear()
+}
+
+/**
+ * Pick up where another device left off, when resuming a book that was already
+ * loaded here.
+ *
+ * playItemById reconciles three position candidates every time a book is LOADED
+ * (see resolveResumePosition). But the common cross-device pattern never passes
+ * through a load: the book stays loaded on the phone while the listener pauses,
+ * listens elsewhere (the car, the web app, another phone), and comes back to hit
+ * play on the still-open player. Nothing re-loads, so nothing re-resolves, and
+ * playback resumes at the stale spot this device paused at - then the first sync
+ * writes that stale position back over the newer one.
+ *
+ * So before a resume is allowed to start audio, re-read the server's media
+ * progress row for this book and jump there when it has genuinely moved. That
+ * row is the one every device writes on every sync, which is what makes it the
+ * right authority for "where is the LISTENER" as opposed to "where was this
+ * device".
+ *
+ * Deliberately narrow, because it can move the playhead under someone:
+ *  - only after a pause long enough to have been a real hand-off (see
+ *    CROSS_DEVICE_MIN_PAUSE_MS), so ordinary pause/resume is never touched;
+ *  - only when the gap is bigger than a rounding difference between a tick and
+ *    its sync (CROSS_DEVICE_MIN_GAP_SEC), WIDENED by whatever auto-rewind just
+ *    stepped back, so our own rewind can't read as a remote advance and get
+ *    undone the instant it lands;
+ *  - never while the car owns playback, and never offline (no fresher truth to
+ *    be had, and the local position is the best answer);
+ *  - never for a finished book, whose row sits parked at the end.
+ *
+ * Direction is not considered: a re-listen or a rewind on another device moves
+ * the row BACKWARDS, and picking that up is just as correct as picking up an
+ * advance.
+ *
+ * Also rotates this device's play session when it does jump. ABS only auto-closes
+ * a session for the same device, so the session we opened here is stale once the
+ * book has moved on elsewhere; syncing the new spot onto it would be reporting a
+ * listen we did not do. Closing at the OLD position and opening a fresh one makes
+ * the resume a clean new stint, which is what it is.
+ */
+
+/** How long the player must have sat paused before a resume is treated as a
+ *  possible device hand-off rather than a normal continue. Matches the WebApp's
+ *  pre-resume check. */
+const CROSS_DEVICE_MIN_PAUSE_MS = 5 * 60_000
+/** How far the server must have moved before the jump is worth making. Above
+ *  ordinary tick/sync rounding, below anything a listener would notice losing. */
+const CROSS_DEVICE_MIN_GAP_SEC = 30
+
+/**
+ * Re-check the server's resume point for the loaded book. Returns the position to
+ * jump to, or null to resume where we are.
+ *
+ * `pausedForMs` is how long playback sat paused; `rewoundSec` is the auto-rewind
+ * this same resume just applied (0 when none).
+ */
+export async function resumePointFromOtherDevices(
+  pausedForMs: number,
+  rewoundSec: number,
+): Promise<number | null> {
+  if (pausedForMs < CROSS_DEVICE_MIN_PAUSE_MS) return null
+  const st = getState()
+  const np = st.nowPlaying
+  if (!np || st.carActive) return null
+  if (!getSession() || isOfflineMode()) return null
+
+  try {
+    await refreshProgress()
+  } catch {
+    // Unreachable: resume from the local position, exactly as before.
+    return null
+  }
+
+  const saved = progressFor(np.itemId)
+  if (!saved || saved.isFinished || !(saved.currentTime > 0)) return null
+
+  // Our own auto-rewind legitimately put us BEHIND the server. Widening by it
+  // keeps that from looking like another device moving ahead.
+  const threshold = CROSS_DEVICE_MIN_GAP_SEC + Math.max(0, rewoundSec)
+  const here = getState().position
+  if (Math.abs(saved.currentTime - here) <= threshold) return null
+
+  breadcrumb(
+    'resume',
+    `elsewhere ${Math.round(saved.currentTime)}s over local ${Math.round(here)}s after ${Math.round(pausedForMs / 1000)}s paused`,
+  )
+  await rotateSessionForCrossDeviceResume(np.itemId, here)
+  return saved.currentTime
+}
+
+/**
+ * The book moved on elsewhere while this device sat paused, and the listener is
+ * resuming here. Close our now-stale session at the position it actually
+ * reached, then open a fresh one for the new stint. Best-effort: a failure here
+ * must never block the jump, since resuming at the right spot matters more than
+ * the session bookkeeping.
+ */
+async function rotateSessionForCrossDeviceResume(itemId: string, closeAt: number): Promise<void> {
+  const a = active
+  if (!a || a.itemId !== itemId) return
+  try {
+    await safeClose()
+    const session = await startPlay(itemId)
+    // A fresh stint, so it dates from now and carries no unsynced backlog -
+    // safeClose already banked whatever `a` was holding.
+    setActiveSession({
+      ...a,
+      sessionId: session.id,
+      startedAt: startedNow(),
+      segmentOpenedAt: startedNow(),
+      lastSyncedTime: closeAt,
+      pendingListened: 0,
+    })
+    attachSessionId(session.id)
+    breadcrumb('session', `rotated to ${session.id.slice(0, 8)} for cross-device resume`)
+  } catch {
+    breadcrumb('session', 'cross-device session rotate failed; keeping current session')
+  }
 }

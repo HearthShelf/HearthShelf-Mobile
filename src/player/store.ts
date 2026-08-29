@@ -26,6 +26,8 @@ import {
   notePaused,
   suppressNextRewind,
   consumeRewindOnResume,
+  lastRewindAmount,
+  lastPausedDuration,
   resetAutoRewind,
 } from './autoRewind'
 
@@ -248,6 +250,7 @@ export function setPlaying(isPlaying: boolean): void {
   if (isPlaying) {
     expireStaleSleepTimer()
     applyAutoRewind()
+    checkRemoteResume()
     maybeAutoArmSleep()
   }
 }
@@ -357,10 +360,72 @@ export function togglePlay(): void {
     if (nowPlaying) {
       expireStaleSleepTimer()
       applyAutoRewind()
+      checkRemoteResume()
       maybeAutoArmSleep()
     }
   }
 }
+
+/**
+ * Ask whether another device has moved this book on while we sat paused, and
+ * where to. Injected for the same reason onDeadTransport is: the check needs the
+ * server and the ABS session, which live in playback.ts, and this leaf store must
+ * not depend back into the player bridge.
+ *
+ * Called on every resume, immediately after the auto-rewind for that resume has
+ * been applied, so the answer accounts for the rewind we just did.
+ */
+let onCheckRemoteResume:
+  ((pausedForMs: number, rewoundSec: number) => Promise<number | null>) | null = null
+export function setRemoteResumeChecker(
+  fn: (pausedForMs: number, rewoundSec: number) => Promise<number | null>,
+): void {
+  onCheckRemoteResume = fn
+}
+
+/**
+ * Resuming: pick up where the listener actually left off, which may be another
+ * device.
+ *
+ * The check is asynchronous (it re-reads the server) while a resume must feel
+ * instant, so audio starts here and the position is corrected a moment later if
+ * the book did move. That is the right trade: the alternative is a stall on every
+ * resume, to catch a case that is only occasionally live.
+ *
+ * The late seek is guarded against everything that can happen while the request
+ * is in flight - a different book loaded, playback stopped again, the car taking
+ * over, or the listener scrubbing somewhere deliberately. In each of those the
+ * answer is stale and is dropped.
+ */
+function checkRemoteResume(): void {
+  const check = onCheckRemoteResume
+  if (!check) return
+  const np = state.nowPlaying
+  if (!np) return
+  const pausedForMs = lastPausedDuration()
+  const rewoundSec = lastRewindAmount()
+  const positionBefore = state.position
+  void check(pausedForMs, rewoundSec)
+    .then((target) => {
+      if (target === null) return
+      const cur = state.nowPlaying
+      if (!cur || cur.itemId !== np.itemId) return
+      if (!state.isPlaying || state.carActive) return
+      // The listener moved the playhead themselves while we were asking. Their
+      // choice wins over the server's.
+      if (Math.abs(state.position - positionBefore) > REMOTE_RESUME_DRIFT_SEC) return
+      breadcrumb('resume', `jumping to ${Math.round(target)}s from another device`)
+      requestSeek(target)
+    })
+    .catch(() => {
+      /* best-effort: resuming where we are is the correct fallback */
+    })
+}
+
+/** How far the playhead may drift while the remote check is in flight before the
+ *  answer is treated as stale. Comfortably above the couple of seconds of audio
+ *  that play during the request, below any deliberate skip. */
+const REMOTE_RESUME_DRIFT_SEC = 15
 
 /** Reporter for transport commands that can't be acted on. Injected (rather than
  *  imported) to keep this leaf store free of a dependency back into the player

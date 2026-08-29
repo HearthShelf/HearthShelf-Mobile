@@ -34,6 +34,7 @@ import {
   setRate,
   currentChapter,
   setDeadTransportReporter,
+  setRemoteResumeChecker,
 } from './store'
 import { syncStateCarOwned } from './syncState'
 import { breadcrumb } from '@/lib/crashLog'
@@ -45,7 +46,13 @@ import {
 import { coverUrl } from '@/api/abs'
 import { addBookmarkPending } from './pendingBookmarks'
 import { localCoverFor } from './downloads'
-import { handOffToCar, playItemById, syncProgress, ensureSessionForPlayback } from './playback'
+import {
+  handOffToCar,
+  playItemById,
+  syncProgress,
+  ensureSessionForPlayback,
+  resumePointFromOtherDevices,
+} from './playback'
 import { getMemoryStats, loadAutoCarBook, syncAutoCarState } from './autoBridge'
 import { advanceQueueOnEnd, skipChapterOrFinish } from './advance'
 import { useShakeToExtend } from './shakeToExtend'
@@ -211,6 +218,12 @@ export function PlayerHost() {
   // Let the store report transport taps it can't act on (see setDeadTransportReporter).
   useEffect(() => {
     setDeadTransportReporter(reportDeadTransport)
+  }, [])
+
+  // Let the store ask, on resume, whether another device moved this book on while
+  // we sat paused (see setRemoteResumeChecker / resumePointFromOtherDevices).
+  useEffect(() => {
+    setRemoteResumeChecker(resumePointFromOtherDevices)
   }, [])
 
   // The recovery run when the native player is no longer producing audio.
