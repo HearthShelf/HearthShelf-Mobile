@@ -21,13 +21,14 @@ import {
 } from 'react'
 import { ActivityIndicator, StyleSheet, TextInput, View } from 'react-native'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
-import type { HSClub, HSNote } from '@hearthshelf/core'
+import type { HSClub, HSNote, HSNoteStub } from '@hearthshelf/core'
 import { gateNotes, formatTimestamp } from '@hearthshelf/core'
 import { getNotes, postNote, deleteNote } from '@/api/notes'
 import { getClubs } from '@/api/clubs'
 import { getMeId } from '@/api/me'
 import { getState as getPlayerState, subscribe as subscribePlayer } from '@/player/store'
 import { NoteThread, type ChapterMark } from './NoteThread'
+import { AheadNotes } from './AheadNotes'
 import { VisibilityToggle, SafeSwitch } from './NoteComposerControls'
 import { AppText, IconButton, Sheet, Touchable, type SheetRef } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
@@ -69,6 +70,7 @@ export const PlayerNotesSheet = forwardRef<
   const [tab, setTab] = useState<Tab>('notes')
   const [notes, setNotes] = useState<HSNote[] | null>(null)
   const [hiddenAhead, setHiddenAhead] = useState(0)
+  const [lockedStubs, setLockedStubs] = useState<HSNoteStub[]>([])
   const [enabled, setEnabled] = useState(true)
   const [club, setClub] = useState<HSClub | null>(null)
   const [body, setBody] = useState('')
@@ -113,6 +115,7 @@ export const PlayerNotesSheet = forwardRef<
     setEnabled(res.enabled)
     setNotes(res.notes)
     setHiddenAhead(res.hiddenAhead)
+    setLockedStubs(res.locked)
   }, [itemId, tab, club?.id, position])
 
   useImperativeHandle(ref, () => ({
@@ -222,9 +225,11 @@ export const PlayerNotesSheet = forwardRef<
       ) : (
         <BottomSheetScrollView contentContainerStyle={{ paddingBottom: spacing.lg }}>
           {gated.visible.length === 0 ? (
-            <AppText variant="meta" color={colors.textMuted} style={styles.empty}>
-              No notes here yet. Leave one at your spot.
-            </AppText>
+            gated.hiddenAhead === 0 ? (
+              <AppText variant="meta" color={colors.textMuted} style={styles.empty}>
+                No notes here yet. Leave one at your spot.
+              </AppText>
+            ) : null
           ) : (
             <NoteThread
               notes={gated.visible}
@@ -235,14 +240,7 @@ export const PlayerNotesSheet = forwardRef<
               onDelete={remove}
             />
           )}
-          {gated.hiddenAhead > 0 ? (
-            <View style={styles.teaser}>
-              <Icon name={icons.notes} size={16} color={colors.textMuted} />
-              <AppText variant="caption" color={colors.textMuted}>
-                {gated.hiddenAhead} ahead of you. Keep listening to unlock them.
-              </AppText>
-            </View>
-          ) : null}
+          <AheadNotes count={gated.hiddenAhead} stubs={lockedStubs} position={position} />
         </BottomSheetScrollView>
       )}
 
@@ -328,15 +326,6 @@ const makeStyles = (colors: Palette) =>
       marginBottom: spacing.sm,
     },
     empty: { textAlign: 'center', paddingVertical: spacing.xl },
-    teaser: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      marginTop: spacing.md,
-      padding: spacing.md,
-      borderRadius: radius.card,
-      backgroundColor: colors.fill,
-    },
     composer: { paddingTop: spacing.sm, gap: spacing.sm },
     replyBanner: {
       flexDirection: 'row',

@@ -66,6 +66,9 @@ export function useTimelineMarkers(
       }
     }
     for (const s of locked) {
+      // A locked reply reports its parent's timeSec, so it would stack a second
+      // tick on the same spot. The parent's tick already marks the thread.
+      if (s.parentId) continue
       items.push({ id: s.id, timeSec: s.timeSec, kind: 'stub' })
     }
     return clusterTimelineMarkers(items, durationSec)

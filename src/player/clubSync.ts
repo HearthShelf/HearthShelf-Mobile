@@ -144,7 +144,7 @@ async function resolveActiveClub(): Promise<void> {
       locked: detail.notes.locked,
       unreadCount: detail.unreadCount,
     })
-    setPopStubs(club.id, itemId, detail.notes.locked)
+    setPopStubs(club.id, itemId, topLevel(detail.notes.locked))
     return
   }
 
@@ -163,8 +163,17 @@ async function resolveActiveClub(): Promise<void> {
       locked: notes.locked,
       unreadCount: previous?.unreadCount ?? 0,
     })
-    setPopStubs(club.id, itemId, notes.locked)
+    setPopStubs(club.id, itemId, topLevel(notes.locked))
   }
+}
+
+/**
+ * Pops announce a thread, not every message in it. A locked reply reports its
+ * parent's timeSec, so passing replies through would fire a second pop at the
+ * same instant as the parent's.
+ */
+function topLevel(stubs: HSNoteStub[]): HSNoteStub[] {
+  return stubs.filter((s) => !s.parentId)
 }
 
 async function pull(): Promise<void> {

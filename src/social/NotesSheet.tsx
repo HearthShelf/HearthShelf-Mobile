@@ -1,8 +1,8 @@
 /**
  * Public notes sheet for a book: the unlocked note thread (with one level of
- * replies), a "notes ahead" teaser for spoiler-gated notes, and a composer for a
- * general (ungated) note. Shared by the book detail page and the player's
- * Notes/Club sheet.
+ * replies), a redacted placeholder block for the spoiler-gated comments ahead
+ * of the reader, and a composer for a general (ungated) note. Shared by the
+ * book detail page and the player's Notes/Club sheet.
  *
  * Spoiler safety is the server's job: GET /hs/notes returns only unlocked notes
  * plus a hiddenAhead count. This sheet re-gates optimistically with core's
@@ -20,7 +20,7 @@ import {
 import { useSyncExternalStore } from 'react'
 import { ActivityIndicator, StyleSheet, TextInput, View } from 'react-native'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
-import type { HSNote } from '@hearthshelf/core'
+import type { HSNote, HSNoteStub } from '@hearthshelf/core'
 import { gateNotes } from '@hearthshelf/core'
 import { getNotes, postNote, deleteNote } from '@/api/notes'
 import { getMeId } from '@/api/me'
@@ -29,6 +29,7 @@ import { Icon, icons } from '@/ui/icons'
 import { avatarUrl } from '@/api/abs'
 import { coverHue } from '@hearthshelf/core'
 import { NoteThread } from './NoteThread'
+import { AheadNotes } from './AheadNotes'
 import { VisibilityToggle, SafeSwitch } from './NoteComposerControls'
 import { haptics } from '@/ui/haptics'
 import { radius, spacing, type Palette } from '@/ui/theme'
@@ -69,6 +70,7 @@ export const NotesSheet = forwardRef<SheetHandle, NotesSheetProps>(function Note
 
   const [notes, setNotes] = useState<HSNote[] | null>(null)
   const [hiddenAhead, setHiddenAhead] = useState(0)
+  const [lockedStubs, setLockedStubs] = useState<HSNoteStub[]>([])
   const [enabled, setEnabled] = useState(true)
   const [body, setBody] = useState('')
   const [replyTo, setReplyTo] = useState<HSNote | null>(null)
@@ -93,6 +95,7 @@ export const NotesSheet = forwardRef<SheetHandle, NotesSheetProps>(function Note
     setEnabled(res.enabled)
     setNotes(res.notes)
     setHiddenAhead(res.hiddenAhead)
+    setLockedStubs(res.locked)
   }, [libraryItemId, position, finished])
 
   useEffect(() => {
@@ -161,9 +164,13 @@ export const NotesSheet = forwardRef<SheetHandle, NotesSheetProps>(function Note
       ) : (
         <BottomSheetScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }}>
           {gated.visible.length === 0 ? (
-            <AppText variant="meta" color={colors.textMuted} style={styles.empty}>
-              No notes yet. Be the first to leave one.
-            </AppText>
+            // Only claim emptiness when nothing is gated either - otherwise the
+            // AheadNotes block below is the real (locked) state of this book.
+            gated.hiddenAhead === 0 ? (
+              <AppText variant="meta" color={colors.textMuted} style={styles.empty}>
+                No notes yet. Be the first to leave one.
+              </AppText>
+            ) : null
           ) : (
             <NoteThread
               notes={gated.visible}
@@ -172,15 +179,7 @@ export const NotesSheet = forwardRef<SheetHandle, NotesSheetProps>(function Note
               onDelete={remove}
             />
           )}
-          {gated.hiddenAhead > 0 ? (
-            <View style={styles.teaser}>
-              <Icon name={icons.notes} size={16} color={colors.textMuted} />
-              <AppText variant="caption" color={colors.textMuted}>
-                {gated.hiddenAhead} {gated.hiddenAhead === 1 ? 'note is' : 'notes are'} ahead of
-                you. Keep listening to unlock them.
-              </AppText>
-            </View>
-          ) : null}
+          <AheadNotes count={gated.hiddenAhead} stubs={lockedStubs} position={position} />
         </BottomSheetScrollView>
       )}
 
@@ -242,15 +241,6 @@ export const NotesSheet = forwardRef<SheetHandle, NotesSheetProps>(function Note
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
     empty: { textAlign: 'center', paddingVertical: spacing.xl },
-    teaser: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.sm,
-      marginTop: spacing.md,
-      padding: spacing.md,
-      borderRadius: radius.card,
-      backgroundColor: colors.fill,
-    },
     composer: { paddingTop: spacing.sm, gap: spacing.sm },
     // Tinted so it reads as the comment being answered, not a stray caption.
     replyBanner: {
