@@ -60,6 +60,7 @@ import { coverUrl, getItemDetail } from '@/api/abs'
 import { recentSessionsFor } from '@/player/sessionCache'
 import { playItemById } from '@/player/playback'
 import { SyncStatusIcon } from '@/player/SyncStatusIcon'
+import { NotificationBell } from '@/notifications/NotificationBell'
 import { getSyncState, subscribeSyncState } from '@/player/syncState'
 import {
   getPendingSessionState,
@@ -922,8 +923,10 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                   </Marquee>
                 </View>
 
-                {/* Right: Focus-view entry + passive sync status glyph. */}
+                {/* Right: unread-notification bell (hidden when all read) +
+                Focus-view entry + passive sync status glyph. */}
                 <View style={styles.headerRight}>
+                  <NotificationBell compact />
                   <IconButton
                     name={icons.focusView}
                     size={22}
