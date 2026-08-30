@@ -181,6 +181,11 @@ export function loadTrack(track: NowPlaying, autoPlay = true): void {
   // A new book resumes at its own saved spot - a pause left over from the
   // previous book must not rewind it.
   resetAutoRewind()
+  // A paused load starts the cross-device staleness clock (see
+  // checkRemoteResume): the position was resolved NOW, and goes stale from here
+  // until the first play. An autoplay load starts audio at the just-resolved
+  // spot, so there is nothing to go stale.
+  loadedPausedAt = autoPlay ? null : Date.now()
   // Any seek we were waiting on belonged to the outgoing track; holding ticks
   // against its target would suppress the new book's progress.
   pendingSeek = null
@@ -377,6 +382,11 @@ export function togglePlay(): void {
  */
 let onCheckRemoteResume:
   ((pausedForMs: number, rewoundSec: number) => Promise<number | null>) | null = null
+
+/** When the loaded book arrived paused and has not been played since, the
+ *  moment it was loaded - the position was resolved then and has been going
+ *  stale ever since. null once playback starts (or for autoplay loads). */
+let loadedPausedAt: number | null = null
 export function setRemoteResumeChecker(
   fn: (pausedForMs: number, rewoundSec: number) => Promise<number | null>,
 ): void {
@@ -402,7 +412,18 @@ function checkRemoteResume(): void {
   if (!check) return
   const np = state.nowPlaying
   if (!np) return
-  const pausedForMs = lastPausedDuration()
+  // How long this device's idea of the position has been stale. Usually that's
+  // how long we sat paused - but a book loaded WITHOUT playing (the launch
+  // rehydrate, landing on the Now Playing tab) never pauses this run, so the
+  // pause clock reads 0 and the first play after every cold start skipped the
+  // check no matter how long the app sat open (HS-MOBILEAPP-2E: 9 minutes on
+  // the still-open player while the web app moved a chapter on). For that book
+  // the position was resolved at LOAD, so time-since-load is the honest answer;
+  // take whichever clock is longer.
+  const sincePausedLoadMs = loadedPausedAt === null ? 0 : Date.now() - loadedPausedAt
+  // Consumed by this play: later resumes on this book have real pauses.
+  loadedPausedAt = null
+  const pausedForMs = Math.max(lastPausedDuration(), sincePausedLoadMs)
   const rewoundSec = lastRewindAmount()
   const positionBefore = state.position
   void check(pausedForMs, rewoundSec)
