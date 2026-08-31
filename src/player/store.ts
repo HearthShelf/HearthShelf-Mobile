@@ -172,6 +172,20 @@ function set(patch: Partial<PlayerState>): void {
 // ---- commands (called from phone UI and car callbacks) ----
 
 /**
+ * How close a native tick must be to the seek target before we accept that the
+ * seek landed. Generous enough to cover the engine reporting a moment of audio
+ * past the target, tight enough that a pre-seek tick never passes.
+ */
+const SEEK_SETTLE_TOLERANCE_SEC = 2
+/** Ceiling on how long ticks are held, so a seek that never lands can't freeze
+ *  the position readout. Matches PlayerHost's own 1.5s seek transient window,
+ *  plus headroom for an unbuffered region. */
+const SEEK_SETTLE_TIMEOUT_MS = 4000
+/** The seek we are waiting for the engine to land (see reportPosition). Declared
+ *  here rather than beside requestSeek because loadTrack below arms it too. */
+let pendingSeek: { target: number; until: number } | null = null
+
+/**
  * Load a track into the player. Starts playing by default; pass
  * `autoPlay = false` to load it paused (used when the Now Playing tab lands you
  * in the player on your last book without starting audio unbidden).
@@ -188,7 +202,23 @@ export function loadTrack(track: NowPlaying, autoPlay = true): void {
   loadedPausedAt = autoPlay ? null : Date.now()
   // Any seek we were waiting on belonged to the outgoing track; holding ticks
   // against its target would suppress the new book's progress.
-  pendingSeek = null
+  //
+  // But do not leave the hold EMPTY: the load below sets position and asks the
+  // engine to seek there, and until that lands the engine keeps emitting
+  // progress from wherever it was - the outgoing track's spot, or this book's
+  // pre-load spot on a reload. With no hold those ticks overwrite the resolved
+  // startPosition, exactly as a mid-flight seek's ticks used to (see
+  // reportPosition). Observed 2026-08-31 (HS-MOBILEAPP-2J): a preview loaded
+  // @1771s and the session opened 4s later @1666s, 105s behind, because
+  // ensureSessionForPlayback reads the live store position - so the rollback
+  // became the session's start point.
+  //
+  // So re-arm the hold on THIS load's target. Same settle tolerance and timeout
+  // as a user seek, and the same escape hatch if it never lands.
+  pendingSeek =
+    track.startPosition > 0
+      ? { target: track.startPosition, until: Date.now() + SEEK_SETTLE_TIMEOUT_MS }
+      : null
   set({
     nowPlaying: track,
     isPlaying: autoPlay,
@@ -456,20 +486,8 @@ export function setDeadTransportReporter(fn: (source: string, detail: string) =>
   onDeadTransport = fn
 }
 
-/**
- * How close a native tick must be to the seek target before we accept that the
- * seek landed. Generous enough to cover the engine reporting a moment of audio
- * past the target, tight enough that a pre-seek tick never passes.
- */
-const SEEK_SETTLE_TOLERANCE_SEC = 2
-/** Ceiling on how long ticks are held, so a seek that never lands can't freeze
- *  the position readout. Matches PlayerHost's own 1.5s seek transient window,
- *  plus headroom for an unbuffered region. */
-const SEEK_SETTLE_TIMEOUT_MS = 4000
 /** Ordinary skip-back and auto-rewind should not create a return pill. */
 const RETURN_JUMP_MIN_SEC = 60
-/** The seek we are waiting for the engine to land (see reportPosition). */
-let pendingSeek: { target: number; until: number } | null = null
 
 /** Keep a seek target inside the book.
  *
