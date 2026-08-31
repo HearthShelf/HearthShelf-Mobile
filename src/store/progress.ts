@@ -130,6 +130,36 @@ function emit(next: Map<string, ABSMediaProgress>): void {
  * never clobbers a write that landed between mount and this resolving.
  */
 export async function hydrateProgress(): Promise<void> {
+  if (!hydration) hydration = runHydrate()
+  return hydration
+}
+
+/**
+ * Resolves once the on-disk rows are in memory. Playback awaits this before
+ * resolving a resume position.
+ *
+ * Hydration is an unawaited AsyncStorage read started at mount, but a resume can
+ * begin the moment the listener taps play - and after an unclean death that tap
+ * comes seconds after launch, because the app reopens on the player. Losing that
+ * race meant progressFor() answered from an EMPTY store, so `saved` read 0, and a
+ * freshly-opened ABS session (whose currentTime is legitimately 0 on a cold
+ * reload) had nothing to be reconciled against. resolveResumePosition's whole
+ * three-candidate reconciliation was bypassed - not because its logic is wrong,
+ * but because two of the three candidates hadn't loaded yet. The first tick then
+ * synced that 0 over the real server position, turning a lost race into a
+ * PERSISTED reset.
+ *
+ * Observed 2026-08-31 after a native crash: `resume start @0s (session said 0s,
+ * resolved 0s, saved 0s)` while the listener was 12 hours into the book.
+ */
+export function progressHydrated(): Promise<void> {
+  return hydration ?? Promise.resolve()
+}
+
+/** In-flight (or settled) hydration, so concurrent callers share one read. */
+let hydration: Promise<void> | null = null
+
+async function runHydrate(): Promise<void> {
   try {
     const raw = await AsyncStorage.getItem(STORE_KEY)
     if (!raw) return

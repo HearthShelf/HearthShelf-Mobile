@@ -24,6 +24,7 @@ import { getSession } from '@/api/session'
 import type { ABSMediaProgress } from '@hearthshelf/core'
 import {
   progressFor,
+  progressHydrated,
   recordLocalProgress,
   serverProgressUpdatedAt,
   isFinished,
@@ -346,6 +347,17 @@ export async function playItemById(
   autoPlay = true,
   opts: { armRecompute?: boolean; resumeAt?: number } = {},
 ): Promise<void> {
+  // Every resume path below reads the progress store to decide where to land, and
+  // that store is hydrated from disk by an unawaited read started at mount. After
+  // an unclean death the listener taps play seconds after launch - on the player
+  // screen the app reopened on - so that tap can beat the read. Losing the race
+  // made progressFor() answer from an empty store, and a resume resolved against
+  // a cold-reload session (currentTime legitimately 0) landed at 0s; the first
+  // tick then synced that 0 over the real server position, persisting the reset.
+  // Awaiting here costs nothing once hydrated (a settled promise) and only ever
+  // delays the very first tap after launch.
+  await progressHydrated()
+
   const local = localSourceFor(itemId)
   const resumeAt =
     typeof opts.resumeAt === 'number' && Number.isFinite(opts.resumeAt)
@@ -441,6 +453,15 @@ export async function playItemById(
     'resume',
     `start @${Math.round(startAt)}s (session said ${Math.round(sessionSaid)}s, resolved ${Math.round(resolved)}s, saved ${Math.round(progressFor(itemId)?.currentTime ?? 0)}s)`,
   )
+  // A resume to 0 on a book the store has never seen is the exact shape of the
+  // reset reports, and it is indistinguishable in the log above from a genuine
+  // first listen. Name it explicitly: if this crumb appears in a future report,
+  // the hydration gate did not cover the path that produced it, and the store was
+  // still empty at resume. A real first listen has no server-side history either,
+  // so the session's own duration is what separates "new book" from "lost row".
+  if (startAt === 0 && !progressFor(itemId) && session.duration > 0) {
+    breadcrumb('resume', `landed @0s with NO stored progress row for ${itemId.slice(0, 8)}`)
+  }
   const np: NowPlaying = {
     itemId,
     sessionId: session.id,
