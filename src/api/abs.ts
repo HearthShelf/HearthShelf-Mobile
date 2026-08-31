@@ -40,9 +40,7 @@ import type {
   ABSListeningSession,
   ABSDeviceInfo,
   ABSCollection,
-  ABSCollectionsResponse,
   ABSPlaylist,
-  ABSPlaylistsResponse,
 } from '@hearthshelf/core'
 import { computeListeningStats } from '@hearthshelf/core'
 import { setMeId } from './me'
@@ -116,7 +114,20 @@ function refreshSession(): Promise<boolean> {
   return inFlightRefresh
 }
 
-async function absRequest<T>(path: string, init?: RequestInit, isRetry = false): Promise<T> {
+/** Per-request options that aren't part of the standard fetch init. */
+type ABSRequestOptions = {
+  /** Override ABS_TIMEOUT_MS for an endpoint known to be slow by design.
+   *  Use sparingly: the 6s default is what keeps the offline fallbacks snappy,
+   *  and raising it anywhere else re-introduces the stall it exists to prevent. */
+  timeoutMs?: number
+}
+
+async function absRequest<T>(
+  path: string,
+  init?: RequestInit,
+  isRetry = false,
+  options?: ABSRequestOptions,
+): Promise<T> {
   const { serverUrl, token } = requireSession()
   const headers = new Headers(init?.headers)
   headers.set('Authorization', `Bearer ${token}`)
@@ -125,7 +136,7 @@ async function absRequest<T>(path: string, init?: RequestInit, isRetry = false):
   // Respect a caller-supplied signal (in-flight cancellation) while still
   // enforcing our own deadline.
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), ABS_TIMEOUT_MS)
+  const timer = setTimeout(() => controller.abort(), options?.timeoutMs ?? ABS_TIMEOUT_MS)
   const onCallerAbort = () => controller.abort()
   init?.signal?.addEventListener('abort', onCallerAbort)
 
@@ -154,7 +165,7 @@ async function absRequest<T>(path: string, init?: RequestInit, isRetry = false):
     // handing out fresh grants.
     if (res.status === 401 && !isRetry) {
       const refreshed = await refreshSession()
-      if (refreshed) return absRequest<T>(path, init, true)
+      if (refreshed) return absRequest<T>(path, init, true, options)
     }
     throw new ABSRequestError(res.status, path)
   }
@@ -730,24 +741,58 @@ export async function updateListeningSession(session: {
 
 // ---- Collections / Playlists (Add to list) ----
 
-// `limit=0` is ABS's "return everything". It is also what you get by OMITTING
-// limit - both library controllers build `limit: req.query.limit || 0` and slice
-// only `if (payload.limit)` (LibraryController.js:823, 861), so zero is falsy
-// and nothing is truncated either way. Passing it is parity with hosted web plus
-// insurance against the `// TODO: Create paginated queries` sitting in both
-// controllers - not a fix for a bug.
+// Both of these are fetched a PAGE AT A TIME, and it is worth being precise about
+// what that does and does not buy, because the obvious reading is wrong.
+//
+// `limit=0` is ABS's "return everything" (both controllers build
+// `limit: req.query.limit || 0` and slice only `if (payload.limit)`, so zero is
+// falsy and nothing is truncated). That is what we used to send. The problem is
+// not truncation - it is the size of the answer: collections come back with every
+// book in every collection fully expanded, so a server with a hundred-odd lists
+// returns one enormous JSON body. Past our 6s ABS_TIMEOUT_MS that request simply
+// fails, and the Lists tab reads as "you have no collections".
+//
+// What paging does NOT do is reduce the server's work. The `// TODO: Create
+// paginated queries` in LibraryController is real: getOldCollectionsJsonExpanded
+// still builds the whole expanded set and the controller slices it afterwards
+// (LibraryController.js:833-840). So paging bounds only what we transfer and
+// parse per round trip - which is the part that was blowing the deadline - and
+// the longer per-request timeout below covers the server-side build.
+//
+// A server that ignores limit/page returns everything with `total` equal to the
+// result count, so the loop exits after one round trip there.
+
+/** Slow-endpoint budget. These two are expensive on the SERVER regardless of
+ *  paging, so they get their own deadline instead of the 6s default. */
+const LIST_TIMEOUT_MS = 20000
+/** Collections carry every book expanded, so keep pages small. */
+const LIST_PAGE_SIZE = 25
+/** Backstop so a server that mis-reports `total` can't loop forever. */
+const LIST_MAX_PAGES = 80
+
+async function getAllPaged<T>(path: string): Promise<T[]> {
+  const out: T[] = []
+  for (let page = 0; page < LIST_MAX_PAGES; page++) {
+    const data = await absRequest<{ results?: T[]; total?: number }>(
+      `${path}?limit=${LIST_PAGE_SIZE}&page=${page}`,
+      undefined,
+      false,
+      { timeoutMs: LIST_TIMEOUT_MS },
+    )
+    const results = data.results ?? []
+    out.push(...results)
+    const total = typeof data.total === 'number' ? data.total : out.length
+    if (!results.length || out.length >= total) return out
+  }
+  return out
+}
+
 export async function getLibraryCollections(libraryId: string): Promise<ABSCollection[]> {
-  const data = await absRequest<ABSCollectionsResponse>(
-    `/api/libraries/${libraryId}/collections?limit=0`,
-  )
-  return data.results ?? []
+  return getAllPaged<ABSCollection>(`/api/libraries/${libraryId}/collections`)
 }
 
 export async function getLibraryPlaylists(libraryId: string): Promise<ABSPlaylist[]> {
-  const data = await absRequest<ABSPlaylistsResponse>(
-    `/api/libraries/${libraryId}/playlists?limit=0`,
-  )
-  return data.results ?? []
+  return getAllPaged<ABSPlaylist>(`/api/libraries/${libraryId}/playlists`)
 }
 
 // ---- Collections / Playlists (browse + maintain) ----

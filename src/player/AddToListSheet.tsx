@@ -69,18 +69,32 @@ export const AddToListSheet = forwardRef<
   const queuedIds = useMemo(() => new Set(queue.manual.map((m) => m.libraryItemId)), [queue.manual])
   const [collections, setCollections] = useState<ABSCollection[] | null>(null)
   const [playlists, setPlaylists] = useState<ABSPlaylist[] | null>(null)
+  const [collectionsFailed, setCollectionsFailed] = useState(false)
+  const [playlistsFailed, setPlaylistsFailed] = useState(false)
   const [clubs, setClubs] = useState<ClubSummary[] | null>(null)
   const [newName, setNewName] = useState('')
   const [busy, setBusy] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
+    // An empty array here would render as "No collections yet. Create one above."
+    // - which is a lie when the fetch failed, and the lie is worst on exactly the
+    // servers that fail: a big list library, where creating a duplicate is the
+    // likely next move. Track the failure separately and say so.
+    setCollectionsFailed(false)
+    setPlaylistsFailed(false)
     getLibraryCollections(libraryId)
       .then(setCollections)
-      .catch(() => setCollections([]))
+      .catch(() => {
+        setCollections([])
+        setCollectionsFailed(true)
+      })
     getLibraryPlaylists(libraryId)
       .then(setPlaylists)
-      .catch(() => setPlaylists([]))
+      .catch(() => {
+        setPlaylists([])
+        setPlaylistsFailed(true)
+      })
     void getClubs()
       .then((response) => {
         const meId = getMeId()
@@ -178,6 +192,7 @@ export const AddToListSheet = forwardRef<
 
   const lists = tab === 'collection' ? collections : playlists
   const loading = lists === null
+  const listsFailed = tab === 'collection' ? collectionsFailed : playlistsFailed
 
   return (
     <Sheet ref={sheetRef} title="Add to list" snapPoints={['70%']}>
@@ -282,6 +297,14 @@ export const AddToListSheet = forwardRef<
 
           {loading ? (
             <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.xl }} />
+          ) : listsFailed ? (
+            <AppText
+              variant="meta"
+              color={colors.textMuted}
+              style={{ textAlign: 'center', marginTop: spacing.xl }}
+            >
+              Could not load your {tab}s. Check your connection and try again.
+            </AppText>
           ) : lists.length === 0 ? (
             <AppText
               variant="meta"
