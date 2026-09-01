@@ -359,7 +359,7 @@ export function leaveCar(): { itemId: string; position: number } | null {
  * this does NOT seed a seek or open a session - the car owns playback and its
  * own ABS session; the phone player stays stood down (carActive).
  */
-export function mirrorCarTrack(track: NowPlaying): void {
+export function mirrorCarTrack(track: NowPlaying, isPlaying = true): void {
   // The car owns the playhead now; its mirrored positions must not be held
   // against a phone-side seek target.
   pendingSeek = null
@@ -370,7 +370,14 @@ export function mirrorCarTrack(track: NowPlaying): void {
   set({
     nowPlaying: track,
     position: track.startPosition,
-    isPlaying: true,
+    // Defaults true because a car LOADING a book is starting to play it. But this
+    // is also reached by the car RE-announcing what it already holds
+    // (republishLoaded, fired on every foreground via syncCarState), and there
+    // the car may well be paused. Forcing true there flipped the store to playing
+    // behind the listener's back, and sync() then saw isPlaying change and
+    // forwarded Native.play() to the car - so pausing in the car and opening the
+    // app restarted the audio (HS-MOBILEAPP-2K/2M).
+    isPlaying,
     carActive: true,
     seekTo: null,
     returnPosition: null,

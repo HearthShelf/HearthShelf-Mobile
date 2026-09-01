@@ -667,20 +667,32 @@ export function PlayerHost() {
           }
           // The car's own answer to "what are you holding", so the pushes below
           // stop once it has the book.
+          const isRepublish = carBook.current === e.itemId
           carBook.current = e.itemId
-          mirrorCarTrack({
-            itemId: e.itemId,
-            sessionId: '',
-            title: e.title,
-            author: e.author,
-            // Prefer the downloaded cover: the server URL renders nothing when
-            // the car loaded this book with no network.
-            artworkUrl: localCoverFor(e.itemId) ?? coverUrl(e.itemId),
-            url: '',
-            duration: e.duration,
-            startPosition: e.position,
-            chapters,
-          })
+          mirrorCarTrack(
+            {
+              itemId: e.itemId,
+              sessionId: '',
+              title: e.title,
+              author: e.author,
+              // Prefer the downloaded cover: the server URL renders nothing when
+              // the car loaded this book with no network.
+              artworkUrl: localCoverFor(e.itemId) ?? coverUrl(e.itemId),
+              url: '',
+              duration: e.duration,
+              startPosition: e.position,
+              chapters,
+            },
+            // A FIRST load of this book means the car is starting it - assume
+            // playing, as before. A RE-announce of the book we already mirrored
+            // (republishLoaded, fired on every foreground via syncCarState) says
+            // nothing about transport, and the car may be paused. Keep whatever
+            // the store already believes there; native emits the car's true
+            // isPlaying immediately after this, which corrects it either way.
+            // Without this, foregrounding while paused in the car forced the
+            // store to playing and sync() forwarded play() (HS-MOBILEAPP-2K/2M).
+            isRepublish ? getState().isPlaying : true,
+          )
         },
       ),
       // ---- CarPlay (iOS): the car and phone share ONE native AVPlayer, so
