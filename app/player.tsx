@@ -112,7 +112,7 @@ import {
 import { Scrubber } from '@/player/Scrubber'
 import { Marquee } from '@/ui/Marquee'
 import { PlayerCoverCarousel } from '@/player/PlayerCoverCarousel'
-import { PlayerClubStrip } from '@/player/PlayerClubStrip'
+import { PlayerClubProgressRail, PlayerClubStrip } from '@/player/PlayerClubStrip'
 import { SkipFeedbackOverlay, type SkipFeedbackHandle } from '@/player/SkipFeedbackOverlay'
 import { SkipButton } from '@/player/SkipButton'
 import {
@@ -951,9 +951,21 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
               and nothing below shifts; the mini player carries the playing book
               while you browse. */}
               <View style={browsing ? styles.hiddenReserved : undefined} pointerEvents="none">
-                <View style={[styles.bookBarTrack, { width: progressRailWidth }]}>
-                  <Animated.View style={[styles.bookBarFill, bookBarStyle]} />
-                </View>
+                {settings.clubsEnabled && activeClub ? (
+                  <PlayerClubProgressRail
+                    members={activeClub.members}
+                    position={position}
+                    duration={duration}
+                    notes={activeClub.notes}
+                    locked={activeClub.locked}
+                    tone="page"
+                    style={{ width: progressRailWidth }}
+                  />
+                ) : (
+                  <View style={[styles.bookBarTrack, { width: progressRailWidth }]}>
+                    <Animated.View style={[styles.bookBarFill, bookBarStyle]} />
+                  </View>
+                )}
                 <View
                   style={[
                     styles.wholeBookStrip,

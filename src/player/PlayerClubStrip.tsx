@@ -7,6 +7,8 @@ import {
   TextInput,
   View,
   type KeyboardEvent,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native'
 import { formatTimestamp } from '@hearthshelf/core'
 import type { HSClubMember, HSNote, HSNoteStub } from '@hearthshelf/core'
@@ -42,12 +44,14 @@ function ProgressNoteMarkers({
   duration,
   colors,
   styles,
+  onPage = false,
 }: {
   notes: HSNote[]
   locked: HSNoteStub[]
   duration: number
   colors: Palette
   styles: ReturnType<typeof makeStyles>
+  onPage?: boolean
 }) {
   if (duration <= 0) return null
 
@@ -66,6 +70,8 @@ function ProgressNoteMarkers({
         style={[
           styles.noteMarker,
           marker.locked && styles.noteMarkerLocked,
+          onPage && styles.noteMarkerPage,
+          onPage && marker.locked && styles.noteMarkerLockedPage,
           { left: `${fraction * 100}%` as `${number}%` },
         ]}
         accessible
@@ -74,7 +80,9 @@ function ProgressNoteMarkers({
         <Icon
           name={icons.chat}
           size={11}
-          color={marker.locked ? 'rgba(255,255,255,0.48)' : colors.accent}
+          color={
+            marker.locked ? (onPage ? colors.textMuted : 'rgba(255,255,255,0.48)') : colors.accent
+          }
         />
       </View>
     )
@@ -171,6 +179,78 @@ function raceContext(
   return 'Reading together here'
 }
 
+/** The compact whole-book rail shared by the Now Playing header and the
+ * expanded Book Club surfaces. It keeps the current reader's fill, member
+ * avatars, and readable/locked chat markers on one timeline. */
+export function PlayerClubProgressRail({
+  members,
+  position,
+  duration,
+  notes = [],
+  locked = [],
+  tone = 'surface',
+  style,
+}: {
+  members: HSClubMember[]
+  position: number
+  duration: number
+  notes?: HSNote[]
+  locked?: HSNoteStub[]
+  tone?: 'surface' | 'page'
+  style?: StyleProp<ViewStyle>
+}) {
+  const { colors } = useTheme()
+  const styles = useMemo(() => makeStyles(colors), [colors])
+  const meId = getMeId()
+  const pips = useMemo(
+    () => racePips(members, meId, position, duration),
+    [duration, meId, members, position],
+  )
+  const raceFill =
+    pips.find((pip) => pip.me)?.fraction ??
+    (duration > 0 ? Math.max(0, Math.min(1, position / duration)) : 0)
+
+  return (
+    <View
+      style={[styles.raceTrack, style]}
+      accessible
+      accessibilityRole="progressbar"
+      accessibilityLabel="Book Club reading progress"
+      accessibilityValue={{ min: 0, max: 100, now: Math.round(raceFill * 100) }}
+    >
+      <View style={[styles.raceLine, tone === 'page' && styles.raceLinePage]} />
+      <View
+        style={[
+          styles.raceFill,
+          tone === 'page' && styles.raceFillPage,
+          { width: `${raceFill * 100}%` as `${number}%` },
+        ]}
+      />
+      <ProgressNoteMarkers
+        notes={notes}
+        locked={locked}
+        duration={duration}
+        colors={colors}
+        styles={styles}
+        onPage={tone === 'page'}
+      />
+      {pips.map((pip) => (
+        <View
+          key={pip.id}
+          style={[
+            styles.racePip,
+            { left: `${pip.fraction * 100}%` as `${number}%` },
+            tone === 'page' && styles.racePipPage,
+            pip.me && styles.racePipMe,
+          ]}
+        >
+          <Avatar uri={avatarUrl(pip.id)} size={18} name={pip.name} />
+        </View>
+      ))}
+    </View>
+  )
+}
+
 /** The same avatar progress rail used on the player, exposed for the club room.
  * Tapping it is intentionally the only control: the room expands its richer
  * "Where everyone is" card beneath it. */
@@ -198,13 +278,6 @@ export function PlayerClubProgressStrip({
   const { colors } = useTheme()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const meId = getMeId()
-  const pips = useMemo(
-    () => racePips(members, meId, position, duration),
-    [duration, meId, members, position],
-  )
-  const raceFill =
-    pips.find((pip) => pip.me)?.fraction ??
-    (duration > 0 ? Math.max(0, Math.min(1, position / duration)) : 0)
   const context = raceContext(members, meId, position, duration)
   return (
     <Touchable
@@ -224,29 +297,13 @@ export function PlayerClubProgressStrip({
             {memberCount} {memberCount === 1 ? 'reader' : 'readers'}
           </AppText>
         </View>
-        <View style={styles.raceTrack}>
-          <View style={styles.raceLine} />
-          <View style={[styles.raceFill, { width: `${raceFill * 100}%` as `${number}%` }]} />
-          <ProgressNoteMarkers
-            notes={notes}
-            locked={locked}
-            duration={duration}
-            colors={colors}
-            styles={styles}
-          />
-          {pips.map((pip) => (
-            <View
-              key={pip.id}
-              style={[
-                styles.racePip,
-                { left: `${pip.fraction * 100}%` as `${number}%` },
-                pip.me && styles.racePipMe,
-              ]}
-            >
-              <Avatar uri={avatarUrl(pip.id)} size={18} name={pip.name} />
-            </View>
-          ))}
-        </View>
+        <PlayerClubProgressRail
+          members={members}
+          position={position}
+          duration={duration}
+          notes={notes}
+          locked={locked}
+        />
         <View style={styles.raceFooter}>
           <AppText variant="caption" color="rgba(255,255,255,0.62)" numberOfLines={1}>
             {context}
@@ -474,17 +531,10 @@ export function PlayerClubStrip({
     return nearbyNote(club.notes, club.locked, position)
   }, [club.locked, club.notes, optimisticNote, position])
   const meId = getMeId()
-  const pips = useMemo(
-    () => racePips(club.members, meId, position, duration),
-    [club.members, duration, meId, position],
-  )
   const otherListening = club.members.find(
     (member) => member.listeningNow && member.userId !== meId,
   )
   const progressContext = raceContext(club.members, meId, position, duration)
-  const raceFill =
-    pips.find((pip) => pip.me)?.fraction ??
-    (duration > 0 ? Math.max(0, Math.min(1, position / duration)) : 0)
 
   if (composing) {
     return (
@@ -664,29 +714,13 @@ export function PlayerClubStrip({
                 {club.memberCount} {club.memberCount === 1 ? 'reader' : 'readers'}
               </AppText>
             </View>
-            <View style={styles.raceTrack}>
-              <View style={styles.raceLine} />
-              <View style={[styles.raceFill, { width: `${raceFill * 100}%` as `${number}%` }]} />
-              <ProgressNoteMarkers
-                notes={club.notes}
-                locked={club.locked}
-                duration={duration}
-                colors={colors}
-                styles={styles}
-              />
-              {pips.map((pip) => (
-                <View
-                  key={pip.id}
-                  style={[
-                    styles.racePip,
-                    { left: `${pip.fraction * 100}%` as `${number}%` },
-                    pip.me && styles.racePipMe,
-                  ]}
-                >
-                  <Avatar uri={avatarUrl(pip.id)} size={18} name={pip.name} />
-                </View>
-              ))}
-            </View>
+            <PlayerClubProgressRail
+              members={club.members}
+              position={position}
+              duration={duration}
+              notes={club.notes}
+              locked={club.locked}
+            />
             <View style={styles.raceFooter}>
               <View style={styles.listeningCopy}>
                 <AppText variant="caption" color="rgba(255,255,255,0.62)" numberOfLines={1}>
@@ -803,6 +837,8 @@ const makeStyles = (colors: Palette) =>
       borderRadius: 4,
       backgroundColor: 'rgba(255,255,255,0.6)',
     },
+    raceLinePage: { backgroundColor: colors.fillStrong },
+    raceFillPage: { backgroundColor: colors.accent },
     noteMarker: {
       position: 'absolute',
       top: 5,
@@ -821,6 +857,8 @@ const makeStyles = (colors: Palette) =>
       borderColor: 'rgba(255,255,255,0.28)',
       backgroundColor: 'rgba(15,11,10,0.9)',
     },
+    noteMarkerPage: { backgroundColor: colors.scaffold },
+    noteMarkerLockedPage: { borderColor: colors.textFaint, backgroundColor: colors.scaffold },
     racePip: {
       position: 'absolute',
       top: 3,
@@ -834,6 +872,7 @@ const makeStyles = (colors: Palette) =>
       borderColor: 'rgba(13,10,9,0.96)',
       borderRadius: 11,
     },
+    racePipPage: { borderColor: colors.scaffold },
     racePipMe: {
       zIndex: 3,
       borderColor: colors.accent,
