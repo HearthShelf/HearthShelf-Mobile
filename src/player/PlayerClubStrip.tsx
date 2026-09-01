@@ -36,6 +36,51 @@ interface RacePip {
   me: boolean
 }
 
+function ProgressNoteMarkers({
+  notes,
+  locked,
+  duration,
+  colors,
+  styles,
+}: {
+  notes: HSNote[]
+  locked: HSNoteStub[]
+  duration: number
+  colors: Palette
+  styles: ReturnType<typeof makeStyles>
+}) {
+  if (duration <= 0) return null
+
+  const markers = [
+    ...notes.flatMap((note) =>
+      note.timeSec == null ? [] : [{ id: note.id, timeSec: note.timeSec, locked: false }],
+    ),
+    ...locked.map((stub) => ({ id: stub.id, timeSec: stub.timeSec, locked: true })),
+  ]
+
+  return markers.map((marker) => {
+    const fraction = Math.max(0, Math.min(1, marker.timeSec / duration))
+    return (
+      <View
+        key={`${marker.locked ? 'locked' : 'visible'}-${marker.id}`}
+        style={[
+          styles.noteMarker,
+          marker.locked && styles.noteMarkerLocked,
+          { left: `${fraction * 100}%` as `${number}%` },
+        ]}
+        accessible
+        accessibilityLabel={`${marker.locked ? 'Locked comment unlocks' : 'Comment'} at ${formatTimestamp(marker.timeSec)}`}
+      >
+        <Icon
+          name={icons.chat}
+          size={11}
+          color={marker.locked ? 'rgba(255,255,255,0.48)' : colors.accent}
+        />
+      </View>
+    )
+  })
+}
+
 function nearbyNote(notes: HSNote[], locked: HSNoteStub[], position: number): NearbyNote | null {
   const candidates: NearbyNote[] = []
   for (const note of notes) {
@@ -135,6 +180,8 @@ export function PlayerClubProgressStrip({
   memberCount,
   position,
   duration,
+  notes = [],
+  locked = [],
   onPress,
   expanded,
 }: {
@@ -143,6 +190,8 @@ export function PlayerClubProgressStrip({
   memberCount: number
   position: number
   duration: number
+  notes?: HSNote[]
+  locked?: HSNoteStub[]
   onPress: () => void
   expanded: boolean
 }) {
@@ -178,6 +227,13 @@ export function PlayerClubProgressStrip({
         <View style={styles.raceTrack}>
           <View style={styles.raceLine} />
           <View style={[styles.raceFill, { width: `${raceFill * 100}%` as `${number}%` }]} />
+          <ProgressNoteMarkers
+            notes={notes}
+            locked={locked}
+            duration={duration}
+            colors={colors}
+            styles={styles}
+          />
           {pips.map((pip) => (
             <View
               key={pip.id}
@@ -611,6 +667,13 @@ export function PlayerClubStrip({
             <View style={styles.raceTrack}>
               <View style={styles.raceLine} />
               <View style={[styles.raceFill, { width: `${raceFill * 100}%` as `${number}%` }]} />
+              <ProgressNoteMarkers
+                notes={club.notes}
+                locked={club.locked}
+                duration={duration}
+                colors={colors}
+                styles={styles}
+              />
               {pips.map((pip) => (
                 <View
                   key={pip.id}
@@ -740,6 +803,24 @@ const makeStyles = (colors: Palette) =>
       borderRadius: 4,
       backgroundColor: 'rgba(255,255,255,0.6)',
     },
+    noteMarker: {
+      position: 'absolute',
+      top: 5,
+      width: 18,
+      height: 18,
+      marginLeft: -9,
+      zIndex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: colors.accent,
+      borderRadius: 9,
+      backgroundColor: 'rgba(15,11,10,0.96)',
+    },
+    noteMarkerLocked: {
+      borderColor: 'rgba(255,255,255,0.28)',
+      backgroundColor: 'rgba(15,11,10,0.9)',
+    },
     racePip: {
       position: 'absolute',
       top: 3,
@@ -748,6 +829,7 @@ const makeStyles = (colors: Palette) =>
       marginLeft: -11,
       alignItems: 'center',
       justifyContent: 'center',
+      zIndex: 2,
       borderWidth: 2,
       borderColor: 'rgba(13,10,9,0.96)',
       borderRadius: 11,

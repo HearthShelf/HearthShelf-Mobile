@@ -82,6 +82,7 @@ import {
   type ChapterMark,
 } from '@/social/NoteThread'
 import { EmojiPickerSheet } from '@/social/EmojiPickerSheet'
+import { AheadNotes } from '@/social/AheadNotes'
 import {
   getReactionRecents,
   hydrateReactionRecents,
@@ -1092,6 +1093,8 @@ export default function ClubRoomScreen() {
                   : (detail.members.find((member) => member.userId === meId)?.currentTime ?? 0)
               }
               duration={bookDurationSec}
+              notes={detail.notes.notes}
+              locked={detail.notes.locked}
               expanded={progressExpanded}
               onPress={() => setProgressExpanded((value) => !value)}
             />
@@ -1175,7 +1178,7 @@ export default function ClubRoomScreen() {
                 colors={colors}
                 styles={styles}
               />
-            ) : detail.notes.notes.length === 0 ? (
+            ) : detail.notes.notes.length === 0 && detail.notes.hiddenAhead === 0 ? (
               <AppText
                 variant="meta"
                 color={colors.textMuted}
@@ -1184,33 +1187,44 @@ export default function ClubRoomScreen() {
                 No notes on this book yet.
               </AppText>
             ) : (
-              <NoteThread
-                notes={detail.notes.notes}
-                chapters={chapters}
-                durationSec={bookDurationSec}
-                meId={meId}
-                canModerate={isOwner}
-                highlightId={highlightId ?? undefined}
-                newSinceTs={newSinceTs}
-                onReply={isMember && detail.club.allowReplies ? beginReply : undefined}
-                onDelete={isMember ? removeNote : undefined}
-                onOpenUser={(userId) =>
-                  router.push(`/user/${encodeURIComponent(userId)}?from=${active}`)
-                }
-                onReact={isMember ? (n, kind, on) => void toggleReaction(n, kind, on) : undefined}
-                onOpenReactions={(n, kind) => void openReactionDetails(n, kind)}
-                onOpenActions={openNoteActions}
-                replyComposerFor={replyTo?.id}
-                replyComposer={replyTo ? composer(true) : undefined}
-                editComposerFor={editingNote?.id}
-                editComposer={
-                  editingNote ? composer(!!editingNote.parentId, editingNote) : undefined
-                }
-                onNoteLayout={(_, y) => {
-                  noteYRef.current = y
-                  tryScrollToDeepLink()
-                }}
-              />
+              <View>
+                {detail.notes.notes.length > 0 ? (
+                  <NoteThread
+                    notes={detail.notes.notes}
+                    chapters={chapters}
+                    durationSec={bookDurationSec}
+                    meId={meId}
+                    canModerate={isOwner}
+                    highlightId={highlightId ?? undefined}
+                    newSinceTs={newSinceTs}
+                    onReply={isMember && detail.club.allowReplies ? beginReply : undefined}
+                    onDelete={isMember ? removeNote : undefined}
+                    onOpenUser={(userId) =>
+                      router.push(`/user/${encodeURIComponent(userId)}?from=${active}`)
+                    }
+                    onReact={
+                      isMember ? (n, kind, on) => void toggleReaction(n, kind, on) : undefined
+                    }
+                    onOpenReactions={(n, kind) => void openReactionDetails(n, kind)}
+                    onOpenActions={openNoteActions}
+                    replyComposerFor={replyTo?.id}
+                    replyComposer={replyTo ? composer(true) : undefined}
+                    editComposerFor={editingNote?.id}
+                    editComposer={
+                      editingNote ? composer(!!editingNote.parentId, editingNote) : undefined
+                    }
+                    onNoteLayout={(_, y) => {
+                      noteYRef.current = y
+                      tryScrollToDeepLink()
+                    }}
+                  />
+                ) : null}
+                <AheadNotes
+                  count={detail.notes.hiddenAhead}
+                  stubs={detail.notes.locked}
+                  position={position}
+                />
+              </View>
             )}
           </View>
         ) : null}

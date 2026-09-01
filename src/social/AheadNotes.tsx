@@ -77,8 +77,7 @@ export function AheadNotes({
       <View style={styles.header}>
         <Icon name={icons.lock} size={16} color={colors.textMuted} />
         <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
-          {count === 1 ? '1 comment' : `${count} comments`} further in. These unlock as your
-          listening progresses.
+          {count === 1 ? '1 comment is' : `${count} comments are`} waiting further in.
         </AppText>
       </View>
 
@@ -115,17 +114,37 @@ function PlaceholderRow({
   colors: Palette
 }) {
   return (
-    <View style={styles.row}>
-      {/* A blank disc, not an avatar - the server withholds who wrote this. */}
-      <View style={[styles.dot, isReply && styles.dotSmall]} />
+    <View
+      style={styles.row}
+      accessible
+      accessibilityLabel={`Locked comment at ${formatTimestamp(stub.timeSec)}`}
+    >
+      {/* A lock, not an avatar - the server withholds who wrote this. */}
+      <View style={[styles.dot, isReply && styles.dotSmall]}>
+        <Icon name={icons.lock} size={isReply ? 10 : 13} color={colors.textMuted} />
+      </View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <AppText variant="caption" color={colors.textMuted}>
-          {isReply ? 'Reply' : `At ${formatTimestamp(stub.timeSec)}`}
-        </AppText>
+        <View style={styles.meta}>
+          <AppText variant="caption" color={colors.textMuted}>
+            {isReply ? 'Locked reply' : 'Locked comment'}
+          </AppText>
+          <AppText variant="caption" color={colors.textFaint}>
+            unlocks at {formatTimestamp(stub.timeSec)}
+          </AppText>
+        </View>
         <View style={styles.bars}>
           <View style={[styles.bar, { width: isReply ? '72%' : '90%' }]} />
           <View style={[styles.bar, { width: isReply ? '44%' : '58%' }]} />
+          {!isReply ? <View style={[styles.bar, { width: '42%' }]} /> : null}
         </View>
+        {!isReply ? (
+          <View style={styles.hint}>
+            <Icon name={icons.schedule} size={13} color={colors.textFaint} />
+            <AppText variant="caption" color={colors.textFaint}>
+              Unlocks as your listening progress reaches it.
+            </AppText>
+          </View>
+        ) : null}
       </View>
     </View>
   )
@@ -138,6 +157,8 @@ const makeStyles = (colors: Palette) =>
       padding: spacing.md,
       borderRadius: radius.card,
       backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
       gap: spacing.sm,
     },
     header: {
@@ -150,7 +171,7 @@ const makeStyles = (colors: Palette) =>
       flexDirection: 'row',
       alignItems: 'flex-start',
       gap: spacing.md,
-      opacity: 0.55,
+      opacity: 0.72,
     },
     replyIndent: {
       paddingLeft: spacing.lg,
@@ -161,13 +182,22 @@ const makeStyles = (colors: Palette) =>
       height: 22,
       borderRadius: 11,
       backgroundColor: colors.hairline,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     dotSmall: { width: 16, height: 16, borderRadius: 8 },
-    bars: { marginTop: spacing.xs, gap: 6 },
+    meta: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
+    bars: { marginTop: spacing.sm, gap: 6 },
     bar: {
       height: 9,
       borderRadius: radius.pill,
       backgroundColor: colors.hairline,
+    },
+    hint: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      marginTop: spacing.sm,
     },
     more: { paddingTop: spacing.xs },
   })
