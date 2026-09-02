@@ -96,6 +96,37 @@ const LOCAL_POSITION_MAX_AGE_MS = 12 * 60 * 60 * 1000
 const CONCURRENT_STAMP_MS = 15_000
 
 /**
+ * A backwards move the elapsed time cannot account for.
+ *
+ * CONCURRENT_STAMP_MS alone is a fixed window, and it was sized from the single
+ * 670ms sample above. Real events since have carried the same impossible shape at
+ * far wider gaps - 318s of position dropped across a 35.8s stamp gap, and 73s
+ * dropped across 16.0s (HS-MOBILEAPP-15, 4 events / 3 users / 4 releases, every
+ * one on the server_newer branch). Both are outside the fixed window, so the
+ * guard declined and the listener lost the position.
+ *
+ * Rather than widen the window again and re-guess, use the physics: listening
+ * forward cannot move a playhead BACKWARDS, so the only honest way a server row
+ * sits N seconds behind ours is that the two describe different moments. If the
+ * stamps are closer together than the position gap, no amount of listening in
+ * between explains it - the server row is simply a stale observation that landed
+ * late, whatever its stamp says.
+ *
+ * The one legitimate way to move backwards fast is a SEEK. But a seek on this
+ * device writes locally too (recordLocalProgress on the tick that follows it), so
+ * it moves our own row and never arrives as server-behind-local. A seek on
+ * ANOTHER device is covered by the ratio: that row reaches us stamped well after
+ * ours, so the elapsed gap grows with real time and this guard stops applying.
+ *
+ * Deliberately a ratio, not a constant: it scales with the size of the loss it is
+ * protecting, so it cannot be outgrown by a longer sync cadence the way a fixed
+ * window was.
+ */
+function impossibleBackwardsJump(dropSec: number, stampGapMs: number): boolean {
+  return dropSec > 0 && dropSec > stampGapMs / 1000
+}
+
+/**
  * How far the server must be BEHIND for the guard above to apply.
  *
  * Small differences are ordinary rounding between a tick and its sync, where the
@@ -379,14 +410,21 @@ function keepFresherLocalPositions(
     // gap), and the drop must exceed CONCURRENT_MIN_DROP_SEC (a felt loss, not
     // tick/sync rounding). A real listen on another device moves the stamp far
     // more than a few seconds, so it still wins.
+    const dropSec = local.currentTime - server.currentTime
+    const stampGapMs = serverAt - localAt
     const concurrentRace =
       localAt > 0 &&
-      serverAt - localAt <= CONCURRENT_STAMP_MS &&
-      local.currentTime - server.currentTime > CONCURRENT_MIN_DROP_SEC
+      dropSec > CONCURRENT_MIN_DROP_SEC &&
+      // Either the stamps are close enough to be one race (the original,
+      // round-trip-sized window), or the backwards jump is too big for the
+      // elapsed time to explain at all (see impossibleBackwardsJump). The
+      // minimum-drop floor above still gates both, so ordinary tick/sync
+      // rounding converges normally and only a felt loss is ever overridden.
+      (stampGapMs <= CONCURRENT_STAMP_MS || impossibleBackwardsJump(dropSec, stampGapMs))
     if (concurrentRace) {
       breadcrumb(
         'progress',
-        `server row ${Math.round(local.currentTime - server.currentTime)}s behind local for ${id.slice(0, 8)} but only ${serverAt - localAt}ms newer - keeping local position (concurrent write)`,
+        `server row ${Math.round(dropSec)}s behind local for ${id.slice(0, 8)} but only ${stampGapMs}ms newer - keeping local position (concurrent write)`,
       )
     }
     // Strictly newer only: equal stamps mean this row already came from the
