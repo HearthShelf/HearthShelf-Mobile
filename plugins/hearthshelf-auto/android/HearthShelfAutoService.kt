@@ -2299,7 +2299,42 @@ class HearthShelfAutoService : MediaLibraryService() {
 
   private fun absItemsInProgress(base: String, tok: String): List<Book> {
     val body = httpGet("$base/api/me/items-in-progress", tok) ?: return emptyList()
-    return parseBooks(JSONObject(body).optJSONArray("libraryItems"))
+    val books = parseBooks(JSONObject(body).optJSONArray("libraryItems"))
+    // ABS keeps returning a naturally finished book from items-in-progress, so
+    // this list alone would leave a book you just finished sitting at the top of
+    // the car's Continue row - while the phone's Continue shelf, which filters it
+    // out, correctly does not show it (HS-MOBILEAPP-2P).
+    //
+    // The phone filters against its own progress store, which the car has no
+    // access to (separate process, no JS runtime). /api/me is where that store
+    // gets its finished flags from, so ask ABS the same question directly.
+    // Best-effort: if the call fails, fall back to the unfiltered list rather
+    // than emptying the row.
+    val finished = absFinishedIds(base, tok) ?: return books
+    return books.filterNot { finished.contains(it.id) }
+  }
+
+  /**
+   * Item ids the server considers FINISHED, from /api/me's mediaProgress.
+   *
+   * Null (not empty) when the request or parse fails, so callers can tell "no
+   * finished books" from "could not find out" and degrade accordingly.
+   */
+  private fun absFinishedIds(base: String, tok: String): Set<String>? {
+    val body = httpGet("$base/api/me", tok) ?: return null
+    return try {
+      val arr = JSONObject(body).optJSONArray("mediaProgress") ?: return emptySet()
+      val out = HashSet<String>()
+      for (i in 0 until arr.length()) {
+        val row = arr.optJSONObject(i) ?: continue
+        if (row.optBoolean("isFinished", false)) {
+          row.optString("libraryItemId").takeIf { it.isNotEmpty() }?.let { out.add(it) }
+        }
+      }
+      out
+    } catch (_: Exception) {
+      null
+    }
   }
 
   private fun parseBooks(arr: JSONArray?): List<Book> {
