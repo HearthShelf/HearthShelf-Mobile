@@ -17,6 +17,26 @@ export function useTimelineMarkers(
   durationSec: number,
   position: number,
   enabled = true,
+  /**
+   * The span the markers are drawn ACROSS, when that is not the whole book.
+   *
+   * The player's seek bar can be scoped to the current chapter (the "Progress
+   * bar" setting), and then its fill is chapter-relative. Markers clustered
+   * against the whole duration were still laid out book-relative, so on a
+   * chapter-scoped bar the ticks and the fill used different denominators and
+   * visibly disagreed - the fill sat at the chapter fraction while the ticks
+   * (and the % label) sat at the book fraction (HS-MOBILEAPP-2N).
+   *
+   * Notes are still FETCHED for the whole book; this only decides where they
+   * land. Markers outside the window are dropped, since there is nowhere on a
+   * chapter-scoped bar to honestly put them.
+   *
+   * Passed as two numbers rather than an object so the memo below can depend on
+   * them directly - a fresh `{start, end}` literal each render would change
+   * identity every time and defeat it.
+   */
+  windowStart?: number,
+  windowEnd?: number,
 ): TimelineMarker[] {
   const [notes, setNotes] = useState<HSNote[]>([])
   const [locked, setLocked] = useState<HSNoteStub[]>([])
@@ -71,6 +91,17 @@ export function useTimelineMarkers(
       if (s.parentId) continue
       items.push({ id: s.id, timeSec: s.timeSec, kind: 'stub' })
     }
-    return clusterTimelineMarkers(items, durationSec)
-  }, [notes, locked, durationSec, enabled])
+    // Whole-book bar: cluster as-is. Chapter-scoped bar: keep only the notes
+    // inside the window and re-base them onto it, so a marker's fraction means
+    // the same thing as the fill's - both measured across what is drawn.
+    if (!windowStart && !windowEnd) return clusterTimelineMarkers(items, durationSec)
+    const start = windowStart ?? 0
+    const span = Math.max(1, (windowEnd ?? durationSec) - start)
+    const inWindow: MarkerItem[] = []
+    for (const it of items) {
+      if (it.timeSec < start || it.timeSec > start + span) continue
+      inWindow.push({ ...it, timeSec: it.timeSec - start })
+    }
+    return clusterTimelineMarkers(inWindow, span)
+  }, [notes, locked, durationSec, enabled, windowStart, windowEnd])
 }

@@ -504,6 +504,18 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // so progress reads as flowing time. Computed before the no-track early return
   // (hooks must run unconditionally).
   const bookProgress = duration > 0 ? Math.min(1, Math.max(0, position / duration)) : 0
+  // The seek bar can be scoped to the current chapter (Progress bar setting), and
+  // then its fill is chapter-relative. Markers have to be laid out across the same
+  // span or they disagree with the fill they sit on - the fill at the chapter
+  // fraction, the ticks at the book fraction (HS-MOBILEAPP-2N). Computed here
+  // rather than beside the other chapter maths further down because the hook below
+  // must run before the no-track early return.
+  //
+  // Mirrors the chStart/chEnd derivation there: chapter scope needs chapters to
+  // exist, and falls back to whole-book without them.
+  const markerChapter = nowPlaying ? currentChapter() : null
+  const markerScoped =
+    settings.scrubber === 'chapter' && (nowPlaying?.chapters?.length ?? 0) > 0 && !!markerChapter
   // Timeline note markers on the seek bar. Suppressed in immersive/car mode
   // (distraction; the car UI is native anyway). Hook runs unconditionally.
   const timelineMarkers = useTimelineMarkers(
@@ -511,6 +523,8 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
     duration,
     position,
     !immersive,
+    markerScoped ? markerChapter.start : undefined,
+    markerScoped ? markerChapter.end : undefined,
   )
   const bookBar = useSharedValue(bookProgress)
   useEffect(() => {
