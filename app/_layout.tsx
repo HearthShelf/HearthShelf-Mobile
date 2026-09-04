@@ -109,6 +109,22 @@ if (SENTRY_DSN) {
           launch: { ...event.contexts?.launch, ...live.launch },
         }
       }
+      // Attach the breadcrumb tail when the event does not already carry one.
+      // Self-reported telemetry (progress drops, playback loss) used to arrive
+      // with player/launch context but NO trail, which is where the cause
+      // actually is - diagnosing HS-MOBILEAPP-15 meant inferring an 11-minute
+      // window from two timestamps. Feedback reports set their own richer
+      // (disk-backed) recent_log just before capture, so leave theirs alone.
+      if (!event.contexts?.recent_log) {
+        try {
+          const log = (
+            require('@/lib/feedbackDiagnostics') as typeof import('@/lib/feedbackDiagnostics')
+          ).liveLogContext()
+          if (log) event.contexts = { ...event.contexts, recent_log: log }
+        } catch {
+          // Never let diagnostics stop an event being sent.
+        }
+      }
       return event
     },
   })

@@ -133,6 +133,35 @@ export function livePlayerContext(): {
   }
 }
 
+/**
+ * The current run's breadcrumb tail, for `beforeSend` to attach to events that
+ * are NOT feedback reports.
+ *
+ * `recent_log` used to be written only by the feedback path, so a self-reported
+ * telemetry event (a progress drop, a playback loss) arrived with player and
+ * launch contexts but no trail - and the trail is where the cause is. Diagnosing
+ * HS-MOBILEAPP-15 meant reasoning backwards from two timestamps because the
+ * ~11 minutes of breadcrumbs leading into it were never attached.
+ *
+ * Deliberately the in-memory ring only, NOT buildTrail(): this runs inside
+ * beforeSend on every event, and buildTrail reads the on-disk ring plus the
+ * prior run's. The live ring is what describes the event being sent; feedback
+ * reports still get the fuller disk-backed trail through their own path.
+ */
+export function liveLogContext(): { tail: string; totalLines: number } | null {
+  try {
+    const crumbs = readBreadcrumbs()
+    if (!crumbs.length) return null
+    const lines = crumbs.map(crumbLine)
+    return {
+      tail: lines.slice(-CONTEXT_TAIL_CRUMBS).join('\n'),
+      totalLines: lines.length,
+    }
+  } catch {
+    return null
+  }
+}
+
 function playerSnapshot(): PlayerSnapshot {
   const s = getState()
   const np = s.nowPlaying
