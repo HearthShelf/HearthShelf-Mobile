@@ -55,7 +55,6 @@ import {
   syncStateStartSession,
   syncStateTick,
   syncStateSynced,
-  syncStatePending,
   syncStateFailed,
   syncStateClear,
   isOfflineMode,
@@ -78,6 +77,11 @@ interface ActiveSession {
   segmentOpenedAt?: number
   /** Book position (seconds) at the last successful server sync. */
   lastSyncedTime: number
+  /** ms epoch of the last push ATTEMPT, for the wall-clock backstop (see
+   *  SYNC_MAX_INTERVAL_MS). Attempt rather than success: a failing server must
+   *  not make us retry on every sparse tick, and a real failure already goes red
+   *  and re-banks its listened-time. */
+  lastPushAtMs: number
   /** Real listened-time (seconds) accrued since the last server sync. Grows
    *  from actual playback between ticks, so seeks/skips never count. */
   pendingListened: number
@@ -129,6 +133,31 @@ let lastTickTime: number | null = null
 const MAX_TICK_GAP = 10
 /** Sync to the server once this much real listened-time has accrued. */
 const SYNC_LISTENED_THRESHOLD = 15
+
+/**
+ * Force a sync once this much WALL-CLOCK time has passed since the last one,
+ * however little listened-time the ticks have credited.
+ *
+ * SYNC_LISTENED_THRESHOLD counts listened-time, which is derived from the gaps
+ * between progress ticks - so it only advances when ticks actually arrive, and
+ * `tickListened` credits nothing at all for a gap over MAX_TICK_GAP. Both of
+ * those stop being true when Android backgrounds us: the native tick is a 1s
+ * `postDelayed` on the main looper (HearthShelfPlayerService.progressTick), and
+ * Doze/App Standby defer it while ExoPlayer keeps playing. Ticks then arrive
+ * far apart, each gap is over MAX_TICK_GAP, each credits 0, the threshold is
+ * never reached, and nothing syncs - while the listener hears the whole book.
+ *
+ * The seek-settle timer is no backstop either: it is a JS setTimeout, frozen by
+ * the same throttling.
+ *
+ * Observed 2026-09-04 (HS-MOBILEAPP-15): 653s with no sync and a local row 430s
+ * stale while playing backgrounded - recordLocalProgress runs on every tick, so
+ * a stale local row proves the tick itself stopped, not that the network failed.
+ *
+ * Keyed on elapsed real time so it holds however sparse the ticks become: the
+ * next tick to arrive after this window pushes, whatever it credited.
+ */
+const SYNC_MAX_INTERVAL_MS = 90_000
 
 /** How far into a book a FINISHED book's saved position has to sit before we
  *  treat it as a leftover end-of-book marker rather than a real re-listen spot.
@@ -489,6 +518,7 @@ export async function playItemById(
     title: np.title,
     startedAt: startedNow(),
     lastSyncedTime: startAt,
+    lastPushAtMs: Date.now(),
     pendingListened: 0,
     totalListened: 0,
   }
@@ -636,6 +666,7 @@ export async function ensureSessionForPlayback(): Promise<boolean> {
     title: np.title,
     startedAt: startedNow(),
     lastSyncedTime: pos,
+    lastPushAtMs: Date.now(),
     pendingListened: 0,
     totalListened: 0,
   }
@@ -883,14 +914,30 @@ export async function syncProgress(currentTime: number, force = false): Promise<
   // listened-time, never crossed the threshold, and resumed at the pre-skip spot.
   recordLocalProgress(active.itemId, currentTime, active.duration)
 
+  // The listened-time threshold above is tick-derived, so throttled ticks can
+  // starve it indefinitely while audio plays on (see SYNC_MAX_INTERVAL_MS).
+  // Elapsed real time since the last push is immune to that, so let it force one.
+  const staleByClock = Date.now() - active.lastPushAtMs >= SYNC_MAX_INTERVAL_MS
   // Sync on `force` (pause/stop/book-switch) ALWAYS - even a few seconds of
   // listening should land - or once enough real listened-time has accrued.
-  if (!force && active.pendingListened < SYNC_LISTENED_THRESHOLD) return
+  if (!force && !staleByClock && active.pendingListened < SYNC_LISTENED_THRESHOLD) return
   // A forced sync still pushes with zero accrued time when a seek left the
   // server's position stale (pause right after a skip) - otherwise the stop point
-  // the listener chose never lands.
-  if (active.pendingListened <= 0 && !(force && seekDirty)) return
+  // the listener chose never lands. The clock backstop pushes on zero accrued
+  // time too: that is exactly the throttled case, where the position has moved a
+  // long way but the ticks credited nothing.
+  if (active.pendingListened <= 0 && !staleByClock && !(force && seekDirty)) return
 
+  // Traced because a backstop push is evidence of tick starvation, and the
+  // starvation itself is silent. A trail of these says ticks are being throttled
+  // (and how long the gaps run); their absence says the ordinary threshold is
+  // keeping up and this window can be left alone.
+  if (staleByClock && active.pendingListened < SYNC_LISTENED_THRESHOLD) {
+    breadcrumb(
+      'sync',
+      `no sync for ${Math.round((Date.now() - active.lastPushAtMs) / 1000)}s (ticks credited ${Math.round(active.pendingListened)}s) - forcing push @${Math.round(currentTime)}s`,
+    )
+  }
   seekDirty = false
   await pushListened(active, currentTime)
 }
@@ -953,6 +1000,9 @@ async function pushListened(a: ActiveSession, currentTime: number): Promise<bool
   const timeListened = Math.round(a.pendingListened)
   a.pendingListened = 0
   a.lastSyncedTime = currentTime
+  // Stamp the ATTEMPT, before the request: the clock backstop must not re-fire
+  // on every sparse tick while a slow or failing push is in flight.
+  a.lastPushAtMs = Date.now()
   // Whatever prompted this push, it carries the current position - so any seek
   // debt is settled and a pending settle-timer has nothing left to send.
   seekDirty = false
@@ -1273,6 +1323,7 @@ async function rotateSessionForCrossDeviceResume(itemId: string, closeAt: number
       startedAt: startedNow(),
       segmentOpenedAt: startedNow(),
       lastSyncedTime: closeAt,
+      lastPushAtMs: Date.now(),
       pendingListened: 0,
     })
     attachSessionId(session.id)
