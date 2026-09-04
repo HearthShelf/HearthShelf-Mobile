@@ -973,7 +973,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                     notes={activeClub.notes}
                     locked={activeClub.locked}
                     tone="page"
-                    style={{ width: progressRailWidth }}
+                    style={{ width: progressRailWidth, alignSelf: 'center' }}
                   />
                 ) : (
                   <View style={[styles.bookBarTrack, { width: progressRailWidth }]}>
