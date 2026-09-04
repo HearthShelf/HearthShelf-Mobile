@@ -183,7 +183,21 @@ const SEEK_SETTLE_TOLERANCE_SEC = 2
 const SEEK_SETTLE_TIMEOUT_MS = 4000
 /** The seek we are waiting for the engine to land (see reportPosition). Declared
  *  here rather than beside requestSeek because loadTrack below arms it too. */
-let pendingSeek: { target: number; until: number } | null = null
+let pendingSeek: { target: number; until: number; retries: number } | null = null
+/**
+ * How many times a lapsed seek is re-issued before we accept the engine's
+ * position instead.
+ *
+ * A seek that does not land is not always the engine refusing it - it is often
+ * the engine not having heard it yet (an unbuffered region, or a service that
+ * was suspended while the app sat in the background). Surrendering on the first
+ * lapse hands the UI a tick from wherever the engine actually is, which is how a
+ * 510s rollback reached the screen after a 6287s background gap
+ * (HS-MOBILEAPP-2S). Re-issuing gives the engine another window to obey; the cap
+ * keeps a genuinely rejected seek (past the end of a shorter re-resolved track,
+ * say) from looping forever.
+ */
+const SEEK_REISSUE_LIMIT = 2
 
 /**
  * Load a track into the player. Starts playing by default; pass
@@ -217,7 +231,7 @@ export function loadTrack(track: NowPlaying, autoPlay = true): void {
   // as a user seek, and the same escape hatch if it never lands.
   pendingSeek =
     track.startPosition > 0
-      ? { target: track.startPosition, until: Date.now() + SEEK_SETTLE_TIMEOUT_MS }
+      ? { target: track.startPosition, until: Date.now() + SEEK_SETTLE_TIMEOUT_MS, retries: 0 }
       : null
   set({
     nowPlaying: track,
@@ -529,7 +543,7 @@ export function requestSeek(seconds: number): void {
   // Hold native progress ticks until the engine reports back near this target,
   // so an in-flight seek can't be rolled back by a tick describing the old spot
   // (and a rapid second skip measures from where the first one put us).
-  pendingSeek = { target, until: Date.now() + SEEK_SETTLE_TIMEOUT_MS }
+  pendingSeek = { target, until: Date.now() + SEEK_SETTLE_TIMEOUT_MS, retries: 0 }
   // A seek (esp. while paused) makes the server's position stale with no new
   // listened-time: mark sync dirty so the header icon goes orange and a tap can
   // push this spot. syncState is a leaf store (no deps back into here).
@@ -919,9 +933,27 @@ export function reportPosition(position: number): void {
       pendingSeek = null
     } else if (Date.now() < pendingSeek.until) {
       return
+    } else if (pendingSeek.retries < SEEK_REISSUE_LIMIT) {
+      // The window lapsed with the engine still elsewhere. Before believing it,
+      // ask again: the common cause is the engine never having heard the seek
+      // (unbuffered region, or a service suspended while backgrounded), not a
+      // refusal. Re-arm the hold and re-seed seekTo so the host re-issues it.
+      //
+      // `position` is deliberately NOT adopted here - adopting it is exactly the
+      // rollback this branch used to ship.
+      const target = pendingSeek.target
+      const retries = pendingSeek.retries + 1
+      breadcrumb(
+        'player',
+        `seek to ${Math.round(target)}s has not landed (engine at ${Math.round(position)}s); re-issuing ${retries}/${SEEK_REISSUE_LIMIT}`,
+      )
+      pendingSeek = { target, until: Date.now() + SEEK_SETTLE_TIMEOUT_MS, retries }
+      set({ seekTo: target })
+      return
     } else {
-      // The seek never landed (engine rejected it, or the track reloaded under
-      // us). Let the engine's truth win rather than freezing the UI forever.
+      // Re-issued and still refused: the engine genuinely cannot go there (the
+      // track reloaded shorter under us, say). Let its truth win rather than
+      // freezing the UI forever.
       //
       // Breadcrumbed because this branch is the fingerprint of the tolerance
       // being wrong rather than of a one-off engine hiccup. If skips are reported
