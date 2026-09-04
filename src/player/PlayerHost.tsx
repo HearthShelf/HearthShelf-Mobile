@@ -133,6 +133,17 @@ const STALL_AFTER_MS = 20_000
  *  seconds. */
 const STALL_CHECK_MS = 5000
 
+/** Stall threshold for the CAR player, which is deliberately slacker than the
+ *  phone's.
+ *
+ *  The car does not mirror a buffering state to JS (only progress and play/pause),
+ *  so unlike the phone branch there is no rebuffer signal to exclude first - a
+ *  long cellular rebuffer is indistinguishable from a stall from here. The
+ *  recovery is also heavier (re-preparing the car player audibly interrupts
+ *  playback), so it must not fire on a rebuffer a driver would have simply waited
+ *  out. */
+const CAR_STALL_AFTER_MS = 60_000
+
 /**
  * Hand the store's current book to the car player.
  *
@@ -813,10 +824,35 @@ export function PlayerHost() {
   useEffect(() => {
     const id = setInterval(() => {
       const s = getState()
-      // Only meaningful while the phone player is supposed to be producing audio.
-      // The car runs its own player and the phone stands down, emitting nothing -
-      // silence there is correct, not a stall.
-      if (!s.isPlaying || s.carActive || !s.nowPlaying) return
+      if (!s.isPlaying || !s.nowPlaying) return
+      // The car runs its own player, but it mirrors a progress tick to JS every
+      // second while audio runs (HearthShelfAutoService's tick loop), so its
+      // silence is just as observable - and it had no watchdog of its own. The
+      // car only self-recovers from onPlayerError; a SILENT stall (no error, the
+      // player simply stops advancing) left the head unit quiet for the rest of
+      // the drive with no way forward - "it just stops playing"
+      // (HS-MOBILEAPP-2R).
+      //
+      // Recovery must not route through recoverLostPlayback: that reloads the
+      // PHONE player, which would play the book a second time over the car. Ask
+      // the car to take the book again instead - the same channel onPlayerError
+      // and an empty car player already use, which re-prepares the car player at
+      // the live position.
+      if (s.carActive) {
+        const last = lastProgressAt.current
+        if (!last) {
+          lastProgressAt.current = Date.now()
+          return
+        }
+        if (Date.now() - last < CAR_STALL_AFTER_MS) return
+        lastProgressAt.current = Date.now()
+        breadcrumb('car', `car playback stalled @${Math.round(s.position)}s; re-handing the book`)
+        // Clear the held marker so handBookToCar re-issues for the same book
+        // (it no-ops when the car is already believed to hold it).
+        carBook.current = null
+        handBookToCar(carBook)
+        return
+      }
       // A genuine rebuffer already explains the silence, and the engine reports
       // it. Waiting it out is right; reloading mid-rebuffer would be the false
       // positive that costs a listener their audio.
