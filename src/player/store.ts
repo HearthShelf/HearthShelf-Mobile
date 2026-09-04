@@ -687,6 +687,19 @@ function touchSleepTimer(): void {
 function expireStaleSleepTimer(): void {
   if (!state.sleepTimer) return
   if (Date.now() - sleepTimerTouchedAt < STALE_SLEEP_TIMER_MS) return
+  // Audio that is running right now is not a leftover from a previous session,
+  // however old the stamp is. The stamp only advances on ticks that MOVE the
+  // position, and a long car drive starves it: mirrorCarTrack runs this on every
+  // car re-announce (republishLoaded fires on each foreground), so a timer armed
+  // over an hour earlier was being discarded mid-drive - the sleep timer then
+  // never fired and the car played on (HS-MOBILEAPP-2Q).
+  //
+  // Re-stamp instead of discarding, so the timer keeps running and the next
+  // genuine idle stretch still expires it.
+  if (state.isPlaying) {
+    sleepTimerTouchedAt = Date.now()
+    return
+  }
   breadcrumb('player', 'discarding a stale sleep timer from a previous listening session')
   set({ sleepTimer: null, volume: 1 })
 }
