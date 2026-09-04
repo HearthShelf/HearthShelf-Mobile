@@ -26,6 +26,7 @@ import {
   progressFor,
   progressHydrated,
   recordLocalProgress,
+  noteServerConfirmedPosition,
   serverProgressUpdatedAt,
   isFinished,
   markFinished,
@@ -964,6 +965,8 @@ async function pushListened(a: ActiveSession, currentTime: number): Promise<bool
     // Confirmed on the server: drop exactly what landed from the safety buffer.
     // Subtracting (not clearing) keeps time accrued during the in-flight request.
     reduceStreamingPending(a.itemId, timeListened)
+    // ABS has this position now - see noteServerConfirmedPosition.
+    noteServerConfirmedPosition(a.itemId, currentTime)
     syncStateSynced(startedNow())
     return true
   } catch (e) {
@@ -1015,6 +1018,8 @@ async function reopenAndResync(
         duration: a.duration,
       })
       reduceStreamingPending(a.itemId, timeListened)
+      // ABS has this position now - see noteServerConfirmedPosition.
+      noteServerConfirmedPosition(a.itemId, currentTime)
       return true
     }
     breadcrumb('session', `reopened as ${session.id.slice(0, 8)} @${Math.round(currentTime)}s`)
@@ -1031,6 +1036,8 @@ async function reopenAndResync(
       duration: a.duration,
     })
     reduceStreamingPending(a.itemId, timeListened)
+    // ABS has this position now - see noteServerConfirmedPosition.
+    noteServerConfirmedPosition(a.itemId, currentTime)
     syncStateSynced(startedNow())
     return true
   } catch {

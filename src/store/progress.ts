@@ -69,6 +69,47 @@ function requestAutoQueueRecompute(): void {
 // came from, and a fresh launch refreshes before any resume decision matters.
 const serverUpdatedAt = new Map<string, number>()
 
+// The furthest position we have CONFIRMED the server accepted, per item.
+//
+// `lastUpdate` on the local row is a liveness stamp (recordLocalProgress
+// restamps it every tick), not a provenance one - it says when we last SAW the
+// playhead, never when the server last heard about it. The concurrent-write
+// guard below was reading it as provenance, which fails exactly when a sync
+// stops landing while playback continues: ticks keep the local stamp fresh, so
+// the stamp gap stays small no matter how far the two positions drift, and the
+// ratio test can never fire.
+//
+// Observed 2026-09-04 (HS-MOBILEAPP-15): 653s without a successful sync while
+// playing backgrounded, then a refresh whose server row was 191s behind the
+// playhead but 223s newer by stamp - so the guard declined and an hour-plus of
+// position went backwards.
+//
+// This watermark is the missing provenance: it only advances when ABS confirms a
+// push, so "the server row is at or behind what we already know it accepted"
+// identifies a stale row regardless of what its stamp claims. Not persisted -
+// it describes this run's syncs, and a fresh launch resolves resume from the
+// server anyway.
+const serverConfirmedSec = new Map<string, number>()
+
+/**
+ * Record that ABS confirmed this position. Called from the sync path on a
+ * successful push (see pushListened).
+ */
+export function noteServerConfirmedPosition(itemId: string, currentTime: number): void {
+  if (!itemId || !Number.isFinite(currentTime)) return
+  // Deliberately NOT monotonic. A backwards seek that syncs means the server
+  // genuinely holds that earlier position, and a row reporting it is current
+  // rather than stale - pinning the watermark to the high-water mark would make
+  // us reject the very row we just caused.
+  const prev = serverConfirmedSec.get(itemId)
+  if (prev === currentTime) return
+  serverConfirmedSec.set(itemId, currentTime)
+  // Write through rather than waiting for the next row change to carry it: the
+  // crash this guards against can land between the two, and a watermark that
+  // never reached disk protects nothing.
+  persist()
+}
+
 /** How stale (ms) a local position may be and still survive a refresh. Matches
  *  playback's LOCAL_RESUME_MAX_AGE_MS: past this the server is the better
  *  authority, so there is nothing to protect and holding the local value would
@@ -127,6 +168,29 @@ function impossibleBackwardsJump(dropSec: number, stampGapMs: number): boolean {
 }
 
 /**
+ * A server row that has not moved past what we already know the server accepted.
+ *
+ * The two guards above both reason from STAMPS, and stamps are exactly what
+ * stops being informative when syncs stall: `lastUpdate` on the local row is
+ * restamped by every tick, so a phone that plays for 11 minutes without a
+ * successful push still looks freshly stamped, the gap to the server stays
+ * small, and the ratio can never fire (HS-MOBILEAPP-15).
+ *
+ * `serverConfirmedSec` is not a stamp but an acknowledgement: it moves only when
+ * ABS confirms a push. If the row coming back sits at or behind that, the server
+ * cannot have learned anything new since - whatever its own lastUpdate says, it
+ * is re-reporting a position we already know it had, so it must not be allowed
+ * to drag a live playhead backwards.
+ *
+ * A genuine listen elsewhere always lands the row AHEAD of our confirmation
+ * (that device pushed a later position), so this never swallows one.
+ */
+function staleAgainstConfirmed(itemId: string, serverSec: number): boolean {
+  const confirmed = serverConfirmedSec.get(itemId)
+  return confirmed !== undefined && serverSec <= confirmed
+}
+
+/**
  * How far the server must be BEHIND for the guard above to apply.
  *
  * Small differences are ordinary rounding between a tick and its sync, where the
@@ -144,7 +208,19 @@ export function serverProgressUpdatedAt(itemId: string): number | undefined {
 
 function persist(): void {
   const items = [...state.byId.values()]
-  void AsyncStorage.setItem(STORE_KEY, JSON.stringify({ items })).catch(() => {})
+  // Carry the confirmed-position watermarks with the rows they qualify.
+  //
+  // A crash is exactly when this matters: the row survives (it is in `items`)
+  // but an in-memory watermark would not, so the refresh after a relaunch would
+  // fall back to the stamp tests - the same tests that already failed to protect
+  // this position before the crash. Persisting keeps the guard armed across the
+  // restart. Only rows we still hold are written, so this cannot grow unbounded.
+  const confirmed: Record<string, number> = {}
+  for (const item of items) {
+    const sec = serverConfirmedSec.get(item.libraryItemId)
+    if (sec !== undefined) confirmed[item.libraryItemId] = sec
+  }
+  void AsyncStorage.setItem(STORE_KEY, JSON.stringify({ items, confirmed })).catch(() => {})
 }
 
 function emit(next: Map<string, ABSMediaProgress>): void {
@@ -194,11 +270,23 @@ async function runHydrate(): Promise<void> {
   try {
     const raw = await AsyncStorage.getItem(STORE_KEY)
     if (!raw) return
-    const parsed = JSON.parse(raw) as { items?: ABSMediaProgress[] }
+    const parsed = JSON.parse(raw) as {
+      items?: ABSMediaProgress[]
+      confirmed?: Record<string, number>
+    }
     const merged = new Map(state.byId)
     for (const p of parsed.items ?? []) {
       if (p && typeof p.libraryItemId === 'string' && !merged.has(p.libraryItemId)) {
         merged.set(p.libraryItemId, p)
+      }
+    }
+    // Restore the confirmed-position watermarks (absent on payloads written
+    // before they existed - the guard then just falls back to the stamp tests,
+    // as it did before). Never overwrite one this run already established: a
+    // live sync is better evidence than anything on disk.
+    for (const [id, sec] of Object.entries(parsed.confirmed ?? {})) {
+      if (typeof sec === 'number' && Number.isFinite(sec) && !serverConfirmedSec.has(id)) {
+        serverConfirmedSec.set(id, sec)
       }
     }
     emit(merged)
@@ -415,12 +503,16 @@ function keepFresherLocalPositions(
     const concurrentRace =
       localAt > 0 &&
       dropSec > CONCURRENT_MIN_DROP_SEC &&
-      // Either the stamps are close enough to be one race (the original,
-      // round-trip-sized window), or the backwards jump is too big for the
-      // elapsed time to explain at all (see impossibleBackwardsJump). The
-      // minimum-drop floor above still gates both, so ordinary tick/sync
-      // rounding converges normally and only a felt loss is ever overridden.
-      (stampGapMs <= CONCURRENT_STAMP_MS || impossibleBackwardsJump(dropSec, stampGapMs))
+      // Any of: the stamps are close enough to be one race (the original,
+      // round-trip-sized window); the backwards jump is too big for the elapsed
+      // time to explain at all (see impossibleBackwardsJump); or the server row
+      // has not moved past what we already know ABS accepted, which is the case
+      // stamps cannot see at all (see staleAgainstConfirmed). The minimum-drop
+      // floor above still gates all three, so ordinary tick/sync rounding
+      // converges normally and only a felt loss is ever overridden.
+      (stampGapMs <= CONCURRENT_STAMP_MS ||
+        impossibleBackwardsJump(dropSec, stampGapMs) ||
+        staleAgainstConfirmed(id, server.currentTime))
     if (concurrentRace) {
       breadcrumb(
         'progress',
@@ -606,6 +698,10 @@ export async function resetItemProgress(itemId: string): Promise<void> {
     throw e instanceof Error ? e : new Error('reset_progress_failed')
   }
   serverUpdatedAt.delete(itemId)
+  // The row is gone from ABS, so nothing about it is confirmed any more. Leaving
+  // the old watermark would make the re-created row (starting at 0) look stale
+  // against a position that no longer exists.
+  serverConfirmedSec.delete(itemId)
   if (loaded) playerStore.requestSeek(0)
   requestAutoQueueRecompute()
   void refreshProgress().catch(() => {})
