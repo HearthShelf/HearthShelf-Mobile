@@ -36,6 +36,13 @@ export function SkipButton({
     <SpringPressable
       onPress={onPress}
       hitSlop={10}
+      // The numeral inside is allowFontScaling={false} and purely decorative to a
+      // screen reader, so the button has to say the amount itself - otherwise
+      // every transport control in the app announces as an unnamed "button".
+      accessibilityRole="button"
+      accessibilityLabel={
+        dir < 0 ? `Rewind ${seconds} seconds` : `Skip forward ${seconds} seconds`
+      }
       style={[styles.btn, { width: box, height: box }]}
       scaleTo={0.85}
     >

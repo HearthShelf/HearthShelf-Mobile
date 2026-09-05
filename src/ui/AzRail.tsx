@@ -12,7 +12,7 @@
  * the finger drifted off the initial touch column - `e.y` from the gesture
  * does not have that problem.
  */
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, {
@@ -23,7 +23,8 @@ import Animated, {
   withTiming,
   Easing,
 } from 'react-native-reanimated'
-import { colors, fonts, radius, spacing } from './theme'
+import { fonts, radius, spacing, type Palette } from './theme'
+import { useColors } from './ThemeProvider'
 import { haptics } from './haptics'
 
 const LETTERS = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')]
@@ -58,6 +59,8 @@ export function AzRail({
   /** Flip the rail so Z is on top - matches a descending (Z-first) list. */
   reversed?: boolean
 }) {
+  const colors = useColors()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   const letters = reversed ? LETTERS_DESC : LETTERS
   const railHeight = useRef(0)
   const lastLetter = useRef<string | null>(null)
@@ -159,6 +162,11 @@ export function AzRail({
           {letters.map((l) => (
             <Text
               key={l}
+              // 27 letters must fit a fixed-height column (see `zone` below), so
+              // this opts out of font scaling entirely rather than capping - at
+              // 1.25x the rail overflows and the letters overlap. The preview
+              // bubble already does the same.
+              allowFontScaling={false}
               style={[
                 styles.letter,
                 !available.has(l) && styles.letterEmpty,
@@ -178,7 +186,8 @@ export function AzRail({
  *  never sit under the letters. */
 export const AZ_RAIL_WIDTH = 30
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
   // Anchored strip down the right edge. The generous bottom inset keeps the rail
   // clear of the floating mini-player that docks over the list's lower edge, and
   // a matching top inset keeps the shortened rail vertically centered.

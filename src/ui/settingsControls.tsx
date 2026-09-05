@@ -4,7 +4,7 @@
  * control) rather than the WebApp's dense two-column layout - mobile rows
  * stack label+description on the left, control on the right, full-width.
  */
-import { useCallback, useMemo, useState } from 'react'
+import { cloneElement, isValidElement, useCallback, useMemo, useState } from 'react'
 import {
   Pressable,
   ScrollView,
@@ -69,6 +69,9 @@ export function SectionAccordion({
     <Animated.View layout={LinearTransition.duration(220)} style={styles.accordion}>
       <Pressable
         onPress={() => setOpen((v) => !v)}
+        // The chevron rotation is the only open/closed cue on screen; state it.
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
         style={({ pressed }) => [styles.accordionHead, pressed && styles.pressed]}
       >
         <View style={styles.accordionIconTile}>
@@ -175,6 +178,14 @@ export function SettingsRow({
   const colors = useColors()
   const styles = useStyles()
   const tint = danger ? colors.destructive : colors.text
+  // Only our own labellable controls are cloned; a raw View or Touchable passed
+  // as `control` must not receive a stray `label` prop.
+  const labelledControl =
+    isValidElement<{ label?: string }>(control) &&
+    (control.type === SettingsToggle || control.type === Seg) &&
+    control.props.label === undefined
+      ? cloneElement(control, { label: title })
+      : control
   const content = (
     <>
       <View style={[styles.row, !last && styles.rowDivider]}>
@@ -191,7 +202,12 @@ export function SettingsRow({
             </AppText>
           ) : null}
         </View>
-        {control}
+        {/* Name the trailing control after the row it belongs to. A switch or
+            segmented control rendered here has no visible text of its own, so
+            without this it announces as an anonymous "switch" and the reader
+            never learns which setting it toggles. An explicit label on the
+            control still wins. */}
+        {labelledControl}
         {onPress && !danger ? (
           <Icon name="chevron-right" size={22} color={colors.textMuted} />
         ) : null}
@@ -217,6 +233,7 @@ export function Seg<T extends string>({
   onChange,
   options,
   fill,
+  label,
 }: {
   value: T
   onChange: (v: T) => void
@@ -225,17 +242,29 @@ export function Seg<T extends string>({
    *  the sole control on its own row (e.g. a `stacked` SettingsRow); leave off when
    *  it sits inline next to a label, where it should hug its content instead. */
   fill?: boolean
+  /** Names the group of choices. Omit inside a <SettingsRow>, which passes its
+   *  own title down. */
+  label?: string
 }) {
   const colors = useColors()
   const styles = useStyles()
   return (
-    <View style={[styles.seg, fill && styles.segFill]}>
+    // The group is announced once by name, then each segment reports whether it
+    // is the selected one - without this the active choice reads as nothing but
+    // a background colour.
+    <View
+      style={[styles.seg, fill && styles.segFill]}
+      accessibilityRole="radiogroup"
+      accessibilityLabel={label}
+    >
       {options.map((o) => {
         const on = o.value === value
         return (
           <Pressable
             key={o.value}
             onPress={() => onChange(o.value)}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: on, checked: on }}
             android_ripple={{ color: colors.fillStrong }}
             style={({ pressed }) => [
               styles.segItem,
@@ -260,12 +289,30 @@ export function Seg<T extends string>({
 
 // ---- Toggle ----
 
-export function SettingsToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+export function SettingsToggle({
+  on,
+  onChange,
+  label,
+}: {
+  on: boolean
+  onChange: (v: boolean) => void
+  /**
+   * Spoken name. Omit inside a <SettingsRow>, which passes its own title down -
+   * the row's visible label is the right name and duplicating it here would make
+   * screen readers announce the setting twice.
+   */
+  label?: string
+}) {
   const styles = useStyles()
   return (
     <Pressable
       onPress={() => onChange(!on)}
-      hitSlop={8}
+      // 46x27 track; 11 of vertical slop clears the 48dp Android minimum (and
+      // iOS's 44) without changing how the switch looks.
+      hitSlop={{ top: 11, bottom: 11, left: 8, right: 8 }}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: on }}
+      accessibilityLabel={label}
       style={({ pressed }) => [
         styles.toggleTrack,
         on && styles.toggleTrackOn,
@@ -601,7 +648,15 @@ const makeStyles = (colors: Palette) =>
       justifyContent: 'center',
     },
     toggleTrackOn: { backgroundColor: colors.accent, borderColor: colors.accent },
-    toggleKnob: { width: 21, height: 21, borderRadius: 11, backgroundColor: '#fff', marginLeft: 3 },
+    // onAccent, not #fff: it is the readable foreground for the current accent,
+    // so the knob stays visible when the track turns on and in the light theme.
+    toggleKnob: {
+      width: 21,
+      height: 21,
+      borderRadius: 11,
+      backgroundColor: colors.onAccent,
+      marginLeft: 3,
+    },
     toggleKnobOn: { marginLeft: 22 },
     chip: {
       paddingHorizontal: spacing.md,

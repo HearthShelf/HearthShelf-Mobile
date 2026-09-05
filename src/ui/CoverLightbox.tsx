@@ -143,6 +143,7 @@ export function CoverLightbox({
         name={icons.close}
         size={24}
         color="#fff"
+        accessibilityLabel="Close cover"
         onPress={onClose}
         style={[styles.close, { top: insets.top + 12 }]}
       />

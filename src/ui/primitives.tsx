@@ -7,6 +7,7 @@ import { forwardRef, useEffect, useMemo, useRef, useState, useSyncExternalStore 
 import {
   ActivityIndicator,
   Image,
+  PixelRatio,
   Pressable,
   StyleSheet,
   Text,
@@ -33,6 +34,7 @@ import {
   type BottomSheetModalProps,
 } from '@gorhom/bottom-sheet'
 import { coverHue } from '@hearthshelf/core'
+import { coverWidthBucket } from '@/api/abs'
 import { localCoverFor, subscribeDownloads } from '@/player/downloads'
 import { CoverDownloadOverlay } from './CoverDownloadOverlay'
 import { CoverDownloadedBadge } from './CoverDownloadedBadge'
@@ -227,6 +229,9 @@ export function Chip({
   return (
     <Pressable
       onPress={onPress}
+      // `active` is conveyed by background colour alone; say it out loud too.
+      accessibilityRole="button"
+      accessibilityState={{ selected: Boolean(active) }}
       style={({ pressed }) => [styles.chip, active && styles.chipActive, pressed && styles.pressed]}
     >
       <Text
@@ -445,12 +450,22 @@ export function Cover({
       RETRY_DELAYS[Math.min(attempt, RETRY_DELAYS.length - 1)],
     )
   }
+  // Ask the server for roughly the size we're about to draw. Without this every
+  // tile decodes the full-resolution jacket and throws most of it away, which is
+  // the bulk of the app's image memory on a grid screen. Only remote ABS covers
+  // are rewritten: a downloaded file:// cover is already local and correctly
+  // sized, and a URL that already carries a query is left alone.
+  const drawWidth = size ?? width ?? measured
+  const sized =
+    src && drawWidth > 0 && /^https?:/i.test(src) && !src.includes('?')
+      ? `${src}?width=${coverWidthBucket(drawWidth * PixelRatio.get())}`
+      : src
   // A retry bumps a cache-busting param so the native image pipeline actually
   // refetches instead of replaying its cached failure for the same URI.
   const displaySrc =
-    src && attempt > 0 && /^https?:/i.test(src)
-      ? `${src}${src.includes('?') ? '&' : '?'}retry=${attempt}`
-      : src
+    sized && attempt > 0 && /^https?:/i.test(sized)
+      ? `${sized}${sized.includes('?') ? '&' : '?'}retry=${attempt}`
+      : sized
 
   // The overlay needs a pixel size to scale its ring. Use the known width when
   // we have one, otherwise fall back to the measured layout width (for callers

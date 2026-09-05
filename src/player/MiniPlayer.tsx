@@ -150,7 +150,12 @@ function MiniPlayerBar({
         </View>
         <GestureDetector gesture={swipe}>
           <View style={[styles.bar, floating && styles.floatingBar]}>
-            <Pressable style={styles.tap} onPress={() => router.push('/player')}>
+            <Pressable
+              style={styles.tap}
+              accessibilityRole="button"
+              accessibilityLabel={`Open player. Now playing ${nowPlaying.title}`}
+              onPress={() => router.push('/player')}
+            >
               {/* Round cover inside a round chapter-progress ring. */}
               <View style={styles.ringWrap}>
                 <CoverRing progress={progress} color={colors.accent} track={colors.fillStrong} />
@@ -185,7 +190,16 @@ function MiniPlayerBar({
               color={colors.textMuted}
               onPress={() => jumpBy(-settings.skipBack)}
             />
-            <SpringPressable onPress={togglePlay} style={styles.play} scaleTo={0.88}>
+            <SpringPressable
+              onPress={togglePlay}
+              // The icon swap is the only play/pause cue; without the state a
+              // screen reader announces the same thing in both modes.
+              accessibilityRole="button"
+              accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
+              accessibilityState={{ selected: isPlaying }}
+              style={styles.play}
+              scaleTo={0.88}
+            >
               <Animated.View
                 key={isPlaying ? 'pause' : 'play'}
                 entering={FadeIn.duration(DUR.fast)}

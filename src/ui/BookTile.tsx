@@ -6,7 +6,7 @@
  * When a selection is active (long-press to begin), the tile shows a corner
  * checkbox and tapping toggles selection instead of opening the book.
  */
-import { useSyncExternalStore } from 'react'
+import { memo, useSyncExternalStore } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import type { ABSLibraryItem } from '@hearthshelf/core'
@@ -19,7 +19,34 @@ import { Icon, icons } from './icons'
 import { radius, spacing } from './theme'
 import { useColors } from './ThemeProvider'
 
-export function BookTile({
+/**
+ * Memoized: this is the tile every grid, shelf and library screen renders, so a
+ * parent re-render otherwise re-renders hundreds of them.
+ *
+ * The comparator is deliberate rather than the default shallow one. Callers pass
+ * the callbacks as inline arrows (`onQuickPlay={() => quickPlay(item.id)}`),
+ * which are a fresh identity on every parent render - a plain React.memo would
+ * therefore never hit. Those handlers are only invoked on press and close over
+ * the item id the tile already has, so a changed identity alone does not change
+ * what the tile draws. We compare the props that do.
+ */
+export const BookTile = memo(BookTileBase, (a, b) => {
+  return (
+    a.item === b.item &&
+    a.width === b.width &&
+    a.selecting === b.selecting &&
+    a.selected === b.selected &&
+    a.progress === b.progress &&
+    a.finished === b.finished &&
+    a.from === b.from &&
+    // Presence flips the chip on and off; identity does not matter (see above).
+    Boolean(a.onQuickPlay) === Boolean(b.onQuickPlay) &&
+    Boolean(a.onLongPress) === Boolean(b.onLongPress) &&
+    Boolean(a.onToggle) === Boolean(b.onToggle)
+  )
+})
+
+function BookTileBase({
   item,
   width,
   selecting = false,
@@ -82,6 +109,8 @@ export function BookTile({
               onQuickPlay?.()
             }}
             hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel={`Play ${title}`}
             style={({ pressed }) => [
               styles.playChip,
               { backgroundColor: colors.scrim, borderColor: colors.hairline },

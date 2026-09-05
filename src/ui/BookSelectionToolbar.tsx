@@ -124,7 +124,12 @@ export function BookSelectionToolbar({
 
   return (
     <View style={styles.bar}>
-      <IconButton name={icons.close} onPress={selection.clear} style={styles.action} />
+      <IconButton
+        name={icons.close}
+        onPress={selection.clear}
+        accessibilityLabel="Exit selection"
+        style={styles.action}
+      />
       <AppText variant="label" numberOfLines={1} style={styles.count}>
         {hasSelection ? `${ids.length} selected` : 'Select books'}
       </AppText>
@@ -137,6 +142,7 @@ export function BookSelectionToolbar({
           onPress={() =>
             allSelected ? selection.clear() : selection.selectAll(books.map((b) => b.id))
           }
+          accessibilityLabel={allSelected ? 'Clear selection' : 'Select all books'}
           style={styles.action}
         />
         <IconButton
@@ -144,6 +150,9 @@ export function BookSelectionToolbar({
           size={20}
           color={hasSelection ? colors.text : colors.textFaint}
           onPress={() => void markFinished()}
+          accessibilityLabel={
+            selectionAllFinished ? 'Mark selected as unfinished' : 'Mark selected as finished'
+          }
           style={styles.action}
         />
         <IconButton
@@ -151,6 +160,7 @@ export function BookSelectionToolbar({
           size={20}
           color={hasSelection ? colors.text : colors.textFaint}
           onPress={() => hasSelection && addSheetRef.current?.present()}
+          accessibilityLabel="Add selected to a list"
           style={styles.action}
         />
         <IconButton
@@ -158,6 +168,7 @@ export function BookSelectionToolbar({
           size={20}
           color={hasSelection ? colors.text : colors.textFaint}
           onPress={() => hasSelection && addToQueueAll()}
+          accessibilityLabel="Add selected to queue"
           style={styles.action}
         />
         {/* Rarer op (download) behind an overflow so the row isn't icon soup. */}
@@ -166,6 +177,7 @@ export function BookSelectionToolbar({
           size={20}
           color={hasSelection ? colors.text : colors.textFaint}
           onPress={() => hasSelection && overflowRef.current?.present()}
+          accessibilityLabel="More actions for selected books"
           style={styles.action}
         />
       </View>
