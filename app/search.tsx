@@ -8,13 +8,7 @@
  * with retry, and offline searching downloads only.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import {
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  useWindowDimensions,
-  View,
-} from 'react-native'
+import { ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { BottomSheetModal } from '@gorhom/bottom-sheet'
 import { useLocalSearchParams, useRouter } from 'expo-router'
@@ -295,7 +289,7 @@ export default function SearchScreen() {
     <Screen tabBar={<AppTabBar activeName={active} onPressTab={goToTab} />}>
       {/* Header: back · search pill (clear ×) · gear */}
       <View style={styles.header}>
-        <IconButton name={icons.back} onPress={() => router.back()} />
+        <IconButton name={icons.back} onPress={() => router.back()} accessibilityLabel="Back" />
         <View style={styles.searchBox}>
           <Icon name={icons.search} size={19} color={colors.accent} />
           <TextInput
@@ -312,6 +306,7 @@ export default function SearchScreen() {
           />
           {query.length > 0 ? (
             <IconButton
+              accessibilityLabel="Close"
               name={icons.close}
               size={19}
               color={colors.textMuted}
@@ -322,7 +317,11 @@ export default function SearchScreen() {
             />
           ) : null}
         </View>
-        <IconButton name={icons.tune} onPress={() => gearRef.current?.present()} />
+        <IconButton
+          name={icons.tune}
+          onPress={() => gearRef.current?.present()}
+          accessibilityLabel="Search settings"
+        />
       </View>
 
       {/* Scope chips */}
@@ -396,6 +395,7 @@ export default function SearchScreen() {
                       <AppText variant="meta">{r}</AppText>
                     </Touchable>
                     <IconButton
+                      accessibilityLabel="Close"
                       name={icons.close}
                       size={17}
                       color={colors.textFaint}

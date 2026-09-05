@@ -297,16 +297,23 @@ function ReaderInner() {
       {/* Top bar - app chrome, uses the reader-page palette so it blends with
           the book surface rather than the app scaffold. */}
       <View style={styles.topbar}>
-        <IconButton name={icons.back} onPress={back} color={readerTheme.ink} />
+        <IconButton
+          name={icons.back}
+          onPress={back}
+          color={readerTheme.ink}
+          accessibilityLabel="Back"
+        />
         <AppText numberOfLines={1} style={[styles.title, { color: readerTheme.ink }]}>
           {title}
         </AppText>
         <IconButton
+          accessibilityLabel="Chapters"
           name={icons.chapters}
           onPress={() => setPanel((p) => (p === 'chapters' ? null : 'chapters'))}
           color={readerTheme.ink}
         />
         <IconButton
+          accessibilityLabel="Text settings"
           name={icons.textFields}
           onPress={() => setPanel((p) => (p === 'settings' ? null : 'settings'))}
           color={readerTheme.ink}
@@ -360,6 +367,7 @@ function ReaderInner() {
         </View>
         <View style={styles.posSliderRow}>
           <IconButton
+            accessibilityLabel="Previous page"
             name={icons.chevronLeft}
             onPress={() => goPrevious()}
             color={readerTheme.ink}
@@ -374,7 +382,12 @@ function ReaderInner() {
             onComplete={onSlideComplete}
             style={{ flex: 1 }}
           />
-          <IconButton name={icons.chevronRight} onPress={() => goNext()} color={readerTheme.ink} />
+          <IconButton
+            name={icons.chevronRight}
+            onPress={() => goNext()}
+            color={readerTheme.ink}
+            accessibilityLabel="Next page"
+          />
         </View>
       </View>
 

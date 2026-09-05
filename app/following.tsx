@@ -577,7 +577,7 @@ export default function FollowingScreen() {
     <Screen tabBar={<AppTabBar activeName={active} onPressTab={goToTab} />}>
       {hero ? <CoverGlow hue={coverHue(hero.asin ?? hero.key)} strength={38} height={310} /> : null}
       <View style={styles.header}>
-        <IconButton name={icons.back} onPress={() => router.back()} />
+        <IconButton name={icons.back} onPress={() => router.back()} accessibilityLabel="Back" />
         <View style={{ flex: 1, minWidth: 0 }}>
           <AppText variant="hero" numberOfLines={1}>
             Following

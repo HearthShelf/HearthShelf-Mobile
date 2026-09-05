@@ -222,7 +222,12 @@ export const NotOwnedSheet = forwardRef<
                 </AppText>
               </Touchable>
               <Touchable onPress={openAudible} style={styles.sheetSecondaryBtn}>
-                <IconButton name={icons.openInNew} size={18} color={colors.text} />
+                <IconButton
+                  name={icons.openInNew}
+                  size={18}
+                  color={colors.text}
+                  accessibilityLabel="Open in browser"
+                />
                 <AppText variant="label">Open Audible</AppText>
               </Touchable>
               <Touchable onPress={toggleIgnore} style={styles.sheetSecondaryBtn}>

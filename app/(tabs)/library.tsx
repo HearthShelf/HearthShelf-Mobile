@@ -755,7 +755,12 @@ function BooksView({
             <AppText variant="caption" color={colors.onAccent}>
               {filterLabel(filter)}
             </AppText>
-            <IconButton name={icons.close} size={13} color={colors.onAccent} />
+            <IconButton
+              name={icons.close}
+              size={13}
+              color={colors.onAccent}
+              accessibilityLabel="Close"
+            />
           </Touchable>
           <Touchable onPress={() => setFilter('all')} hitSlop={8} style={styles.clearFilters}>
             <AppText variant="caption" color={colors.textMuted}>

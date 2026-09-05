@@ -562,7 +562,13 @@ function QueueRow({
         </View>
       </Touchable>
       {canRemove ? (
-        <IconButton name={icons.close} size={20} color={colors.textMuted} onPress={onRemove} />
+        <IconButton
+          name={icons.close}
+          size={20}
+          color={colors.textMuted}
+          onPress={onRemove}
+          accessibilityLabel="Close"
+        />
       ) : showBolt ? (
         <View style={styles.boltSlot}>
           <Icon name={icons.bolt} size={16} color={colors.accent} />

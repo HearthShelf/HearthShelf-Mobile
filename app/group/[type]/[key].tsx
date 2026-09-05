@@ -211,7 +211,7 @@ export default function GroupDrilldown() {
   return (
     <Screen tabBar={<AppTabBar activeName={active} onPressTab={goToTab} />}>
       <View style={styles.headerRow}>
-        <IconButton name={icons.back} onPress={() => router.back()} />
+        <IconButton name={icons.back} onPress={() => router.back()} accessibilityLabel="Back" />
       </View>
 
       {error ? (

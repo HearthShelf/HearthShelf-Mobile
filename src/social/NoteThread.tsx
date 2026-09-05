@@ -306,6 +306,7 @@ function NoteBubble({
           ) : null}
           {canDelete ? (
             <IconButton
+              accessibilityLabel="Close"
               name={icons.close}
               size={15}
               color={colors.textFaint}

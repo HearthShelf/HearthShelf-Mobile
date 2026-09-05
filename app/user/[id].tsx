@@ -112,7 +112,7 @@ export default function UserProfileScreen() {
 
   const header = (
     <View style={styles.header}>
-      <IconButton name={icons.back} onPress={() => router.back()} />
+      <IconButton name={icons.back} onPress={() => router.back()} accessibilityLabel="Back" />
       <AppText variant="label" numberOfLines={1} style={styles.headerTitle}>
         {status.phase === 'ready' ? status.profile.username || 'Listener' : 'Profile'}
       </AppText>

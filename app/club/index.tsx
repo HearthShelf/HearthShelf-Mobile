@@ -142,7 +142,12 @@ export default function MyClubsScreen() {
   return (
     <Screen tabBar={<AppTabBar activeName={active} onPressTab={goToTab} />}>
       <View style={styles.header}>
-        <IconButton name={icons.back} onPress={() => router.back()} style={styles.headerBtn} />
+        <IconButton
+          name={icons.back}
+          onPress={() => router.back()}
+          style={styles.headerBtn}
+          accessibilityLabel="Back"
+        />
         <View style={{ flex: 1, marginHorizontal: spacing.sm }}>
           <AppText variant="label">My Book Clubs</AppText>
           {clubs ? (

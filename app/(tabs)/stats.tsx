@@ -44,11 +44,7 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router'
 import { getHSStats, getStatsHistory, avatarUrl, coverUrl } from '@/api/abs'
 import { getLeaderboard, getCompare } from '@/api/social'
-import {
-  getIsPlaying,
-  getTrackId,
-  subscribe as subscribePlayer,
-} from '@/player/store'
+import { getIsPlaying, getTrackId, subscribe as subscribePlayer } from '@/player/store'
 import { getSettingsState, setSetting, subscribeSettings } from '@/store/settings'
 import { useSyncExternalStore } from 'react'
 import {

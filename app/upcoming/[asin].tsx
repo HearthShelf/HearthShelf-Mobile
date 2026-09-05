@@ -497,7 +497,13 @@ function Header({ onBack }: { onBack: () => void }) {
   const { colors } = useTheme()
   return (
     <View style={styles.header}>
-      <IconButton name={icons.back} size={24} color={colors.text} onPress={onBack} />
+      <IconButton
+        name={icons.back}
+        size={24}
+        color={colors.text}
+        onPress={onBack}
+        accessibilityLabel="Back"
+      />
     </View>
   )
 }

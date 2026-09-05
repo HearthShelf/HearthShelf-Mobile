@@ -9,13 +9,7 @@
  * drives mark-finished, the primary action people reach for on a series.
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  useWindowDimensions,
-  View,
-} from 'react-native'
+import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native'
 import { useSheetBackHandler } from '@/ui/useBackHandler'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type { BottomSheetModal } from '@gorhom/bottom-sheet'
@@ -821,10 +815,16 @@ function Header({
   const overflowRef = useRef<SheetRef>(null)
   return (
     <View style={styles.header}>
-      <IconButton name={icons.back} onPress={onBack} style={styles.headerBtn} />
+      <IconButton
+        name={icons.back}
+        onPress={onBack}
+        style={styles.headerBtn}
+        accessibilityLabel="Back"
+      />
       {onMarkSeries ? (
         <>
           <IconButton
+            accessibilityLabel="More options"
             name={icons.more}
             onPress={() => overflowRef.current?.present()}
             style={styles.headerBtn}

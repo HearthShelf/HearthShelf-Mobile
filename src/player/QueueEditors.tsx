@@ -130,6 +130,7 @@ function ManualRow({
       </View>
       {canEdit ? (
         <IconButton
+          accessibilityLabel="Close"
           name={icons.close}
           size={20}
           color={colors.textMuted}

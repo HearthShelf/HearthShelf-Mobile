@@ -60,7 +60,7 @@ export default function ShelfScreen() {
   return (
     <Screen tabBar={<AppTabBar activeName={active} onPressTab={goToTab} />}>
       <View style={styles.header}>
-        <IconButton name={icons.back} onPress={() => router.back()} />
+        <IconButton name={icons.back} onPress={() => router.back()} accessibilityLabel="Back" />
         <View style={{ flex: 1, minWidth: 0 }}>
           <AppText variant="hero" numberOfLines={1}>
             {shelf?.label ?? 'Shelf'}

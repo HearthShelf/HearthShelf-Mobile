@@ -12,14 +12,7 @@
  * has one.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import {
-  Pressable,
-  ScrollView,
-  Share,
-  StyleSheet,
-  useWindowDimensions,
-  View,
-} from 'react-native'
+import { Pressable, ScrollView, Share, StyleSheet, useWindowDimensions, View } from 'react-native'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type {
@@ -730,6 +723,7 @@ export default function ItemDetailScreen() {
                 </AppText>
               </Touchable>
               <IconButton
+                accessibilityLabel="Close"
                 name={icons.close}
                 size={18}
                 color={colors.textFaint}
@@ -1608,11 +1602,17 @@ function Header({
   const styles = useStyles()
   return (
     <View style={styles.header}>
-      <IconButton name={icons.back} onPress={onBack} style={styles.headerBtn} />
+      <IconButton
+        name={icons.back}
+        onPress={onBack}
+        style={styles.headerBtn}
+        accessibilityLabel="Back"
+      />
       <View style={{ flexDirection: 'row', gap: spacing.sm }}>
         {onBookmarks ? (
           <View>
             <IconButton
+              accessibilityLabel="Bookmarks"
               name={icons.bookmarks}
               size={20}
               onPress={onBookmarks}
@@ -1628,7 +1628,12 @@ function Header({
           </View>
         ) : null}
         {onOverflow ? (
-          <IconButton name={icons.more} onPress={onOverflow} style={styles.headerBtn} />
+          <IconButton
+            name={icons.more}
+            onPress={onOverflow}
+            style={styles.headerBtn}
+            accessibilityLabel="More options"
+          />
         ) : null}
       </View>
     </View>

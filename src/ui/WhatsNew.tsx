@@ -60,17 +60,15 @@ const SWEEP_MS = 2600
  * dark room and drop to 1.7-2.6:1 on a light ground - these render as label TEXT,
  * not just a dot, so they need 4.5:1. The twins keep the meaning and clear it.
  */
-const SECTION_META: Record<
-  ChangelogSection,
-  { label: string; color: string; colorLight: string }
-> = {
-  breaking: { label: 'Heads up', color: '#e0654a', colorLight: '#b03f34' },
-  feature: { label: 'New', color: '#4ade80', colorLight: '#1f7a3d' },
-  change: { label: 'Improved', color: '#60a5fa', colorLight: '#1d5fb8' },
-  fix: { label: 'Fixed', color: '#fbbf24', colorLight: '#8a5a02' },
-  docs: { label: 'Docs', color: '#94a3b8', colorLight: '#4a5568' },
-  other: { label: 'Notes', color: '#94a3b8', colorLight: '#4a5568' },
-}
+const SECTION_META: Record<ChangelogSection, { label: string; color: string; colorLight: string }> =
+  {
+    breaking: { label: 'Heads up', color: '#e0654a', colorLight: '#b03f34' },
+    feature: { label: 'New', color: '#4ade80', colorLight: '#1f7a3d' },
+    change: { label: 'Improved', color: '#60a5fa', colorLight: '#1d5fb8' },
+    fix: { label: 'Fixed', color: '#fbbf24', colorLight: '#8a5a02' },
+    docs: { label: 'Docs', color: '#94a3b8', colorLight: '#4a5568' },
+    other: { label: 'Notes', color: '#94a3b8', colorLight: '#4a5568' },
+  }
 
 const SECTION_ORDER: ChangelogSection[] = ['breaking', 'feature', 'change', 'fix', 'docs', 'other']
 

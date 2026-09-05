@@ -206,6 +206,7 @@ export default function StorageScreen() {
                   </View>
                 </View>
                 <IconButton
+                  accessibilityLabel="Close"
                   name={icons.close}
                   size={20}
                   color={colors.textMuted}
@@ -238,6 +239,7 @@ export default function StorageScreen() {
                   </AppText>
                 </Pressable>
                 <IconButton
+                  accessibilityLabel="Close"
                   name={icons.close}
                   size={20}
                   color={colors.textMuted}
@@ -267,6 +269,7 @@ export default function StorageScreen() {
                 </AppText>
               </View>
               <IconButton
+                accessibilityLabel="Close"
                 name={icons.close}
                 size={20}
                 color={colors.textMuted}

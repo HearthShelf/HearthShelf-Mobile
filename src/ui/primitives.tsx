@@ -267,12 +267,20 @@ export function IconButton({
 }) {
   const colors = useColors()
   const styles = useStyles()
+  // IconButton is also used decoratively - a chevron or check drawn inside a
+  // row that is itself the tappable thing. Those have no onPress, and announcing
+  // them as buttons invents a control that does not exist, so they are hidden
+  // from the reader and the parent row speaks for them.
+  const decorative = !onPress
   return (
     <Pressable
       onPress={onPress}
       hitSlop={hitSlop}
-      accessibilityRole="button"
+      accessibilityRole={decorative ? 'image' : 'button'}
       accessibilityLabel={accessibilityLabel}
+      accessibilityElementsHidden={decorative && !accessibilityLabel}
+      importantForAccessibility={decorative && !accessibilityLabel ? 'no-hide-descendants' : 'auto'}
+      focusable={!decorative}
       style={({ pressed }) => [pressed && styles.pressed, style]}
     >
       <Icon name={name} size={size} color={color ?? colors.text} />

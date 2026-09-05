@@ -2135,7 +2135,12 @@ function Header({
   const styles = useMemo(() => makeStyles(colors), [colors])
   return (
     <View style={styles.header}>
-      <IconButton name={icons.back} onPress={onBack} style={styles.headerBtn} />
+      <IconButton
+        name={icons.back}
+        onPress={onBack}
+        style={styles.headerBtn}
+        accessibilityLabel="Back"
+      />
       <View style={{ flex: 1, minWidth: 0, marginHorizontal: spacing.sm }}>
         <AppText variant="label" numberOfLines={1}>
           {title}
@@ -2147,7 +2152,12 @@ function Header({
         ) : null}
       </View>
       {onOverflow ? (
-        <IconButton name={icons.more} onPress={onOverflow} style={styles.headerBtn} />
+        <IconButton
+          name={icons.more}
+          onPress={onOverflow}
+          style={styles.headerBtn}
+          accessibilityLabel="More options"
+        />
       ) : null}
     </View>
   )

@@ -188,94 +188,94 @@ export const AZ_RAIL_WIDTH = 30
 
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
-  // Anchored strip down the right edge. The generous bottom inset keeps the rail
-  // clear of the floating mini-player that docks over the list's lower edge, and
-  // a matching top inset keeps the shortened rail vertically centered.
-  zone: {
-    position: 'absolute',
-    right: 0,
-    top: 24,
-    bottom: 96,
-    width: AZ_RAIL_WIDTH,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // The touch target: a full-height column wide enough to hit comfortably.
-  rail: {
-    flex: 1,
-    width: AZ_RAIL_WIDTH,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-    backgroundColor: colors.fillStrong,
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  // 27 letters have to fit a fixed-height column, so this is as large as the
-  // type can go before the rail needs to scroll. includeFontPadding:false drops
-  // Android's extra glyph padding, which buys back the line height that makes
-  // the larger size fit.
-  letter: {
-    fontSize: 12,
-    lineHeight: 15,
-    fontWeight: '700',
-    fontFamily: fonts.mono,
-    color: colors.textMuted,
-    includeFontPadding: false,
-  },
-  letterEmpty: { color: colors.textFaint, opacity: 0.35 },
-  letterActive: { color: colors.accent, fontWeight: '800' },
-  // Positioned + scaled as a unit; `top` tracks the finger (set via animated
-  // style) and the whole thing pops in/out with bubbleScale. Sized to hold the
-  // body plus its pointer, and laid out right-to-left so the pointer ends up
-  // nearest the rail.
-  bubbleWrap: {
-    position: 'absolute',
-    right: AZ_RAIL_WIDTH + spacing.xs,
-    width: BUBBLE + POINTER,
-    height: BUBBLE,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  // The round body: a real circle, so BUBBLE is its true diameter. The shadow
-  // lifts it off the list underneath (elevation for Android, shadow* for iOS).
-  bubbleBody: {
-    width: BUBBLE,
-    height: BUBBLE,
-    borderRadius: BUBBLE / 2,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.35,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  // Zero-sized box whose LEFT border is the visible triangle - the standard
-  // CSS-triangle trick, which RN's border rendering supports. Pulled left by a
-  // hair so it meets the circle with no seam at the join.
-  bubblePointer: {
-    marginLeft: -1,
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    borderTopWidth: POINTER,
-    borderBottomWidth: POINTER,
-    borderLeftWidth: POINTER,
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
-    borderLeftColor: colors.accent,
-  },
-  // Scaled off the body so the glyph fills the circle the way the platform
-  // launcher's does. allowFontScaling is off at the call site: a large system
-  // font setting would otherwise overflow a fixed-diameter circle.
-  bubbleText: {
-    fontSize: BUBBLE * 0.5,
-    lineHeight: BUBBLE * 0.6,
-    fontWeight: '800',
-    fontFamily: fonts.mono,
-    color: colors.onAccent,
-    textAlign: 'center',
-    includeFontPadding: false,
-  },
-})
+    // Anchored strip down the right edge. The generous bottom inset keeps the rail
+    // clear of the floating mini-player that docks over the list's lower edge, and
+    // a matching top inset keeps the shortened rail vertically centered.
+    zone: {
+      position: 'absolute',
+      right: 0,
+      top: 24,
+      bottom: 96,
+      width: AZ_RAIL_WIDTH,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    // The touch target: a full-height column wide enough to hit comfortably.
+    rail: {
+      flex: 1,
+      width: AZ_RAIL_WIDTH,
+      paddingVertical: 6,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fillStrong,
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    // 27 letters have to fit a fixed-height column, so this is as large as the
+    // type can go before the rail needs to scroll. includeFontPadding:false drops
+    // Android's extra glyph padding, which buys back the line height that makes
+    // the larger size fit.
+    letter: {
+      fontSize: 12,
+      lineHeight: 15,
+      fontWeight: '700',
+      fontFamily: fonts.mono,
+      color: colors.textMuted,
+      includeFontPadding: false,
+    },
+    letterEmpty: { color: colors.textFaint, opacity: 0.35 },
+    letterActive: { color: colors.accent, fontWeight: '800' },
+    // Positioned + scaled as a unit; `top` tracks the finger (set via animated
+    // style) and the whole thing pops in/out with bubbleScale. Sized to hold the
+    // body plus its pointer, and laid out right-to-left so the pointer ends up
+    // nearest the rail.
+    bubbleWrap: {
+      position: 'absolute',
+      right: AZ_RAIL_WIDTH + spacing.xs,
+      width: BUBBLE + POINTER,
+      height: BUBBLE,
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    // The round body: a real circle, so BUBBLE is its true diameter. The shadow
+    // lifts it off the list underneath (elevation for Android, shadow* for iOS).
+    bubbleBody: {
+      width: BUBBLE,
+      height: BUBBLE,
+      borderRadius: BUBBLE / 2,
+      backgroundColor: colors.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOpacity: 0.35,
+      shadowOffset: { width: 0, height: 6 },
+      shadowRadius: 12,
+      elevation: 8,
+    },
+    // Zero-sized box whose LEFT border is the visible triangle - the standard
+    // CSS-triangle trick, which RN's border rendering supports. Pulled left by a
+    // hair so it meets the circle with no seam at the join.
+    bubblePointer: {
+      marginLeft: -1,
+      width: 0,
+      height: 0,
+      backgroundColor: 'transparent',
+      borderTopWidth: POINTER,
+      borderBottomWidth: POINTER,
+      borderLeftWidth: POINTER,
+      borderTopColor: 'transparent',
+      borderBottomColor: 'transparent',
+      borderLeftColor: colors.accent,
+    },
+    // Scaled off the body so the glyph fills the circle the way the platform
+    // launcher's does. allowFontScaling is off at the call site: a large system
+    // font setting would otherwise overflow a fixed-diameter circle.
+    bubbleText: {
+      fontSize: BUBBLE * 0.5,
+      lineHeight: BUBBLE * 0.6,
+      fontWeight: '800',
+      fontFamily: fonts.mono,
+      color: colors.onAccent,
+      textAlign: 'center',
+      includeFontPadding: false,
+    },
+  })

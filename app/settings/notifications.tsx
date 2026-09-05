@@ -484,6 +484,7 @@ function SubRow({ sub, last }: { sub: HSSubscription; last?: boolean }) {
         </AppText>
       </View>
       <IconButton
+        accessibilityLabel="Close"
         name={icons.close}
         size={20}
         color={colors.textMuted}
