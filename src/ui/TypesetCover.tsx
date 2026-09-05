@@ -10,7 +10,7 @@
  */
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
-import { colors } from './theme'
+import { BRAND_SHELF } from './theme'
 
 /** Darken a #rrggbb hex toward black by `amount` (0..1). */
 function darken(hex: string, amount: number): string {
@@ -93,6 +93,6 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: '700',
     lineHeight: 13,
-    color: colors.brandShelf,
+    color: BRAND_SHELF,
   },
 })

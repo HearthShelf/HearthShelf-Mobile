@@ -37,6 +37,9 @@ export default function SSOCallbackScreen() {
   )
 }
 
+// Same fixed ink as sign-in (app/sign-in.tsx INK) - a mid-OAuth interstitial
+// that returns to that screen; theming it would flash light between two dark
+// frames.
 const styles = StyleSheet.create({
   bg: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0e0d0c' },
 })

@@ -644,7 +644,9 @@ const makePillStyles = (colors: Palette) =>
       borderRadius: radius.pill,
       backgroundColor: 'transparent',
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: withAlpha('#ffffff', 0.2),
+      // The theme's own hairline, strengthened: a fixed white rim reads as a
+      // crisp edge on the dark glass but disappears entirely on light.
+      borderColor: colors.border,
       overflow: 'hidden',
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 14 },
@@ -694,7 +696,9 @@ const makePillStyles = (colors: Palette) =>
       borderRadius: radius.pill,
       backgroundColor: 'transparent',
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: withAlpha('#ffffff', 0.2),
+      // The theme's own hairline, strengthened: a fixed white rim reads as a
+      // crisp edge on the dark glass but disappears entirely on light.
+      borderColor: colors.border,
       overflow: 'hidden',
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 14 },

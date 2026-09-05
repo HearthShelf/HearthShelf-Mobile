@@ -79,6 +79,9 @@ export default function InviteScreen() {
   )
 }
 
+// Deliberately the same fixed ink as sign-in (app/sign-in.tsx INK): this is a
+// pre-auth interstitial that hands straight off to that screen, so following the
+// app theme here would flash a light panel between two dark ones.
 const styles = StyleSheet.create({
   bg: {
     flex: 1,

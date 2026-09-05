@@ -11,7 +11,7 @@
  * sparks. Reanimated still owns the logo/glow timing and the static reduced-motion
  * path, so startup never depends on JS-thread timers or fire motion alone.
  */
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   ActivityIndicator,
   AppState,
@@ -43,7 +43,8 @@ import Animated, {
 import { useReducedMotion } from './motion'
 import { FlameLogo } from './FlameLogo'
 import { HearthFire } from './HearthFire'
-import { colors, fonts, shadow, spacing } from './theme'
+import { fonts, spacing, type Palette } from './theme'
+import { useTheme } from './ThemeProvider'
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle)
 
@@ -111,6 +112,7 @@ const BASE_LOCATIONS = _ramp.locations as [number, number, ...number[]]
 const GLOW_BOX = HEARTH_BOX // svg canvas side; the outer bloom fills the hearth box
 
 function HearthGlow({ pulse }: { pulse: SharedValue<number> }) {
+  const { colors } = useTheme()
   const outer = useAnimatedProps(() => ({
     opacity: interpolate(pulse.value, [0, 1], [0.4, 0.75]),
   }))
@@ -194,6 +196,11 @@ export function SplashScreen({
    *  native OS splash so it cross-fades onto an already-painted hearth. */
   onReady?: () => void
 }) {
+  // The splash is the first thing on screen, so it has to honour the user's
+  // theme like everything else - it used to import the static dark+ember palette
+  // and flash a dark hearth over a light-theme app on every cold start.
+  const { colors, shadow } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   // Reduce Motion (OS setting) OR a low-RAM device gets the STATIC hearth: one
   // painted glow, no ember field, no looping flicker - progress is carried by a
   // determinate bar + text, never by fire motion alone (D-A11Y).
@@ -577,6 +584,8 @@ export function ForcedSplashHost() {
  * finished is pure friction.
  */
 function InviteCodeEntry({ onSubmit }: { onSubmit?: (code: string) => Promise<string | null> }) {
+  const { colors, shadow } = useTheme()
+  const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -688,7 +697,8 @@ function friendlyError(message: string): string {
   return message
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow']) =>
+  StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: colors.scaffold,

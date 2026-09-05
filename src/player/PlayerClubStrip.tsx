@@ -749,6 +749,10 @@ export function PlayerClubStrip({
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
     row: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm },
+    // Fixed dark, not themed: this strip sits on the player over cover art and
+    // paints its own near-opaque scrim panel, so its white-on-dark text is
+    // reading against THIS surface, not the app background. Same exception the
+    // Home hero takes. Themed text here would be unreadable on light artwork.
     surface: {
       backgroundColor: 'rgba(15,11,10,0.86)',
       borderWidth: StyleSheet.hairlineWidth,

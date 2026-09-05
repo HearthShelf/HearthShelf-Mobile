@@ -147,6 +147,15 @@ const BASES: Record<ThemeName, BasePalette> = {
 /** The hearth ember accent - the default when accentMode is dynamic/unset. */
 export const EMBER = '#e0654a'
 
+/**
+ * The wordmark's two halves. Brand-locked and identical in every theme, so code
+ * that needs them outside the React tree can import these directly instead of
+ * reaching for the static `colors` snapshot (which is dark+ember and would go
+ * stale for every other token on it).
+ */
+export const BRAND_HEARTH = '#bd863f'
+export const BRAND_SHELF = '#f0e6d6'
+
 /** Readable ink/cream over an accent hex, chosen by relative luminance. */
 export function onColor(hex: string): string {
   const [r8, g8, b8] = hexToRgb(hex)
@@ -170,8 +179,8 @@ export function buildPalette(themeName: ThemeName, accentHex: string): Palette {
     mutedForeground: b.textMuted,
     onAccent: onColor(accent),
     accent,
-    brandHearth: '#bd863f',
-    brandShelf: '#f0e6d6',
+    brandHearth: BRAND_HEARTH,
+    brandShelf: BRAND_SHELF,
     brandCream: '#ffe6cf',
     rowNow: accentAlpha(accent, 0.22),
     accentWash: accentAlpha(accent, 0.12),
@@ -227,10 +236,21 @@ export function buildShadow(p: Palette) {
 }
 
 // --- static defaults (dark + ember) ----------------------------------------
-// Kept for code outside the React tree (headless car service) and any screen not
-// yet reading useTheme(). These are the dark palette; migrated screens use the
-// reactive palette from useTheme() instead.
-
+/**
+ * The dark+ember palette as a plain object.
+ *
+ * **Nothing should import this.** It was documented as existing for "the
+ * headless car service", but the car path (autoBridge, carOffline,
+ * backgroundFlushTask) renders no UI and imports no colours - so that
+ * justification was never true, and the three components that did import it
+ * (splash, A-Z rail, typeset cover) were simply frozen on dark+ember, ignoring
+ * the user's theme and accent.
+ *
+ * Use `useTheme()` / `useColors()` in components. For a brand hex outside the
+ * React tree, import BRAND_HEARTH / BRAND_SHELF, which are theme-invariant by
+ * definition. Kept exported only so an out-of-tree consumer can be migrated
+ * deliberately rather than crash on a missing symbol.
+ */
 export const colors = buildPalette('dark', EMBER)
 
 export const radius = {

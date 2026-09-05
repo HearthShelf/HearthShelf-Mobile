@@ -577,6 +577,9 @@ const makeStyles = (colors: Palette) =>
       right: 0,
       top: 0,
     },
+    // Fixed dark, not themed: a full-screen celebration that paints its own
+    // near-opaque backdrop, so the white content reads against this, not the app
+    // theme - the same convention as the cover lightbox.
     backdrop: {
       bottom: 0,
       backgroundColor: 'rgba(8,7,10,0.96)',

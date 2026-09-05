@@ -42,7 +42,7 @@ import { dismissChip } from '@/lib/whatsNew'
 import { Icon, icons } from '@/ui/icons'
 import { AppText, Touchable } from '@/ui/primitives'
 import { useReducedMotion } from '@/ui/motion'
-import { useColors } from '@/ui/ThemeProvider'
+import { useColors, useTheme } from '@/ui/ThemeProvider'
 import { radius, spacing, withAlpha, type Palette } from '@/ui/theme'
 
 /** One sweep of the chip's gradient. Slow enough to read as a shimmer. */
@@ -55,14 +55,21 @@ const SWEEP_MS = 2600
  *
  * Colours are literals rather than theme tokens on purpose: green-means-added
  * is the meaning here, and it must survive an accent change.
+ *
+ * Each carries a light twin of the same hue. The dark values are tuned for the
+ * dark room and drop to 1.7-2.6:1 on a light ground - these render as label TEXT,
+ * not just a dot, so they need 4.5:1. The twins keep the meaning and clear it.
  */
-const SECTION_META: Record<ChangelogSection, { label: string; color: string }> = {
-  breaking: { label: 'Heads up', color: '#e0654a' },
-  feature: { label: 'New', color: '#4ade80' },
-  change: { label: 'Improved', color: '#60a5fa' },
-  fix: { label: 'Fixed', color: '#fbbf24' },
-  docs: { label: 'Docs', color: '#94a3b8' },
-  other: { label: 'Notes', color: '#94a3b8' },
+const SECTION_META: Record<
+  ChangelogSection,
+  { label: string; color: string; colorLight: string }
+> = {
+  breaking: { label: 'Heads up', color: '#e0654a', colorLight: '#b03f34' },
+  feature: { label: 'New', color: '#4ade80', colorLight: '#1f7a3d' },
+  change: { label: 'Improved', color: '#60a5fa', colorLight: '#1d5fb8' },
+  fix: { label: 'Fixed', color: '#fbbf24', colorLight: '#8a5a02' },
+  docs: { label: 'Docs', color: '#94a3b8', colorLight: '#4a5568' },
+  other: { label: 'Notes', color: '#94a3b8', colorLight: '#4a5568' },
 }
 
 const SECTION_ORDER: ChangelogSection[] = ['breaking', 'feature', 'change', 'fix', 'docs', 'other']
@@ -255,6 +262,8 @@ export function WhatsNewModal({ visible, onClose }: { visible: boolean; onClose:
 /** One release: version + date, then its items grouped by colour-coded section. */
 function ReleaseBlock({ entry }: { entry: ChangelogEntry }) {
   const colors = useColors()
+  const { name: themeName } = useTheme()
+  const isLight = themeName === 'light'
   const styles = useStyles()
   const isCurrent = entry.version === FULL_VERSION
 
@@ -299,17 +308,19 @@ function ReleaseBlock({ entry }: { entry: ChangelogEntry }) {
       ) : (
         grouped.map(({ section, items }) => {
           const meta = SECTION_META[section]
+          // Same meaning, readable ground: the dark hues vanish on light.
+          const tag = isLight ? meta.colorLight : meta.color
           return (
             <View key={section} style={styles.section}>
               <View style={styles.sectionHead}>
-                <View style={[styles.sectionDot, { backgroundColor: meta.color }]} />
-                <AppText variant="caption" color={meta.color}>
+                <View style={[styles.sectionDot, { backgroundColor: tag }]} />
+                <AppText variant="caption" color={tag}>
                   {meta.label.toUpperCase()}
                 </AppText>
               </View>
               {items.map((item) => (
                 <View key={item.id} style={styles.item}>
-                  <View style={[styles.bullet, { backgroundColor: withAlpha(meta.color, 0.5) }]} />
+                  <View style={[styles.bullet, { backgroundColor: withAlpha(tag, 0.5) }]} />
                   <AppText variant="body" style={styles.itemText}>
                     {item.text}
                   </AppText>
