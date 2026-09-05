@@ -3,7 +3,7 @@ import { ClerkProvider, useAuth } from '@clerk/expo'
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AppState, StyleSheet, View } from 'react-native'
+import { AppState, Platform, StyleSheet, View } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
@@ -453,13 +453,23 @@ function ThemedStack() {
     >
       {/* The player is a persistent destination, not a dismissible sheet, so it
           enters with the same standard lift as every other push (no sheet-style
-          slide that would falsely promise swipe-to-dismiss). Dismiss gestures
-          are disabled: it's the primary surface, and an accidental swipe
-          shouldn't throw the listener out of it. System back remains the
-          sanctioned exit. */}
+          slide that would falsely promise swipe-to-dismiss).
+
+          `fullScreenGestureEnabled` stays off everywhere: a swipe anywhere on
+          the surface must not throw the listener out of the player by accident.
+
+          The narrow LEFT-EDGE gesture is a different thing, and on iOS it stays
+          on. It is the system-wide way back on that platform - iPhone has no
+          hardware Back to fall back on, so disabling it left the on-screen
+          control as the only exit and the reflex every iPhone user has silently
+          did nothing. Android keeps it off: predictive Back already covers the
+          exit there, and the edge swipe would only duplicate it. */}
       <Stack.Screen
         name="player"
-        options={{ gestureEnabled: false, fullScreenGestureEnabled: false }}
+        options={{
+          gestureEnabled: Platform.OS === 'ios',
+          fullScreenGestureEnabled: false,
+        }}
       />
     </Stack>
   )

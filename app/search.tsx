@@ -8,7 +8,13 @@
  * with retry, and offline searching downloads only.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { ScrollView, StyleSheet, TextInput, View } from 'react-native'
+import {
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  useWindowDimensions,
+  View,
+} from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { BottomSheetModal } from '@gorhom/bottom-sheet'
 import { useLocalSearchParams, useRouter } from 'expo-router'
@@ -45,6 +51,7 @@ import { haptics } from '@/ui/haptics'
 import { showToast } from '@/ui/Toast'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useContentInset } from '@/ui/useContentInset'
+import { adaptiveContentMaxWidth } from '@/ui/responsive'
 import { useColors } from '@/ui/ThemeProvider'
 
 type Scope = 'everything' | 'books' | 'series' | 'authors' | 'narrators'
@@ -78,6 +85,10 @@ export default function SearchScreen() {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const contentInset = useContentInset()
+  // Results are a reading column: centre them at a comfortable measure on a
+  // tablet rather than stretching rows the full width.
+  const { width: winWidth } = useWindowDimensions()
+  const contentMaxWidth = adaptiveContentMaxWidth(winWidth)
   const { status } = useConnection()
   const offline = status.phase === 'offline'
 
@@ -347,7 +358,12 @@ export default function SearchScreen() {
       {!trimmed ? (
         // ---- default: recent searches + beyond-library status card ----
         <ScrollView
-          contentContainerStyle={{ paddingBottom: contentInset }}
+          contentContainerStyle={{
+            paddingBottom: contentInset,
+            alignSelf: 'center',
+            maxWidth: contentMaxWidth,
+            width: '100%',
+          }}
           keyboardShouldPersistTaps="handled"
         >
           {recents.length > 0 ? (
@@ -461,7 +477,12 @@ export default function SearchScreen() {
         // A Reanimated `entering` on a screen ROOT races the navigator's
         // fade_from_bottom transition and can leave a blank white screen.
         <ScrollView
-          contentContainerStyle={{ paddingBottom: contentInset }}
+          contentContainerStyle={{
+            paddingBottom: contentInset,
+            alignSelf: 'center',
+            maxWidth: contentMaxWidth,
+            width: '100%',
+          }}
           keyboardShouldPersistTaps="handled"
         >
           {showBooks && ownedBooks.length > 0 ? (

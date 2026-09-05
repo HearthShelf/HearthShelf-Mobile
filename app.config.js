@@ -165,6 +165,11 @@ module.exports = {
   slug: 'hearthshelf',
   owner: 'hearthshelf',
   version: appVersion,
+  // Deliberate, not an oversight: there is no landscape layout yet, so locking
+  // portrait is better than shipping a broken one. A foldable revamp is queued
+  // ahead of landscape; until one of those lands, this stays. Note the knock-on:
+  // a portrait-locked iOS app is ineligible for iPad Split View / Slide Over
+  // regardless of supportsTablet below.
   orientation: 'portrait',
   icon: './assets/icon.png',
   scheme: 'hearthshelf',

@@ -9,7 +9,13 @@
  * drives mark-finished, the primary action people reach for on a series.
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native'
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+} from 'react-native'
 import { useSheetBackHandler } from '@/ui/useBackHandler'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type { BottomSheetModal } from '@gorhom/bottom-sheet'
@@ -72,6 +78,7 @@ import { QuestGiverAssessment } from '@/ui/questgiver/QuestGiverAssessment'
 import { useBookSelection } from '@/ui/useBookSelection'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useMiniPlayerInset } from '@/ui/useContentInset'
+import { adaptiveContentMaxWidth } from '@/ui/responsive'
 import { useColors } from '@/ui/ThemeProvider'
 
 /** ABS stores a book's sequence in the denormalized seriesName ("Foundation #2").
@@ -107,6 +114,8 @@ export default function SeriesDetailScreen() {
   const [rmabEnabled, setRmabEnabled] = useState(false)
   const selection = useBookSelection()
   const miniInset = useMiniPlayerInset()
+  const { width: winWidth } = useWindowDimensions()
+  const contentMaxWidth = adaptiveContentMaxWidth(winWidth)
   // Shared per-item progress; mutations anywhere in the app update this page live.
   const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
   // Pushed above the tabs navigator, so it renders its own copy of the bar
@@ -322,7 +331,12 @@ export default function SeriesDetailScreen() {
       />
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: miniInset }}
+        contentContainerStyle={{
+          paddingBottom: miniInset,
+          alignSelf: 'center',
+          maxWidth: contentMaxWidth,
+          width: '100%',
+        }}
         showsVerticalScrollIndicator={false}
       >
         {/* Hero */}

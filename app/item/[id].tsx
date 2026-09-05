@@ -12,7 +12,14 @@
  * has one.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { Pressable, ScrollView, Share, StyleSheet, View } from 'react-native'
+import {
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+} from 'react-native'
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type {
@@ -101,6 +108,7 @@ import { Toast, useToast } from '@/ui/Toast'
 import { haptics } from '@/ui/haptics'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useMiniPlayerInset } from '@/ui/useContentInset'
+import { adaptiveContentMaxWidth } from '@/ui/responsive'
 import { useColors } from '@/ui/ThemeProvider'
 
 const CHAPTER_PREVIEW_COUNT = 4
@@ -135,6 +143,8 @@ export default function ItemDetailScreen() {
   const active = tabFromParam(from, 'library')
   const { message, show } = useToast()
   const miniInset = useMiniPlayerInset()
+  const { width: winWidth } = useWindowDimensions()
+  const contentMaxWidth = adaptiveContentMaxWidth(winWidth)
 
   const [detail, setDetail] = useState<ABSLibraryItemDetail | null>(null)
   // Progress comes from the shared store, so mark-finished anywhere (here, a
@@ -616,7 +626,15 @@ export default function ItemDetailScreen() {
        * fine, it is the SCREEN ROOT that must not animate itself. */}
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: miniInset }}
+        contentContainerStyle={{
+          paddingBottom: miniInset,
+          // Book detail is a reading column, so on a tablet it centres at a
+          // comfortable measure instead of stretching hero art and paragraphs
+          // across 1024pt.
+          alignSelf: 'center',
+          maxWidth: contentMaxWidth,
+          width: '100%',
+        }}
         showsVerticalScrollIndicator={false}
       >
         {offline && (
