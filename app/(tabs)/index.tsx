@@ -180,6 +180,20 @@ export default function HomeScreen() {
   // shelf rows below. Subscribed here so hiding a book (including via "Reset
   // progress") drops it from the hero immediately, without a relaunch.
   useSyncExternalStore(subscribeDismissals, getDismissalsState)
+  // Re-apply the finished + dismissed filters against the live stores so a book
+  // that reaches 100% - or that gets hidden/reset - while Home is open drops out
+  // of the hero and Continue Listening immediately, without waiting for the next
+  // items-in-progress fetch. Hoisted above shelvesBySection because that memo
+  // needs the hero's id to suppress a duplicate row.
+  const visibleInProgress = useMemo(
+    () =>
+      inProgress.filter(
+        (it) => progressById.get(it.id)?.isFinished !== true && !isItemDismissed(it.id),
+      ),
+    [inProgress, progressById],
+  )
+  const hero = visibleInProgress[0]
+  const heroId = hero?.id
   // The user's Home arrangement drives which bands render and in what order.
   const { homeSections } = useSyncExternalStore(subscribeSettings, getSettingsState)
   // Edit mode replaces the shelves with draggable section headers (covers off).
@@ -202,15 +216,34 @@ export default function HomeScreen() {
   }, [])
   // Book shelves keyed by the section they belong to, so the arrangement walk
   // can render a whole section's rows at its chosen position in one step.
+  //
+  // Continue Listening drops out entirely when the hero is the only book it
+  // would show. The hero already IS "resume the last book you were on", so a
+  // one-tile row underneath it is the same cover twice, and a full-width shelf
+  // header plus a lone tile leaves a band of dead space. Two books or more and
+  // the row earns its place again.
+  //
+  // Matched by id against the hero rather than by counting tiles: the hero comes
+  // from getItemsInProgress() and this shelf from ABS's getPersonalized(), two
+  // endpoints that normally agree but need not. Counting would hide a genuine
+  // second book on the day they disagree; matching ids only ever hides a
+  // duplicate.
   const shelvesBySection = useMemo(() => {
     const map = new Map<HomeSectionId, HomeShelf[]>()
     for (const s of shelves) {
+      const isHeroDuplicate =
+        s.section === 'continue-listening' &&
+        s.type === 'book' &&
+        heroId !== undefined &&
+        s.entities.length === 1 &&
+        s.entities[0]?.id === heroId
+      if (isHeroDuplicate) continue
       const arr = map.get(s.section)
       if (arr) arr.push(s)
       else map.set(s.section, [s])
     }
     return map
-  }, [shelves])
+  }, [shelves, heroId])
   const { message: toast, show: showToast } = useToast()
   const actionsRef = useRef<BookActionsHandle>(null)
   const queueSheetRef = useRef<SheetHandle>(null)
@@ -695,14 +728,6 @@ export default function HomeScreen() {
     )
   }
 
-  // Re-apply the finished + dismissed filters at render against the live stores
-  // so a book that reaches 100% - or that gets hidden/reset - while Home is open
-  // drops out of the hero/Continue immediately, without waiting for the next
-  // items-in-progress fetch.
-  const visibleInProgress = inProgress.filter(
-    (it) => progressById.get(it.id)?.isFinished !== true && !isItemDismissed(it.id),
-  )
-  const hero = visibleInProgress[0]
   const allSectionsHidden = homeSections.every((s) => !s.on)
 
   return (
