@@ -27,6 +27,7 @@ import {
   progressHydrated,
   recordLocalProgress,
   noteServerConfirmedPosition,
+  matchesOurLastPush,
   serverProgressUpdatedAt,
   isFinished,
   markFinished,
@@ -1293,6 +1294,32 @@ export async function resumePointFromOtherDevices(
   const threshold = CROSS_DEVICE_MIN_GAP_SEC + Math.max(0, rewoundSec)
   const here = getState().position
   if (Math.abs(saved.currentTime - here) <= threshold) return null
+
+  // A BACKWARDS jump has to prove the row is genuinely someone else's newer
+  // observation, not our own stale one coming back.
+  //
+  // The gate above is an absolute value, deliberately: a re-listen or rewind on
+  // another device moves the row backwards and picking that up is correct. But
+  // that also let a row we ourselves last pushed drag the playhead back - and
+  // because this runs on PLAY, the listener experiences it as "I skipped ahead,
+  // pressed play, and it jumped back" (HS-MOBILEAPP-2Z: 39878s -> 22725s, an
+  // hour of listening, on a row sitting exactly where this device had left it).
+  //
+  // serverConfirmedSec is the discriminator: it moves only when ABS confirms a
+  // push from THIS device. A backwards row sitting EXACTLY on it is our own last
+  // push echoing back, not news.
+  //
+  // Matched exactly rather than "at or below" on purpose: a re-listen on another
+  // device usually lands well below our watermark too, and treating everything
+  // below it as ours would block precisely the case this feature exists for.
+  // Only the value we ourselves put there is ours.
+  if (saved.currentTime < here && matchesOurLastPush(np.itemId, saved.currentTime)) {
+    breadcrumb(
+      'resume',
+      `ignoring server row ${Math.round(saved.currentTime)}s behind local ${Math.round(here)}s - not newer than our last confirmed push`,
+    )
+    return null
+  }
 
   breadcrumb(
     'resume',

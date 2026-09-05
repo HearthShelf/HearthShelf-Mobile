@@ -191,6 +191,24 @@ function staleAgainstConfirmed(itemId: string, serverSec: number): boolean {
 }
 
 /**
+ * Is this server position exactly the one WE last pushed for this book?
+ *
+ * Narrower than staleAgainstConfirmed on purpose. That predicate answers "could
+ * the server have learned anything since", which is the right question when
+ * deciding whether a row may overwrite a live local row mid-refresh. Here the
+ * question is different: a backwards row is about to move the listener, and a
+ * re-listen on another device legitimately lands far BELOW our watermark - so
+ * "at or below" would block the very case the cross-device resume exists for.
+ *
+ * Equality is what identifies our own push coming back to us. Rounded because
+ * the push sends Math.round(currentTime) while the watermark keeps the float.
+ */
+export function matchesOurLastPush(itemId: string, serverSec: number): boolean {
+  const confirmed = serverConfirmedSec.get(itemId)
+  return confirmed !== undefined && Math.round(confirmed) === Math.round(serverSec)
+}
+
+/**
  * How far the server must be BEHIND for the guard above to apply.
  *
  * Small differences are ordinary rounding between a tick and its sync, where the
