@@ -39,7 +39,7 @@ import {
   subscribeSettings,
   toggleAutoRule,
 } from '@/store/settings'
-import { getState, subscribe } from './store'
+import { getTrack, subscribe } from './store'
 import { coverUrl, getLibraries, searchLibraryAll, itemTitle, itemAuthor } from '@/api/abs'
 import { AppText, Cover, IconButton, Sheet, type SheetRef, Touchable } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
@@ -68,7 +68,9 @@ export const QueueSheet = forwardRef<SheetHandle, { onJump: (itemId: string) => 
 
     const queue = useSyncExternalStore(subscribeQueue, getQueueState)
     const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
-    const { nowPlaying } = useSyncExternalStore(subscribe, getState)
+    // getTrack keeps the sheet off the 1Hz position tick; it needs the book,
+    // not the playhead.
+    const nowPlaying = useSyncExternalStore(subscribe, getTrack)
     const [dragActive, setDragActive] = useState(false)
 
     // Which merged-list rows are hand-added: those whose id is in the durable

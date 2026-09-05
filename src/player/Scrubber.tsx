@@ -83,8 +83,33 @@ export function Scrubber({
     }
   }, [playing, dragRatio, glow])
 
+  // The drag position lives on the UI thread. Previously onUpdate called
+  // runOnJS(move) on EVERY frame, and move() did setDragRatio - a full React
+  // render per frame while scrubbing the app's most-touched control. Now the
+  // fill and leading line read this shared value directly, and JS only hears
+  // about the gesture at its boundaries (begin / end / cancel).
+  const dragPct = useSharedValue(-1)
+  // Last ratio pushed across to JS, so onUpdate can rate-limit the bridge.
+  const lastSentPct = useSharedValue(-1)
+  const fillStyle = useAnimatedStyle(() =>
+    dragPct.value >= 0 ? { width: `${dragPct.value * 100}%` } : {},
+  )
+  const linePosStyle = useAnimatedStyle(() =>
+    dragPct.value >= 0 ? { left: `${dragPct.value * 100}%` } : {},
+  )
+
+  // Mirrored onto the UI thread: a worklet cannot read widthRef.
+  const widthSV = useSharedValue(0)
   const onLayout = (e: LayoutChangeEvent) => {
     widthRef.current = e.nativeEvent.layout.width
+    widthSV.value = e.nativeEvent.layout.width
+  }
+
+  // Worklet twin of ratioFromX: same clamp, runs on the UI thread.
+  const ratioFromXWorklet = (x: number, w: number) => {
+    'worklet'
+    if (w <= 0) return 0
+    return Math.max(0, Math.min(1, x / w))
   }
 
   const ratioFromX = useCallback((x: number) => {
@@ -132,11 +157,33 @@ export function Scrubber({
   // gesture. `x` is clamped in ratioFromX, so overshoot past the ends is fine.
   const pan = Gesture.Pan()
     .minDistance(0)
-    .onBegin((e) => runOnJS(begin)(e.x))
-    .onUpdate((e) => runOnJS(move)(e.x))
-    .onEnd((e) => runOnJS(end)(e.x))
+    .onBegin((e) => {
+      dragPct.value = ratioFromXWorklet(e.x, widthSV.value)
+      lastSentPct.value = dragPct.value
+      runOnJS(begin)(e.x)
+    })
+    .onUpdate((e) => {
+      const r = ratioFromXWorklet(e.x, widthSV.value)
+      // The bar itself follows on the UI thread, every frame, for free.
+      dragPct.value = r
+      // The player's elapsed/remaining readout is React state, so it still needs
+      // JS - but at ~20Hz, not at every frame. The numbers are seconds; a finer
+      // cadence costs renders nobody can read. Without this the labels freeze
+      // mid-drag, which is what the per-frame bridge was really paying for.
+      if (Math.abs(r - lastSentPct.value) > 0.004) {
+        lastSentPct.value = r
+        runOnJS(move)(e.x)
+      }
+    })
+    .onEnd((e) => {
+      dragPct.value = -1
+      runOnJS(end)(e.x)
+    })
     .onFinalize((_e, success) => {
-      if (!success) runOnJS(cancel)()
+      if (!success) {
+        dragPct.value = -1
+        runOnJS(cancel)()
+      }
     })
 
   const shown = dragRatio ?? ratio
@@ -147,24 +194,27 @@ export function Scrubber({
     <GestureDetector gesture={pan}>
       <View style={styles.pill} onLayout={onLayout} hitSlop={{ top: 8, bottom: 8 }}>
         {/* two-tone fill, exactly pill height */}
-        <View style={[styles.fillClip, { width: `${pct}%` }]}>
+        <Animated.View style={[styles.fillClip, { width: `${pct}%` }, fillStyle]}>
           <LinearGradient
             colors={[FILL_START, colors.accent]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={StyleSheet.absoluteFill}
           />
-        </View>
+        </Animated.View>
 
         {/* full-height cream leading line, behind the labels like web (the
             marker passes behind the text instead of overlapping it). Web's
             `box-shadow: 0 0 8px 1px accent, 0 0 2px #ffe6cf` glow rides on a
             twin of the line whose opacity banks down while paused. */}
         {knob && (
-          <View style={[styles.lineWrap, { left: `${pct}%` }]} pointerEvents="none">
+          <Animated.View
+            style={[styles.lineWrap, { left: `${pct}%` }, linePosStyle]}
+            pointerEvents="none"
+          >
             <Animated.View style={[styles.line, styles.lineGlow, lineStyle, glowStyle]} />
             <Animated.View style={[styles.line, lineStyle]} />
-          </View>
+          </Animated.View>
         )}
 
         {/* interior labels - plain text over the fill/track, no background

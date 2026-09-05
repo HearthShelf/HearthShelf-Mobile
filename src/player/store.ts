@@ -156,6 +156,24 @@ export function getTrackId(): string | null {
   return state.nowPlaying?.itemId ?? null
 }
 
+/**
+ * The loaded track itself, for consumers that need its title/cover/chapters but
+ * not the moving position.
+ *
+ * `set()` rebuilds the state object every tick but leaves `nowPlaying` pointing
+ * at the same track object until the book actually changes, so returning that
+ * reference is stable in exactly the way useSyncExternalStore needs (see
+ * getHasTrack for why this matters).
+ */
+export function getTrack(): NowPlaying | null {
+  return state.nowPlaying
+}
+
+/** Whether audio is currently playing. Stable across position ticks. */
+export function getIsPlaying(): boolean {
+  return state.isPlaying
+}
+
 function set(patch: Partial<PlayerState>): void {
   const leftCar = state.carActive && patch.carActive === false
   state = { ...state, ...patch }

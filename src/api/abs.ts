@@ -216,10 +216,24 @@ export function mediaUrl(path: string): string {
  * needs no token, but the server ORIGIN comes from the session, and a
  * half-built URL against no server is worse than the typeset cover.
  */
-export function coverUrl(itemId: string): string {
+export function coverUrl(itemId: string, width?: number): string {
   const s = getSession()
   if (!s) return ''
-  return `${s.serverUrl}/api/items/${encodeURIComponent(itemId)}/cover`
+  const base = `${s.serverUrl}/api/items/${encodeURIComponent(itemId)}/cover`
+  // ABS resizes server-side. Asking for the display width instead of the full
+  // jacket is the difference between decoding a ~1600px image per tile and a
+  // ~300px one - on a grid screen that is most of the app's image memory.
+  // Widths are bucketed so a handful of URLs stay cacheable across screens
+  // instead of every tile size minting its own.
+  if (!width) return base
+  return `${base}?width=${coverWidthBucket(width)}`
+}
+
+/** Round a display width up to the next cache-friendly cover size. */
+export function coverWidthBucket(width: number): number {
+  const buckets = [120, 200, 300, 400, 600, 900]
+  const want = Math.ceil(width)
+  return buckets.find((b) => b >= want) ?? buckets[buckets.length - 1]
 }
 
 /** Tokenized URL to download a set of items as a single zip (bulk download).

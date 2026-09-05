@@ -11,7 +11,7 @@ import { useRouter } from 'expo-router'
 import type { ABSLibraryItem } from '@hearthshelf/core'
 import { getItemsInProgress, getLibraries, getPersonalized } from '@/api/abs'
 import { playItemById } from '@/player/playback'
-import { getState, subscribe } from '@/player/store'
+import { getTrack, subscribe } from '@/player/store'
 import { breadcrumb } from '@/lib/crashLog'
 import { getProgressState, subscribeProgress, refreshProgress } from '@/store/progress'
 import { AppText, Screen, PrimaryButton, icons } from '@/ui/primitives'
@@ -25,7 +25,9 @@ import { adaptiveShelfTileWidth } from '@/ui/responsive'
 import { PlayerSurface } from '../player'
 
 export default function NowPlayingTab() {
-  const { nowPlaying } = useSyncExternalStore(subscribe, getState)
+  // getTrack, not getState: the full snapshot is rebuilt every position tick,
+  // which would re-render this tab once a second for a value it never reads.
+  const nowPlaying = useSyncExternalStore(subscribe, getTrack)
 
   // Something loaded -> the tab IS the real player.
   if (nowPlaying) return <PlayerSurface embedded />

@@ -44,7 +44,11 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router'
 import { getHSStats, getStatsHistory, avatarUrl, coverUrl } from '@/api/abs'
 import { getLeaderboard, getCompare } from '@/api/social'
-import { getState as getPlayerState, subscribe as subscribePlayer } from '@/player/store'
+import {
+  getIsPlaying,
+  getTrackId,
+  subscribe as subscribePlayer,
+} from '@/player/store'
 import { getSettingsState, setSetting, subscribeSettings } from '@/store/settings'
 import { useSyncExternalStore } from 'react'
 import {
@@ -194,7 +198,11 @@ export default function StatsTab() {
 
   // Playback state drives the silent re-poll below, so the stats keep advancing
   // while a book plays instead of freezing at first draw.
-  const { nowPlaying, isPlaying } = useSyncExternalStore(subscribePlayer, getPlayerState)
+  // Stable selectors, not the whole snapshot: this screen renders ~21 chart
+  // loops, and subscribing to the full state re-ran all of them once a second
+  // during playback for two values that only change when the book does.
+  const nowPlayingId = useSyncExternalStore(subscribePlayer, getTrackId)
+  const isPlaying = useSyncExternalStore(subscribePlayer, getIsPlaying)
   const lastPlaybackItemRef = useRef<string | null>(null)
   const lastPlaybackPlayingRef = useRef<boolean>(false)
   const playbackRepollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -297,7 +305,7 @@ export default function StatsTab() {
   // pause) so the two tabs never disagree. A short debounce lets the server
   // record the just-played time before we read it back.
   useEffect(() => {
-    if (!nowPlaying) {
+    if (!nowPlayingId) {
       lastPlaybackItemRef.current = null
       lastPlaybackPlayingRef.current = isPlaying
       return
@@ -305,10 +313,10 @@ export default function StatsTab() {
 
     const lastItem = lastPlaybackItemRef.current
     const lastPlaying = lastPlaybackPlayingRef.current
-    const itemChanged = lastItem !== nowPlaying.itemId
+    const itemChanged = lastItem !== nowPlayingId
     const paused = lastPlaying === true && !isPlaying
 
-    lastPlaybackItemRef.current = nowPlaying.itemId
+    lastPlaybackItemRef.current = nowPlayingId
     lastPlaybackPlayingRef.current = isPlaying
 
     if (!itemChanged && !paused) return
@@ -321,7 +329,7 @@ export default function StatsTab() {
       },
       paused ? 900 : 500,
     )
-  }, [nowPlaying, isPlaying, silentReload])
+  }, [nowPlayingId, isPlaying, silentReload])
 
   useEffect(
     () => () => {
