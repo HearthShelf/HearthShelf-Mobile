@@ -312,17 +312,39 @@ export const type = {
 } as const
 
 /**
- * App-wide ceiling on OS font scaling. The type scale and most containers use
- * fixed pixel sizes, so unbounded scaling (a user cranking the phone's Display
- * Size / Text Size up) overflows pills, rows, and tiles and text starts to
- * overlap. Capping at 1.25x still gives large-text users noticeably bigger type
- * while keeping every layout intact on both platforms. AppText applies it to all
- * app copy; the few raw <Text> nodes in fixed-height containers (the scrubber
- * pill, tab bar, toast, and the shared button/chip primitives) pass it
- * explicitly. React 19 dropped Text.defaultProps, so there is no global default -
- * a raw <Text> without this prop scales unbounded.
+ * App-wide ceiling on OS font scaling.
+ *
+ * This exists because unbounded scaling overflows fixed-size pills, rows and
+ * tiles until text overlaps. But the cap is paid for by the exact person this
+ * app names as its accessibility user - someone reading in a dim room, often
+ * with the system text size turned well up. It was 1.25x, which is noticeably
+ * less than the phone gives every other app; 1.6x is the largest step the
+ * current layouts hold, and it should keep rising as containers stop assuming a
+ * fixed height.
+ *
+ * Raising it is not free: any container that would rather clip than grow has to
+ * be fixed first (Home's hero cards were converted from `height` to `minHeight`
+ * with a flow column for exactly this). If a new surface overflows at 1.6x, fix
+ * the surface rather than lowering this number back.
+ *
+ * AppText applies it to all app copy; the few raw <Text> nodes in fixed-height
+ * containers (the scrubber pill, tab bar, toast, and the shared button/chip
+ * primitives) pass it explicitly. React 19 dropped Text.defaultProps, so there
+ * is no global default - a raw <Text> without this prop scales unbounded.
  */
-export const MAX_FONT_SCALE = 1.25
+export const MAX_FONT_SCALE = 1.6
+
+/**
+ * Tighter ceiling for chrome whose height is genuinely fixed by the platform or
+ * by an ownership constraint, where growing the container is not an option:
+ * the tab bar (a 60pt band holding a 22pt icon above a 10pt label). Everything
+ * else uses MAX_FONT_SCALE and grows.
+ *
+ * Reach for this only when the container truly cannot grow. It is a smaller
+ * accessibility concession than the old app-wide 1.25x, but it is still a
+ * concession - do not spread it to surfaces that could simply reflow.
+ */
+export const MAX_FONT_SCALE_FIXED = 1.25
 
 export const shadow = buildShadow(colors)
 

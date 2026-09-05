@@ -790,9 +790,18 @@ export default function HomeScreen() {
             }}
             onLongPress={() => openActions(hero)}
           />
+        ) : shelves.length > 0 ? (
+          // Nothing in progress, but the server has books: the real first run.
+          // The hero band is this screen's anchor, and leaving it blank is what
+          // made a fresh install read as broken - the greeting sat on top of a
+          // dashboard of em-dashes with no primary action anywhere. The empty
+          // state below can't cover this case: the taste engine "always produces
+          // rows", so shelves.length is never 0 on a server that has books.
+          <StartHere onBrowse={() => router.push('/(tabs)/library')} />
         ) : null}
         {!nowPlaying && !hero && shelves.length === 0 ? (
-          // First-run empty: a warm invitation instead of a lonely greeting.
+          // Genuinely empty server (no books at all). Distinct from the first-run
+          // case above, which has books but no listening history yet.
           <EmptyState
             title="Your hearth is ready"
             body={"Pick a book and it'll be waiting here, right where you left it."}
@@ -939,7 +948,17 @@ function HomeHeader({
   const context = [serverName, libraryName].filter(Boolean).join(' · ')
   return (
     <View style={styles.header}>
-      <Touchable onPress={() => router.push('/settings/servers')} style={{ flex: 1, minWidth: 0 }}>
+      {/* The greeting is a link to the server picker, but it reads as a plain
+          heading - so a screen reader heard "Good evening, Jeremy" and nothing
+          about where tapping it goes. */}
+      <Touchable
+        onPress={() => router.push('/settings/servers')}
+        accessibilityRole="button"
+        accessibilityLabel={
+          context ? `${hello}. Connected to ${context}. Switch server` : `${hello}. Switch server`
+        }
+        style={{ flex: 1, minWidth: 0 }}
+      >
         <AppText variant="label" numberOfLines={1}>
           {hello}
         </AppText>
@@ -974,7 +993,11 @@ function HomeHeader({
             <View style={styles.headerDot} />
           </Touchable>
         ) : null}
-        <Touchable onPress={() => router.push('/search?from=home')} style={styles.headerBtn}>
+        <Touchable
+          onPress={() => router.push('/search?from=home')}
+          style={styles.headerBtn}
+          accessibilityLabel="Search your library"
+        >
           <Icon name={icons.search} size={19} color={colors.text} />
         </Touchable>
       </View>
@@ -989,6 +1012,44 @@ const HERO_TEXT = 'rgba(255,255,255,0.98)'
 const HERO_TEXT_DIM = 'rgba(255,255,255,0.78)'
 const HERO_EYEBROW = 'rgba(255,255,255,0.75)'
 const HERO_TRACK = 'rgba(255,255,255,0.22)'
+
+/**
+ * First-run hero: shown when the server has books but nothing is in progress.
+ *
+ * It occupies the hero band rather than sitting below it, because that band is
+ * the screen's anchor - a blank one is what made a fresh install read as broken.
+ * Deliberately quiet: no artwork (there is no book to show yet) and one obvious
+ * action, matching the single-action shape the real hero has.
+ */
+function StartHere({ onBrowse }: { onBrowse: () => void }) {
+  const colors = useColors()
+  const styles = useStyles()
+  const { width } = useWindowDimensions()
+  const contentMaxWidth = adaptiveContentMaxWidth(width)
+  return (
+    <View style={styles.heroWrap}>
+      <View style={[styles.startHere, { maxWidth: contentMaxWidth }]}>
+        <View style={styles.heroBody}>
+          <AppText variant="eyebrow" color={colors.textMuted}>
+            Welcome
+          </AppText>
+          <AppText variant="title" style={{ marginTop: 5 }}>
+            Your hearth is ready
+          </AppText>
+          <AppText variant="meta" color={colors.textMuted} style={{ marginTop: 3 }}>
+            Start a book and it&apos;ll be waiting here, right where you left it.
+          </AppText>
+        </View>
+        <Touchable onPress={onBrowse} style={styles.heroResume}>
+          <Icon name={icons.book} size={20} color={colors.onAccent} />
+          <AppText variant="label" color={colors.onAccent}>
+            Browse your library
+          </AppText>
+        </Touchable>
+      </View>
+    </View>
+  )
+}
 
 /**
  * Compact continue-listening hero card (~190px): the book's artwork fills a
@@ -1036,35 +1097,44 @@ function ContinueHero({
           />
         </ImageBackground>
 
-        <View style={styles.heroBody}>
-          <AppText variant="eyebrow" color={HERO_EYEBROW}>
-            {started ? 'Continue' : 'Up next'}
-          </AppText>
-          <AppText variant="title" color={HERO_TEXT} numberOfLines={1} style={{ marginTop: 5 }}>
-            {itemTitle(item)}
-          </AppText>
-          <AppText variant="meta" color={HERO_TEXT_DIM} numberOfLines={1} style={{ marginTop: 3 }}>
-            {[itemAuthor(item), left].filter(Boolean).join(' · ')}
-          </AppText>
-        </View>
-
-        {started && (
-          <View style={[styles.heroTrackRow, { bottom: 56 }]}>
-            <View style={styles.heroTrack}>
-              <View style={[styles.heroTrackFill, { width: `${pct}%` }]} />
-            </View>
-            <AppText variant="mono" color={HERO_TEXT_DIM}>
-              {pct}%
+        <View style={styles.heroInner}>
+          <View style={styles.heroBody}>
+            <AppText variant="eyebrow" color={HERO_EYEBROW}>
+              {started ? 'Continue' : 'Up next'}
+            </AppText>
+            <AppText variant="title" color={HERO_TEXT} numberOfLines={2} style={{ marginTop: 5 }}>
+              {itemTitle(item)}
+            </AppText>
+            <AppText
+              variant="meta"
+              color={HERO_TEXT_DIM}
+              numberOfLines={2}
+              style={{ marginTop: 3 }}
+            >
+              {[itemAuthor(item), left].filter(Boolean).join(' · ')}
             </AppText>
           </View>
-        )}
 
-        <Touchable onPress={onResume} style={styles.heroResume}>
-          <Icon name={icons.play} size={20} color={colors.onAccent} />
-          <AppText variant="label" color={colors.onAccent}>
-            {started ? 'Resume' : 'Start listening'}
-          </AppText>
-        </Touchable>
+          <View style={styles.heroFoot}>
+            {started && (
+              <View style={styles.heroTrackRow}>
+                <View style={styles.heroTrack}>
+                  <View style={[styles.heroTrackFill, { width: `${pct}%` }]} />
+                </View>
+                <AppText variant="mono" color={HERO_TEXT_DIM}>
+                  {pct}%
+                </AppText>
+              </View>
+            )}
+
+            <Touchable onPress={onResume} style={styles.heroResume}>
+              <Icon name={icons.play} size={20} color={colors.onAccent} />
+              <AppText variant="label" color={colors.onAccent}>
+                {started ? 'Resume' : 'Start listening'}
+              </AppText>
+            </Touchable>
+          </View>
+        </View>
       </Pressable>
     </View>
   )
@@ -1122,63 +1192,75 @@ function PlayerHero({
           />
         </ImageBackground>
 
-        <View style={styles.heroBody}>
-          <AppText variant="eyebrow" color={HERO_EYEBROW}>
-            {isPlaying ? 'Now playing' : 'Continue'}
-          </AppText>
-          <AppText variant="title" color={HERO_TEXT} numberOfLines={1} style={{ marginTop: 5 }}>
-            {nowPlaying.title}
-          </AppText>
-          <AppText variant="meta" color={HERO_TEXT_DIM} numberOfLines={1} style={{ marginTop: 3 }}>
-            {meta}
-          </AppText>
-        </View>
-
-        <View style={[styles.heroTrackRow, { bottom: isPlaying ? 76 : 56 }]}>
-          <View style={styles.heroTrack}>
-            <View style={[styles.heroTrackFill, { width: `${pct}%` }]} />
-          </View>
-          <AppText variant="mono" color={HERO_TEXT_DIM}>
-            {pct}%
-          </AppText>
-        </View>
-
-        {isPlaying ? (
-          <>
-            <View style={styles.heroTransport}>
-              <SkipButton
-                dir={-1}
-                seconds={skipBack}
-                size={26}
-                color={HERO_TEXT}
-                onPress={() => jumpBy(-skipBack)}
-              />
-              <Touchable onPress={togglePlay} style={styles.heroPlayBtn}>
-                <Icon name={icons.pause} size={28} color={colors.onAccent} />
-              </Touchable>
-              <SkipButton
-                dir={1}
-                seconds={skipForward}
-                size={26}
-                color={HERO_TEXT}
-                onPress={() => jumpBy(skipForward)}
-              />
-            </View>
-            <View style={styles.heroOpenHint}>
-              <AppText variant="caption" color={HERO_TEXT_DIM}>
-                Player
-              </AppText>
-              <Icon name={icons.chevronRight} size={16} color={HERO_TEXT_DIM} />
-            </View>
-          </>
-        ) : (
-          <Touchable onPress={togglePlay} style={styles.heroResume}>
-            <Icon name={icons.play} size={20} color={colors.onAccent} />
-            <AppText variant="label" color={colors.onAccent}>
-              Resume
+        <View style={styles.heroInner}>
+          <View style={styles.heroBody}>
+            <AppText variant="eyebrow" color={HERO_EYEBROW}>
+              {isPlaying ? 'Now playing' : 'Continue'}
             </AppText>
-          </Touchable>
-        )}
+            <AppText variant="title" color={HERO_TEXT} numberOfLines={2} style={{ marginTop: 5 }}>
+              {nowPlaying.title}
+            </AppText>
+            <AppText
+              variant="meta"
+              color={HERO_TEXT_DIM}
+              numberOfLines={2}
+              style={{ marginTop: 3 }}
+            >
+              {meta}
+            </AppText>
+          </View>
+
+          <View style={styles.heroFoot}>
+            <View style={styles.heroTrackRow}>
+              <View style={styles.heroTrack}>
+                <View style={[styles.heroTrackFill, { width: `${pct}%` }]} />
+              </View>
+              <AppText variant="mono" color={HERO_TEXT_DIM}>
+                {pct}%
+              </AppText>
+            </View>
+
+            {isPlaying ? (
+              // Transport and the "Player" hint share one row: the hint used to be
+              // pinned to the card's bottom-right corner, which only worked while
+              // the card had a fixed height.
+              <View style={styles.heroControlsRow}>
+                <View style={styles.heroTransport}>
+                  <SkipButton
+                    dir={-1}
+                    seconds={skipBack}
+                    size={26}
+                    color={HERO_TEXT}
+                    onPress={() => jumpBy(-skipBack)}
+                  />
+                  <Touchable onPress={togglePlay} style={styles.heroPlayBtn}>
+                    <Icon name={icons.pause} size={28} color={colors.onAccent} />
+                  </Touchable>
+                  <SkipButton
+                    dir={1}
+                    seconds={skipForward}
+                    size={26}
+                    color={HERO_TEXT}
+                    onPress={() => jumpBy(skipForward)}
+                  />
+                </View>
+                <View style={styles.heroOpenHint}>
+                  <AppText variant="caption" color={HERO_TEXT_DIM}>
+                    Player
+                  </AppText>
+                  <Icon name={icons.chevronRight} size={16} color={HERO_TEXT_DIM} />
+                </View>
+              </View>
+            ) : (
+              <Touchable onPress={togglePlay} style={styles.heroResume}>
+                <Icon name={icons.play} size={20} color={colors.onAccent} />
+                <AppText variant="label" color={colors.onAccent}>
+                  Resume
+                </AppText>
+              </Touchable>
+            )}
+          </View>
+        </View>
       </Pressable>
     </View>
   )
@@ -1398,9 +1480,13 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
     },
     headerBtns: { flexDirection: 'row', gap: spacing.sm },
     headerBtn: {
-      width: 38,
-      height: 38,
-      borderRadius: 19,
+      // 44x44 is the iOS minimum and near Android's 48dp; these were 38, under
+      // both, sitting spacing.sm apart at the top of the screen - the hardest
+      // reach for a thumb, and the place a mis-tap is most costly (Arrange
+      // throws you into edit mode, the greeting leaves Home entirely).
+      width: 44,
+      height: 44,
+      borderRadius: 22,
       backgroundColor: colors.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.hairline,
@@ -1428,14 +1514,51 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
       overflow: 'hidden',
       backgroundColor: colors.card,
     },
-    heroCardTall: { height: 238 },
-    heroCardShort: { height: 190 },
+    // minHeight, not height: at large system font sizes the text block inside
+    // grows downward, and a fixed box would drive it into the controls pinned
+    // at the bottom. The card grows instead; at default scale it still lands on
+    // the same 190/238 the design specifies.
+    // The first-run card borrows the hero's silhouette (same radius, same
+    // minimum band) so the screen's anchor is present from the very first
+    // launch, without pretending to be a book.
+    startHere: {
+      alignSelf: 'center',
+      width: '100%',
+      minHeight: 190,
+      borderRadius: 20,
+      backgroundColor: colors.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      justifyContent: 'space-between',
+      paddingTop: 15,
+      paddingBottom: 12,
+      paddingHorizontal: 18,
+      gap: spacing.sm,
+    },
+    heroCardTall: { minHeight: 238 },
+    heroCardShort: { minHeight: 190 },
     heroBgImg: { resizeMode: 'cover' },
-    heroBody: { paddingTop: 15, paddingHorizontal: 18 },
+    // The card is a flow column: text at the top, controls at the bottom, and
+    // the gap between them absorbs the growth. Nothing inside is absolutely
+    // positioned any more, so nothing can collide.
+    heroInner: {
+      flex: 1,
+      justifyContent: 'space-between',
+      paddingTop: 15,
+      paddingBottom: 12,
+      paddingHorizontal: 18,
+      gap: spacing.sm,
+    },
+    heroBody: {},
+    // Bottom cluster: progress, then the primary control. Grouped so the whole
+    // block stays pinned to the end of the column as the text above it grows.
+    heroFoot: { gap: spacing.sm },
+    heroControlsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
     heroTrackRow: {
-      position: 'absolute',
-      left: 18,
-      right: 18,
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.sm,
@@ -1452,11 +1575,10 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
       borderRadius: 2,
       backgroundColor: colors.accent,
     },
-    // Compact auto-width Resume pill anchored bottom-left in the card.
+    // Compact auto-width Resume pill, sitting at the end of the flow column.
+    // alignSelf keeps it hugging its label instead of stretching full width.
     heroResume: {
-      position: 'absolute',
-      left: 18,
-      bottom: 12,
+      alignSelf: 'flex-start',
       flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
@@ -1467,9 +1589,6 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
       ...shadow.accentGlow,
     },
     heroTransport: {
-      position: 'absolute',
-      left: 18,
-      bottom: 12,
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.lg,
@@ -1484,9 +1603,6 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
       ...shadow.accentGlow,
     },
     heroOpenHint: {
-      position: 'absolute',
-      right: 14,
-      bottom: 24,
       flexDirection: 'row',
       alignItems: 'center',
       gap: 2,

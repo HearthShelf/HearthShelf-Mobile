@@ -31,7 +31,7 @@ import { emitTabReselect } from './tabReselect'
 import { getMoreMenuOpen, subscribeMoreMenu, toggleMoreMenu } from './moreMenuState'
 import { haptics } from './haptics'
 import { POP_SPRING } from './motion'
-import { fonts, MAX_FONT_SCALE, radius, spacing, withAlpha, type Palette } from './theme'
+import { fonts, MAX_FONT_SCALE_FIXED, radius, spacing, withAlpha, type Palette } from './theme'
 import { useColors } from './ThemeProvider'
 import { GlassBackdrop } from './GlassBackdrop'
 
@@ -264,7 +264,7 @@ function ClassicTabBar({ activeName: rawActive, expandedName, onPressTab }: NavP
             <Text
               style={[styles.tabLabel, { color: tint }, focused && styles.tabLabelActive]}
               numberOfLines={1}
-              maxFontSizeMultiplier={MAX_FONT_SCALE}
+              maxFontSizeMultiplier={MAX_FONT_SCALE_FIXED}
             >
               {meta.label}
             </Text>
@@ -540,7 +540,11 @@ function PillItem({
         </Animated.View>
         {focused ? (
           <Animated.View style={labelStyle}>
-            <Text style={styles.itemLabel} numberOfLines={1} maxFontSizeMultiplier={MAX_FONT_SCALE}>
+            <Text
+              style={styles.itemLabel}
+              numberOfLines={1}
+              maxFontSizeMultiplier={MAX_FONT_SCALE_FIXED}
+            >
               {meta.label}
             </Text>
           </Animated.View>
