@@ -11,7 +11,9 @@
 import { createContext, useContext, useMemo } from 'react'
 import { useSyncExternalStore } from 'react'
 import { useColorScheme } from 'react-native'
+import { coverHue } from '@hearthshelf/core'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
+import { getTrackId, subscribe as subscribePlayer } from '@/player/store'
 import { buildPalette, buildShadow, EMBER, type Palette, type ThemeName } from './theme'
 
 export interface ActiveTheme {
@@ -29,9 +31,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // re-renders on OS light/dark changes, so Auto flips live.
   const scheme = useColorScheme()
   const name: ThemeName = s.theme === 'auto' ? (scheme === 'light' ? 'light' : 'dark') : s.theme
-  // accentMode 'dynamic' means "follow the cover art"; until that's wired we use
-  // the chosen accentHex (or ember). 'manual' always uses accentHex.
-  const accent = s.accentMode === 'manual' ? s.accentHex || EMBER : s.accentHex || EMBER
+  // accentMode 'dynamic' follows the playing book's cover hue; 'manual' pins the
+  // accent to the user's chosen hex. Both are account-scoped settings shared with
+  // the web app, so the mode a user picks on either surface applies on both
+  // (DESIGN.shared.md, "Accent").
+  //
+  // getTrackId() is stable across position ticks, so subscribing here re-themes
+  // on a book change rather than at 1Hz. With nothing playing, dynamic falls back
+  // to the chosen hex so the app never loses its accent between books.
+  const trackId = useSyncExternalStore(subscribePlayer, getTrackId)
+  const chosen = s.accentHex || EMBER
+  const accent = s.accentMode === 'dynamic' && trackId ? coverHue(trackId) : chosen
 
   const value = useMemo<ActiveTheme>(() => {
     const colors = buildPalette(name, accent)

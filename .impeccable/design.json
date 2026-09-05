@@ -1,0 +1,444 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-04T00:00:00Z",
+  "title": "Design System: HearthShelf Mobile",
+  "extensions": {
+    "colorMeta": {
+      "ember": {
+        "role": "primary",
+        "displayName": "Ember",
+        "canonical": "#e0654a",
+        "userChangeable": true,
+        "tonalRamp": [
+          "#2b100a",
+          "#4d1d12",
+          "#71291a",
+          "#963722",
+          "#bd4b31",
+          "#e0654a",
+          "#ea8f78",
+          "#f6c7b8"
+        ]
+      },
+      "brand-hearth": {
+        "role": "secondary",
+        "displayName": "Hearth Gold",
+        "canonical": "#bd863f",
+        "tonalRamp": [
+          "#241809",
+          "#402a11",
+          "#5e3d18",
+          "#7e5220",
+          "#9e6929",
+          "#bd863f",
+          "#d5ad76",
+          "#eddbbf"
+        ]
+      },
+      "brand-shelf": {
+        "role": "secondary",
+        "displayName": "Shelf Cream",
+        "canonical": "#f0e6d6",
+        "tonalRamp": [
+          "#2b251c",
+          "#463d2f",
+          "#635744",
+          "#81735b",
+          "#a09174",
+          "#bfb094",
+          "#d8cdb8",
+          "#f0e6d6"
+        ]
+      },
+      "success": {
+        "role": "tertiary",
+        "displayName": "Leaf",
+        "canonical": "#5a9c52",
+        "note": "Shared with the web app. Darkens to #47803f in the light theme so it clears 3:1 as an icon colour.",
+        "tonalRamp": [
+          "#0f1a0d",
+          "#1c2f18",
+          "#2a4724",
+          "#385f30",
+          "#47803f",
+          "#5a9c52",
+          "#8bbd82",
+          "#c3dcbd"
+        ]
+      },
+      "scaffold": {
+        "role": "neutral",
+        "displayName": "Hearth Ground",
+        "canonical": "#1b1a18",
+        "note": "Warm brown-black. Deliberately not #18181b.",
+        "tonalRamp": [
+          "#000000",
+          "#131211",
+          "#1b1a18",
+          "#201e1c",
+          "#242220",
+          "#2a2825",
+          "#322f2b",
+          "#383530"
+        ]
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "Warm Off-White",
+        "canonical": "#f4f1ea",
+        "note": "Never pure white; pure white on a warm ground reads blue.",
+        "tonalRamp": [
+          "#1b1a18",
+          "#383530",
+          "#5a554c",
+          "#756f64",
+          "#aba498",
+          "#d0cabe",
+          "#f4f1ea",
+          "#fffdf8"
+        ]
+      },
+      "destructive": {
+        "role": "tertiary",
+        "displayName": "Warning Red",
+        "canonical": "#c4463a",
+        "note": "Deliberately NOT the ember: the accent is user-changeable, so a delete action must never borrow it. Darkens to #b03f34 on light.",
+        "tonalRamp": [
+          "#2b0f0b",
+          "#4a1a14",
+          "#6b261d",
+          "#8c3227",
+          "#ad3e31",
+          "#c4463a",
+          "#d97f75",
+          "#efc2bc"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "hero": {
+        "displayName": "Hero",
+        "purpose": "Screen-leading titles. The largest tier; there is no display tier above it."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Section headers, sheet titles, card headings."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Primary reading copy at weight 500 - 400 goes soft on a warm dark ground."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Buttons, chips, controls. Anything you press."
+      },
+      "meta": {
+        "displayName": "Meta",
+        "purpose": "Author names, durations, counts, secondary rows."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "The 11px floor. Timestamps, sheet kickers, tab labels."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Geist Mono. Any number that changes in place - elapsed, remaining, position."
+      },
+      "eyebrow": {
+        "displayName": "Eyebrow",
+        "purpose": "Libre Baskerville uppercase kicker above a title. The serif's main structural appearance."
+      },
+      "quote": {
+        "displayName": "Quote",
+        "purpose": "Libre Baskerville italic for pulled text and editorial moments."
+      }
+    },
+    "shadows": [
+      {
+        "name": "card",
+        "value": "0 2px 6px rgba(0,0,0,0.25)",
+        "elevation": 3,
+        "purpose": "The whisper under cards and rows. Never enough to read as lifted."
+      },
+      {
+        "name": "lift",
+        "value": "0 12px 24px rgba(0,0,0,0.5)",
+        "elevation": 12,
+        "purpose": "Genuine elevation: sheets, the tab bar pill, raised cards."
+      },
+      {
+        "name": "accentLift",
+        "value": "0 2px 16px rgba(224,101,74,0.5)",
+        "elevation": 12,
+        "purpose": "A lifted element that is also live."
+      },
+      {
+        "name": "accentGlow",
+        "value": "0 8px 12px rgba(224,101,74,0.34)",
+        "elevation": 8,
+        "purpose": "The hearth glow. Playing state. Means lit, not raised."
+      }
+    ],
+    "motion": [
+      {
+        "name": "POP_SPRING",
+        "value": "spring(damping 13, stiffness 380, mass 0.5)",
+        "purpose": "Press feedback. Snaps in ~200ms."
+      },
+      {
+        "name": "BUBBLE_SPRING",
+        "value": "spring(damping 26, stiffness 190, mass 1)",
+        "purpose": "Large-surface entrances. ~520ms to rest, ~2% overshoot."
+      },
+      {
+        "name": "DUR.fast",
+        "value": "120ms",
+        "purpose": "Quick fades and dismissals."
+      },
+      {
+        "name": "DUR.base",
+        "value": "180ms",
+        "purpose": "Default fade and layout transition."
+      },
+      {
+        "name": "DUR.slow",
+        "value": "220ms",
+        "purpose": "Deliberate transitions."
+      },
+      {
+        "name": "LIFT.micro",
+        "value": "8px / 200ms",
+        "purpose": "Shelf Lift dose for tab swaps - a whisper."
+      },
+      {
+        "name": "LIFT.standard",
+        "value": "18px / 240ms",
+        "purpose": "Shelf Lift dose for pushes and the player."
+      },
+      {
+        "name": "LIFT.zero",
+        "value": "0px / 120ms",
+        "purpose": "Reduce Motion: opacity only, no displacement."
+      },
+      {
+        "name": "PULSE_MS",
+        "value": "2600ms",
+        "purpose": "The hearth's breathing period for anything that should feel live."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact",
+        "value": "<600px",
+        "note": "The design target. Phone."
+      },
+      {
+        "name": "medium",
+        "value": "600px",
+        "note": "Content clamps to 640px; padding rises to 24px."
+      },
+      {
+        "name": "expanded",
+        "value": "840px",
+        "note": "Content clamps to 640px; padding 24px."
+      }
+    ],
+    "scaling": {
+      "maxFontScale": 1.25,
+      "note": "OS font scaling ceiling. A raw <Text> without maxFontSizeMultiplier scales unbounded (React 19 dropped Text.defaultProps)."
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The accent-ground action button. Label color is luminance-chosen so a custom accent never yields unreadable text.",
+      "html": "<button class=\"ds-btn-primary\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M8 5v14l11-7z\"/></svg>Play</button>",
+      "css": ".ds-btn-primary { display:inline-flex; align-items:center; justify-content:center; gap:8px; background:#e0654a; color:#fff; font-family:'Inter 18pt',Inter,system-ui,sans-serif; font-size:14px; font-weight:600; border:none; border-radius:16px; padding:12px 24px; cursor:pointer; transition:opacity 120ms; } .ds-btn-primary:hover { opacity:0.85; } .ds-btn-primary:active { opacity:0.6; } .ds-btn-primary:focus-visible { outline:2px solid #f4f1ea; outline-offset:2px; }"
+    },
+    {
+      "name": "Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Neutral filter/preset pill. Never shrinks below its label in a horizontal row.",
+      "html": "<button class=\"ds-chip\">Series</button>",
+      "css": ".ds-chip { flex-shrink:0; background:rgba(255,255,255,0.06); color:#aba498; font-family:'Inter 18pt',Inter,system-ui,sans-serif; font-size:14px; font-weight:600; border:none; border-radius:999px; padding:8px 16px; cursor:pointer; transition:background 120ms,color 120ms; } .ds-chip:hover { background:rgba(255,255,255,0.10); } .ds-chip:active { opacity:0.6; } .ds-chip:focus-visible { outline:2px solid #f4f1ea; outline-offset:2px; }"
+    },
+    {
+      "name": "Chip (active)",
+      "kind": "chip",
+      "refersTo": "chip-active",
+      "description": "Selected chip: accent tile wash at 22% of the live accent, full-strength label.",
+      "html": "<button class=\"ds-chip-active\" aria-pressed=\"true\">Everything</button>",
+      "css": ".ds-chip-active { flex-shrink:0; background:rgba(224,101,74,0.22); color:#f4f1ea; font-family:'Inter 18pt',Inter,system-ui,sans-serif; font-size:14px; font-weight:600; border:none; border-radius:999px; padding:8px 16px; cursor:pointer; transition:background 120ms; } .ds-chip-active:hover { background:rgba(224,101,74,0.30); } .ds-chip-active:active { opacity:0.6; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Surface High container with a hairline rim and the card whisper-shadow. Tonal first, per the Tone-First Rule.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">Continue listening</div><div class=\"ds-card-meta\">3 books in progress</div></div>",
+      "css": ".ds-card { background:#2a2825; border:0.5px solid rgba(255,255,255,0.08); border-radius:16px; padding:16px; box-shadow:0 2px 6px rgba(0,0,0,0.25); font-family:'Inter 18pt',Inter,system-ui,sans-serif; } .ds-card-title { color:#f4f1ea; font-size:18px; font-weight:700; } .ds-card-meta { color:#aba498; font-size:13px; font-weight:500; margin-top:4px; }"
+    },
+    {
+      "name": "List Row",
+      "kind": "custom",
+      "refersTo": "row",
+      "description": "The standard tappable list row. The now-playing variant tints with 22% of the live accent.",
+      "html": "<div class=\"ds-row\"><div class=\"ds-row-cover\">K</div><div><div class=\"ds-row-title\">The Way of Kings</div><div class=\"ds-row-meta\">Brandon Sanderson &middot; 45h 12m</div></div></div>",
+      "css": ".ds-row { display:flex; align-items:center; gap:12px; background:#2a2825; border:0.5px solid rgba(255,255,255,0.08); border-radius:12px; padding:12px 16px; font-family:'Inter 18pt',Inter,system-ui,sans-serif; cursor:pointer; transition:opacity 120ms; } .ds-row:active { opacity:0.6; } .ds-row-cover { width:40px; height:60px; flex-shrink:0; border-radius:10px; background:#322f2b; color:#aba498; display:flex; align-items:center; justify-content:center; font-family:'Libre Baskerville',Georgia,serif; font-size:16px; } .ds-row-title { color:#f4f1ea; font-size:16px; font-weight:500; } .ds-row-meta { color:#aba498; font-size:13px; font-weight:500; margin-top:2px; }"
+    },
+    {
+      "name": "Glass Tab Bar",
+      "kind": "nav",
+      "description": "The signature component. A floating pill band with genuine backdrop blur, an ember tint over the blurred result, a hairline rim, and a pill indicator that animates position and height between items.",
+      "html": "<nav class=\"ds-tabbar\"><span class=\"ds-tab ds-tab-on\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M12 3 2 12h3v8h6v-6h2v6h6v-8h3z\"/></svg>Home</span><span class=\"ds-tab\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M4 4h7v16H4zm9 0h7v16h-7z\"/></svg>Library</span><span class=\"ds-tab\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M12 2a10 10 0 100 20 10 10 0 000-20zm-2 14.5v-9l7 4.5z\"/></svg>Now</span></nav>",
+      "css": ".ds-tabbar { display:inline-flex; align-items:center; gap:4px; padding:6px; border-radius:999px; background:rgba(42,40,37,0.72); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px); border:0.5px solid rgba(255,255,255,0.08); box-shadow:0 14px 24px rgba(0,0,0,0.5); font-family:'Inter 18pt',Inter,system-ui,sans-serif; } .ds-tab { display:flex; flex-direction:column; align-items:center; gap:2px; padding:8px 16px; border-radius:999px; color:#aba498; font-size:11px; font-weight:500; cursor:pointer; transition:color 180ms,background 180ms; } .ds-tab:hover { color:#f4f1ea; } .ds-tab-on { color:#e0654a; background:rgba(224,101,74,0.22); }"
+    },
+    {
+      "name": "Bottom Sheet",
+      "kind": "custom",
+      "refersTo": "sheet",
+      "description": "The primary sub-task surface. Sheet ground distinct from Base so it reads as a separate plane, with a faint grab handle and an optional kicker/title/subtitle header.",
+      "html": "<div class=\"ds-sheet\"><div class=\"ds-sheet-handle\"></div><div class=\"ds-sheet-kicker\">SLEEP TIMER</div><div class=\"ds-sheet-title\">Stop after</div><div class=\"ds-sheet-sub\">Playback fades out when the timer ends</div></div>",
+      "css": ".ds-sheet { background:#222120; border-radius:20px 20px 0 0; padding:8px 16px 24px; font-family:'Inter 18pt',Inter,system-ui,sans-serif; } .ds-sheet-handle { width:36px; height:4px; border-radius:999px; background:#756f64; margin:0 auto 12px; } .ds-sheet-kicker { color:#aba498; font-size:11px; font-weight:500; letter-spacing:0.08em; } .ds-sheet-title { color:#f4f1ea; font-size:18px; font-weight:700; margin-top:2px; } .ds-sheet-sub { color:#aba498; font-size:11px; font-weight:500; margin-top:2px; }"
+    },
+    {
+      "name": "Cover (typeset fallback)",
+      "kind": "custom",
+      "description": "Cover art is the content, so its failure state is designed. When artwork is missing or fails, a hue-derived ground carries the title initial and a kicker; remote loads retry on a 2s/5s/12s/30s backoff.",
+      "html": "<div class=\"ds-cover\"><span class=\"ds-cover-init\">K</span><span class=\"ds-cover-title\">The Way of Kings</span></div>",
+      "css": ".ds-cover { width:104px; aspect-ratio:2/3; border-radius:10px; background:#322f2b; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:8px; text-align:center; box-shadow:0 2px 6px rgba(0,0,0,0.25); } .ds-cover-init { font-family:'Libre Baskerville',Georgia,serif; font-size:28px; color:#bd863f; } .ds-cover-title { font-family:'Inter 18pt',Inter,system-ui,sans-serif; font-size:11px; font-weight:500; color:#aba498; }"
+    },
+    {
+      "name": "Progress Bar",
+      "kind": "custom",
+      "description": "Position within a book. The fill is the live accent - the ember marking where you are.",
+      "html": "<div class=\"ds-progress\"><div class=\"ds-progress-fill\"></div></div>",
+      "css": ".ds-progress { height:3px; border-radius:999px; background:rgba(255,255,255,0.10); overflow:hidden; } .ds-progress-fill { width:42%; height:100%; border-radius:999px; background:#e0654a; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Hearthside Shelf",
+    "overview": "A shelf of books in a warm, dark room with a fire going. Two things are true at once, and every visual decision serves one of them. The hearth is the light and the ground: a warm-neutral brown-black (#1b1a18, never blue-black), a single ember accent that glows rather than shouts, and shadows tinted by that ember so lifted things feel lit instead of merely raised. The shelf is the subject: cover artwork is the content, and the chrome's job is to hold it and then get out of the way.\n\nThe system is dense but unhurried. Surfaces stack through a five-step warm ramp rather than a border-per-box, radii are generous but never soft-toy round, and motion has one vocabulary - a tuned pop for press feedback, a slower bubble for large entrances, and a Shelf Lift fade-and-settle on every navigation. Nothing bounces for its own sake. The app is used by people in a dark room holding a phone one-handed and by people in a moving vehicle who cannot look at it, so legibility at low light and at a glance outranks expression everywhere they conflict.\n\nThe palette is not fixed. Theme (dark / light / OLED-flat) and accent color are user settings resolved at runtime through ThemeProvider, and every documented token is the default dark+ember resolution of a reactive system. A surface that only looks right in one palette is unfinished. The one thing that never varies is the metaphor: this is a hearth and a shelf, and it stays a metaphor. It is never rendered literally.",
+    "keyCharacteristics": [
+      "Warm-neutral ground (#1b1a18) - brown-black, deliberately not blue-black",
+      "Ember accent (#e0654a) as the room's warmth, user-changeable",
+      "Five-step tonal surface ramp doing the everyday depth work",
+      "Covers lead; chrome recedes to hold them",
+      "One motion vocabulary, sourced from src/ui/motion.tsx, never reinvented per screen",
+      "Reactive: dark, light, and OLED-flat are all first-class"
+    ],
+    "rules": [
+      {
+        "name": "The Warm Grey Rule",
+        "body": "Every neutral in this system carries brown. If a grey reads blue or neutral-cool next to #1b1a18, it is wrong - the ground is #1b1a18 and not #18181b on purpose, and a cool grey anywhere in the stack makes the whole room read as a different, colder app.",
+        "section": "colors"
+      },
+      {
+        "name": "The Reactive Palette Rule",
+        "body": "No hardcoded hex in screens. Colors come from useTheme() / useColors(); the documented values are the dark+ember resolution. The static colors export exists only for code outside the React tree (the headless car service) and is not a license to bypass the hook.",
+        "section": "colors"
+      },
+      {
+        "name": "The Alpha Wash Rule",
+        "body": "Accent-derived surfaces are always alpha derivations of the live accent (withAlpha), never a second hardcoded hex. That is what lets a user's chosen accent flow into every tinted surface instead of stranding the default ember in half the app.",
+        "section": "colors"
+      },
+      {
+        "name": "The 11px Floor Rule",
+        "body": "Nothing renders below 11px. There is no smaller tier and none may be added - this app is read in the dark and, at a glance, from a driver's seat.",
+        "section": "typography"
+      },
+      {
+        "name": "The Serif Is A Guest Rule",
+        "body": "Libre Baskerville appears in the wordmark, eyebrows, and quotes. It never sets a button, a row, a label, or body copy. The moment the serif starts doing UI work, the app stops being plain-spoken and starts performing.",
+        "section": "typography"
+      },
+      {
+        "name": "The 1.25x Scale Ceiling Rule",
+        "body": "OS font scaling is capped at MAX_FONT_SCALE (1.25). The type scale and most containers use fixed pixel sizes, so unbounded scaling overflows pills, rows, and tiles until text overlaps. React 19 dropped Text.defaultProps, so a raw <Text> without maxFontSizeMultiplier scales unbounded - use AppText, or pass the prop explicitly in fixed-height containers.",
+        "section": "typography"
+      },
+      {
+        "name": "The Mono Numerals Rule",
+        "body": "Any number that changes in place - elapsed time, remaining, position - is Geist Mono. Proportional numerals jitter the layout on every tick.",
+        "section": "typography"
+      },
+      {
+        "name": "The Thumb Zone Rule",
+        "body": "Frequent controls live in the bottom half of the screen. The player's queue and sync controls sit in the transport zone, not the header.",
+        "section": "layout"
+      },
+      {
+        "name": "The Computed Grid Rule",
+        "body": "Never hardcode a column count. Derive it from adaptiveGridColumns so tile width stays honest at every window size.",
+        "section": "layout"
+      },
+      {
+        "name": "The Tone-First Rule",
+        "body": "Reach for the next surface step before reaching for a shadow. If two surfaces can be separated tonally, they must be - shadow is spent only on things that actually float.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Glow Means Alive Rule",
+        "body": "Accent-tinted shadow means lit, never raised. If an element is elevated but not live, it takes lift, not accentLift.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Radius Ladder Rule",
+        "body": "Radius tracks size and permanence: the bigger and more container-like the element, the larger the radius. A 16px radius on a 32px control reads as a bubble; a 10px radius on a full-width sheet reads as unfinished.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Hairline Default Rule",
+        "body": "Rims are hairline at 8% white. A 1px solid border anywhere in the ordinary UI is a mistake unless it is fighting artwork.",
+        "section": "shapes"
+      },
+      {
+        "name": "The One Vocabulary Rule",
+        "body": "Springs and durations come from motion.tsx. A bespoke curve in a screen file is a defect, not a flourish.",
+        "section": "components"
+      },
+      {
+        "name": "The Reduce Motion Rule",
+        "body": "useReducedMotion() is a single shared import for exactly this reason. Under Reduce Motion, loops go static and large entrances become cross-fades - LIFT drops to zero, opacity only.",
+        "section": "components"
+      },
+      {
+        "name": "The One Spring Rule",
+        "body": "Drive a growth as one spring per axis from start to rest. Intermediate waypoints restart the easing mid-growth and read as a stutter.",
+        "section": "components"
+      },
+      {
+        "name": "The One Cover Palette Rule",
+        "body": "A book is the same colour on every surface. Cover hue comes from coverHue() in core, seeded on the item id, never from a surface-local palette or a different seed.",
+        "section": "colors"
+      }
+    ],
+    "dos": [
+      "Do read every color from useTheme() / useColors(). The documented values are the dark+ember resolution of a reactive system, not constants.",
+      "Do keep neutrals warm. If a grey reads cool next to #1b1a18, it's wrong.",
+      "Do derive accent-tinted surfaces with withAlpha on the live accent, so a user's chosen color flows everywhere.",
+      "Do separate surfaces tonally first; spend shadow only on things that genuinely float.",
+      "Do use AppText, or pass maxFontSizeMultiplier={MAX_FONT_SCALE} on any raw <Text> in a fixed-height container.",
+      "Do give every icon-only control an accessibilityLabel.",
+      "Do design the loading, empty, error, and offline state of every surface. Offline is a first-class mode here, not a failure.",
+      "Do source motion from motion.tsx and gate it on useReducedMotion().",
+      "Do verify every surface in dark, light, and OLED-flat before calling it finished."
+    ],
+    "donts": [
+      "Don't render the metaphor literally. No wood grain, leather, paper textures, or bookshelf illustrations - the hearth and the shelf are a palette and a hierarchy, never scenery.",
+      "Don't use pure white text or blue-black grounds. Both break the room.",
+      "Don't set UI in Libre Baskerville. It's the wordmark, eyebrows, and quotes - never a button, row, label, or body string.",
+      "Don't re-color or split the wordmark: Hearth gold (#bd863f) + Shelf cream (#f0e6d6), always together.",
+      "Don't render type below 11px, or add a tier beneath Caption.",
+      "Don't use proportional numerals for anything that counts in place - that's Geist Mono's job.",
+      "Don't hardcode grid column counts; derive them from adaptiveGridColumns.",
+      "Don't invent a spring or duration in a screen file.",
+      "Don't tint a destructive action with the accent. It is user-changeable, so a borrowed accent can make delete the same colour as the progress bar.",
+      "Don't seed a cover colour on the title or from a local palette; use coverHue(item.id) so books match across surfaces."
+    ]
+  }
+}

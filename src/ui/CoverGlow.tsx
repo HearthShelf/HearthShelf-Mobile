@@ -11,7 +11,7 @@
  * quality/appearance option per plan section 0.4 #3); until that asset ships it
  * falls back to the gradient renderer.
  */
-import { useEffect } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import Animated, {
@@ -21,6 +21,7 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated'
+import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { PULSE_MS } from './motion'
 
 export type GlowMode = 'gradient' | 'image'
@@ -36,14 +37,18 @@ function withAlpha(hex: string, alpha: number): string {
 
 export function CoverGlow({
   hue,
-  strength = 60,
+  strength,
   height = 360,
   mode = 'gradient',
   breathe = false,
   style,
 }: {
   hue: string
-  /** 0-100, mirrors the DS --glow-strength (60 dark). Scales peak opacity. */
+  /** 0-100, mirrors the DS --glow-strength (60 dark). Scales peak opacity.
+   *  Omit to follow the user's `glow` setting, which is the normal case - it is
+   *  account-scoped and shared with the web app, so the slider in Appearance
+   *  moves the bloom on every surface. Pass a value only to hold a surface
+   *  deliberately dimmer than the user's pick (a hero behind dense text). */
   strength?: number
   /** How far down the bloom reaches, px. */
   height?: number
@@ -53,8 +58,14 @@ export function CoverGlow({
   breathe?: boolean
   style?: StyleProp<ViewStyle>
 }) {
+  // Flat/OLED sets the glow to 0 and removes the atmosphere entirely, so any
+  // effect built on the bloom must still read with it off (DESIGN.shared.md,
+  // "The Flat-Theme Rule").
+  const s = useSyncExternalStore(subscribeSettings, getSettingsState)
+  const effectiveStrength = strength ?? s.glow
+
   // Peak opacity from strength: 60 -> ~0.34, clamped so it stays a tint.
-  const peak = Math.max(0, Math.min(0.6, (strength / 100) * 0.56))
+  const peak = Math.max(0, Math.min(0.6, (effectiveStrength / 100) * 0.56))
 
   const pulse = useSharedValue(1)
   useEffect(() => {

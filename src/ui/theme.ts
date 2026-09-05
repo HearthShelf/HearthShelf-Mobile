@@ -177,8 +177,18 @@ export function buildPalette(themeName: ThemeName, accentHex: string): Palette {
     accentWash: accentAlpha(accent, 0.12),
     accentTile: accentAlpha(accent, 0.22),
     scrim: themeName === 'light' ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.55)',
-    destructive: '#e0654a',
-    success: '#7fa86b',
+    // State colours shared with the web app (DESIGN.shared.md). Destructive is
+    // deliberately NOT the ember: the accent is user-changeable, so a delete
+    // button that borrows it can end up the same colour as the progress bar -
+    // or green.
+    //
+    // Both darken on light, matching the web tokens: the shared hexes are tuned
+    // for the dark room and only reach ~3.1:1 (green) and ~4.5:1 (red) on the
+    // light scaffold. These are icon and label colours, so 3:1 is the floor they
+    // must clear, but the light variants keep them comfortably above it rather
+    // than at the line.
+    destructive: themeName === 'light' ? '#b03f34' : '#c4463a',
+    success: themeName === 'light' ? '#47803f' : '#5a9c52',
   }
 }
 
