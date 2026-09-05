@@ -22,7 +22,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
-import { PULSE_MS } from './motion'
+import { PULSE_MS, useReducedMotion } from './motion'
 
 export type GlowMode = 'gradient' | 'image'
 
@@ -68,8 +68,11 @@ export function CoverGlow({
   const peak = Math.max(0, Math.min(0.6, (effectiveStrength / 100) * 0.56))
 
   const pulse = useSharedValue(1)
+  const reduceMotion = useReducedMotion()
   useEffect(() => {
-    if (!breathe) {
+    // A perpetual pulse behind the player is exactly the kind of ambient motion
+    // Reduce Motion is asking us to stop; hold it at full instead.
+    if (!breathe || reduceMotion) {
       pulse.value = 1
       return
     }
@@ -78,7 +81,7 @@ export function CoverGlow({
       -1,
       true,
     )
-  }, [breathe, pulse])
+  }, [breathe, reduceMotion, pulse])
   const breathing = useAnimatedStyle(() => ({ opacity: pulse.value }))
 
   // `mode='image'` falls back to gradient until the blurred-PNG asset exists.

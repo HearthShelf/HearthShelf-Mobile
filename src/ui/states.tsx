@@ -24,6 +24,7 @@ import { AppText, PrimaryButton } from './primitives'
 import { Icon, icons, type IconName } from './icons'
 import { MAX_FONT_SCALE, radius, spacing } from './theme'
 import { useColors } from './ThemeProvider'
+import { useReducedMotion } from './motion'
 
 const SHIMMER_MS = 1600
 
@@ -48,9 +49,17 @@ export function Skeleton({
 }) {
   const colors = useColors()
   const x = useSharedValue(-1)
+  const reduceMotion = useReducedMotion()
   useEffect(() => {
+    // Skeletons render many-at-once, so an ungated sweep means dozens of
+    // simultaneous perpetual animations on every load. Under Reduce Motion the
+    // block just sits there as a static placeholder.
+    if (reduceMotion) {
+      x.value = -1
+      return
+    }
     x.value = withRepeat(withTiming(1, { duration: SHIMMER_MS, easing: Easing.linear }), -1, false)
-  }, [x])
+  }, [reduceMotion, x])
   const sweep = useAnimatedStyle(() => ({
     transform: [{ translateX: `${x.value * 100}%` }],
   }))

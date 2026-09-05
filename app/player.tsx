@@ -900,7 +900,13 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
               exiting={FadeOut.duration(DUR.fast)}
               style={styles.focusExit}
             >
-              <IconButton name={icons.close} size={24} color={colors.textMuted} onPress={exit} />
+              <IconButton
+                name={icons.close}
+                size={24}
+                color={colors.textMuted}
+                accessibilityLabel="Exit focus view"
+                onPress={exit}
+              />
             </Animated.View>
           )}
 
@@ -945,6 +951,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                     name={icons.focusView}
                     size={22}
                     color={colors.textMuted}
+                    accessibilityLabel="Enter focus view"
                     onPress={enter}
                   />
                   <SyncStatusIcon />
@@ -1022,6 +1029,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                     name={isBookmarked ? icons.bookmarkFilled : icons.bookmark}
                     size={19}
                     color="#fff"
+                    accessibilityLabel={isBookmarked ? 'Remove bookmark' : 'Add bookmark'}
                     onPress={onBookmark}
                     style={styles.bookmarkBtn}
                   />
@@ -1622,10 +1630,17 @@ function DeckControls({
 function BufferingRing({ size }: { size: number }) {
   const { colors } = useTheme()
   const spin = useSharedValue(0)
+  const reduceMotion = useReducedMotion()
   useEffect(() => {
+    // The ring still shows that buffering is happening; only the perpetual
+    // rotation stops under Reduce Motion.
+    if (reduceMotion) {
+      spin.value = 0
+      return
+    }
     spin.value = withRepeat(withTiming(1, { duration: 900, easing: Easing.linear }), -1, false)
     return () => cancelAnimation(spin)
-  }, [spin])
+  }, [reduceMotion, spin])
   const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.value * 360}deg` }] }))
   return (
     <Animated.View
