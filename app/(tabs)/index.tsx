@@ -1,4 +1,4 @@
-import { useAuth, useUser } from '@clerk/expo'
+import { useAuth } from '@/auth/useAuth'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   BackHandler,
@@ -154,8 +154,7 @@ function toPublishedShelves(shelves: HomeShelf[]) {
 export default function HomeScreen() {
   const styles = useStyles()
   const colors = useColors()
-  const { signOut } = useAuth()
-  const { user } = useUser()
+  const { signOut, user } = useAuth()
   const firstName = user?.firstName ?? null
   const { nowPlaying, isPlaying, position } = useSyncExternalStore(subscribe, getState)
   const router = useRouter()

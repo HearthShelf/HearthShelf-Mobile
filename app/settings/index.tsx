@@ -8,7 +8,7 @@
  * Reached from the More menu's Settings entry as a pushed route, so it gets the
  * settings stack's native header and back button rather than tab-root behaviour.
  */
-import { useUser } from '@clerk/expo'
+import { useAuth } from '@/auth/useAuth'
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native'
 import { useFocusEffect, useRouter, type Href } from 'expo-router'
@@ -181,7 +181,7 @@ const GROUPS: { label: string; items: MenuItemEx[] }[] = [
 
 export default function MoreScreen() {
   const router = useRouter()
-  const { user } = useUser()
+  const { user } = useAuth()
   const { activeRole } = useConnection()
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])

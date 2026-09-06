@@ -21,7 +21,7 @@ import {
 } from 'react-native'
 import * as Sentry from '@sentry/react-native'
 import * as ImagePicker from 'expo-image-picker'
-import { useUser } from '@clerk/expo'
+import { useAuth } from '@/auth/useAuth'
 import { AppText, Chip, PrimaryButton, Screen, SectionHeader } from '@/ui/primitives'
 import { Icon, iconFor } from '@/ui/icons'
 import { showToast } from '@/ui/Toast'
@@ -83,7 +83,7 @@ export default function FeedbackScreen() {
   const colors = useColors()
   const styles = useStyles(colors)
   const bottomInset = useContentInset()
-  const { user } = useUser()
+  const { user } = useAuth()
 
   const [kind, setKind] = useState<Kind>('bug')
   const [message, setMessage] = useState('')

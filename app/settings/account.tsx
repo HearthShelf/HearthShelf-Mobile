@@ -5,7 +5,7 @@
  * is a read view + sign out rather than a form. Header comes from settings/_layout.
  */
 import { useMemo } from 'react'
-import { useAuth, useUser } from '@clerk/expo'
+import { useAuth } from '@/auth/useAuth'
 import { useRouter } from 'expo-router'
 import { StyleSheet, View } from 'react-native'
 import { clearSession } from '@/api/session'
@@ -31,8 +31,7 @@ function fmtDay(d: Date | null | undefined): string {
 
 export default function AccountScreen() {
   const router = useRouter()
-  const { user } = useUser()
-  const { signOut } = useAuth()
+  const { user, signOut } = useAuth()
   const settings = useSyncExternalStore(subscribeSettings, getSettingsState)
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])

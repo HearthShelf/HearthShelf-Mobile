@@ -6,7 +6,7 @@
  * you to new devices). An "Add a library" row accepts an invite code (or a
  * pasted invite link) to join another library. Header comes from settings/_layout.
  */
-import { useAuth } from '@clerk/expo'
+import { getSessionToken } from '@/auth/token'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, Alert, Pressable, StyleSheet, TextInput, View } from 'react-native'
 import { useRouter } from 'expo-router'
@@ -19,7 +19,6 @@ import {
   type LinkedServer,
 } from '@/api/controlPlane'
 import { useConnection } from '@/api/ConnectionProvider'
-import { CLERK_JWT_TEMPLATE } from '@/lib/config'
 import { AppText, Centered } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
 import { showToast } from '@/ui/Toast'
@@ -45,7 +44,6 @@ type Status = { phase: 'loading' } | { phase: 'error'; message: string } | { pha
 
 export default function ServersScreen() {
   const router = useRouter()
-  const { getToken } = useAuth()
   const { connectTo, serverName } = useConnection()
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
@@ -59,18 +57,8 @@ export default function ServersScreen() {
   // sync with reconnects rather than a one-time getSession() read.
   const activeName = serverName
 
-  const tokenFn = useCallback(
-    async (opts?: { forceRefresh?: boolean }) => {
-      try {
-        // skipCache forces a fresh JWT so a stale-token 401 can be retried before
-        // the session-expired handler fires (see controlPlane.request).
-        return await getToken({ template: CLERK_JWT_TEMPLATE, skipCache: opts?.forceRefresh })
-      } catch {
-        return null
-      }
-    },
-    [getToken],
-  )
+  // Reads the stored session; bounded and null-never-throw (see auth/token.ts).
+  const tokenFn = useCallback(getSessionToken, [])
 
   // `silent` refreshes the list in place (e.g. after toggling a default) without
   // flashing the spinner over an already-populated list.

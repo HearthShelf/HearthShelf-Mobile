@@ -1,5 +1,4 @@
 import * as Sentry from '@sentry/react-native'
-import { ClerkProvider, useAuth } from '@clerk/expo'
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -8,14 +7,11 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import * as SplashScreen from 'expo-splash-screen'
-import { tokenCache, hasCachedClerkSession, clerkResourceCache } from '@/lib/tokenCache'
-import {
-  CLERK_PUBLISHABLE_KEY,
-  CLERK_JWT_TEMPLATE,
-  SENTRY_DSN,
-  FULL_VERSION,
-  BUILD_NUMBER,
-} from '@/lib/config'
+import { useSession, authClient } from '@/auth/client'
+import { getSessionToken } from '@/auth/token'
+// Aliased: AuthGate has local state also called hasCachedSession.
+import { hasCachedSession as readCachedSession, clearCachedSession } from '@/auth/sessionCache'
+import { SENTRY_DSN, FULL_VERSION, BUILD_NUMBER } from '@/lib/config'
 import { PlayerHost } from '@/player/PlayerHost'
 import { MiniPlayerDock } from '@/player/MiniPlayerDock'
 import { PopToast } from '@/social/PopToast'
@@ -129,7 +125,7 @@ if (SENTRY_DSN) {
     },
   })
   // Open the startup transaction + arm the hang watchdog immediately after init,
-  // so the whole launch (Clerk load, cached-session check, connect) is spanned.
+  // so the whole launch (auth load, cached-session check, connect) is spanned.
   beginStartupTrace()
 }
 
@@ -156,35 +152,39 @@ function hideOsSplash() {
 
 /**
  * Auth gate. Signed-out users are pushed to /sign-in; signed-in users sitting on
- * the sign-in screen are sent into the tabs. Runs as an effect off Clerk state so
+ * the sign-in screen are sent into the tabs. Runs as an effect off auth state so
  * there is no standalone `/` route competing with the tabs index.
  *
- * While Clerk is still resolving, the hearth splash covers everything. Once signed
+ * While auth is still resolving, the hearth splash covers everything. Once signed
  * in, the ConnectionProvider + ConnectionGate keep that same splash up through the
  * server connect, so there's one continuous warm boot screen (see ConnectionGate).
  */
-/** How long to wait for Clerk to load before falling back to the cached session.
- *  Offline, Clerk's isLoaded never resolves (it can't reach Clerk's servers), so
- *  without this the app hangs on the splash forever. */
-const CLERK_LOAD_TIMEOUT_MS = 4000
+/** How long to wait for auth to resolve before falling back to the cached
+ *  session. Offline the session can never be CONFIRMED (the auth service is
+ *  unreachable), so without this the app hangs on the splash forever. */
+const AUTH_LOAD_TIMEOUT_MS = 4000
 
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const { isLoaded, isSignedIn, getToken } = useAuth()
+  // `isPending` is the auth client's "still resolving" state, so !isPending is
+  // the old isLoaded; a session object present means signed in.
+  const { data: session, isPending } = useSession()
+  const isLoaded = !isPending
+  const isSignedIn = !!session
   const segments = useSegments()
   const router = useRouter()
   // Flush a prior-run crash report exactly once, the first time we have a
-  // confirmed signed-in Clerk session (its token authenticates the upload).
+  // confirmed signed-in session (its token authenticates the upload).
   const crashFlushed = useRef(false)
-  // Set when Clerk hasn't loaded in time AND we have a cached session, so a
+  // Set when auth hasn't resolved in time AND we have a cached session, so a
   // signed-in user launching offline reaches offline mode instead of hanging.
   const [offlineFallback, setOfflineFallback] = useState(false)
   // True once we've seen a confirmed signed-in session this run. After that we
   // NEVER auto-redirect to /sign-in on an isSignedIn=false reading - see below.
   const wasSignedIn = useRef(false)
-  // Whether this device has a cached Clerk JWT (was signed in on a prior run).
+  // Whether this device has a stored session (was signed in on a prior run).
   // null = not yet checked. A long iOS suspension can KILL the JS process while
   // native audio keeps playing; on the cold relaunch `wasSignedIn` starts false
-  // and Clerk can momentarily report isLoaded=true/isSignedIn=false before the
+  // and auth can momentarily report isLoaded=true/isSignedIn=false before the
   // cached session re-hydrates. Without this we'd redirect that returning user to
   // /sign-in mid-playback. So on a fresh mount we hold the redirect until we've
   // confirmed there is NO cached session (genuine first launch / signed out).
@@ -192,45 +192,45 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const phase = startPhase('cached-session-check')
-    void hasCachedClerkSession()
+    void readCachedSession()
       .then(setHasCachedSession)
       .finally(() => phase.end())
   }, [])
 
-  // Span the wait for Clerk to load. This is the prime suspect for the hang: if
+  // Span the wait for auth to resolve. This is the prime suspect for the hang: if
   // isLoaded never resolves AND there's no cached JWT, `ready` stays false with
   // no timeout, and this span never ends - which the trace + watchdog surface.
-  const clerkPhase = useRef<ReturnType<typeof startPhase> | null>(null)
-  if (!isLoaded && !clerkPhase.current) clerkPhase.current = startPhase('clerk-load')
+  const authPhase = useRef<ReturnType<typeof startPhase> | null>(null)
+  if (!isLoaded && !authPhase.current) authPhase.current = startPhase('auth-load')
   useEffect(() => {
-    if (isLoaded && clerkPhase.current) {
-      clerkPhase.current.end()
-      clerkPhase.current = null
+    if (isLoaded && authPhase.current) {
+      authPhase.current.end()
+      authPhase.current = null
     }
   }, [isLoaded])
 
   useEffect(() => {
     if (isLoaded) return
     const t = setTimeout(() => {
-      void hasCachedClerkSession().then((cached) => {
+      void readCachedSession().then((cached: boolean) => {
         if (cached) setOfflineFallback(true)
       })
-    }, CLERK_LOAD_TIMEOUT_MS)
+    }, AUTH_LOAD_TIMEOUT_MS)
     return () => clearTimeout(t)
   }, [isLoaded])
 
-  // Treat a timed-out-but-cached session as signed in: Clerk can't confirm us
+  // Treat a timed-out-but-cached session as signed in: we can't confirm
   // offline, but the cached client proves we were.
   const effectiveSignedIn = isSignedIn || (!isLoaded && offlineFallback)
   const ready = isLoaded || offlineFallback
 
   if (effectiveSignedIn) wasSignedIn.current = true
   // A returning user whose session is still re-hydrating: cached JWT present but
-  // Clerk hasn't confirmed signed-in yet this run. Treated as "signed in" for
-  // gating so their screen and connection stay mounted while Clerk settles.
+  // the service hasn't confirmed signed-in yet this run. Treated as "signed in" for
+  // gating so their screen and connection stay mounted while auth settles.
   //
-  // `!isLoaded` is REQUIRED: rehydration is by definition the window BEFORE Clerk
-  // has answered. Once isLoaded is true and isSignedIn is false, Clerk HAS
+  // `!isLoaded` is REQUIRED: rehydration is by definition the window BEFORE auth
+  // has answered. Once isLoaded is true and isSignedIn is false, auth HAS
   // answered - the user is signed out and the cached JWT is merely stale. Without
   // this clause a stale JWT made `rehydrating` permanently true, which gated a
   // signed-out user into ConnectionGate (splash, forever) while simultaneously
@@ -238,7 +238,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   // email" -> hardware back popped /sign-in, landing on (tabs) signed-out, and
   // the app stuck on "Warming up the hearth" with no way out.
   const rehydrating = !isLoaded && hasCachedSession === true && !wasSignedIn.current
-  // Sticky: once signed in this run, stay "signed in" for gating even if Clerk
+  // Sticky: once signed in this run, stay "signed in" for gating even if auth
   // momentarily flaps to false on a suspend/resume. Keeps ConnectionGate mounted
   // (no connect-splash flash) and, with the redirect guard below, keeps a
   // listening user on their screen.
@@ -257,7 +257,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     if (!ready) return
     // `onAuthRoute` (declared above, and shared with the gate) also covers
     // sso-callback, which catches the OAuth redirect mid-flow (see
-    // app/sso-callback.tsx) and routes itself once Clerk settles - so don't yank
+    // app/sso-callback.tsx) and routes itself once the session settles - so don't yank
     // it to /sign-in while the session is still being established.
     if (effectiveSignedIn && segments[0] === 'sign-in') {
       router.replace('/(tabs)')
@@ -267,7 +267,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
     // Not signed in and not on an auth route. Only auto-redirect on a GENUINE
     // signed-out state: we've never had a confirmed session this run AND there is
-    // no cached JWT on the device. If either is true, this is Clerk failing to
+    // no stored session on the device. If either is true, this is auth failing to
     // re-hydrate - after a warm suspend/resume (isSignedIn flaps while wasSignedIn
     // stays true) or a cold relaunch of a returning user (a long iOS suspension
     // can kill the JS process while native audio keeps playing; wasSignedIn starts
@@ -281,7 +281,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     // hasCachedSession === null means the check hasn't resolved yet - hold the
     // redirect until it does rather than risk a wrong bounce.
     //
-    // A cached JWT alone is NOT a reason to hold once Clerk has actually loaded
+    // A stored session alone is NOT a reason to hold once auth has actually resolved
     // and reported signed-out: `isLoaded && !isSignedIn && !wasSignedIn` is a
     // definitive answer, and the cached token is simply stale (e.g. it was left
     // behind by an abandoned sign-in). Holding on that combination stranded a
@@ -304,8 +304,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (crashFlushed.current || !isLoaded || !isSignedIn) return
     crashFlushed.current = true
-    void flushPriorCrash(() => getToken({ template: CLERK_JWT_TEMPLATE }))
-  }, [isLoaded, isSignedIn, getToken])
+    void flushPriorCrash(() => getSessionToken())
+  }, [isLoaded, isSignedIn])
 
   if (!ready) return <HearthSplash phase={{ kind: 'connecting' }} onReady={hideOsSplash} />
 
@@ -330,7 +330,15 @@ function AuthGate({ children }: { children: React.ReactNode }) {
  */
 function ConnectionGate({ children }: { children: React.ReactNode }) {
   const { status, retry, connectTo, redeemInvite, enterOffline, canGoOffline } = useConnection()
-  const { signOut } = useAuth()
+  // Clear the stored session too: sign-out must work with the auth service
+  // unreachable, or a user on a dead network is stuck signed in.
+  const signOut = useCallback(async () => {
+    try {
+      await authClient.signOut()
+    } finally {
+      await clearCachedSession()
+    }
+  }, [])
   const router = useRouter()
   // Lets the user step out to the servers screen while still not connected.
   const [peekingServers, setPeekingServers] = useState(false)
@@ -491,7 +499,7 @@ export default Sentry.wrap(function RootLayout() {
   useEffect(() => mountPushHandlers(), [])
 
   // Drive the crash-log clean-shutdown sentinel off app foreground/background.
-  // Auth-independent, so it lives here rather than in the Clerk-scoped AuthGate.
+  // Auth-independent, so it lives here rather than inside AuthGate.
   useEffect(() => mountCrashLifecycle(), [])
 
   // Anonymous install heartbeat to the public community stats. Auth-independent
@@ -514,62 +522,58 @@ export default Sentry.wrap(function RootLayout() {
   // async load gate needed. The hearth splash calls SplashScreen.hideAsync
   // itself once it has painted its first frame.
   return (
-    <ClerkProvider
-      publishableKey={CLERK_PUBLISHABLE_KEY}
-      tokenCache={tokenCache}
-      __experimental_resourceCache={clerkResourceCache}
-    >
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <SafeAreaProvider>
-          <ThemeProvider>
-            <BottomSheetModalProvider>
-              <ThemedStatusBar />
-              {/* Catches render errors from any screen. Without it, a throw
+    // The auth client is a module singleton (src/auth/client.ts) - there is no
+    // provider component to mount, so the tree starts at the gesture root.
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <BottomSheetModalProvider>
+            <ThemedStatusBar />
+            {/* Catches render errors from any screen. Without it, a throw
                   during render unmounts the tree to a blank white screen and can
                   reach Sentry as NOTHING - React catches it, so the global
                   handler never sees it (HS-MOBILEAPP-13, which took an adb
                   logcat session to find). Inside ThemeProvider so the fallback
                   can use app primitives; outside AuthGate so a failure in the
                   auth/connection tree is caught too. */}
-              <ErrorBoundary label="root">
-                <AuthGate>
-                  <AppBlurTargetProvider>
-                    <ThemedStack />
-                    {/* Keep the floating mini player outside each screen's native
+            <ErrorBoundary label="root">
+              <AuthGate>
+                <AppBlurTargetProvider>
+                  <ThemedStack />
+                  {/* Keep the floating mini player outside each screen's native
                       blur target, while sharing that target through this provider. */}
-                    <MiniPlayerDock />
-                  </AppBlurTargetProvider>
-                  {/* The More bubble. Mounted after the dock so it covers the
+                  <MiniPlayerDock />
+                </AppBlurTargetProvider>
+                {/* The More bubble. Mounted after the dock so it covers the
                     mini player, which is a root sibling and would otherwise
                     paint over it. */}
-                  <MoreMenuHost />
-                  {/* Note-pop toasts fired by the club watcher (notePops.ts). */}
-                  <PopToast />
-                  {/* Single app-wide confirmation toast, positioned in the
+                <MoreMenuHost />
+                {/* Note-pop toasts fired by the club watcher (notePops.ts). */}
+                <PopToast />
+                {/* Single app-wide confirmation toast, positioned in the
                     mini-player band above all screens. */}
-                  <ToastHost />
-                  {/* Full-screen reading-goal celebration, fired on the first app
+                <ToastHost />
+                {/* Full-screen reading-goal celebration, fired on the first app
                     open after the yearly goal is reached. */}
-                  <GoalCelebrationHost />
-                </AuthGate>
-              </ErrorBoundary>
-              {/* Persistent audio engine - mounted once, never unmounted.
+                <GoalCelebrationHost />
+              </AuthGate>
+            </ErrorBoundary>
+            {/* Persistent audio engine - mounted once, never unmounted.
                   Deliberately OUTSIDE the error boundary: a UI render error must
                   not tear down in-flight playback, and this renders no visible
                   tree of its own to fail. */}
-              <PlayerHost />
-              {/* "When did you finish this?" prompt raised by mark-finished
+            <PlayerHost />
+            {/* "When did you finish this?" prompt raised by mark-finished
                   actions app-wide, so backdated completions land in the right
                   stats bucket. */}
-              <FinishDateHost />
-              {/* Debug: force-show the boot splash (from Diagnostics), tap to
+            <FinishDateHost />
+            {/* Debug: force-show the boot splash (from Diagnostics), tap to
                   dismiss. Renders nothing unless forced. */}
-              <ForcedSplashHost />
-            </BottomSheetModalProvider>
-          </ThemeProvider>
-        </SafeAreaProvider>
-      </GestureHandlerRootView>
-    </ClerkProvider>
+            <ForcedSplashHost />
+          </BottomSheetModalProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   )
 })
 

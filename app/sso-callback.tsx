@@ -1,4 +1,4 @@
-import { useAuth } from '@clerk/expo'
+import { useAuth } from '@/auth/useAuth'
 import { useRouter } from 'expo-router'
 import { useEffect } from 'react'
 import { ActivityIndicator, StyleSheet, View } from 'react-native'
@@ -11,15 +11,13 @@ WebBrowser.maybeCompleteAuthSession()
 /**
  * Catches the `hearthshelf://sso-callback` OAuth redirect.
  *
- * For a returning user the browser-tab flow resolves in-place (useSSO's promise)
- * and this route is never navigated to. A NEW user's sign-up does an extra
- * transfer hop whose second redirect the OS delivers to expo-router as a real
- * deep link - without this route that lands on "Unmatched Route". The session is
- * already being established by the in-memory startSSOFlow promise back on the
- * sign-in screen (which calls setActive), so this screen does no auth work: it
- * just exists to catch the URL and hand control back. The root AuthGate then
- * routes to the tabs (signed in) or sign-in, so we send everyone to '/' and let
- * it decide.
+ * Most of the time the browser-tab flow resolves in-place and this route is
+ * never navigated to. But some provider flows do an extra transfer hop whose
+ * second redirect the OS delivers to expo-router as a real deep link - without
+ * this route that lands on "Unmatched Route". The session is already being
+ * established by the auth client, so this screen does no auth work: it just
+ * catches the URL and hands control back, routing to the tabs (signed in) or
+ * sign-in once the session resolves.
  */
 export default function SSOCallbackScreen() {
   const { isLoaded, isSignedIn } = useAuth()

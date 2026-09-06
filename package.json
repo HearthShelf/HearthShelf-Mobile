@@ -18,7 +18,6 @@
   "dependencies": {
     "@better-auth/expo": "^1.7.3",
     "@better-auth/passkey": "^1.7.2",
-    "@clerk/expo": "^3.6.5",
     "@epubjs-react-native/core": "^1.4.7",
     "@expo/vector-icons": "^15.1.1",
     "@gorhom/bottom-sheet": "^5.2.14",

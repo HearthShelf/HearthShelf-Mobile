@@ -1,7 +1,7 @@
 /**
  * Owns "are we connected to an AudiobookShelf server yet?" for the whole app.
  *
- * Mounted for the app's whole lifetime; the connect flow starts once Clerk
+ * Mounted for the app's whole lifetime; the connect flow starts once auth
  * reports a signed-in user and idles at `connecting` while signed out. It mints
  * a grant, exchanges it for an ABS token, and stashes the result in the session
  * singleton (src/api/session.ts) that every /api/* helper reads. Until it reaches
@@ -13,14 +13,14 @@
  */
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { AppState } from 'react-native'
-import { useAuth } from '@clerk/expo'
+import { useSession } from '@/auth/client'
+import { getSessionToken } from '@/auth/token'
+import { hasCachedSession } from '@/auth/sessionCache'
 import { fetchLinkedServers, acceptInvite, ApiError, type LinkedServer } from './controlPlane'
 import { connectServer } from './connect'
 import { currentNetworkScope } from './candidates'
 import { ConnectionError } from './connectionError'
 import { setSession, setLastServerId, getLastServerId, takePendingInviteToken } from './session'
-import { CLERK_JWT_TEMPLATE } from '@/lib/config'
-import { hasCachedClerkSession } from '@/lib/tokenCache'
 import { tracePhase } from '@/lib/startupTrace'
 import {
   clearAutoSession,
@@ -142,7 +142,7 @@ function offlineReason(e: unknown): string | undefined {
 }
 
 /** How long to wait for the launch connect before treating it as stalled. The
- *  connect is a multi-hop handshake (two Clerk token mints + a control-plane
+ *  connect is a multi-hop handshake (two token reads + a control-plane
  *  grant + the server exchange), which on real cellular is comfortably slower
  *  than on the emulator's localhost - 7s tripped constantly on-device. A stall
  *  only becomes offline mode when the network is actually unreachable; when it's
@@ -151,16 +151,6 @@ const CONNECT_TIMEOUT_MS = 20000
 /** Once, on a stall with the network still up, give the handshake a second try
  *  before giving up. */
 const CONNECT_RETRIES = 1
-
-/** How long a single Clerk getToken() may take before we give up on it and treat
- *  the mint as "no token yet".
- *
- *  Clerk's getToken has no internal timeout and can hang (not reject) when its
- *  client sync is wedged on an unresolvable host. Sized to match
- *  DEFAULT_FETCH_TIMEOUT_MS (10s) - the same budget every other single hop in
- *  the handshake gets - so it stays well inside the 20s connect race and leaves
- *  room for the retry. */
-const TOKEN_MINT_TIMEOUT_MS = 10000
 
 /** Hard ceiling on how long the covered "connecting" splash may stay up before
  *  we force a resolution (offline mode, or an actionable error screen).
@@ -309,13 +299,13 @@ class NoLinkedServersError extends Error {
   }
 }
 
-/** Clerk can't mint a template token yet (still loading, e.g. right after network
+/** No session token available yet (auth still loading, e.g. right after network
  *  returns from an offline launch). We must NOT call the control plane with a null
  *  bearer - it 401s, which fires the session-expired handler and signs the user
- *  out. Instead we abort the connect and let the caller retry once Clerk loads. */
+ *  out. Instead we abort the connect and let the caller retry once auth loads. */
 class NoTokenError extends Error {
   constructor() {
-    super('clerk_not_loaded')
+    super('auth_not_loaded')
     this.name = 'NoTokenError'
   }
 }
@@ -339,67 +329,41 @@ async function backfillDownloadedCatalog(): Promise<void> {
 }
 
 export function ConnectionProvider({ children }: { children: React.ReactNode }) {
-  const { getToken, isLoaded, isSignedIn } = useAuth()
+  // `isPending` is the auth client's "still resolving" state, so !isPending is
+  // the old isLoaded. A session object present means signed in.
+  const { data: session, isPending } = useSession()
+  const isLoaded = !isPending
+  const isSignedIn = !!session
   const [status, setStatus] = useState<ConnectionStatus>({ phase: 'connecting' })
   const [activeRole, setActiveRole] = useState<'admin' | 'user'>('user')
-  // Does this device have a cached Clerk session (was signed in on a prior run)?
+  // Does this device have a cached session (was signed in on a prior run)?
   //
-  // Checked UNCONDITIONALLY - not only while `!isLoaded`. The old version bailed
-  // out when Clerk had already loaded, which deadlocked the launch: Clerk can
-  // report isLoaded=true with isSignedIn=false for a moment while a returning
-  // user's session re-hydrates. In that window `effectiveSignedIn` was false, so
+  // Checked UNCONDITIONALLY - not only while `!isLoaded`. An older version
+  // bailed out once auth had loaded, which deadlocked the launch: the client can
+  // report loaded-but-signed-out for a moment while a returning user's session
+  // re-hydrates. In that window `effectiveSignedIn` was false, so
   // this provider held at `connecting` and NEVER ran connect - while AuthGate's
   // own `rehydrating` path (which does check the cache) still rendered the gate,
   // so the splash stayed up forever. Every recovery route was also disabled: the
   // isLoaded&&isSignedIn retry never fired, and the NetInfo watcher + foreground
   // probe are gated on effectiveSignedIn so they were never even armed. Only a
   // force-close escaped. Observed on an ONLINE Pixel 7 (Sentry HS-MOBILEAPP-3,
-  // trace 8dd3e166: clerk-load 856ms and cached-session-check 42ms both COMPLETED,
+  // trace 8dd3e166: auth-load 856ms and cached-session-check 42ms both COMPLETED,
   // and no connect:* span ever started).
   const [cachedSession, setCachedSession] = useState(false)
   useEffect(() => {
-    void hasCachedClerkSession().then(setCachedSession)
+    void hasCachedSession().then(setCachedSession)
   }, [])
-  // A returning user mid-rehydration: Clerk hasn't confirmed the session yet, but
-  // a cached JWT proves there is one. Mirrors AuthGate's `rehydrating` so the two
+  // A returning user mid-rehydration: the service hasn't confirmed the session
+  // yet, but a stored one proves it existed. Mirrors AuthGate's `rehydrating` so the two
   // gates agree - when AuthGate decides to render the ConnectionGate, this
   // provider must be willing to actually connect behind it.
   const rehydrating = !isSignedIn && cachedSession
   const effectiveSignedIn = isSignedIn || rehydrating
 
-  // getToken identity changes across renders; keep a stable wrapper.
-  const getTokenRef = useRef(getToken)
-  getTokenRef.current = getToken
-  const tokenFn = useCallback(async (opts?: { forceRefresh?: boolean }) => {
-    let timer: ReturnType<typeof setTimeout> | undefined
-    try {
-      // skipCache forces Clerk to mint a fresh JWT - used to retry a 401 that was
-      // really just a stale cached token handed out during a warm resume.
-      //
-      // Bounded, because getToken() can HANG rather than reject: Clerk's client
-      // sync has no timeout of its own, so a dead DNS lookup (backgrounded on a
-      // dead network, resumed before the network returned - Sentry
-      // HS-MOBILEAPP-8) leaves the promise pending indefinitely. Unbounded, that
-      // burns the entire 20s connect race on a token mint that was never going
-      // to resolve, so the retry never gets to run and the launch resolves to
-      // offline via the 44s floor instead of reconnecting. Timing out to null
-      // yields NoTokenError, which holds at `connecting` for the re-arm paths
-      // (isSignedIn effect / NetInfo edge / foreground probe) to pick up.
-      return await Promise.race([
-        getTokenRef.current({
-          template: CLERK_JWT_TEMPLATE,
-          skipCache: opts?.forceRefresh,
-        }),
-        new Promise<null>((resolve) => {
-          timer = setTimeout(() => resolve(null), TOKEN_MINT_TIMEOUT_MS)
-        }),
-      ])
-    } catch {
-      return null
-    } finally {
-      if (timer) clearTimeout(timer)
-    }
-  }, [])
+  // Reading the stored session is stable across renders; the bounded read and
+  // the null-never-throw contract live in auth/token.ts.
+  const tokenFn = useCallback(getSessionToken, [])
 
   // The user has explicitly said "I know I'm offline, let me in" and we haven't
   // been asked to go back online since. Latched by enterOffline, cleared by
@@ -550,9 +514,9 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   const runConnect = useCallback(
     async (opts?: { quiet?: boolean }) => {
       // Guard the control plane against a null bearer: offline, or in the window
-      // right after network returns while Clerk is still re-hydrating, getToken
+      // right after network returns while auth is still re-hydrating, the read
       // yields null. Calling /servers with no token 401s -> session-expired ->
-      // sign-out. Bail here so the retry loop waits for Clerk instead.
+      // sign-out. Bail here so the retry loop waits for auth instead.
       if (!(await tracePhase('connect:token-mint', () => tokenFn()))) throw new NoTokenError()
 
       // Redeem a pending invite (from an /invite?token= universal link that
@@ -712,10 +676,10 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
             setStatus({ phase: 'no-servers' })
             return
           }
-          // Clerk can't mint a token yet (still re-hydrating a returning user's
+          // No session token yet (still re-hydrating a returning user's
           // session). This is NOT a network problem, so don't burn a retry or
           // fall through to offline/error - just hold at `connecting`. The
-          // isLoaded&&isSignedIn effect re-runs connect the moment Clerk settles,
+          // isLoaded&&isSignedIn effect re-runs connect the moment auth settles,
           // and the foreground probe covers the case where it never does.
           if (e instanceof NoTokenError) {
             showConnecting({})
@@ -859,10 +823,10 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     })
   }, [])
 
-  // Re-attempt the connect the moment Clerk finishes loading a real session while
+  // Re-attempt the connect the moment auth finishes loading a real session while
   // we're not ready. Critical after an offline launch: the NetInfo online-edge can
-  // fire (and bail with NoTokenError) before Clerk has re-hydrated, so getToken was
-  // still null. When Clerk's own retry finally loads it, `isSignedIn` flips true -
+  // fire (and bail with NoTokenError) before auth has re-hydrated, so the token was
+  // still null. When the client's own retry finally loads it, `isSignedIn` flips true -
   // that's our cue to run the handshake again, now that a token can be minted.
   // Without this, the app stays in offline mode until the next network edge (which
   // may never come if the connection is stable), and only a force-close recovers.
@@ -876,7 +840,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   // Retry / Manage servers / Log out.
   //
   // This exists because the launch could previously deadlock with no timer at
-  // all: a returning user whose Clerk session was mid-rehydration left the
+  // all: a returning user whose session was mid-rehydration left the
   // provider parked at `connecting` with every retry path disarmed, so the
   // splash stayed up until a force-close (Sentry HS-MOBILEAPP-3). The specific
   // deadlock is fixed above, but a hung launch is bad enough - and the failure
@@ -930,7 +894,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
 
   // A sync that reached the server is direct proof the server is up, so recover
   // from a stale offline/error phase immediately. The other recovery paths are all
-  // edge-triggered (network edge, foreground, Clerk flip) and a merely SLOW
+  // edge-triggered (network edge, foreground, auth flip) and a merely SLOW
   // connection produces no edge: a connect that lost the startup race to
   // CONNECTING_FLOOR_MS would otherwise leave the app showing a red sync icon and
   // an offline banner while playback was syncing to that same server just fine.

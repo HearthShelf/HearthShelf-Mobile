@@ -1,4 +1,4 @@
-import { useAuth } from '@clerk/expo'
+import { useAuth } from '@/auth/useAuth'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useEffect, useRef, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
