@@ -31,6 +31,14 @@ export const CLERK_PUBLISHABLE_KEY = cfg(
   'pk_live_Y2xlcmsuaGVhcnRoc2hlbGYuY29tJA',
 )
 
+// HearthShelf's own auth service (passkeys, social, magic link, email OTP, 2FA).
+export const AUTH_SERVICE_URL = cfg('EXPO_PUBLIC_AUTH_SERVICE_URL', 'https://auth.hearthshelf.com')
+
+// WebAuthn Relying Party ID for passkeys. MUST match the auth service's
+// PASSKEY_RP_ID and the domain in the app's associated-domains / assetlinks
+// entries - a passkey is bound to its RP ID permanently and cannot be re-scoped.
+export const PASSKEY_RP_ID = cfg('EXPO_PUBLIC_PASSKEY_RP_ID', 'hearthshelf.com')
+
 // Deep-link scheme for Clerk OAuth redirects (matches app.json "scheme").
 export const APP_SCHEME = 'hearthshelf'
 

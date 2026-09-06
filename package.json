@@ -16,6 +16,8 @@
     }
   },
   "dependencies": {
+    "@better-auth/expo": "^1.7.3",
+    "@better-auth/passkey": "^1.7.2",
     "@clerk/expo": "^3.6.5",
     "@epubjs-react-native/core": "^1.4.7",
     "@expo/vector-icons": "^15.1.1",
@@ -28,6 +30,7 @@
     "@sentry/react-native": "^8.19.0",
     "@shopify/flash-list": "2.0.2",
     "@shopify/react-native-skia": "2.6.2",
+    "better-auth": "^1.7.2",
     "expo": "^57.0.1",
     "expo-application": "~57.0.2",
     "expo-audio": "~57.0.0",
@@ -48,6 +51,7 @@
     "expo-in-app-updates": "^0.12.0",
     "expo-linear-gradient": "~57.0.0",
     "expo-linking": "~57.0.1",
+    "expo-network": "^57.0.1",
     "expo-notifications": "~57.0.3",
     "expo-router": "~57.0.2",
     "expo-secure-store": "~57.0.0",

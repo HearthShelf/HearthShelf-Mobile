@@ -47,6 +47,17 @@ B caught what A missed: ctrlBadge height:17 around 10pt text collides at the new
 Genuine clean result from a check that actually ran: ZERO hardcoded colors in
 1854 lines.
 
+## Status (fixed 2026-09-06, commit 904602a)
+
+ALL FIVE priority issues addressed. P2 (A-Z rail) was revisited with the
+author, who chose to enable it in grid rather than keep the FINAL list-only
+decision. Re-score on the next run.
+
+Remaining from Minor Observations, NOT fixed: "Random" naming, re-sort on every
+progress change, two parallel sort taxonomies, "Select books" filed under the
+Sort tab, filter sheet maxHeight with no search inside, nested Touchables in the
+sort chip, and the unmeasured client-side cost of holding 715 items.
+
 ## Priority Issues
 
 [P1] Both error paths render a raw exception with no retry. Library resolution
