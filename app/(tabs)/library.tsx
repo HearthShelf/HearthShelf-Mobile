@@ -373,7 +373,9 @@ function LibrarySwitcher({
   const active = libraries.find((l) => l.id === activeId) ?? libraries[0]
   const [counts, setCounts] = useState<Record<string, number>>({})
 
-  // Fetch each library's book count once, when the picker opens.
+  // Fetch each library's book count once. The COLLAPSED chip shows the active
+  // library's count too, so deferring this until the picker opened meant the
+  // chip was blank on first sight and populated only on a second open.
   const loadCounts = useCallback(() => {
     for (const lib of libraries) {
       if (counts[lib.id] !== undefined) continue
@@ -382,6 +384,15 @@ function LibrarySwitcher({
         .catch(() => {})
     }
   }, [libraries, counts])
+
+  // Just the active library, eagerly, so the chip is never blank. The rest
+  // still wait for the picker.
+  useEffect(() => {
+    if (!active || counts[active.id] !== undefined) return
+    void getLibraryItemsPage(active.id, 0, 1)
+      .then((page) => setCounts((c) => ({ ...c, [active.id]: page.total })))
+      .catch(() => {})
+  }, [active, counts])
 
   return (
     <>
@@ -519,6 +530,8 @@ function sortItems(
   sort: LibrarySort,
   desc: boolean,
   progressOf: ProgressOf,
+  /** Shuffle seed; only read by the Random sort. */
+  seed = 1,
 ): ABSLibraryItem[] {
   const out = items.slice()
   const cmp: Record<LibrarySort, (a: ABSLibraryItem, b: ABSLibraryItem) => number> = {
@@ -539,9 +552,18 @@ function sortItems(
   }
   out.sort(cmp[sort])
   if (sort === 'Random') {
-    // Deterministic-per-render shuffle so the order is mixed but stable.
+    // Seeded shuffle: stable for a given seed so scrolling never reshuffles
+    // under the thumb, but a NEW seed on each deliberate pick actually gives a
+    // new order. The old version derived j from i alone, so every "Random" in
+    // the app's lifetime produced the identical sequence - a shuffle that
+    // never shuffled.
+    let state = seed || 1
+    const next = () => {
+      state = (state * 1103515245 + 12345) % 2147483648
+      return state / 2147483648
+    }
     for (let i = out.length - 1; i > 0; i--) {
-      const j = Math.floor((((i * 9301 + 49297) % 233280) / 233280) * (i + 1))
+      const j = Math.floor(next() * (i + 1))
       const tmp = out[i]
       out[i] = out[j]
       out[j] = tmp
@@ -619,6 +641,9 @@ function BooksView({
   const [sort, setSort] = useState<LibrarySort>('Title')
   const [desc, setDesc] = useState(false)
   const [display, setDisplay] = useState<DisplayMode>('grid')
+  // Reseeded on every deliberate pick of the Random sort, so it genuinely
+  // reshuffles; held stable otherwise so scrolling doesn't reorder the shelf.
+  const [shuffleSeed, setShuffleSeed] = useState(1)
   const [size, setSize] = useState<CoverSize>('comfortable')
   const defaultGridCols = useMemo(() => adaptiveLibraryColumns(width, size), [width, size])
   const maxGridCols = size === 'compact' ? 7 : 6
@@ -798,18 +823,29 @@ function BooksView({
     [items, filters, progressDep],
   )
   const sorted = useMemo(
-    () => sortItems(filtered, sort, desc, progressRef.current),
+    () => sortItems(filtered, sort, desc, progressRef.current, shuffleSeed),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filtered, sort, desc, progressDep],
+    [filtered, sort, desc, progressDep, shuffleSeed],
   )
 
+  // A pinch is honored across re-renders, but not across a real width change:
+  // rotating to landscape used to clamp a portrait-tuned column count, leaving
+  // a wide screen showing three fat columns. A new width means the pinch was
+  // tuned for a layout that no longer exists, so re-derive from scratch.
+  const lastWidth = useRef(width)
   useEffect(() => {
+    if (lastWidth.current !== width) {
+      lastWidth.current = width
+      manualGridCols.current = false
+      setGridCols(defaultGridCols)
+      return
+    }
     if (manualGridCols.current) {
       setGridCols((prev) => Math.max(2, Math.min(maxGridCols, prev)))
     } else {
       setGridCols(defaultGridCols)
     }
-  }, [defaultGridCols, maxGridCols])
+  }, [defaultGridCols, maxGridCols, width])
 
   const cols = gridCols
   // Pinch the grid to resize covers: spread apart = fewer/bigger columns, pinch
@@ -876,11 +912,16 @@ function BooksView({
   const letterIndex = useMemo(() => {
     const map = new Map<string, number>()
     sorted.forEach((it, i) => {
-      // Bucket by the same key the active comparator sorts on so the rail's
+      // Bucket by the EXACT key the active comparator sorts on so the rail's
       // letters line up with the visual order: title (ignoring "The"/"A"
-      // prefixes) for Title sort, author surname for Author sort.
+      // prefixes) for Title sort, author SURNAME for Author sort. itemAuthor()
+      // returns the full display name, so bucketing on it put "Brandon
+      // Sanderson" under B while the list had him sorted under S - the rail
+      // pointed at the wrong letter for every author with a first name.
       const key =
-        sort === 'Author' ? itemAuthor(it) : it.media.metadata.titleIgnorePrefix || itemTitle(it)
+        sort === 'Author'
+          ? lastName(it.media.metadata.authorName ?? itemAuthor(it))
+          : it.media.metadata.titleIgnorePrefix || itemTitle(it)
       const l = letterOf(key)
       if (!map.has(l)) map.set(l, i)
     })
@@ -907,8 +948,16 @@ function BooksView({
     sheetRef.current?.present()
   }
 
-  // Tapping the active sort flips direction; a new sort adopts its natural default.
+  // Tapping the active sort flips direction; a new sort adopts its natural
+  // default. Random is the exception: re-tapping it reshuffles, because
+  // "reverse the random order" is not a thing anybody wants.
   const chooseSort = (s: LibrarySort) => {
+    if (s === 'Random') {
+      setSort('Random')
+      setDesc(false)
+      setShuffleSeed(Date.now())
+      return
+    }
     if (s === sort) setDesc((d) => !d)
     else {
       setSort(s)
@@ -1045,6 +1094,12 @@ function BooksView({
               </AppText>
             </Touchable>
           ) : null}
+          {/* How much did that actually narrow things? Without it you cannot
+              tell 715 -> 40 from 715 -> 400 without scrolling to the end. Rides
+              in the existing chip row rather than earning a band of its own. */}
+          <AppText variant="caption" color={colors.textFaint} style={styles.filterCount}>
+            {sorted.length} of {items?.length ?? 0}
+          </AppText>
         </View>
       )}
 
@@ -2303,6 +2358,7 @@ const makeStyles = (colors: Palette) =>
     // sheet past the screen.
     sheetScroll: { maxHeight: 380 },
     sheetGroupLabel: { marginTop: spacing.md, marginBottom: spacing.xs },
+    filterCount: { marginLeft: 'auto', alignSelf: 'center' },
     // Sits outside sheetScroll so it stays put while the values scroll under it.
     filterSearch: {
       flexDirection: 'row',
