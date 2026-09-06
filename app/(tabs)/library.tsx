@@ -41,8 +41,6 @@ import {
   applyLibraryFilters,
   filterChipLabel,
   FILTER_GROUPS,
-  SORT_COMMON,
-  SORT_MORE,
 } from '@hearthshelf/core'
 import {
   authorImageUrl,
@@ -105,6 +103,10 @@ const GUTTER = spacing.lg
 const SCROLL_TOP_THRESHOLD = 900
 // One-time grid "Pinch to resize" hint (device-local).
 const PINCH_HINT_KEY = 'hs.libraryPinchHint'
+// How you browse (sort, direction, layout, cover size, filters), remembered
+// device-locally. Leaving the tab and coming back used to reset all of it, so a
+// large library got re-configured every single session.
+const VIEW_PREFS_KEY = 'hs.libraryViewPrefs'
 
 type ViewMode = 'books' | 'series' | 'narrators' | 'authors'
 const VIEW_MODES: { key: ViewMode; label: string }[] = [
@@ -126,8 +128,14 @@ export default function LibraryScreen() {
   const params = useLocalSearchParams<{ sort?: string; desc?: string; filter?: string }>()
   const preset = useMemo<BooksPreset | undefined>(() => {
     if (!params.sort && !params.filter) return undefined
-    const all = [...SORT_COMMON, ...SORT_MORE] as string[]
-    const sort = params.sort && all.includes(params.sort) ? (params.sort as LibrarySort) : undefined
+    // Validate against what the TRAY can render, not against core's full list.
+    // Core has 'Size' and 'Author (Last, First)'; the phone tray deliberately
+    // doesn't. Accepting one of those stranded you in a sort the sheet showed
+    // as inactive and offered no way to leave except picking something else.
+    const sort =
+      params.sort && SELECTABLE_SORTS.includes(params.sort as LibrarySort)
+        ? (params.sort as LibrarySort)
+        : undefined
     return { sort, desc: params.desc === '1', filter: params.filter }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.sort, params.desc, params.filter])
@@ -355,6 +363,37 @@ function LibrarySwitcher({
 type DisplayMode = 'grid' | 'list'
 type CoverSize = 'comfortable' | 'compact'
 
+/** The browse preferences persisted under VIEW_PREFS_KEY. */
+type ViewPrefs = {
+  sort: LibrarySort
+  desc: boolean
+  display: DisplayMode
+  size: CoverSize
+  filters: string[]
+}
+
+/** Read persisted browse prefs, discarding anything this build can no longer
+ *  render (a sort removed from the tray, a filter group since retired). */
+function parseViewPrefs(raw: string | null): Partial<ViewPrefs> | null {
+  if (!raw) return null
+  try {
+    const p = JSON.parse(raw) as Partial<ViewPrefs>
+    const out: Partial<ViewPrefs> = {}
+    if (p.sort && SELECTABLE_SORTS.includes(p.sort)) out.sort = p.sort
+    if (typeof p.desc === 'boolean') out.desc = p.desc
+    if (p.display === 'grid' || p.display === 'list') out.display = p.display
+    if (p.size === 'comfortable' || p.size === 'compact') out.size = p.size
+    if (Array.isArray(p.filters)) {
+      out.filters = p.filters.filter(
+        (f) => typeof f === 'string' && CURATED_FILTER_GROUPS.includes(f.split('|')[0]),
+      )
+    }
+    return out
+  } catch {
+    return null
+  }
+}
+
 interface ItemProgress {
   progress: number
   isFinished: boolean
@@ -373,6 +412,9 @@ const CURATED_SORTS: LibrarySort[] = [
   'Published Year',
 ]
 const MORE_SORTS: LibrarySort[] = ['Random']
+// Every sort the tray can actually show as active, and therefore the only ones
+// a deep-link may put us into. The single source of truth for that question.
+const SELECTABLE_SORTS: LibrarySort[] = [...CURATED_SORTS, ...MORE_SORTS]
 // Sorts that read most naturally newest/longest-first when you first pick them.
 const DESC_BY_DEFAULT = new Set<LibrarySort>(['Date Added', 'Duration', 'Progress'])
 
@@ -509,6 +551,41 @@ function BooksView({
   }, [])
   // Re-tapping the Library tab while already on it scrolls back to the top.
   useEffect(() => onTabReselect('library', scrollToTop), [scrollToTop])
+
+  // Restore how the user last browsed. Skipped entirely when a deep-link preset
+  // is present - an explicit "show me Recently Added" must not be overwritten by
+  // last session's Title sort. `prefsReady` gates the save effect so the initial
+  // defaults are never written back over what's on disk.
+  const [prefsReady, setPrefsReady] = useState(false)
+  useEffect(() => {
+    if (preset) {
+      setPrefsReady(true)
+      return
+    }
+    let cancelled = false
+    void AsyncStorage.getItem(VIEW_PREFS_KEY).then((raw) => {
+      if (cancelled) return
+      const p = parseViewPrefs(raw)
+      if (p) {
+        if (p.sort) setSort(p.sort)
+        if (p.desc !== undefined) setDesc(p.desc)
+        if (p.display) setDisplay(p.display)
+        if (p.size) setSize(p.size)
+        if (p.filters) setFilters(p.filters)
+      }
+      setPrefsReady(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [preset])
+
+  // Persist browse prefs whenever they change (after the restore has landed).
+  useEffect(() => {
+    if (!prefsReady) return
+    const prefs: ViewPrefs = { sort, desc, display, size, filters }
+    void AsyncStorage.setItem(VIEW_PREFS_KEY, JSON.stringify(prefs))
+  }, [prefsReady, sort, desc, display, size, filters])
 
   // Apply an incoming deep-link preset (from Home's shelf headers).
   useEffect(() => {
