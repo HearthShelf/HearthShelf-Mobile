@@ -23,6 +23,7 @@ import {
   subscribeSettings,
   setSetting,
   setQueueMode,
+  playerCoverOpacityFraction,
   resetSettings,
   restoreSettings,
 } from '@/store/settings'
@@ -53,6 +54,17 @@ export default function PlaybackPanel() {
       action: { label: 'Undo', onPress: () => restoreSettings(prev) },
     })
   }
+  // Show the opacity the player is ACTUALLY using, which is not always the
+  // stored value: with a hearth background and no choice of the user's own, the
+  // cover resolves to 60%. Reading it through the same helper the player uses
+  // keeps the slider honest, so the first drag starts from what's on screen
+  // rather than jumping up from 60 to 100.
+  const coverOpacityShown = useMemo(
+    () => Math.round(playerCoverOpacityFraction() * 100),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [s.playerBg, s.playerCoverOpacity],
+  )
+
   const [playlists, setPlaylists] = useState<ABSPlaylist[]>([])
   const [playlistLoading, setPlaylistLoading] = useState(false)
 
@@ -91,6 +103,8 @@ export default function PlaybackPanel() {
             'skipBackCustom',
             'scrubber',
             'playerBg',
+            'playerCover',
+            'playerCoverOpacity',
             'carouselPlayer',
             'tapArtworkTogglesPlay',
             'skipHotspots',
@@ -168,6 +182,30 @@ export default function PlaybackPanel() {
             ]}
           />
         </SettingsRow>
+        <SettingsRow
+          title="Show the cover"
+          desc="The book's artwork on the player. Off leaves the space empty, so the buttons stay where they are."
+          control={
+            <SettingsToggle on={s.playerCover} onChange={(v) => setSetting('playerCover', v)} />
+          }
+        />
+        {s.playerCover && (
+          <SettingsRow
+            title="Cover fade"
+            desc="How solid the artwork looks. Lower lets the background show through it."
+            stacked
+          >
+            <SettingsSlider
+              value={coverOpacityShown}
+              min={10}
+              max={100}
+              step={5}
+              ticks={[25, 60, 100]}
+              onChange={(v) => setSetting('playerCoverOpacity', v)}
+              formatLabel={(v) => `${v}%`}
+            />
+          </SettingsRow>
+        )}
         <SettingsRow
           title="Swipe between books"
           desc="Swipe the player artwork to peek at what's up next. Off shows just the book you're listening to."

@@ -53,6 +53,10 @@ export function PlayerCoverCarousel({
   queue,
   coverWidth,
   coverAspect,
+  /** Artwork visibility + fade, from the Player settings. Hidden keeps each
+   *  page's sized slot so paging, dots and gestures are unaffected. */
+  coverVisible = true,
+  coverOpacity = 1,
   /** Full width of the cover area; each page fills it so only the centered
    *  cover is visible (no neighbor peeking). */
   pageWidth,
@@ -89,6 +93,8 @@ export function PlayerCoverCarousel({
   queue: QueueEntry[]
   coverWidth: number
   coverAspect: number
+  coverVisible?: boolean
+  coverOpacity?: number
   pageWidth: number
   clubOverlaysEnabled?: boolean
   overlay?: React.ReactNode
@@ -336,19 +342,23 @@ export function PlayerCoverCarousel({
             delayLongPress={300}
             style={styles.pressTarget}
           >
-            <Cover
-              uri={item.isLive ? liveArtworkUrl : coverUrl(item.itemId)}
-              itemId={item.itemId}
-              width={coverWidth}
-              aspectRatio={coverAspect}
-              radius={radius.card}
-              fallback={{
-                hue: pageHue,
-                initial: item.title.charAt(0).toUpperCase(),
-                title: item.title,
-              }}
-              style={{ backgroundColor: colors.high }}
-            />
+            {coverVisible ? (
+              <Cover
+                uri={item.isLive ? liveArtworkUrl : coverUrl(item.itemId)}
+                itemId={item.itemId}
+                width={coverWidth}
+                aspectRatio={coverAspect}
+                radius={radius.card}
+                fallback={{
+                  hue: pageHue,
+                  initial: item.title.charAt(0).toUpperCase(),
+                  title: item.title,
+                }}
+                style={{ backgroundColor: colors.high, opacity: coverOpacity }}
+              />
+            ) : (
+              <View style={{ width: coverWidth, aspectRatio: coverAspect }} />
+            )}
 
             {/* Non-live pages dim and carry a slim UP NEXT kicker; tap the focused
               one to play it. No separate play button/label - a single tap on

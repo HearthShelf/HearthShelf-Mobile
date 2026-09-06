@@ -46,6 +46,7 @@ import {
   normalizeHomeSections,
   normalizeNotifyPrefs,
   validateSetting,
+  resolvePlayerCoverOpacity,
   READER_DEFAULTS,
   DEFAULT_NOTIFY_PREFS,
 } from '@hearthshelf/core'
@@ -213,6 +214,10 @@ export interface SettingsState {
   skipBack: number
   skipBackCustom: number
   playerBg: PlayerBg
+  /** Show the book cover on the full player. Off hides it (and its zoom button). */
+  playerCover: boolean
+  /** Cover opacity as a percent (10-100). See playerCoverOpacityFraction(). */
+  playerCoverOpacity: number
   tapArtworkTogglesPlay: boolean
   skipHotspots: boolean
   // Full-player cover is a swipeable deck of the live book + the up-next queue.
@@ -339,6 +344,8 @@ let state: SettingsState = {
   skipBack: 15,
   skipBackCustom: 20,
   playerBg: 'blurred',
+  playerCover: true,
+  playerCoverOpacity: 100,
   tapArtworkTogglesPlay: false,
   skipHotspots: true,
   carouselPlayer: true,
@@ -415,6 +422,19 @@ export function getSettingsState(): SettingsState {
 /** The per-key sync metadata (updatedAt per catalogued key). */
 export function getSettingsMeta(): Record<string, number> {
   return meta
+}
+
+/**
+ * The player cover's effective opacity as a 0-1 fraction, given the current
+ * background. `meta` carries a stamp only for keys the user has actually set (or
+ * that synced from another device), which is what lets this tell "never touched"
+ * apart from "deliberately set to 100": with a hearth background and no stored
+ * choice, the cover drops to 60% so the art reads through behind it. Once the
+ * user moves the slider, their value wins on every background.
+ */
+export function playerCoverOpacityFraction(): number {
+  const configured = meta['playerCoverOpacity'] != null ? state.playerCoverOpacity : undefined
+  return resolvePlayerCoverOpacity(state.playerBg, configured)
 }
 
 /**

@@ -54,7 +54,12 @@ import { getProgressState, subscribeProgress } from '@/store/progress'
 import { BookActionsSheet, type BookActionsHandle } from '@/ui/BookActionsSheet'
 import { getImmersive, subscribeImmersive, setImmersive } from '@/player/immersive'
 import { getActiveClub, subscribeActiveClub } from '@/player/clubSync'
-import { getSettingsState, subscribeSettings, COVER_ASPECT_RATIO } from '@/store/settings'
+import {
+  getSettingsState,
+  subscribeSettings,
+  playerCoverOpacityFraction,
+  COVER_ASPECT_RATIO,
+} from '@/store/settings'
 import { useBookmarks } from '@/player/useBookmarks'
 import { coverUrl, getItemDetail } from '@/api/abs'
 import { recentSessionsFor } from '@/player/sessionCache'
@@ -714,6 +719,14 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
       : height * (immersive ? 0.62 : 0.52) - controlsBottomLift,
   )
   const coverWidth = Math.min(coverMaxW, coverMaxH * coverAspect)
+  // Artwork visibility + fade, per the Player settings. Resolving the fraction
+  // through the store (rather than reading settings.playerCoverOpacity directly)
+  // is what applies the hearth-background 60% default for a user who has never
+  // touched the slider. Not memoized: this sits after the `if (!nowPlaying)`
+  // early return, where a hook may not go, and it is only a couple of reads -
+  // and `settings` already re-renders this component on any change.
+  const coverVisible = settings.playerCover
+  const coverOpacity = playerCoverOpacityFraction()
   const contentMaxWidth = adaptiveContentMaxWidth(width)
   const progressRailWidth = Math.max(0, Math.min(width, contentMaxWidth) - spacing.xl * 2)
   // A vertical column occupies the player's lower-right edge in both embedded
@@ -1038,8 +1051,9 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                   <ReturnPositionPill position={returnPosition} />
                 )}
                 {/* Zoom lives in the cover's top-left corner now that a tap no
-                    longer opens the lightbox. */}
-                {!immersive && (
+                    longer opens the lightbox. It goes away with the artwork -
+                    there is nothing left to magnify. */}
+                {!immersive && coverVisible && (
                   <IconButton
                     name={icons.search}
                     size={19}
@@ -1142,6 +1156,8 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                       queue={queue.items}
                       coverWidth={coverWidth}
                       coverAspect={coverAspect}
+                      coverVisible={coverVisible}
+                      coverOpacity={coverOpacity}
                       pageWidth={width}
                       clubOverlaysEnabled={settings.clubsEnabled && settings.clubPlayerButton}
                       overlay={coverOverlays}
@@ -1170,19 +1186,27 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
                           delayLongPress={300}
                           style={styles.coverPressTarget}
                         >
-                          <Cover
-                            uri={nowPlaying.artworkUrl}
-                            itemId={nowPlaying.itemId}
-                            width={coverWidth}
-                            aspectRatio={coverAspect}
-                            radius={radius.card}
-                            fallback={{
-                              hue,
-                              initial: nowPlaying.title.charAt(0).toUpperCase(),
-                              title: nowPlaying.title,
-                            }}
-                            style={styles.cover}
-                          />
+                          {/* The artwork can be hidden or faded (Player settings).
+                          Hidden still renders the sized, empty press target, so
+                          tap-to-play, the hold-to-boost gesture and the layout
+                          around it all behave exactly as they do with a cover. */}
+                          {coverVisible ? (
+                            <Cover
+                              uri={nowPlaying.artworkUrl}
+                              itemId={nowPlaying.itemId}
+                              width={coverWidth}
+                              aspectRatio={coverAspect}
+                              radius={radius.card}
+                              fallback={{
+                                hue,
+                                initial: nowPlaying.title.charAt(0).toUpperCase(),
+                                title: nowPlaying.title,
+                              }}
+                              style={[styles.cover, { opacity: coverOpacity }]}
+                            />
+                          ) : (
+                            <View style={{ width: coverWidth, aspectRatio: coverAspect }} />
+                          )}
                           <SkipFeedbackOverlay ref={skipFeedbackRef} />
                         </Pressable>
                         {coverOverlays}
