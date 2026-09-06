@@ -110,7 +110,9 @@ export default function GroupDrilldown() {
           // Narrators: fetch every item in the library (limit=0 via a single
           // large page) and filter by narrator credit substring match, since
           // ABS stores narrators as a free-text comma-joined field.
-          const page = await getLibraryItemsPage(libraryId, 0, 0)
+          // NOT minified: itemNarrator() below reads metadata.narratorName,
+          // which minified responses drop - the match silently found nothing.
+          const page = await getLibraryItemsPage(libraryId, 0, 0, false)
           const target = decodeURIComponent(name).toLowerCase()
           result = page.results.filter((it) => itemNarrator(it).toLowerCase().includes(target))
         }

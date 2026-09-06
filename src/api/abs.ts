@@ -263,14 +263,24 @@ export async function getLibraryItems(
   return data.results
 }
 
-/** Like getLibraryItems but returns the page envelope (total) for infinite scroll. */
+/**
+ * Like getLibraryItems but returns the page envelope (total) for infinite scroll.
+ *
+ * `minified` defaults to true because paged browsing only needs cover, title and
+ * author. Pass `false` when the CALLER READS genres, seriesName, narratorName or
+ * tags: minified responses omit those fields entirely, and the core types
+ * declare them non-optional, so TypeScript will not warn you - a consumer that
+ * calls `.flatMap(i => i.media.metadata.genres)` throws at runtime instead.
+ * A count-only call (limit=1, reading `total`) should stay minified.
+ */
 export async function getLibraryItemsPage(
   libraryId: string,
   page = 0,
   limit = 50,
+  minified = true,
 ): Promise<LibraryItemsPage> {
   const data = await absRequest<ABSLibraryItemsResponse>(
-    `/api/libraries/${libraryId}/items?page=${page}&limit=${limit}&minified=1`,
+    `/api/libraries/${libraryId}/items?page=${page}&limit=${limit}${minified ? '&minified=1' : ''}`,
   )
   return { results: data.results, total: data.total, page: data.page, limit: data.limit }
 }

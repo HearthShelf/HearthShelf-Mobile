@@ -136,6 +136,12 @@ const PINCH_HINT_KEY = 'hs.libraryPinchHint'
 // How you browse (sort, direction, layout, cover size, filters), remembered
 // device-locally. Leaving the tab and coming back used to reset all of it, so a
 // large library got re-configured every single session.
+//
+// DEVICE-LOCAL BY DECISION, not by oversight. The account-scoped store in
+// src/store/settings.ts syncs cross-surface settings (theme, accent,
+// coverAspect); these do not belong there, because how you browse on a phone
+// held one-handed is not how you browse on a tablet or the web. Do not "fix"
+// this by moving it into the synced store.
 const VIEW_PREFS_KEY = 'hs.libraryViewPrefs'
 // A BookTile's non-cover height: two caption lines (11px at ~1.3 line height)
 // plus the meta block's top margin and inter-line gap. Used only to estimate a
@@ -643,7 +649,12 @@ function BooksView({
   const [display, setDisplay] = useState<DisplayMode>('grid')
   // Reseeded on every deliberate pick of the Random sort, so it genuinely
   // reshuffles; held stable otherwise so scrolling doesn't reorder the shelf.
-  const [shuffleSeed, setShuffleSeed] = useState(1)
+  // Seeded from the clock at mount rather than a constant: 'Random' is a
+  // persisted sort, so a fixed initial seed meant a user who left the app on
+  // Random relaunched into the exact same permutation every single time - the
+  // same never-shuffles bug this seed was introduced to fix, arriving by the
+  // restore path instead of the re-tap path.
+  const [shuffleSeed, setShuffleSeed] = useState(() => Date.now())
   const [size, setSize] = useState<CoverSize>('comfortable')
   const defaultGridCols = useMemo(() => adaptiveLibraryColumns(width, size), [width, size])
   const maxGridCols = size === 'compact' ? 7 : 6
@@ -729,7 +740,12 @@ function BooksView({
       setError(null)
       try {
         const [page] = await Promise.all([
-          getLibraryItemsPage(libraryId, 0, 0),
+          // NOT minified: this screen's Genre and Series filter groups read
+          // metadata.genres / metadata.seriesName, which a minified response
+          // omits entirely - Genre threw a TypeError on open and Series was
+          // silently empty. The larger payload is the cost of those filters
+          // existing at all.
+          getLibraryItemsPage(libraryId, 0, 0, false),
           refreshProgress().catch(() => null),
         ])
         if (cancelled()) return
