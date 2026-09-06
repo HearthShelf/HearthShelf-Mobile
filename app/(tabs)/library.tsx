@@ -119,6 +119,9 @@ const SCROLL_TOP_THRESHOLD = 900
 // Scroll depth at which the title + search band collapses. Roughly the band's
 // own height, so it leaves exactly as it would have scrolled away anyway.
 const HEADER_COLLAPSE_AT = 120
+// Restore well before the collapse point, so scrolling back and forth across a
+// single boundary cannot flap the band open and shut.
+const HEADER_RESTORE_AT = 60
 // The control bar's icon buttons are a 38pt box; this carries the effective
 // target past the 44/48 platform minimum without growing the bar itself.
 const CTRL_ICON_HITSLOP = 6
@@ -250,6 +253,14 @@ export default function LibraryScreen() {
   // the header's own height; we fade and lift the band out, and give the space
   // back to the covers.
   const [collapsed, setCollapsed] = useState(false)
+  // REAL hysteresis, in one place. The child views report raw scroll offset and
+  // this decides: collapse past 120, restore below 60. A single threshold (what
+  // this used to do, while its comment claimed otherwise) meant a thumb resting
+  // near the boundary toggled a HEIGHT animation over and over, relaying out the
+  // whole list under it - the screen visibly pulsing in a dark room.
+  const onScrollOffset = useCallback((y: number) => {
+    setCollapsed((prev) => (prev ? y > HEADER_RESTORE_AT : y > HEADER_COLLAPSE_AT))
+  }, [])
   const reduceMotion = useReducedMotion()
   const collapse = useSharedValue(0)
   // Measured, not hardcoded: the hero title and the search label both scale
@@ -276,9 +287,15 @@ export default function LibraryScreen() {
   const onBandLayout = useCallback(
     (e: LayoutChangeEvent) => {
       const h = e.nativeEvent.layout.height
-      if (h > 0 && bandHeight.value === 0) bandHeight.value = h
+      // Re-measure on every layout while EXPANDED, not once ever. onLayout fires
+      // again on rotation and on an OS font-size change, and a one-shot capture
+      // pinned the container to a stale height - clipping the hero and search
+      // label at large text sizes, the exact failure measuring was meant to
+      // prevent. Guarded on `collapsed` because a collapsed band lays out at
+      // ~0 and would otherwise overwrite the real height with nothing.
+      if (h > 0 && !collapsed) bandHeight.value = h
     },
-    [bandHeight],
+    [bandHeight, collapsed],
   )
 
   // Switching views resets the collapse so the search box is never stranded
@@ -326,9 +343,6 @@ export default function LibraryScreen() {
       <Animated.View style={collapsingStyle} onLayout={onBandLayout}>
         <View style={styles.header}>
           <AppText variant="hero">Library</AppText>
-          {libraries.length > 1 && (
-            <LibrarySwitcher libraries={libraries} activeId={libraryId} onSelect={setLibraryId} />
-          )}
         </View>
 
         {/* Search routes to the ONE unified search screen (D-SEARCH). */}
@@ -345,12 +359,19 @@ export default function LibraryScreen() {
         </Touchable>
       </Animated.View>
 
+      {/* Persistent: this row is navigation and library SCOPE, so neither
+          collapses. The switcher lived in the band above until it turned out
+          that scrolling then removed the only thing naming which library you
+          were looking at. */}
       <View style={styles.viewSelector}>
         {VIEW_MODES.map((v) => (
           <Touchable
             key={v.key}
             onPress={() => setViewMode(v.key)}
             style={[styles.viewChip, viewMode === v.key && styles.viewChipActive]}
+            hitSlop={VIEW_CHIP_HITSLOP}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: viewMode === v.key }}
           >
             <AppText
               variant="label"
@@ -360,6 +381,11 @@ export default function LibraryScreen() {
             </AppText>
           </Touchable>
         ))}
+        {libraries.length > 1 && (
+          <View style={styles.viewSelectorTrail}>
+            <LibrarySwitcher libraries={libraries} activeId={libraryId} onSelect={setLibraryId} />
+          </View>
+        )}
       </View>
 
       {!libraryId ? (
@@ -369,10 +395,10 @@ export default function LibraryScreen() {
           libraryId={libraryId}
           width={width}
           preset={preset}
-          onCollapseChange={setCollapsed}
+          onCollapseChange={onScrollOffset}
         />
       ) : (
-        <GroupsView libraryId={libraryId} mode={viewMode} onCollapseChange={setCollapsed} />
+        <GroupsView libraryId={libraryId} mode={viewMode} onCollapseChange={onScrollOffset} />
       )}
     </Screen>
   )
@@ -624,9 +650,8 @@ function BooksView({
   libraryId: string
   width: number
   preset?: BooksPreset
-  /** Reports when the shelf has scrolled past the screen header's own height,
-   *  so the title + search band can collapse and give the room to covers. */
-  onCollapseChange?: (collapsed: boolean) => void
+  /** Reports raw scroll offset; the screen applies the collapse hysteresis. */
+  onCollapseChange?: (offsetY: number) => void
 }) {
   const colors = useColors()
   const styles = useStyles()
@@ -698,9 +723,7 @@ function BooksView({
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const y = e.nativeEvent.contentOffset.y
       setScrolledDeep(y > SCROLL_TOP_THRESHOLD)
-      // Hysteresis: collapse past the band, restore well before it, so a list
-      // resting near the threshold cannot flicker open and shut while scrolling.
-      onCollapseChange?.(y > HEADER_COLLAPSE_AT)
+      onCollapseChange?.(y)
     },
     [onCollapseChange],
   )
@@ -1761,7 +1784,7 @@ function GroupsView({
 }: {
   libraryId: string
   mode: ViewMode
-  onCollapseChange?: (collapsed: boolean) => void
+  onCollapseChange?: (offsetY: number) => void
 }) {
   const router = useRouter()
   const colors = useColors()
@@ -1776,7 +1799,7 @@ function GroupsView({
   const [refreshing, setRefreshing] = useState(false)
   const onGroupsScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      onCollapseChange?.(e.nativeEvent.contentOffset.y > HEADER_COLLAPSE_AT)
+      onCollapseChange?.(e.nativeEvent.contentOffset.y)
     },
     [onCollapseChange],
   )
@@ -2190,8 +2213,12 @@ const makeStyles = (colors: Palette) =>
       borderColor: colors.hairline,
     },
     input: { flex: 1, paddingVertical: spacing.md, color: colors.text, fontSize: 16 },
+    // marginLeft:auto keeps the switcher at the right edge; the chips keep
+    // their natural widths on the left.
+    viewSelectorTrail: { marginLeft: 'auto' },
     viewSelector: {
       flexDirection: 'row',
+      alignItems: 'center',
       gap: spacing.sm,
       paddingHorizontal: spacing.lg,
       paddingVertical: spacing.md,
