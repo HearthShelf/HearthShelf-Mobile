@@ -27,13 +27,20 @@ import {
   TextInput,
   View,
   useWindowDimensions,
+  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native'
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
-import Animated, { FadeIn, runOnJS } from 'react-native-reanimated'
+import Animated, {
+  FadeIn,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated'
 import type {
   ABSLibrary,
   ABSLibraryItem,
@@ -76,7 +83,7 @@ import {
   icons,
 } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
-import { DUR } from '@/ui/motion'
+import { DUR, LIFT, useReducedMotion } from '@/ui/motion'
 import { haptics } from '@/ui/haptics'
 import { onTabReselect } from '@/ui/tabReselect'
 import { BookTile } from '@/ui/BookTile'
@@ -109,6 +116,9 @@ import { adaptiveGridColumns, adaptiveGridTileWidth, adaptiveLibraryColumns } fr
 const GUTTER = spacing.lg
 // Reveal the scroll-to-top button once the list is roughly 1.5 screens deep.
 const SCROLL_TOP_THRESHOLD = 900
+// Scroll depth at which the title + search band collapses. Roughly the band's
+// own height, so it leaves exactly as it would have scrolled away anyway.
+const HEADER_COLLAPSE_AT = 120
 // One-time grid "Pinch to resize" hint (device-local).
 const PINCH_HINT_KEY = 'hs.libraryPinchHint'
 // How you browse (sort, direction, layout, cover size, filters), remembered
@@ -198,6 +208,45 @@ export default function LibraryScreen() {
   // ---- view selector ----
   const [viewMode, setViewMode] = useState<ViewMode>('books')
 
+  // Collapsing title + search. The child list reports when it has scrolled past
+  // the header's own height; we fade and lift the band out, and give the space
+  // back to the covers.
+  const [collapsed, setCollapsed] = useState(false)
+  const reduceMotion = useReducedMotion()
+  const collapse = useSharedValue(0)
+  // Measured, not hardcoded: the hero title and the search label both scale
+  // with the OS font size, so a fixed height would clip at 1.6x.
+  const bandHeight = useSharedValue(0)
+  useEffect(() => {
+    collapse.value = withTiming(collapsed ? 1 : 0, {
+      duration: reduceMotion ? DUR.fast : DUR.base,
+    })
+  }, [collapsed, reduceMotion, collapse])
+  const collapsingStyle = useAnimatedStyle(() => {
+    // Before the first measurement, render at natural height so the band is
+    // never invisible on mount.
+    if (bandHeight.value === 0) return { opacity: 1 }
+    return {
+      opacity: 1 - collapse.value,
+      height: bandHeight.value * (1 - collapse.value),
+      // Under Reduce Motion the band still has to leave - it is a layout
+      // change, not decoration - it just crossfades instead of sliding.
+      transform: reduceMotion ? [] : [{ translateY: -collapse.value * LIFT.micro.distance }],
+      overflow: 'hidden' as const,
+    }
+  })
+  const onBandLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      const h = e.nativeEvent.layout.height
+      if (h > 0 && bandHeight.value === 0) bandHeight.value = h
+    },
+    [bandHeight],
+  )
+
+  // Switching views resets the collapse so the search box is never stranded
+  // offscreen on a list that is already at the top.
+  useEffect(() => setCollapsed(false), [viewMode])
+
   // A deep-link preset always lands on the Books view so the preset is visible.
   useEffect(() => {
     if (preset) setViewMode('books')
@@ -232,21 +281,26 @@ export default function LibraryScreen() {
 
   return (
     <Screen>
-      <View style={styles.header}>
-        <AppText variant="hero">Library</AppText>
-        {libraries.length > 1 && (
-          <LibrarySwitcher libraries={libraries} activeId={libraryId} onSelect={setLibraryId} />
-        )}
-      </View>
+      {/* Title + search collapse once you are into the shelf: five stacked
+          control bands pushed the first cover ~240px down the screen, on a
+          product whose whole doctrine is that covers lead. The view chips
+          below are NAVIGATION and never collapse. */}
+      <Animated.View style={collapsingStyle} onLayout={onBandLayout}>
+        <View style={styles.header}>
+          <AppText variant="hero">Library</AppText>
+          {libraries.length > 1 && (
+            <LibrarySwitcher libraries={libraries} activeId={libraryId} onSelect={setLibraryId} />
+          )}
+        </View>
 
-      {/* Search routes to the ONE unified search screen (D-SEARCH); the view
-          chips below are purely for browsing and never disappear. */}
-      <Touchable onPress={() => router.push('/search?from=library')} style={styles.searchBox}>
-        <IconButton name={icons.search} size={20} color={colors.textMuted} />
-        <AppText variant="meta" color={colors.textFaint} style={{ flex: 1 }}>
-          Search books, series, people…
-        </AppText>
-      </Touchable>
+        {/* Search routes to the ONE unified search screen (D-SEARCH). */}
+        <Touchable onPress={() => router.push('/search?from=library')} style={styles.searchBox}>
+          <IconButton name={icons.search} size={20} color={colors.textMuted} />
+          <AppText variant="meta" color={colors.textFaint} style={{ flex: 1 }}>
+            Search books, series, people…
+          </AppText>
+        </Touchable>
+      </Animated.View>
 
       <View style={styles.viewSelector}>
         {VIEW_MODES.map((v) => (
@@ -268,9 +322,14 @@ export default function LibraryScreen() {
       {!libraryId ? (
         <Loading />
       ) : viewMode === 'books' ? (
-        <BooksView libraryId={libraryId} width={width} preset={preset} />
+        <BooksView
+          libraryId={libraryId}
+          width={width}
+          preset={preset}
+          onCollapseChange={setCollapsed}
+        />
       ) : (
-        <GroupsView libraryId={libraryId} mode={viewMode} />
+        <GroupsView libraryId={libraryId} mode={viewMode} onCollapseChange={setCollapsed} />
       )}
     </Screen>
   )
@@ -492,10 +551,14 @@ function BooksView({
   libraryId,
   width,
   preset,
+  onCollapseChange,
 }: {
   libraryId: string
   width: number
   preset?: BooksPreset
+  /** Reports when the shelf has scrolled past the screen header's own height,
+   *  so the title + search band can collapse and give the room to covers. */
+  onCollapseChange?: (collapsed: boolean) => void
 }) {
   const colors = useColors()
   const styles = useStyles()
@@ -555,9 +618,16 @@ function BooksView({
   const railInset = useMiniPlayerInset()
   // Drives the scroll-to-top button: true once we've scrolled past ~1.5 screens.
   const [scrolledDeep, setScrolledDeep] = useState(false)
-  const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    setScrolledDeep(e.nativeEvent.contentOffset.y > SCROLL_TOP_THRESHOLD)
-  }, [])
+  const onScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const y = e.nativeEvent.contentOffset.y
+      setScrolledDeep(y > SCROLL_TOP_THRESHOLD)
+      // Hysteresis: collapse past the band, restore well before it, so a list
+      // resting near the threshold cannot flicker open and shut while scrolling.
+      onCollapseChange?.(y > HEADER_COLLAPSE_AT)
+    },
+    [onCollapseChange],
+  )
   const scrollToTop = useCallback(() => {
     listRef.current?.scrollToOffset({ offset: 0, animated: true })
   }, [])
@@ -1533,7 +1603,15 @@ interface GroupRow {
 
 type GroupSort = 'name' | 'count'
 
-function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) {
+function GroupsView({
+  libraryId,
+  mode,
+  onCollapseChange,
+}: {
+  libraryId: string
+  mode: ViewMode
+  onCollapseChange?: (collapsed: boolean) => void
+}) {
   const router = useRouter()
   const colors = useColors()
   const styles = useStyles()
@@ -1545,6 +1623,12 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
   // badges - see fetchSeriesGapSummaries.
   const [gaps, setGaps] = useState<ReadonlyMap<string, SeriesGapSummary>>(new Map())
   const [refreshing, setRefreshing] = useState(false)
+  const onGroupsScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      onCollapseChange?.(e.nativeEvent.contentOffset.y > HEADER_COLLAPSE_AT)
+    },
+    [onCollapseChange],
+  )
   // Re-run the load when the offline catalog changes (hydrate finishing, a new
   // download), so offline groups appear once the catalog is populated.
   const catalogVersion = useSyncExternalStore(subscribeCatalog, getCatalogState)
@@ -1707,6 +1791,8 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
         maxToRenderPerBatch={12}
         windowSize={5}
         removeClippedSubviews
+        onScroll={onGroupsScroll}
+        scrollEventThrottle={16}
         onScrollToIndexFailed={({ index, averageItemLength }) => {
           listRef.current?.scrollToOffset({ offset: index * averageItemLength, animated: true })
         }}
@@ -1975,23 +2061,27 @@ const makeStyles = (colors: Palette) =>
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.sm,
     },
+    // The control bar is ADJUSTMENT, not navigation, and must read quieter than
+    // the view selector above it - both were the same fill + hairline pill, so
+    // four bands of chrome carried identical weight and none of them led. No
+    // ground of its own: the hairline alone defines the control, and the tap
+    // target grew to clear the platform minimum (was 7pt padding = ~28 high).
     ctrlChip: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 5,
       paddingLeft: spacing.md - 2,
       paddingRight: spacing.md - 2,
-      paddingVertical: 7,
+      paddingVertical: spacing.md - 2,
       borderRadius: radius.pill,
-      backgroundColor: colors.fill,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.hairline,
     },
     ctrlBadge: {
       // minHeight, not height: the label inside scales with the user's text
       // size (app cap is 1.6x), and a hard 17 clipped it.
-      minWidth: 17,
-      minHeight: 17,
+      minWidth: 18,
+      minHeight: 18,
       paddingHorizontal: 4,
       paddingVertical: 1,
       borderRadius: 9,
@@ -1999,7 +2089,8 @@ const makeStyles = (colors: Palette) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-    ctrlBadgeText: { fontSize: 10, fontWeight: '700' },
+    // 11 is the app's documented type floor - 10 was the one place that broke it.
+    ctrlBadgeText: { fontSize: 11, fontWeight: '700' },
     offlineChip: {
       flexDirection: 'row',
       alignItems: 'center',
