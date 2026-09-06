@@ -10,7 +10,15 @@
  * once (ABS limit=0) and filters/sorts/displays client-side, the same pattern
  * the web app's Library page already proves out.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import {
   FlatList,
   RefreshControl,
@@ -107,6 +115,10 @@ const PINCH_HINT_KEY = 'hs.libraryPinchHint'
 // device-locally. Leaving the tab and coming back used to reset all of it, so a
 // large library got re-configured every single session.
 const VIEW_PREFS_KEY = 'hs.libraryViewPrefs'
+// A BookTile's non-cover height: two caption lines (11px at ~1.3 line height)
+// plus the meta block's top margin and inter-line gap. Used only to estimate a
+// grid row for A-Z jumps into unmeasured rows.
+const TILE_META_HEIGHT = 34
 
 type ViewMode = 'books' | 'series' | 'narrators' | 'authors'
 const VIEW_MODES: { key: ViewMode; label: string }[] = [
@@ -673,13 +685,35 @@ function BooksView({
     void AsyncStorage.setItem(PINCH_HINT_KEY, '1')
   }, [])
 
+  // `progress` is a fresh Map on every store emission, and the store emits
+  // continuously while audio plays - which this screen is designed to sit open
+  // through. Depending on progressOf unconditionally re-filtered and re-sorted
+  // the entire library on every tick, even on a Title sort where progress has
+  // no bearing on the result. Depend on it only where it actually decides
+  // something; otherwise hold a stable identity so the memos survive the tick.
+  const filtersUseProgress = useMemo(
+    () => filters.some((f) => f.startsWith('progress|')),
+    [filters],
+  )
+  const usesProgress = filtersUseProgress || sort === 'Progress'
+  // The dep flips identity only when progress actually matters. The ref keeps
+  // the LOOKUP current regardless, so the memo body never reads a stale map on
+  // the recomputes it does run.
+  const progressRef = useRef(progressOf)
+  progressRef.current = progressOf
+  const progressDep = usesProgress ? progressOf : null
+
   const filtered = useMemo(
-    () => (items ? applyLibraryFilters(items, filters, progressOf) : []),
-    [items, filters, progressOf],
+    () => (items ? applyLibraryFilters(items, filters, progressRef.current) : []),
+    // progressOf is reached through progressRef; progressDep decides when a
+    // progress change should force a recompute at all.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, filters, progressDep],
   )
   const sorted = useMemo(
-    () => sortItems(filtered, sort, desc, progressOf),
-    [filtered, sort, desc, progressOf],
+    () => sortItems(filtered, sort, desc, progressRef.current),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filtered, sort, desc, progressDep],
   )
 
   useEffect(() => {
@@ -741,6 +775,16 @@ function BooksView({
     gutter: GUTTER,
     reserved: railReserve,
   })
+  // Estimated grid row height, used to land an A-Z jump into rows FlatList
+  // hasn't measured yet. Cover height follows the user's aspect setting; the
+  // rest is the tile's meta block (two caption lines + gaps) and its bottom
+  // margin. An estimate, not a measurement - tiles with a progress bar or a
+  // two-line title run a few px taller, which the animated scroll absorbs.
+  const { coverAspect } = useSyncExternalStore(subscribeSettings, getSettingsState)
+  const estRowHeight = useMemo(
+    () => tileWidth / COVER_ASPECT_RATIO[coverAspect] + TILE_META_HEIGHT + spacing.md,
+    [tileWidth, coverAspect],
+  )
 
   const letterIndex = useMemo(() => {
     const map = new Map<string, number>()
@@ -929,13 +973,23 @@ function BooksView({
             onScroll={onScroll}
             scrollEventThrottle={16}
             refreshControl={refreshControl}
+            // Windowing for a library that is routinely 700+ items. Rendering
+            // three screens' worth keeps an A-Z fling from hitting blank space
+            // without mounting the whole shelf.
+            initialNumToRender={cols * 4}
+            maxToRenderPerBatch={cols * 3}
+            windowSize={5}
+            removeClippedSubviews
             onScrollToIndexFailed={({ index }) => {
               // `index` is already a ROW index here (onJump converts, and
               // FlatList reports rows for a multi-column list), so do NOT divide
               // by cols again - that lands near the top of the library instead
-              // of at the letter. Row height is the tile plus its meta lines.
+              // of at the letter. Row height is the tile plus its meta lines,
+              // and the cover's height follows the USER'S aspect setting - the
+              // old hardcoded 1.5 (2:3) overshot by a third on the square
+              // default, so an A-Z jump landed well past the letter.
               listRef.current?.scrollToOffset({
-                offset: index * (tileWidth * 1.5 + spacing.md),
+                offset: index * estRowHeight,
                 animated: true,
               })
             }}
@@ -972,6 +1026,10 @@ function BooksView({
           onScroll={onScroll}
           scrollEventThrottle={16}
           refreshControl={refreshControl}
+          initialNumToRender={12}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews
           onScrollToIndexFailed={({ index, averageItemLength }) => {
             listRef.current?.scrollToOffset({ offset: index * averageItemLength, animated: true })
           }}
@@ -1395,19 +1453,21 @@ function FilterValues({
   )
 }
 
-function BookListRow({
-  item,
-  selecting = false,
-  selected = false,
-  onLongPress,
-  onToggle,
-}: {
+type BookListRowProps = {
   item: ABSLibraryItem
   selecting?: boolean
   selected?: boolean
   onLongPress?: () => void
   onToggle?: () => void
-}) {
+}
+
+function BookListRowBase({
+  item,
+  selecting = false,
+  selected = false,
+  onLongPress,
+  onToggle,
+}: BookListRowProps) {
   const router = useRouter()
   const colors = useColors()
   const styles = useStyles()
@@ -1442,6 +1502,20 @@ function BookListRow({
     </Touchable>
   )
 }
+
+/** The list-mode twin of BookTile's memo. Callers pass fresh inline arrows on
+ *  every render, so identity comparison would defeat the memo entirely and the
+ *  whole list would re-render on any parent update - compare PRESENCE instead,
+ *  which is all this row's output actually depends on. */
+const BookListRow = memo(
+  BookListRowBase,
+  (a, b) =>
+    a.item === b.item &&
+    a.selecting === b.selecting &&
+    a.selected === b.selected &&
+    Boolean(a.onLongPress) === Boolean(b.onLongPress) &&
+    Boolean(a.onToggle) === Boolean(b.onToggle),
+)
 
 interface GroupRow {
   key: string
@@ -1629,6 +1703,10 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
           paddingRight: showAzRail ? spacing.md + AZ_RAIL_WIDTH : spacing.md,
           paddingBottom: contentInset,
         }}
+        initialNumToRender={14}
+        maxToRenderPerBatch={12}
+        windowSize={5}
+        removeClippedSubviews
         onScrollToIndexFailed={({ index, averageItemLength }) => {
           listRef.current?.scrollToOffset({ offset: index * averageItemLength, animated: true })
         }}
