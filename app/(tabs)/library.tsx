@@ -124,7 +124,27 @@ const HEADER_COLLAPSE_AT = 120
 const CTRL_ICON_HITSLOP = 6
 // The Groups Name/count sort buttons are small by design (they sit inline with
 // a count label); expand the target rather than the pill.
-const GROUP_SORT_HITSLOP = 10
+// 23pt box + 2x13 = 49. The previous 10 gave 43 - one point under the 44 floor
+// its own comment claimed to clear, and five under Android's 48.
+const GROUP_SORT_HITSLOP = 13
+// viewChip is a ~33pt box; this carries the app's primary navigation past both
+// platform minimums without growing the band.
+const VIEW_CHIP_HITSLOP = 8
+
+// User-facing copy for values that are internal enum keys. These used to render
+// as the raw key under textTransform: 'capitalize' - "comfortable"/"compact"
+// describe the density to a developer, not the cover size to a reader.
+const OPTION_LABELS: Record<string, string> = {
+  grid: 'Grid',
+  list: 'List',
+  comfortable: 'Large covers',
+  compact: 'Small covers',
+}
+const SHEET_TAB_LABELS: Record<string, string> = {
+  display: 'Display',
+  sort: 'Sort',
+  filter: 'Filter',
+}
 
 /** The screen-body entrance, dropped entirely under Reduce Motion. */
 function useEnterAnim() {
@@ -407,6 +427,9 @@ function LibrarySwitcher({
           loadCounts()
           sheetRef.current?.present()
         }}
+        hitSlop={VIEW_CHIP_HITSLOP}
+        accessibilityRole="button"
+        accessibilityLabel={`Library: ${active?.name ?? 'none'}. Tap to switch.`}
         style={styles.libSwitcher}
       >
         <Icon name={icons.library} size={15} color={colors.brandHearth} />
@@ -1088,6 +1111,8 @@ function BooksView({
               key={f}
               style={styles.filterChip}
               onPress={() => setFilters((prev) => prev.filter((x) => x !== f))}
+              hitSlop={VIEW_CHIP_HITSLOP}
+              accessibilityRole="button"
               accessibilityLabel={`Remove filter ${filterChipLabel(f)}`}
             >
               {/* filterChipLabel, not filterLabel: a bare "Finished" could be a
@@ -1095,12 +1120,10 @@ function BooksView({
               <AppText variant="caption" color={colors.onAccent}>
                 {filterChipLabel(f)}
               </AppText>
-              <IconButton
-                name={icons.close}
-                size={13}
-                color={colors.onAccent}
-                accessibilityLabel={`Remove ${filterChipLabel(f)}`}
-              />
+              {/* No label: the wrapping Touchable already announces "Remove
+                  filter X" and this sits inside it, so labelling both made the
+                  reader say it twice. */}
+              <IconButton name={icons.close} size={13} color={colors.onAccent} />
             </Touchable>
           ))}
           {filters.length > 1 ? (
@@ -1268,13 +1291,12 @@ function BooksView({
                 setSheetTab(t)
               }}
               style={[styles.sheetTab, sheetTab === t && styles.sheetTabActive]}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: sheetTab === t }}
+              accessibilityLabel={SHEET_TAB_LABELS[t]}
             >
-              <AppText
-                variant="label"
-                color={sheetTab === t ? colors.text : colors.textMuted}
-                style={{ textTransform: 'capitalize' }}
-              >
-                {t}
+              <AppText variant="label" color={sheetTab === t ? colors.text : colors.textMuted}>
+                {SHEET_TAB_LABELS[t]}
               </AppText>
             </Touchable>
           ))}
@@ -1453,13 +1475,12 @@ function SegRow<T extends string>({
             key={o}
             onPress={() => onChange(o)}
             style={[styles.segChoice, value === o && styles.segChoiceActive]}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: value === o }}
+            accessibilityLabel={OPTION_LABELS[o] ?? o}
           >
-            <AppText
-              variant="label"
-              color={value === o ? colors.onAccent : colors.text}
-              style={{ textTransform: 'capitalize' }}
-            >
-              {o}
+            <AppText variant="label" color={value === o ? colors.onAccent : colors.text}>
+              {OPTION_LABELS[o] ?? o}
             </AppText>
           </Touchable>
         ))}
@@ -1483,7 +1504,15 @@ function SortRow({
   const colors = useColors()
   const styles = useStyles()
   return (
-    <Touchable onPress={onPress} style={styles.sheetRow}>
+    <Touchable
+      onPress={onPress}
+      style={styles.sheetRow}
+      accessibilityRole="radio"
+      accessibilityState={{ checked: active }}
+      accessibilityLabel={
+        active ? `${label}, ${desc ? 'descending' : 'ascending'}. Tap to reverse.` : label
+      }
+    >
       <AppText variant="body" color={active ? colors.accent : colors.text}>
         {label}
       </AppText>
@@ -2366,7 +2395,9 @@ const makeStyles = (colors: Palette) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingVertical: spacing.md,
+      // 14, not spacing.md (12): a 19pt body line box + 2x12 = 43pt missed the
+      // 44 floor at the sheet's four busiest row types.
+      paddingVertical: 14,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.hairline,
     },
