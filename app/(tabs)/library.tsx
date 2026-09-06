@@ -119,6 +119,18 @@ const SCROLL_TOP_THRESHOLD = 900
 // Scroll depth at which the title + search band collapses. Roughly the band's
 // own height, so it leaves exactly as it would have scrolled away anyway.
 const HEADER_COLLAPSE_AT = 120
+// The control bar's icon buttons are a 38pt box; this carries the effective
+// target past the 44/48 platform minimum without growing the bar itself.
+const CTRL_ICON_HITSLOP = 6
+// The Groups Name/count sort buttons are small by design (they sit inline with
+// a count label); expand the target rather than the pill.
+const GROUP_SORT_HITSLOP = 10
+
+/** The screen-body entrance, dropped entirely under Reduce Motion. */
+function useEnterAnim() {
+  const reduceMotion = useReducedMotion()
+  return reduceMotion ? undefined : FadeIn.duration(DUR.base)
+}
 // One-time grid "Pinch to resize" hint (device-local).
 const PINCH_HINT_KEY = 'hs.libraryPinchHint'
 // How you browse (sort, direction, layout, cover size, filters), remembered
@@ -294,7 +306,12 @@ export default function LibraryScreen() {
         </View>
 
         {/* Search routes to the ONE unified search screen (D-SEARCH). */}
-        <Touchable onPress={() => router.push('/search?from=library')} style={styles.searchBox}>
+        <Touchable
+          onPress={() => router.push('/search?from=library')}
+          style={styles.searchBox}
+          accessibilityRole="search"
+          accessibilityLabel="Search books, series and people"
+        >
           <IconButton name={icons.search} size={20} color={colors.textMuted} />
           <AppText variant="meta" color={colors.textFaint} style={{ flex: 1 }}>
             Search books, series, people…
@@ -899,6 +916,11 @@ function BooksView({
     }
   }
 
+  // Reduce Motion: the entrance is a layout arrival, not decoration, so the
+  // surface still appears - it just does so instantly instead of fading.
+  // Above the early returns: hooks must run in the same order every render.
+  const enterAnim = useEnterAnim()
+
   if (!items && !error) return <LibrarySkeleton width={width} cols={defaultGridCols} />
   if (error) {
     return (
@@ -921,7 +943,7 @@ function BooksView({
   )
 
   return (
-    <Animated.View entering={FadeIn.duration(DUR.base)} style={{ flex: 1 }}>
+    <Animated.View entering={enterAnim} style={{ flex: 1 }}>
       {selection.selecting ? (
         <BookSelectionToolbar selection={selection} books={sorted} libraryId={libraryId} />
       ) : (
@@ -929,18 +951,33 @@ function BooksView({
         // the sheet), filter chip with an active-count badge, and grid/list +
         // Select buttons. The full Display/Sort/Filter sheet stays behind these.
         <View style={[styles.controlBar, showAzRail && { paddingRight: 28 }]}>
-          <Touchable style={styles.ctrlChip} onPress={() => chooseSort(sort)}>
+          <Touchable
+            style={styles.ctrlChip}
+            onPress={() => chooseSort(sort)}
+            accessibilityRole="button"
+            accessibilityLabel={`Sort: ${sort}, ${desc ? 'descending' : 'ascending'}. Tap to reverse.`}
+          >
             <Icon
               name={desc ? icons.arrowDownward : icons.arrowUpward}
               size={15}
               color={colors.accent}
             />
             <AppText variant="caption">{sort}</AppText>
-            <Touchable onPress={() => openSheet('sort')} hitSlop={8}>
+            <Touchable
+              onPress={() => openSheet('sort')}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Change sort order"
+            >
               <Icon name={icons.collapse} size={15} color={colors.textMuted} />
             </Touchable>
           </Touchable>
-          <Touchable style={styles.ctrlChip} onPress={() => openSheet('filter')}>
+          <Touchable
+            style={styles.ctrlChip}
+            onPress={() => openSheet('filter')}
+            accessibilityRole="button"
+            accessibilityLabel={filters.length ? `Filters, ${filters.length} active` : 'Filters'}
+          >
             <Icon name={icons.filter} size={15} color={colors.text} />
             <AppText variant="caption">Filters</AppText>
             {filters.length > 0 ? (
@@ -954,7 +991,10 @@ function BooksView({
           <View style={{ flex: 1 }} />
           <Touchable
             style={styles.ctrlIconBtn}
+            hitSlop={CTRL_ICON_HITSLOP}
             onPress={() => setDisplay((d) => (d === 'grid' ? 'list' : 'grid'))}
+            accessibilityRole="button"
+            accessibilityLabel={display === 'grid' ? 'Switch to list view' : 'Switch to grid view'}
           >
             <Icon
               name={display === 'grid' ? icons.viewList : icons.viewGrid}
@@ -962,7 +1002,13 @@ function BooksView({
               color={colors.text}
             />
           </Touchable>
-          <Touchable style={styles.ctrlIconBtn} onPress={() => selection.begin()}>
+          <Touchable
+            style={styles.ctrlIconBtn}
+            hitSlop={CTRL_ICON_HITSLOP}
+            onPress={() => selection.begin()}
+            accessibilityRole="button"
+            accessibilityLabel="Select books"
+          >
             <Icon name={icons.checklist} size={19} color={colors.text} />
           </Touchable>
         </View>
@@ -1436,7 +1482,12 @@ function FilterValues({
 
   return (
     <View>
-      <Touchable onPress={onBack} style={styles.filterBack}>
+      <Touchable
+        onPress={onBack}
+        style={styles.filterBack}
+        accessibilityRole="button"
+        accessibilityLabel={`Back to filter groups from ${def?.label ?? 'filter'}`}
+      >
         <IconButton name={icons.back} size={18} color={colors.textMuted} />
         <AppText variant="label" color={colors.textMuted}>
           {def?.label ?? 'Filter'}
@@ -1741,24 +1792,34 @@ function GroupsView({
     }
   }, [load])
 
+  const enterAnim = useEnterAnim()
+
   if (error) {
     return <ErrorState message={error} onRetry={() => void load({ blank: true })} />
   }
   if (!sorted) return <Loading />
   if (sorted.length === 0) {
+    // Books view gets a designed EmptyState with an icon, a reason and a way
+    // out; this branch used to get a bare centered sentence. Same screen, same
+    // dead end - it deserves the same treatment.
     return (
-      <Centered>
-        <AppText variant="meta" color={colors.textMuted}>
-          Nothing here yet.
-        </AppText>
-      </Centered>
+      <EmptyState
+        icon={mode === 'series' ? icons.library : icons.person}
+        iconColor={colors.textMuted}
+        title={`No ${mode} in this library yet`}
+        body={
+          mode === 'series'
+            ? 'Books grouped into a series will show up here.'
+            : `Books tagged with a ${mode === 'authors' ? 'author' : 'narrator'} will show up here.`
+        }
+      />
     )
   }
 
   const countLabel = mode === 'series' ? 'Books' : 'Titles'
 
   return (
-    <Animated.View entering={FadeIn.duration(DUR.base)} style={{ flex: 1 }}>
+    <Animated.View entering={enterAnim} style={{ flex: 1 }}>
       <View style={[styles.groupControlRow, showAzRail && { paddingRight: 30 }]}>
         <AppText variant="caption" color={colors.textMuted}>
           {sorted.length} {mode === 'series' ? 'series' : mode}
@@ -1881,7 +1942,17 @@ function GroupSortBtn({
   const colors = useColors()
   const styles = useStyles()
   return (
-    <Touchable style={[styles.groupSortBtn, active && styles.groupSortBtnActive]} onPress={onPress}>
+    <Touchable
+      style={[styles.groupSortBtn, active && styles.groupSortBtnActive]}
+      onPress={onPress}
+      hitSlop={GROUP_SORT_HITSLOP}
+      accessibilityRole="button"
+      accessibilityLabel={
+        active
+          ? `Sorted by ${label}, ${desc ? 'descending' : 'ascending'}. Tap to reverse.`
+          : `Sort by ${label}`
+      }
+    >
       <AppText variant="caption" color={active ? colors.text : colors.textMuted}>
         {label}
       </AppText>
@@ -2126,6 +2197,8 @@ const makeStyles = (colors: Palette) =>
       zIndex: 50,
       elevation: 12,
     },
+    // 38 keeps the control bar compact; CTRL_ICON_HITSLOP carries it the rest
+    // of the way to the platform touch minimum without inflating the row.
     ctrlIconBtn: {
       width: 38,
       height: 38,
