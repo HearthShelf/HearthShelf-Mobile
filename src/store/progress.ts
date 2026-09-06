@@ -569,7 +569,35 @@ function keepFresherLocalPositions(
       }
       continue
     }
-    if (now - localAt > LOCAL_POSITION_MAX_AGE_MS) {
+    // Age alone is not evidence the server knows better.
+    //
+    // This branch exists for a local row so old it belongs to some earlier
+    // sitting, where the server has since heard from another device. But it was
+    // discarding on age WITHOUT asking whether the server had actually learned
+    // anything - so a listen that ran longer than the window with no successful
+    // sync (screen off, no network, the media service playing on regardless)
+    // lost every second of it on the next refresh. That is the worst shape this
+    // whole guard exists to prevent, and the age check was the one path that
+    // could still produce it (HS-MOBILEAPP-15, branch local_too_old on 0.8.13).
+    //
+    // matchesOurLastPush - NOT staleAgainstConfirmed - is the right predicate
+    // here, for the same reason the cross-device resume check uses it: a
+    // re-listen on another device usually lands BELOW our watermark too, so
+    // "at or below" would treat that genuine remote move as our own echo and
+    // strand the listener on a position nobody is at any more. Only the exact
+    // value we ourselves put there is unambiguously ours coming back.
+    //
+    // The watermark moves ONLY when ABS acknowledges a push from this device and
+    // is persisted across restarts, so this is age-independent by construction:
+    // however old our row is, a server row sitting exactly on our last confirmed
+    // push has told us nothing new.
+    //
+    // Keep the drop floor so this only ever protects a felt loss; a stale row
+    // level with (or ahead of) ours still converges normally.
+    const staleServerRow =
+      local.currentTime - server.currentTime > CONCURRENT_MIN_DROP_SEC &&
+      matchesOurLastPush(id, server.currentTime)
+    if (now - localAt > LOCAL_POSITION_MAX_AGE_MS && !staleServerRow) {
       breadcrumb(
         'progress',
         `local position for ${id.slice(0, 8)} too old (${Math.round((now - localAt) / 1000)}s) - server row kept`,
@@ -583,6 +611,12 @@ function keepFresherLocalPositions(
         branch: 'local_too_old',
       })
       continue
+    }
+    if (staleServerRow && now - localAt > LOCAL_POSITION_MAX_AGE_MS) {
+      breadcrumb(
+        'progress',
+        `local position for ${id.slice(0, 8)} is ${Math.round((now - localAt) / 1000)}s old but server row (${Math.round(server.currentTime)}s) is at or behind what ABS confirmed from us - keeping local ${Math.round(local.currentTime)}s`,
+      )
     }
     const duration = server.duration || local.duration || 0
     next.set(id, {
