@@ -16,6 +16,7 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  TextInput,
   View,
   useWindowDimensions,
   type NativeScrollEvent,
@@ -95,7 +96,7 @@ import { useBottomSheetModal } from '@gorhom/bottom-sheet'
 import { useBookSelection } from '@/ui/useBookSelection'
 import { AzRail, AZ_RAIL_WIDTH } from '@/ui/AzRail'
 import { ScrollTopButton } from '@/ui/ScrollTopButton'
-import { radius, spacing, type Palette } from '@/ui/theme'
+import { radius, spacing, MAX_FONT_SCALE_FIXED, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { adaptiveGridColumns, adaptiveGridTileWidth, adaptiveLibraryColumns } from '@/ui/responsive'
 
@@ -1016,59 +1017,58 @@ function BooksView({
           </ScrollView>
         )}
 
-        {sheetTab === 'filter' && (
-          <ScrollView style={styles.sheetScroll}>
-            {openGroup ? (
-              <FilterValues
-                group={openGroup}
-                items={items ?? []}
-                active={filters}
-                onBack={() => setOpenGroup(null)}
-                onPick={(f) => {
-                  // Toggle within the list rather than replacing it: picking a
-                  // second filter used to silently drop the first. Re-picking
-                  // the same value clears just that one.
-                  setFilters((prev) =>
-                    prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f],
-                  )
-                  setOpenGroup(null)
-                }}
-              />
-            ) : (
-              <>
-                <Touchable onPress={() => setFilters([])} style={styles.sheetRow}>
-                  <AppText variant="body" color={!filters.length ? colors.accent : colors.text}>
-                    All titles
-                  </AppText>
-                  {!filters.length && <IconButton name={icons.checkCircle} color={colors.accent} />}
-                </Touchable>
-                {CURATED_FILTER_GROUPS.map((gid) => {
-                  const group = FILTER_GROUPS.find((g) => g.id === gid)
-                  if (!group) return null
-                  const inGroup = filters.filter((f) => f.startsWith(`${gid}|`))
-                  const activeInGroup = inGroup.length > 0
-                  return (
-                    <Touchable key={gid} onPress={() => setOpenGroup(gid)} style={styles.sheetRow}>
-                      <AppText variant="body" color={activeInGroup ? colors.accent : colors.text}>
-                        {group.label}
-                      </AppText>
-                      <View style={styles.filterRowTrail}>
-                        {activeInGroup && (
-                          <AppText variant="caption" color={colors.accent} numberOfLines={1}>
-                            {inGroup.length > 1
-                              ? `${inGroup.length} selected`
-                              : inGroup[0].split('|')[1]}
-                          </AppText>
-                        )}
-                        <IconButton name={icons.chevronRight} color={colors.textMuted} />
-                      </View>
-                    </Touchable>
-                  )
-                })}
-              </>
-            )}
-          </ScrollView>
-        )}
+        {sheetTab === 'filter' &&
+          (openGroup ? (
+            // The drill-in owns its own scroller so its search field can stay
+            // pinned above the values instead of scrolling away with them.
+            <FilterValues
+              group={openGroup}
+              items={items ?? []}
+              active={filters}
+              onBack={() => setOpenGroup(null)}
+              onPick={(f) => {
+                // Toggle within the list rather than replacing it: picking a
+                // second filter used to silently drop the first. Re-picking
+                // the same value clears just that one. The drill-in deliberately
+                // stays open - ticking three values should not cost three trips.
+                setFilters((prev) =>
+                  prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f],
+                )
+              }}
+            />
+          ) : (
+            <ScrollView style={styles.sheetScroll}>
+              <Touchable onPress={() => setFilters([])} style={styles.sheetRow}>
+                <AppText variant="body" color={!filters.length ? colors.accent : colors.text}>
+                  All titles
+                </AppText>
+                {!filters.length && <IconButton name={icons.checkCircle} color={colors.accent} />}
+              </Touchable>
+              {CURATED_FILTER_GROUPS.map((gid) => {
+                const group = FILTER_GROUPS.find((g) => g.id === gid)
+                if (!group) return null
+                const inGroup = filters.filter((f) => f.startsWith(`${gid}|`))
+                const activeInGroup = inGroup.length > 0
+                return (
+                  <Touchable key={gid} onPress={() => setOpenGroup(gid)} style={styles.sheetRow}>
+                    <AppText variant="body" color={activeInGroup ? colors.accent : colors.text}>
+                      {group.label}
+                    </AppText>
+                    <View style={styles.filterRowTrail}>
+                      {activeInGroup && (
+                        <AppText variant="caption" color={colors.accent} numberOfLines={1}>
+                          {inGroup.length > 1
+                            ? `${inGroup.length} selected`
+                            : inGroup[0].split('|')[1]}
+                        </AppText>
+                      )}
+                      <IconButton name={icons.chevronRight} color={colors.textMuted} />
+                    </View>
+                  </Touchable>
+                )
+              })}
+            </ScrollView>
+          ))}
       </Sheet>
     </Animated.View>
   )
@@ -1172,7 +1172,16 @@ function SortRow({
   )
 }
 
-/** Drill-in list of a filter group's available values (derived from the items). */
+/** Below this many values a search field is more clutter than help - Progress
+ *  has four options and Language usually two. */
+const FILTER_SEARCH_THRESHOLD = 12
+
+/** Drill-in list of a filter group's available values (derived from the items).
+ *
+ *  Search-first, not list-first: on a 715-book library the Author group is
+ *  300-500 names, which is not a list anyone scrolls. The field sits outside
+ *  the scroller so it never scrolls away, and picking a value does NOT close
+ *  the drill-in - you tick several and leave when you're done. */
 function FilterValues({
   group,
   items,
@@ -1189,8 +1198,37 @@ function FilterValues({
 }) {
   const colors = useColors()
   const styles = useStyles()
+  const [query, setQuery] = useState('')
   const def = FILTER_GROUPS.find((g) => g.id === group)
-  const values = def ? def.values(items) : []
+
+  // Values and their counts are derived once per group, not per keystroke.
+  // The count turns blind scrolling into a decision ("Sanderson - 23").
+  const { values, counts } = useMemo(() => {
+    const vals = def ? def.values(items) : []
+    const tally = new Map<string, number>()
+    if (def) {
+      // Count through the group's own accessor so the number always matches
+      // what the filter will actually select. One item at a time is the only
+      // way to attribute a value to a book, but the per-call uniq/sort is over
+      // a single item's handful of values, not the library.
+      const single: ABSLibraryItem[] = [items[0]]
+      for (const it of items) {
+        single[0] = it
+        for (const v of def.values(single)) tally.set(v, (tally.get(v) ?? 0) + 1)
+      }
+    }
+    return { values: vals, counts: tally }
+  }, [def, items])
+
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return values
+    return values.filter((v) => v.toLowerCase().includes(q))
+  }, [values, query])
+
+  const searchable = values.length >= FILTER_SEARCH_THRESHOLD
+  const activeInGroup = active.filter((f) => f.startsWith(`${group}|`)).length
+
   return (
     <View>
       <Touchable onPress={onBack} style={styles.filterBack}>
@@ -1198,31 +1236,83 @@ function FilterValues({
         <AppText variant="label" color={colors.textMuted}>
           {def?.label ?? 'Filter'}
         </AppText>
+        {activeInGroup > 0 && (
+          <AppText variant="caption" color={colors.accent}>
+            {activeInGroup} selected
+          </AppText>
+        )}
       </Touchable>
+
+      {searchable && (
+        <View style={styles.filterSearch}>
+          <IconButton name={icons.search} size={18} color={colors.textMuted} />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder={`Search ${(def?.label ?? 'values').toLowerCase()}…`}
+            placeholderTextColor={colors.textFaint}
+            style={styles.input}
+            autoCorrect={false}
+            autoCapitalize="none"
+            returnKeyType="search"
+            maxFontSizeMultiplier={MAX_FONT_SCALE_FIXED}
+            accessibilityLabel={`Search ${def?.label ?? 'values'}`}
+          />
+          {query.length > 0 && (
+            <IconButton
+              name={icons.close}
+              size={18}
+              color={colors.textMuted}
+              onPress={() => setQuery('')}
+              accessibilityLabel="Clear search"
+            />
+          )}
+        </View>
+      )}
+
       {values.length === 0 ? (
         <AppText variant="meta" color={colors.textMuted} style={{ paddingVertical: spacing.md }}>
           Nothing to filter by here.
         </AppText>
+      ) : shown.length === 0 ? (
+        <AppText variant="meta" color={colors.textMuted} style={{ paddingVertical: spacing.md }}>
+          No matches for “{query.trim()}”.
+        </AppText>
       ) : (
-        values.map((v) => {
-          const f = `${group}|${v}`
-          const on = active.includes(f)
-          return (
-            <Touchable
-              key={v}
-              onPress={() => onPick(f)}
-              style={styles.sheetRow}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: on }}
-              accessibilityLabel={v}
-            >
-              <AppText variant="body" color={on ? colors.accent : colors.text} numberOfLines={1}>
-                {v}
-              </AppText>
-              {on && <IconButton name={icons.checkCircle} color={colors.accent} />}
-            </Touchable>
-          )
-        })
+        <ScrollView style={styles.sheetScroll} keyboardShouldPersistTaps="handled">
+          {shown.map((v) => {
+            const f = `${group}|${v}`
+            const on = active.includes(f)
+            const n = counts.get(v)
+            return (
+              <Touchable
+                key={v}
+                onPress={() => onPick(f)}
+                style={styles.sheetRow}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: on }}
+                accessibilityLabel={n ? `${v}, ${n} books` : v}
+              >
+                <AppText
+                  variant="body"
+                  color={on ? colors.accent : colors.text}
+                  numberOfLines={1}
+                  style={{ flex: 1 }}
+                >
+                  {v}
+                </AppText>
+                <View style={styles.filterRowTrail}>
+                  {n !== undefined && (
+                    <AppText variant="caption" color={colors.textFaint}>
+                      {n}
+                    </AppText>
+                  )}
+                  {on && <IconButton name={icons.checkCircle} color={colors.accent} />}
+                </View>
+              </Touchable>
+            )
+          })}
+        </ScrollView>
       )}
     </View>
   )
@@ -1894,6 +1984,18 @@ const makeStyles = (colors: Palette) =>
     // sheet past the screen.
     sheetScroll: { maxHeight: 380 },
     sheetGroupLabel: { marginTop: spacing.md, marginBottom: spacing.xs },
+    // Sits outside sheetScroll so it stays put while the values scroll under it.
+    filterSearch: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+      marginBottom: spacing.xs,
+      borderRadius: radius.pill,
+      backgroundColor: colors.fill,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
     filterRowTrail: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, maxWidth: 180 },
     filterBack: {
       flexDirection: 'row',
