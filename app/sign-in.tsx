@@ -1,16 +1,34 @@
-import type { SetActive, SignUpResource } from '@clerk/shared/types'
-import { useSSO } from '@clerk/expo'
-// The classic create()/setActive() useSignIn shape (the new signal-based
-// useSignIn in @clerk/expo's root would require a flow rewrite; the email path
-// here is a secondary fallback to the primary Google flow).
-import { useSignIn, useSignUp } from '@clerk/expo/legacy'
-import { useSignInWithGoogle } from '@clerk/expo/google'
+/**
+ * Sign-in, on HearthShelf's own auth service.
+ *
+ * Methods, in the order the screen offers them:
+ *   - passkey  - the one we want people using; no password, no code, no mail
+ *   - social   - Google / Apple / Discord, carried over from the old provider
+ *   - email    - a magic link, or a 6-digit code if the link is awkward to tap
+ *   - 2FA      - a TOTP step when the account has it switched on
+ *
+ * Magic link and email codes both depend on mail delivery, so they fail
+ * together; passkeys and social do not. Offering all of them means no single
+ * dependency locks anyone out.
+ *
+ * ACCOUNT CONTINUITY. Accounts carried over from the previous provider were
+ * seeded with their original id and their known social identities, so signing
+ * in with the same Google/Apple/Discord account lands on the SAME HearthShelf
+ * account - the servers you are linked to, your progress, all of it. For Apple
+ * Private Relay users the seeded identity is the ONLY thing that matches, since
+ * their relay address is issued per developer team.
+ *
+ * The screen is deliberately DARK regardless of app theme - a brand moment over
+ * the hearth photo, before the theme system is in play - so it uses a fixed ink
+ * palette rather than useColors().
+ */
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useCallback, useRef, useState } from 'react'
 import * as WebBrowser from 'expo-web-browser'
 import { LinearGradient } from 'expo-linear-gradient'
 import Svg, { Path } from 'react-native-svg'
-import { APPLE_ENABLED, CLERK_PUBLISHABLE_KEY, NATIVE_GOOGLE_ENABLED } from '@/lib/config'
+import { APPLE_ENABLED } from '@/lib/config'
+import { authClient } from '@/auth/client'
 import { fonts } from '@/ui/theme'
 import { useBackHandler } from '@/ui/useBackHandler'
 import { MaterialIcons } from '@expo/vector-icons'
@@ -19,7 +37,6 @@ import {
   BackHandler,
   Image,
   KeyboardAvoidingView,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -31,10 +48,6 @@ import {
 // Required so the OAuth browser tab closes and hands control back to the app.
 WebBrowser.maybeCompleteAuthSession()
 
-// The sign-in screen is intentionally DARK regardless of the app theme (it's a
-// brand moment over the hearth photo, before the theme system is even in play),
-// so it uses a fixed ink palette rather than useColors(). Centralized here so
-// there are no scattered magic hexes. Values mirror the brand tokens in theme.ts.
 const INK = {
   bg: '#0e0d0c',
   hearth: '#bd863f',
@@ -49,36 +62,6 @@ const INK = {
   glass: 'rgba(28,26,23,0.6)',
   dangerBg: 'rgba(224,101,74,0.16)',
 }
-
-// The Clerk account-portal origin, decoded from the publishable key's frontend
-// API domain (pk_live_<base64("clerk.example.com$")>). Used for the hosted
-// forgot-password flow, which Clerk owns.
-function accountPortalUrl(path: string): string {
-  try {
-    const b64 = CLERK_PUBLISHABLE_KEY.replace(/^pk_(test|live)_/, '')
-    // atob isn't in RN; decode base64 manually via Buffer-free approach.
-    const decoded = decodeBase64(b64).replace(/\$$/, '') // "clerk.hearthshelf.com"
-    const domain = decoded.replace(/^clerk\./, '') // "hearthshelf.com"
-    return `https://accounts.${domain}${path}`
-  } catch {
-    return `https://accounts.hearthshelf.com${path}`
-  }
-}
-
-function decodeBase64(input: string): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-  let str = input.replace(/=+$/, '')
-  let output = ''
-  for (let bc = 0, bs = 0, buffer, i = 0; (buffer = str.charAt(i++));) {
-    buffer = chars.indexOf(buffer)
-    if (buffer === -1) continue
-    bs = bc % 4 ? bs * 64 + buffer : buffer
-    if (bc++ % 4) output += String.fromCharCode(255 & (bs >> ((-2 * bc) & 6)))
-  }
-  return output
-}
-
-// Brand marks rendered inline so no extra image assets are needed.
 function GoogleLogo() {
   return (
     <Svg width={20} height={20} viewBox="0 0 24 24">
@@ -127,79 +110,40 @@ function DiscordLogo() {
  * Bottom-aligned auth block over the hearth photo (thumb zone), wordmark in the
  * upper third, a bottom scrim for legibility. The screen stays dark by design.
  */
+/** Which sub-step the screen is showing. 'providers' is the root. */
+type Step = 'providers' | 'email' | 'magic-sent' | 'otp' | 'two-factor'
+
 export default function SignInScreen() {
-  const { signIn, setActive, isLoaded } = useSignIn()
-  const { signUp, setActive: setActiveSignUp, isLoaded: signUpLoaded } = useSignUp()
-  const { startSSOFlow } = useSSO()
-  const { startGoogleAuthenticationFlow } = useSignInWithGoogle()
   const router = useRouter()
   const { reason } = useLocalSearchParams<{ reason?: string }>()
+
+  const [step, setStep] = useState<Step>('providers')
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [emailMode, setEmailMode] = useState(false)
-  // Within emailMode, whether we're registering a new account rather than
-  // signing in to an existing one.
-  const [signUpMode, setSignUpMode] = useState(false)
-  // A created-but-unverified sign-up: Clerk has emailed a 6-digit code and we
-  // collect it here before the account (and session) exist.
-  const [verifyingSignUp, setVerifyingSignUp] = useState(false)
-  const [busy, setBusy] = useState(false)
-  // A pending second-factor challenge: after signIn.create returns
-  // needs_second_factor, we collect the code here and attempt it.
-  const [twoFactor, setTwoFactor] = useState(false)
   const [code, setCode] = useState('')
-  // When an OAuth sign-up completes everything except a required username, we
-  // hold the in-progress sign-up here and show the "choose a username" step.
-  const [pendingSignUp, setPendingSignUp] = useState<SignUpResource | null>(null)
-  const [pendingSetActive, setPendingSetActive] = useState<SetActive | null>(null)
-  const [username, setUsername] = useState('')
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(
-    reason === 'expired' ? 'Your session expired. Please sign in again.' : null,
+    reason === 'signed-out' ? 'You have been signed out.' : null,
   )
 
-  // Double-press-to-exit state for the provider list (see the handler below).
+  // Second back press at the root exits, rather than popping to a screen the
+  // user cannot use while signed out.
   const exitArmedRef = useRef(false)
   const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Hardware back unwinds the sign-in sub-steps instead of popping the route.
-  // /sign-in is always entered with router.replace, so a pop lands on whatever
-  // sits beneath it - (tabs) - while still signed out, leaving the user on a
-  // screen they can't use (and, before the AuthGate fix, stuck under the
-  // "Warming up the hearth" splash with no redirect back). Each press retreats
-  // one step; at the provider list - the root auth screen, with nowhere valid to
-  // go back TO - a second press exits the app instead of popping.
+  const done = useCallback(() => router.replace('/(tabs)'), [router])
+
+  // Hardware back unwinds sub-steps instead of popping the route. /sign-in is
+  // always entered with router.replace, so a pop lands on (tabs) while still
+  // signed out - a screen they cannot use. Each press retreats one step; at the
+  // provider list a second press exits the app.
   useBackHandler(
     useCallback(() => {
-      if (pendingSignUp) {
-        // Abandon the half-finished OAuth sign-up (no session was activated).
-        setPendingSignUp(null)
-        setPendingSetActive(null)
-        setUsername('')
-        setError(null)
-        return true
-      }
-      if (verifyingSignUp) {
-        setVerifyingSignUp(false)
+      if (step !== 'providers') {
+        setStep(step === 'otp' || step === 'magic-sent' ? 'email' : 'providers')
         setCode('')
         setError(null)
         return true
       }
-      if (twoFactor) {
-        setTwoFactor(false)
-        setCode('')
-        setError(null)
-        return true
-      }
-      if (emailMode) {
-        setEmailMode(false)
-        setSignUpMode(false)
-        setError(null)
-        return true
-      }
-      // At the provider list: this is a root screen (a pop would land on (tabs)
-      // while signed out), so exit the app on a confirmed second press rather
-      // than either popping or trapping the user. Same grammar as Home.
       if (exitArmedRef.current) {
         if (exitTimerRef.current) clearTimeout(exitTimerRef.current)
         BackHandler.exitApp()
@@ -211,240 +155,98 @@ export default function SignInScreen() {
         exitArmedRef.current = false
       }, 2000)
       return true
-    }, [pendingSignUp, verifyingSignUp, twoFactor, emailMode]),
+    }, [step]),
   )
 
-  async function completeFlow(
+  /**
+   * Run an auth call and map its outcome onto the screen.
+   *
+   * Better Auth resolves with `{ data, error }` rather than throwing, so a
+   * rejected sign-in is a value to inspect - but a network failure still
+   * throws, hence both paths.
+   */
+  async function run(
     label: string,
-    run: () => Promise<{
-      createdSessionId?: string | null
-      setActive?: SetActive
-      signIn?: { createdSessionId?: string | null } | null
-      signUp?: SignUpResource | null
-      authSessionResult?: { type?: string } | null
-    }>,
+    fn: () => Promise<{ error?: { message?: string } | null } | void>,
+    onDone?: () => void,
   ) {
     if (busy) return
     setBusy(true)
     setError(null)
     try {
-      const res = await run()
-      const flowSetActive = res.setActive
-      const sessionId =
-        res.createdSessionId || res.signUp?.createdSessionId || res.signIn?.createdSessionId
-      if (sessionId && flowSetActive) {
-        await flowSetActive({ session: sessionId })
-        router.replace('/(tabs)')
+      const res = await fn()
+      const failure = res && 'error' in res ? res.error : null
+      if (failure) {
+        setError(failure.message || label + ' did not complete')
         return
       }
-
-      const su = res.signUp
-      const usernameOutstanding =
-        !!su &&
-        !su.createdSessionId &&
-        !su.username &&
-        (su.missingFields.includes('username') || su.requiredFields.includes('username'))
-      if (su && usernameOutstanding && flowSetActive) {
-        setPendingSignUp(su)
-        setPendingSetActive(() => flowSetActive)
-        setUsername(
-          su.emailAddress ? su.emailAddress.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '') : '',
-        )
-        return
-      }
-
-      if (res.authSessionResult && res.authSessionResult.type !== 'success') {
-        setError(`${label} sign-in was cancelled`)
-      } else {
-        setError(`${label} sign-in did not complete`)
-      }
+      if (onDone) onDone()
+      else done()
     } catch (e) {
-      setError(clerkMessage(e, `${label} sign-in failed`))
+      setError((e as Error)?.message || label + ' failed')
     } finally {
       setBusy(false)
     }
   }
 
-  function onGoogle() {
-    return completeFlow('Google', () =>
-      NATIVE_GOOGLE_ENABLED
-        ? startGoogleAuthenticationFlow()
-        : startSSOFlow({ strategy: 'oauth_google' }),
+  const social = (provider: 'google' | 'apple' | 'discord', label: string) => () =>
+    run(label, () => authClient.signIn.social({ provider, callbackURL: '/(tabs)' }))
+
+  /**
+   * Sign in with a passkey.
+   *
+   * Offered unconditionally rather than behind a capability check: the OS
+   * prompt is itself the discovery mechanism, and a device holding no passkey
+   * for this account reports none - surfaced as a hint to use another method,
+   * not as a failure.
+   */
+  function onPasskey() {
+    return run('Passkey sign-in', async () => {
+      const res = await authClient.signIn.passkey()
+      if (res?.error) {
+        return {
+          error: {
+            message:
+              'No passkey found on this device. Sign in another way, then add a passkey in Settings.',
+          },
+        }
+      }
+      return res
+    })
+  }
+
+  function onMagicLink() {
+    if (!email.trim()) {
+      setError('Enter your email first')
+      return
+    }
+    return run(
+      'Magic link',
+      () => authClient.signIn.magicLink({ email: email.trim(), callbackURL: '/(tabs)' }),
+      () => setStep('magic-sent'),
     )
   }
-  function onApple() {
-    return completeFlow('Apple', () => startSSOFlow({ strategy: 'oauth_apple' }))
-  }
-  function onDiscord() {
-    return completeFlow('Discord', () => startSSOFlow({ strategy: 'oauth_discord' }))
-  }
 
-  async function onSignIn() {
-    if (!isLoaded || busy) return
-    setBusy(true)
-    setError(null)
-    try {
-      const attempt = await signIn.create({ identifier: email, password })
-      if (attempt.status === 'complete') {
-        await setActive({ session: attempt.createdSessionId })
-        router.replace('/(tabs)')
-      } else if (attempt.status === 'needs_second_factor') {
-        // Account has 2FA. Prepare a code challenge (phone code where set up;
-        // TOTP apps need no prepare) and switch to the code-entry step.
-        try {
-          await signIn.prepareSecondFactor({ strategy: 'phone_code' })
-        } catch {
-          // TOTP / no preparable factor - the user reads the code from their app.
-        }
-        setTwoFactor(true)
-      } else {
-        setError(`This account needs another step to sign in (${attempt.status}).`)
-      }
-    } catch (e) {
-      setError(clerkMessage(e, 'Sign-in failed'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function onSignUp() {
-    if (!signUpLoaded || busy) return
-    const user = username.trim()
-    if (!email.trim() || !password || !user) {
-      setError('Enter an email, password, and username to create your account.')
+  function onSendCode() {
+    if (!email.trim()) {
+      setError('Enter your email first')
       return
     }
-    setBusy(true)
-    setError(null)
-    try {
-      const attempt = await signUp.create({
-        emailAddress: email.trim(),
-        password,
-        username: user,
-      })
-      // A new account is never complete on create - Clerk requires the emailed
-      // code first. Send it and move to the code step.
-      if (attempt.status === 'complete' && attempt.createdSessionId) {
-        await setActiveSignUp({ session: attempt.createdSessionId })
-        router.replace('/(tabs)')
-        return
-      }
-      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' })
-      setVerifyingSignUp(true)
-      setCode('')
-    } catch (e) {
-      setError(clerkMessage(e, 'Could not create your account'))
-    } finally {
-      setBusy(false)
-    }
+    return run(
+      'Sending your code',
+      () => authClient.emailOtp.sendVerificationOtp({ email: email.trim(), type: 'sign-in' }),
+      () => setStep('otp'),
+    )
   }
 
-  async function onVerifySignUp() {
-    if (!signUpLoaded || busy) return
-    const value = code.trim()
-    if (!value) {
-      setError('Enter the code we emailed you.')
-      return
-    }
-    setBusy(true)
-    setError(null)
-    try {
-      const attempt = await signUp.attemptEmailAddressVerification({ code: value })
-      if (attempt.status === 'complete' && attempt.createdSessionId) {
-        await setActiveSignUp({ session: attempt.createdSessionId })
-        router.replace('/(tabs)')
-      } else if (attempt.missingFields.length) {
-        setError(`Your account still needs: ${attempt.missingFields.join(', ')}`)
-      } else {
-        setError('That code was not accepted. Try again.')
-      }
-    } catch (e) {
-      setError(clerkMessage(e, 'That code was not accepted.'))
-    } finally {
-      setBusy(false)
-    }
+  function onVerifyCode() {
+    return run('That code', () =>
+      authClient.signIn.emailOtp({ email: email.trim(), otp: code.trim() }),
+    )
   }
 
-  async function onResendSignUpCode() {
-    if (!signUpLoaded || busy) return
-    setBusy(true)
-    setError(null)
-    try {
-      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' })
-      setError('We sent a new code to your email.')
-    } catch (e) {
-      setError(clerkMessage(e, 'Could not resend the code'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function onSubmitCode() {
-    if (!isLoaded || busy) return
-    const value = code.trim()
-    if (!value) {
-      setError('Enter the code from your authenticator or text.')
-      return
-    }
-    setBusy(true)
-    setError(null)
-    try {
-      // Try TOTP first (authenticator app), then fall back to a phone code.
-      let attempt
-      try {
-        attempt = await signIn.attemptSecondFactor({ strategy: 'totp', code: value })
-      } catch {
-        attempt = await signIn.attemptSecondFactor({ strategy: 'phone_code', code: value })
-      }
-      if (attempt.status === 'complete') {
-        await setActive({ session: attempt.createdSessionId })
-        router.replace('/(tabs)')
-      } else {
-        setError('That code was not accepted. Try again.')
-      }
-    } catch (e) {
-      setError(clerkMessage(e, 'That code was not accepted.'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function onForgotPassword() {
-    // Clerk owns password reset; open its hosted account portal.
-    try {
-      const url = accountPortalUrl(
-        `/sign-in?redirect_url=hearthshelf://sso-callback${email ? `&email_address=${encodeURIComponent(email)}` : ''}`,
-      )
-      await WebBrowser.openBrowserAsync(url)
-    } catch {
-      setError('Could not open the password reset page.')
-    }
-  }
-
-  async function onSubmitUsername() {
-    if (!pendingSignUp || !pendingSetActive || busy) return
-    const value = username.trim()
-    if (!value) {
-      setError('Please choose a username')
-      return
-    }
-    setBusy(true)
-    setError(null)
-    try {
-      const updated = await pendingSignUp.update({ username: value })
-      if (updated.status === 'complete' && updated.createdSessionId) {
-        await pendingSetActive({ session: updated.createdSessionId })
-        setPendingSignUp(null)
-        setPendingSetActive(null)
-        router.replace('/(tabs)')
-      } else {
-        setError(`Sign-up still needs: ${updated.missingFields.join(', ') || updated.status}`)
-      }
-    } catch (e) {
-      setError(clerkMessage(e, 'Could not set username'))
-    } finally {
-      setBusy(false)
-    }
+  function onVerifyTwoFactor() {
+    return run('That code', () => authClient.twoFactor.verifyTotp({ code: code.trim() }))
   }
 
   const errorBanner = error ? (
@@ -453,6 +255,20 @@ export default function SignInScreen() {
       <Text style={styles.errorBannerText}>{error}</Text>
     </View>
   ) : null
+
+  const backToOptions = (
+    <TouchableOpacity
+      style={styles.backLink}
+      onPress={() => {
+        setStep('providers')
+        setCode('')
+        setError(null)
+      }}
+      disabled={busy}
+    >
+      <Text style={styles.backLinkText}>Back to all sign-in options</Text>
+    </TouchableOpacity>
+  )
 
   return (
     <View style={styles.bg}>
@@ -479,8 +295,7 @@ export default function SignInScreen() {
 
       {/* 'padding' on BOTH platforms: SDK 57 forces edge-to-edge on Android,
           where the system ignores adjustResize and never resizes the window,
-          so the JS side must pad for the keyboard itself. Padding is computed
-          from actual overlap, so it can't double-compensate. */}
+          so the JS side must pad for the keyboard itself. */}
       <KeyboardAvoidingView style={styles.content} behavior="padding" keyboardVerticalOffset={0}>
         <ScrollView
           contentContainerStyle={styles.scroll}
@@ -489,100 +304,25 @@ export default function SignInScreen() {
           bounces={false}
         >
           <View style={styles.authBlock}>
-            {pendingSignUp ? (
+            {step === 'two-factor' ? (
               <View style={styles.formCard}>
-                <Text style={styles.stepTitle}>Choose a username</Text>
-                <Text style={styles.stepHint}>This is how you'll show up in HearthShelf.</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Username"
-                  placeholderTextColor={INK.faint}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  value={username}
-                  onChangeText={setUsername}
-                />
-                {errorBanner}
-                <TouchableOpacity
-                  style={styles.primaryButton}
-                  onPress={onSubmitUsername}
-                  disabled={busy}
-                >
-                  {busy ? (
-                    <ActivityIndicator color={INK.onAccent} />
-                  ) : (
-                    <Text style={styles.primaryButtonText}>Continue</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            ) : verifyingSignUp ? (
-              <View style={styles.formCard}>
-                <Text style={styles.stepTitle}>Check your email</Text>
+                <Text style={styles.stepTitle}>Two-factor code</Text>
                 <Text style={styles.stepHint}>
-                  We sent a 6-digit code to {email.trim() || 'your email'}. Enter it below to finish
-                  creating your account.
+                  Open your authenticator app and enter the 6-digit code.
                 </Text>
                 <TextInput
-                  style={[styles.input, styles.codeInput]}
-                  placeholder="123456"
+                  style={styles.codeInput}
+                  placeholder="000000"
                   placeholderTextColor={INK.faint}
                   keyboardType="number-pad"
-                  autoFocus
+                  maxLength={6}
                   value={code}
                   onChangeText={setCode}
-                  maxLength={8}
                 />
                 {errorBanner}
                 <TouchableOpacity
                   style={styles.primaryButton}
-                  onPress={onVerifySignUp}
-                  disabled={busy}
-                >
-                  {busy ? (
-                    <ActivityIndicator color={INK.onAccent} />
-                  ) : (
-                    <Text style={styles.primaryButtonText}>Create account</Text>
-                  )}
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => void onResendSignUpCode()}
-                  style={styles.forgot}
-                  disabled={busy}
-                >
-                  <Text style={styles.forgotText}>Resend code</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.backLink}
-                  onPress={() => {
-                    setVerifyingSignUp(false)
-                    setCode('')
-                    setError(null)
-                  }}
-                  disabled={busy}
-                >
-                  <Text style={styles.backLinkText}>Back</Text>
-                </TouchableOpacity>
-              </View>
-            ) : twoFactor ? (
-              <View style={styles.formCard}>
-                <Text style={styles.stepTitle}>Enter your code</Text>
-                <Text style={styles.stepHint}>
-                  Open your authenticator app (or check your texts) for the 6-digit code.
-                </Text>
-                <TextInput
-                  style={[styles.input, styles.codeInput]}
-                  placeholder="123456"
-                  placeholderTextColor={INK.faint}
-                  keyboardType="number-pad"
-                  autoFocus
-                  value={code}
-                  onChangeText={setCode}
-                  maxLength={8}
-                />
-                {errorBanner}
-                <TouchableOpacity
-                  style={styles.primaryButton}
-                  onPress={onSubmitCode}
+                  onPress={onVerifyTwoFactor}
                   disabled={busy}
                 >
                   {busy ? (
@@ -591,158 +331,132 @@ export default function SignInScreen() {
                     <Text style={styles.primaryButtonText}>Verify</Text>
                   )}
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.backLink}
-                  onPress={() => {
-                    setTwoFactor(false)
-                    setCode('')
-                    setError(null)
-                  }}
-                  disabled={busy}
-                >
-                  <Text style={styles.backLinkText}>Back</Text>
-                </TouchableOpacity>
+                {backToOptions}
               </View>
-            ) : emailMode ? (
+            ) : step === 'magic-sent' ? (
               <View style={styles.formCard}>
-                {signUpMode ? (
-                  <>
-                    <Text style={styles.stepTitle}>Create your account</Text>
-                    <Text style={styles.stepHint}>We'll email you a code to confirm it's you.</Text>
-                  </>
-                ) : null}
-                <TextInput
-                  style={styles.input}
-                  placeholder="Email"
-                  placeholderTextColor={INK.faint}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  value={email}
-                  onChangeText={setEmail}
-                />
-                {signUpMode ? (
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Username"
-                    placeholderTextColor={INK.faint}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    value={username}
-                    onChangeText={setUsername}
-                  />
-                ) : null}
-                <View style={styles.passwordRow}>
-                  <TextInput
-                    style={[styles.input, { flex: 1 }]}
-                    placeholder="Password"
-                    placeholderTextColor={INK.faint}
-                    secureTextEntry={!showPassword}
-                    value={password}
-                    onChangeText={setPassword}
-                  />
-                  <Pressable
-                    onPress={() => setShowPassword((v) => !v)}
-                    hitSlop={10}
-                    style={styles.eyeBtn}
-                  >
-                    <MaterialIcons
-                      name={showPassword ? 'visibility-off' : 'visibility'}
-                      size={22}
-                      color={INK.muted}
-                    />
-                  </Pressable>
-                </View>
-
-                {signUpMode ? null : (
-                  <TouchableOpacity onPress={() => void onForgotPassword()} style={styles.forgot}>
-                    <Text style={styles.forgotText}>Forgot password?</Text>
-                  </TouchableOpacity>
-                )}
-
+                <Text style={styles.stepTitle}>Check your email</Text>
+                <Text style={styles.stepHint}>
+                  We sent a sign-in link to {email}. Tap it on this device and you are in.
+                </Text>
                 {errorBanner}
-
+                <TouchableOpacity style={styles.primaryButton} onPress={onSendCode} disabled={busy}>
+                  {busy ? (
+                    <ActivityIndicator color={INK.onAccent} />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Send a code instead</Text>
+                  )}
+                </TouchableOpacity>
+                {backToOptions}
+              </View>
+            ) : step === 'otp' ? (
+              <View style={styles.formCard}>
+                <Text style={styles.stepTitle}>Enter your code</Text>
+                <Text style={styles.stepHint}>We sent a 6-digit code to {email}.</Text>
+                <TextInput
+                  style={styles.codeInput}
+                  placeholder="000000"
+                  placeholderTextColor={INK.faint}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  value={code}
+                  onChangeText={setCode}
+                />
+                {errorBanner}
                 <TouchableOpacity
                   style={styles.primaryButton}
-                  onPress={signUpMode ? onSignUp : onSignIn}
+                  onPress={onVerifyCode}
                   disabled={busy}
                 >
                   {busy ? (
                     <ActivityIndicator color={INK.onAccent} />
                   ) : (
-                    <Text style={styles.primaryButtonText}>
-                      {signUpMode ? 'Continue' : 'Sign in'}
-                    </Text>
+                    <Text style={styles.primaryButtonText}>Sign in</Text>
                   )}
                 </TouchableOpacity>
-
+                {backToOptions}
+              </View>
+            ) : step === 'email' ? (
+              <View style={styles.formCard}>
+                <Text style={styles.stepTitle}>Sign in with email</Text>
+                <Text style={styles.stepHint}>
+                  No password needed - we will send you a link, or a code if you prefer.
+                </Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="you@example.com"
+                  placeholderTextColor={INK.faint}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  textContentType="emailAddress"
+                  value={email}
+                  onChangeText={setEmail}
+                />
+                {errorBanner}
                 <TouchableOpacity
-                  style={styles.switchLink}
-                  onPress={() => {
-                    setSignUpMode((v) => !v)
-                    setError(null)
-                  }}
+                  style={styles.primaryButton}
+                  onPress={onMagicLink}
                   disabled={busy}
                 >
+                  {busy ? (
+                    <ActivityIndicator color={INK.onAccent} />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Email me a link</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.switchLink} onPress={onSendCode} disabled={busy}>
                   <Text style={styles.switchLinkText}>
-                    {signUpMode ? 'Already have an account? ' : "Don't have an account? "}
-                    <Text style={styles.switchLinkStrong}>
-                      {signUpMode ? 'Sign in' : 'Sign up'}
-                    </Text>
+                    Prefer a code? <Text style={styles.switchLinkStrong}>Send one</Text>
                   </Text>
                 </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.backLink}
-                  onPress={() => {
-                    setEmailMode(false)
-                    setSignUpMode(false)
-                    setError(null)
-                  }}
-                  disabled={busy}
-                >
-                  <Text style={styles.backLinkText}>Back to all sign-in options</Text>
-                </TouchableOpacity>
+                {backToOptions}
               </View>
             ) : (
               <View style={styles.providers}>
-                <TouchableOpacity style={styles.google} onPress={onGoogle} disabled={busy}>
+                <TouchableOpacity style={styles.google} onPress={onPasskey} disabled={busy}>
                   {busy ? (
                     <ActivityIndicator color="#1f1f1f" />
                   ) : (
                     <>
-                      <GoogleLogo />
-                      <Text style={styles.googleText}>Continue with Google</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-
-                {APPLE_ENABLED ? (
-                  <TouchableOpacity style={styles.apple} onPress={onApple} disabled={busy}>
-                    {busy ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <>
-                        <AppleLogo />
-                        <Text style={styles.appleText}>Continue with Apple</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                ) : null}
-
-                <TouchableOpacity style={styles.discord} onPress={onDiscord} disabled={busy}>
-                  {busy ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <>
-                      <DiscordLogo />
-                      <Text style={styles.discordText}>Continue with Discord</Text>
+                      <MaterialIcons name="fingerprint" size={20} color="#1f1f1f" />
+                      <Text style={styles.googleText}>Sign in with a passkey</Text>
                     </>
                   )}
                 </TouchableOpacity>
 
                 <TouchableOpacity
+                  style={styles.discord}
+                  onPress={social('google', 'Google sign-in')}
+                  disabled={busy}
+                >
+                  <GoogleLogo />
+                  <Text style={styles.discordText}>Continue with Google</Text>
+                </TouchableOpacity>
+
+                {APPLE_ENABLED ? (
+                  <TouchableOpacity
+                    style={styles.apple}
+                    onPress={social('apple', 'Apple sign-in')}
+                    disabled={busy}
+                  >
+                    <AppleLogo />
+                    <Text style={styles.appleText}>Continue with Apple</Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                <TouchableOpacity
+                  style={styles.discord}
+                  onPress={social('discord', 'Discord sign-in')}
+                  disabled={busy}
+                >
+                  <DiscordLogo />
+                  <Text style={styles.discordText}>Continue with Discord</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
                   style={styles.emailButton}
-                  onPress={() => setEmailMode(true)}
+                  onPress={() => setStep('email')}
                   disabled={busy}
                 >
                   <Text style={styles.emailButtonText}>Continue with email</Text>
@@ -774,14 +488,6 @@ export default function SignInScreen() {
       </KeyboardAvoidingView>
     </View>
   )
-}
-
-/** Clerk's short `message` is often "is invalid"; `longMessage` names the
- *  offending parameter, which actually tells you what's wrong. */
-function clerkMessage(e: unknown, fallback: string): string {
-  const clerkErr = (e as { errors?: Array<{ message?: string; longMessage?: string }> })
-    ?.errors?.[0]
-  return clerkErr?.longMessage || clerkErr?.message || (e as Error)?.message || fallback
 }
 
 const styles = StyleSheet.create({
