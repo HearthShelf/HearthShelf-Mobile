@@ -2345,7 +2345,15 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
     // player chrome while composing; the artwork itself remains size-capped.
     coverAreaComposing: { overflow: 'visible', zIndex: 30, elevation: 30 },
     // Full-strength art, shown on its own with no scrim over it.
-    hearthBg: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+    hearthBg: {
+      position: 'absolute',
+      top: 0,
+      bottom: 0,
+      left: 0,
+      right: 0,
+      width: '100%',
+      height: '100%',
+    },
     coverTap: { position: 'relative' },
     coverPressTarget: { borderRadius: radius.card, overflow: 'hidden' },
     // Skip hotspots fill the margins beside the artwork (edge to cover). Top/
