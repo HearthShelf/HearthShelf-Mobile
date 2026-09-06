@@ -78,6 +78,7 @@ export const icons = {
   listNumbered: 'format-list-numbered',
   tune: 'tune',
   sort: 'swap-vert',
+  shuffle: 'shuffle',
   dragHandle: 'drag-indicator',
   queue: 'queue-music',
   bookmark: 'bookmark-add',

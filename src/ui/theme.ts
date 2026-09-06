@@ -64,6 +64,9 @@ export interface Palette {
   accentWash: string
   accentTile: string
   scrim: string
+  /** Ink that sits ON a scrim. The scrim is a black wash in BOTH themes, so
+   *  this stays light regardless of theme - it is not a text/onAccent pair. */
+  scrimInk: string
   destructive: string
   success: string
 }
@@ -186,6 +189,7 @@ export function buildPalette(themeName: ThemeName, accentHex: string): Palette {
     accentWash: accentAlpha(accent, 0.12),
     accentTile: accentAlpha(accent, 0.22),
     scrim: themeName === 'light' ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.55)',
+    scrimInk: '#ffffff',
     // State colours shared with the web app (DESIGN.shared.md). Destructive is
     // deliberately NOT the ember: the accent is user-changeable, so a delete
     // button that borrows it can end up the same colour as the progress bar -

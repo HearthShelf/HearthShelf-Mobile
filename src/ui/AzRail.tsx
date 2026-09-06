@@ -26,7 +26,7 @@ import Animated, {
 import { fonts, radius, spacing, type Palette } from './theme'
 import { useColors } from './ThemeProvider'
 import { haptics } from './haptics'
-import { DUR, POP_SPRING } from './motion'
+import { DUR, POP_SPRING, useReducedMotion } from './motion'
 
 const LETTERS = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')]
 // Reversed rail (Z on top, # at bottom) for descending name sorts.
@@ -91,10 +91,17 @@ export function AzRail({
     [available, onJump, bubbleY],
   )
 
+  const reduceMotion = useReducedMotion()
+
   const end = useCallback(() => {
     lastLetter.current = null
     // Fade the shape out first, then clear the letter once it's hidden - so the
     // glyph doesn't blink away while the bubble is still visibly shrinking.
+    if (reduceMotion) {
+      bubbleScale.value = 0
+      setActive(null)
+      return
+    }
     bubbleScale.value = withTiming(
       0,
       { duration: DUR.fast, easing: Easing.in(Easing.ease) },
@@ -102,7 +109,7 @@ export function AzRail({
         runOnJS(setActive)(null)
       },
     )
-  }, [bubbleScale])
+  }, [bubbleScale, reduceMotion])
 
   // Runs on the JS thread. e.y is relative to the rail view for the whole
   // gesture (unlike RN's responder locationY, which re-targets per child under
@@ -124,10 +131,13 @@ export function AzRail({
   const begin = useCallback(
     (y: number) => {
       lastLetter.current = null
-      bubbleScale.value = withSpring(1, POP_SPRING)
+      // Under Reduce Motion the bubble still has to APPEAR - it is the only
+      // thing showing which letter you are on - it just arrives instead of
+      // springing.
+      bubbleScale.value = reduceMotion ? 1 : withSpring(1, POP_SPRING)
       sample(y)
     },
-    [bubbleScale, sample],
+    [bubbleScale, sample, reduceMotion],
   )
 
   const pan = Gesture.Pan()

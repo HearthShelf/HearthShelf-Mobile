@@ -72,7 +72,6 @@ import {
 import {
   AppText,
   Avatar,
-  Centered,
   Cover,
   IconButton,
   Loading,
@@ -111,7 +110,7 @@ import { AzRail, AZ_RAIL_WIDTH } from '@/ui/AzRail'
 import { ScrollTopButton } from '@/ui/ScrollTopButton'
 import { radius, spacing, MAX_FONT_SCALE_FIXED, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
-import { adaptiveGridColumns, adaptiveGridTileWidth, adaptiveLibraryColumns } from '@/ui/responsive'
+import { adaptiveGridTileWidth, adaptiveLibraryColumns } from '@/ui/responsive'
 
 const GUTTER = spacing.lg
 // Reveal the scroll-to-top button once the list is roughly 1.5 screens deep.
@@ -122,6 +121,43 @@ const HEADER_COLLAPSE_AT = 120
 // Restore well before the collapse point, so scrolling back and forth across a
 // single boundary cannot flap the band open and shut.
 const HEADER_RESTORE_AT = 60
+// Fallbacks for onScrollToIndexFailed when FlatList has no measurement yet:
+// a 46px cover + padding for a book row, a 46px cover stack + padding for a
+// group row. Only ever used to approximate an A-Z jump into unrendered rows.
+const LIST_ROW_ESTIMATE = 70
+const GROUP_ROW_ESTIMATE = 64
+// The control bar's laid-out height, mirrored by the skeleton so the
+// skeleton->content swap doesn't jump. ctrlChip is 10pt padding around a 13pt
+// caption line box, inside a bar with spacing.sm vertical padding.
+const CONTROL_BAR_HEIGHT = 50
+
+/**
+ * Turn a thrown error into something a reader can act on.
+ *
+ * ErrorState already supplies a human title and a Try again button, but the
+ * `message` beneath it was the raw exception - "Network request failed",
+ * "JSON Parse error: Unexpected token &lt;", an HTTP status. That is the harshest
+ * thing a dark-room app can show, and it tells a listener nothing about what to
+ * do. The exception text is not discarded lightly: it is genuinely useless to
+ * the person holding the phone, and Sentry already captures the real one.
+ */
+function humanError(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e)
+  const m = raw.toLowerCase()
+  if (m.includes('network') || m.includes('fetch') || m.includes('timeout')) {
+    return 'Your server did not answer. Check that it is running and that you are on the same network.'
+  }
+  if (m.includes('401') || m.includes('403') || m.includes('unauthorized')) {
+    return 'Your server refused the connection. You may need to sign in again.'
+  }
+  if (m.includes('404')) {
+    return 'That library is no longer on your server.'
+  }
+  if (m.includes('500') || m.includes('502') || m.includes('503')) {
+    return 'Your server hit an error answering. It may still be starting up.'
+  }
+  return 'Something went wrong reaching your server.'
+}
 // The control bar's icon buttons are a 38pt box; this carries the effective
 // target past the 44/48 platform minimum without growing the bar itself.
 const CTRL_ICON_HITSLOP = 6
@@ -166,10 +202,12 @@ const PINCH_HINT_KEY = 'hs.libraryPinchHint'
 // held one-handed is not how you browse on a tablet or the web. Do not "fix"
 // this by moving it into the synced store.
 const VIEW_PREFS_KEY = 'hs.libraryViewPrefs'
-// A BookTile's non-cover height: two caption lines (11px at ~1.3 line height)
-// plus the meta block's top margin and inter-line gap. Used only to estimate a
-// grid row for A-Z jumps into unmeasured rows.
-const TILE_META_HEIGHT = 34
+// A BookTile's non-cover height: up to THREE caption lines - the title wraps to
+// two (numberOfLines={2}) and the author takes a third - at 11px/~1.3, plus the
+// meta block's top margin and its 1px inter-line gaps. Used only to estimate a
+// grid row for A-Z jumps into unmeasured rows. Was 34, which assumed two lines
+// and landed jumps ~15px short per row on any two-line title.
+const TILE_META_HEIGHT = 49
 
 type ViewMode = 'books' | 'series' | 'narrators' | 'authors'
 const VIEW_MODES: { key: ViewMode; label: string }[] = [
@@ -236,7 +274,7 @@ export default function LibraryScreen() {
             setLibError(null)
             setLibraryId(offlineLib)
           } else {
-            setLibError((e as Error).message)
+            setLibError(humanError(e))
           }
         }
       })()
@@ -802,7 +840,7 @@ function BooksView({
         // local catalog instead of a bare error, so the library stays browseable.
         const offline = catalogAsLibraryItems()
         if (offline.length > 0) setItems(offline)
-        else setError((e as Error).message)
+        else setError(humanError(e))
       }
     },
     [libraryId],
@@ -1035,9 +1073,9 @@ function BooksView({
   if (!items && !error) return <LibrarySkeleton width={width} cols={defaultGridCols} />
   if (error) {
     return (
-      // A raw exception string in destructive red was the harshest thing this
-      // dark-room app could show, and there was nothing to tap - recovery meant
-      // backgrounding the app. In the car that is unreadable and unactionable.
+      // Human title, plain-language cause (see humanError), and something to
+      // tap. This used to be a raw exception string in destructive red with no
+      // recovery short of backgrounding the app.
       <ErrorState message={error} onRetry={() => void load({ blank: true })} />
     )
   }
@@ -1061,15 +1099,23 @@ function BooksView({
         // Persistent control bar: sort chip (tap flips direction, chevron opens
         // the sheet), filter chip with an active-count badge, and grid/list +
         // Select buttons. The full Display/Sort/Filter sheet stays behind these.
-        <View style={[styles.controlBar, showAzRail && { paddingRight: 28 }]}>
+        <View style={[styles.controlBar, showAzRail && { paddingRight: AZ_RAIL_WIDTH }]}>
           <Touchable
             style={styles.ctrlChip}
             onPress={() => chooseSort(sort)}
             accessibilityRole="button"
-            accessibilityLabel={`Sort: ${sort}, ${desc ? 'descending' : 'ascending'}. Tap to reverse.`}
+            accessibilityLabel={
+              // A shuffle has no direction: showing an up-arrow and announcing
+              // "ascending" for Random described an order that doesn't exist.
+              sort === 'Random'
+                ? 'Sorted randomly. Tap to reshuffle.'
+                : `Sort: ${sort}, ${desc ? 'descending' : 'ascending'}. Tap to reverse.`
+            }
           >
             <Icon
-              name={desc ? icons.arrowDownward : icons.arrowUpward}
+              name={
+                sort === 'Random' ? icons.shuffle : desc ? icons.arrowDownward : icons.arrowUpward
+              }
               size={15}
               color={colors.accent}
             />
@@ -1264,7 +1310,11 @@ function BooksView({
           windowSize={5}
           removeClippedSubviews
           onScrollToIndexFailed={({ index, averageItemLength }) => {
-            listRef.current?.scrollToOffset({ offset: index * averageItemLength, animated: true })
+            // FlatList reports averageItemLength as 0 for regions it has never
+            // measured, which is exactly the case an A-Z jump deep into the
+            // list hits - multiplying by it scrolled to the very top instead.
+            const row = averageItemLength || LIST_ROW_ESTIMATE
+            listRef.current?.scrollToOffset({ offset: index * row, animated: true })
           }}
           renderItem={({ item }) => (
             <BookListRow
@@ -1455,7 +1505,7 @@ function LibrarySkeleton({ width, cols }: { width: number; cols: number }) {
   const rows = Array.from({ length: cols * 4 })
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ height: 54 }} />
+      <View style={{ height: CONTROL_BAR_HEIGHT }} />
       <View
         style={{
           flexDirection: 'row',
@@ -1892,7 +1942,7 @@ function GroupsView({
         // Offline: build the groups from downloaded books instead of erroring.
         const offline = offlineGroups(mode)
         if (offline.length > 0) setGroups(offline)
-        else setError((e as Error).message)
+        else setError(humanError(e))
       }
     },
     [libraryId, mode],
@@ -1978,7 +2028,8 @@ function GroupsView({
         onScroll={onGroupsScroll}
         scrollEventThrottle={16}
         onScrollToIndexFailed={({ index, averageItemLength }) => {
-          listRef.current?.scrollToOffset({ offset: index * averageItemLength, animated: true })
+          const row = averageItemLength || GROUP_ROW_ESTIMATE
+          listRef.current?.scrollToOffset({ offset: index * row, animated: true })
         }}
         refreshControl={
           <RefreshControl
@@ -2432,7 +2483,10 @@ const makeStyles = (colors: Palette) =>
     // sheet past the screen.
     sheetScroll: { maxHeight: 380 },
     sheetGroupLabel: { marginTop: spacing.md, marginBottom: spacing.xs },
-    filterCount: { marginLeft: 'auto', alignSelf: 'center' },
+    // No marginLeft:auto - in a flexWrap row, 4+ chips pushed the count onto its
+    // own line and pinned it to the right edge, reading as a stray number.
+    // It now simply follows the last chip.
+    filterCount: { alignSelf: 'center' },
     // Sits outside sheetScroll so it stays put while the values scroll under it.
     filterSearch: {
       flexDirection: 'row',

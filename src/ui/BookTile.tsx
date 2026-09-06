@@ -117,7 +117,10 @@ function BookTileBase({
               pressed && styles.playChipPressed,
             ]}
           >
-            <Icon name={icons.play} size={18} color="#fff" />
+            {/* The chip's ground is `scrim` - a dark translucent wash over the
+                cover, NOT the accent - so this takes the fixed light ink that
+                pairs with a scrim in every theme, not onAccent. */}
+            <Icon name={icons.play} size={18} color={colors.scrimInk} />
           </Pressable>
         ) : null}
         {selecting ? (
