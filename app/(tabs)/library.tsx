@@ -37,8 +37,8 @@ import type {
 import {
   letterOf,
   coverHue,
-  applyLibraryFilter,
-  filterLabel,
+  applyLibraryFilters,
+  filterChipLabel,
   FILTER_GROUPS,
   SORT_COMMON,
   SORT_MORE,
@@ -73,7 +73,7 @@ import { DUR } from '@/ui/motion'
 import { haptics } from '@/ui/haptics'
 import { onTabReselect } from '@/ui/tabReselect'
 import { BookTile } from '@/ui/BookTile'
-import { EmptyState, SkeletonTile } from '@/ui/states'
+import { EmptyState, ErrorState, SkeletonTile } from '@/ui/states'
 import { playItemById } from '@/player/playback'
 import { useConnection } from '@/api/ConnectionProvider'
 import { fetchSeriesGapSummaries, type SeriesGapSummary } from '@/api/absAudible'
@@ -88,8 +88,10 @@ import {
   subscribeCatalog,
   getCatalogState,
 } from '@/player/offlineCatalog'
+import { getSettingsState, subscribeSettings, COVER_ASPECT_RATIO } from '@/store/settings'
 import { useContentInset, useMiniPlayerInset } from '@/ui/useContentInset'
 import { useBackHandler, useSheetBackHandler } from '@/ui/useBackHandler'
+import { useBottomSheetModal } from '@gorhom/bottom-sheet'
 import { useBookSelection } from '@/ui/useBookSelection'
 import { AzRail, AZ_RAIL_WIDTH } from '@/ui/AzRail'
 import { ScrollTopButton } from '@/ui/ScrollTopButton'
@@ -199,11 +201,10 @@ export default function LibraryScreen() {
   if (libError) {
     return (
       <Screen>
-        <Centered>
-          <AppText variant="meta" color={colors.destructive}>
-            {libError}
-          </AppText>
-        </Centered>
+        {/* Clearing libError re-arms the focus effect above, which already
+            retries when a prior attempt errored - so Try again just drops the
+            error and lets the existing self-heal path run. */}
+        <ErrorState message={libError} onRetry={() => setLibError(null)} />
       </Screen>
     )
   }
@@ -456,8 +457,30 @@ function BooksView({
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const selection = useBookSelection()
+  // Back cancels a selection before it does anything else. Registered here
+  // rather than in LibraryScreen because the selection state lives in this
+  // component - the screen-level handler cannot see it, so back used to leave
+  // for Home mid-selection and silently discard everything picked. Registered
+  // after the screen's handler, and BackHandler fires the newest first.
+  const { dismiss: dismissSheet } = useBottomSheetModal()
+  useBackHandler(
+    useCallback(() => {
+      // A sheet still wins. This handler registers after the screen's sheet
+      // handler (child mounts later, and BackHandler fires newest first), so it
+      // would otherwise swallow the press while "add to list" or the overflow
+      // sheet is open - both reachable from the selection toolbar. dismiss()
+      // returns true only when a sheet was actually open.
+      if (dismissSheet()) return true
+      selection.clear()
+      return true
+    }, [selection, dismissSheet]),
+    selection.selecting,
+  )
 
-  const [filter, setFilter] = useState<string>('all')
+  // A LIST of active filters, ANDed. One at a time was not enough on a large
+  // catalog: a genre alone can still leave hundreds of books, and picking a
+  // second filter silently replaced the first.
+  const [filters, setFilters] = useState<string[]>([])
   const [sort, setSort] = useState<LibrarySort>('Title')
   const [desc, setDesc] = useState(false)
   const [display, setDisplay] = useState<DisplayMode>('grid')
@@ -491,7 +514,7 @@ function BooksView({
     if (!preset) return
     if (preset.sort) setSort(preset.sort)
     setDesc(preset.desc)
-    if (preset.filter) setFilter(preset.filter)
+    if (preset.filter) setFilters([preset.filter])
   }, [preset])
 
   // Fetch the whole library + refresh progress. `blank` clears the grid first
@@ -573,8 +596,8 @@ function BooksView({
   }, [])
 
   const filtered = useMemo(
-    () => (items ? applyLibraryFilter(items, filter, progressOf) : []),
-    [items, filter, progressOf],
+    () => (items ? applyLibraryFilters(items, filters, progressOf) : []),
+    [items, filters, progressOf],
   )
   const sorted = useMemo(
     () => sortItems(filtered, sort, desc, progressOf),
@@ -620,12 +643,16 @@ function BooksView({
         }),
     [captureCols, applyPinch],
   )
-  // FINAL: the A-Z rail is LIST-view only, on alphabetical (Title/Author)
-  // sorts - so grid covers get the full row width. It works in either
-  // direction (letterIndex is built from the already-sorted list, so a desc
-  // sort just gives Z-first buckets).
+  // The A-Z rail runs on any alphabetical (Title/Author) sort, in BOTH grid and
+  // list. It was list-only so grid covers could keep the full row width, but
+  // grid is the default view and Title the default sort - so the default state
+  // of a large library had no jump navigation at all, only a scroll-to-top
+  // button after ~900px. The rail costs one tile column at most (tileWidth
+  // already shrinks by railReserve below), and it is the only thumb-reachable
+  // control on the screen. Works in either direction: letterIndex is built from
+  // the already-sorted list, so a desc sort just gives Z-first buckets.
   const alphabetical = sort === 'Title' || sort === 'Author'
-  const showAzRail = alphabetical && display === 'list'
+  const showAzRail = alphabetical
 
   // Tiles fill the row exactly; when the rail reserves space on the right, shrink
   // them so the last column isn't pushed under the rail.
@@ -656,10 +683,13 @@ function BooksView({
     (letter: string) => {
       const idx = letterIndex.get(letter)
       if (idx == null) return
-      // Rail is list-view only now, so the item index is the row index.
-      listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0 })
+      // In list view an item IS a row. In grid, `cols` items share a row, and
+      // FlatList indexes by row - so scrolling to the raw item index would
+      // overshoot by a factor of cols.
+      const index = display === 'grid' ? Math.floor(idx / cols) : idx
+      listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0 })
     },
-    [letterIndex],
+    [letterIndex, display, cols],
   )
 
   const openSheet = (tab: 'display' | 'sort' | 'filter') => {
@@ -680,11 +710,10 @@ function BooksView({
   if (!items && !error) return <LibrarySkeleton width={width} cols={defaultGridCols} />
   if (error) {
     return (
-      <Centered>
-        <AppText variant="meta" color={colors.destructive}>
-          {error}
-        </AppText>
-      </Centered>
+      // A raw exception string in destructive red was the harshest thing this
+      // dark-room app could show, and there was nothing to tap - recovery meant
+      // backgrounding the app. In the car that is unreadable and unactionable.
+      <ErrorState message={error} onRetry={() => void load({ blank: true })} />
     )
   }
 
@@ -722,10 +751,10 @@ function BooksView({
           <Touchable style={styles.ctrlChip} onPress={() => openSheet('filter')}>
             <Icon name={icons.filter} size={15} color={colors.text} />
             <AppText variant="caption">Filters</AppText>
-            {filter !== 'all' ? (
+            {filters.length > 0 ? (
               <View style={styles.ctrlBadge}>
                 <AppText variant="caption" color={colors.onAccent} style={styles.ctrlBadgeText}>
-                  1
+                  {filters.length}
                 </AppText>
               </View>
             ) : null}
@@ -749,24 +778,35 @@ function BooksView({
 
       {/* Applied filters as removable chips + a clear-all, so it's obvious what's
           active and easy to undo without opening the tray. */}
-      {filter !== 'all' && (
+      {filters.length > 0 && (
         <View style={styles.filterChips}>
-          <Touchable style={styles.filterChip} onPress={() => setFilter('all')}>
-            <AppText variant="caption" color={colors.onAccent}>
-              {filterLabel(filter)}
-            </AppText>
-            <IconButton
-              name={icons.close}
-              size={13}
-              color={colors.onAccent}
-              accessibilityLabel="Close"
-            />
-          </Touchable>
-          <Touchable onPress={() => setFilter('all')} hitSlop={8} style={styles.clearFilters}>
-            <AppText variant="caption" color={colors.textMuted}>
-              Clear
-            </AppText>
-          </Touchable>
+          {filters.map((f) => (
+            <Touchable
+              key={f}
+              style={styles.filterChip}
+              onPress={() => setFilters((prev) => prev.filter((x) => x !== f))}
+              accessibilityLabel={`Remove filter ${filterChipLabel(f)}`}
+            >
+              {/* filterChipLabel, not filterLabel: a bare "Finished" could be a
+                  progress state or a genre. The chip says which. */}
+              <AppText variant="caption" color={colors.onAccent}>
+                {filterChipLabel(f)}
+              </AppText>
+              <IconButton
+                name={icons.close}
+                size={13}
+                color={colors.onAccent}
+                accessibilityLabel={`Remove ${filterChipLabel(f)}`}
+              />
+            </Touchable>
+          ))}
+          {filters.length > 1 ? (
+            <Touchable onPress={() => setFilters([])} hitSlop={8} style={styles.clearFilters}>
+              <AppText variant="caption" color={colors.textMuted}>
+                Clear all
+              </AppText>
+            </Touchable>
+          ) : null}
         </View>
       )}
 
@@ -783,14 +823,14 @@ function BooksView({
         <EmptyState
           icon={icons.library}
           iconColor={colors.textMuted}
-          title={filter !== 'all' ? 'No books match these filters' : 'No books in this library yet'}
+          title={filters.length ? 'No books match these filters' : 'No books in this library yet'}
           body={
-            filter !== 'all'
+            filters.length
               ? 'Try clearing a filter to see more of your library.'
               : 'Switch to another library or add books on your server.'
           }
-          cta={filter !== 'all' ? 'Clear filters' : undefined}
-          onCta={filter !== 'all' ? () => setFilter('all') : undefined}
+          cta={filters.length ? 'Clear filters' : undefined}
+          onCta={filters.length ? () => setFilters([]) : undefined}
         />
       ) : display === 'grid' ? (
         <GestureDetector gesture={pinchGesture}>
@@ -812,8 +852,12 @@ function BooksView({
             scrollEventThrottle={16}
             refreshControl={refreshControl}
             onScrollToIndexFailed={({ index }) => {
+              // `index` is already a ROW index here (onJump converts, and
+              // FlatList reports rows for a multi-column list), so do NOT divide
+              // by cols again - that lands near the top of the library instead
+              // of at the letter. Row height is the tile plus its meta lines.
               listRef.current?.scrollToOffset({
-                offset: Math.floor(index / cols) * (tileWidth * 1.5 + spacing.md),
+                offset: index * (tileWidth * 1.5 + spacing.md),
                 animated: true,
               })
             }}
@@ -978,27 +1022,31 @@ function BooksView({
               <FilterValues
                 group={openGroup}
                 items={items ?? []}
-                current={filter}
+                active={filters}
                 onBack={() => setOpenGroup(null)}
                 onPick={(f) => {
-                  setFilter(f)
+                  // Toggle within the list rather than replacing it: picking a
+                  // second filter used to silently drop the first. Re-picking
+                  // the same value clears just that one.
+                  setFilters((prev) =>
+                    prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f],
+                  )
                   setOpenGroup(null)
                 }}
               />
             ) : (
               <>
-                <Touchable onPress={() => setFilter('all')} style={styles.sheetRow}>
-                  <AppText variant="body" color={filter === 'all' ? colors.accent : colors.text}>
+                <Touchable onPress={() => setFilters([])} style={styles.sheetRow}>
+                  <AppText variant="body" color={!filters.length ? colors.accent : colors.text}>
                     All titles
                   </AppText>
-                  {filter === 'all' && (
-                    <IconButton name={icons.checkCircle} color={colors.accent} />
-                  )}
+                  {!filters.length && <IconButton name={icons.checkCircle} color={colors.accent} />}
                 </Touchable>
                 {CURATED_FILTER_GROUPS.map((gid) => {
                   const group = FILTER_GROUPS.find((g) => g.id === gid)
                   if (!group) return null
-                  const activeInGroup = filter.startsWith(`${gid}|`)
+                  const inGroup = filters.filter((f) => f.startsWith(`${gid}|`))
+                  const activeInGroup = inGroup.length > 0
                   return (
                     <Touchable key={gid} onPress={() => setOpenGroup(gid)} style={styles.sheetRow}>
                       <AppText variant="body" color={activeInGroup ? colors.accent : colors.text}>
@@ -1006,8 +1054,10 @@ function BooksView({
                       </AppText>
                       <View style={styles.filterRowTrail}>
                         {activeInGroup && (
-                          <AppText variant="caption" color={colors.accent}>
-                            {filter.split('|')[1]}
+                          <AppText variant="caption" color={colors.accent} numberOfLines={1}>
+                            {inGroup.length > 1
+                              ? `${inGroup.length} selected`
+                              : inGroup[0].split('|')[1]}
                           </AppText>
                         )}
                         <IconButton name={icons.chevronRight} color={colors.textMuted} />
@@ -1028,6 +1078,12 @@ function BooksView({
  *  real grid so content lands without reflow. */
 function LibrarySkeleton({ width, cols }: { width: number; cols: number }) {
   const contentInset = useContentInset()
+  // Match the user's cover shape. SkeletonTile defaults to 2:3, but the app's
+  // default cover aspect is square - so placeholders were snapping to a
+  // different shape the moment real covers landed, in the one component whose
+  // whole job is landing without reflow.
+  const { coverAspect } = useSyncExternalStore(subscribeSettings, getSettingsState)
+  const aspect = COVER_ASPECT_RATIO[coverAspect]
   const tileWidth = adaptiveGridTileWidth({ width, cols, gutter: GUTTER })
   const rows = Array.from({ length: cols * 4 })
   return (
@@ -1043,7 +1099,7 @@ function LibrarySkeleton({ width, cols }: { width: number; cols: number }) {
         }}
       >
         {rows.map((_, i) => (
-          <SkeletonTile key={i} width={tileWidth} />
+          <SkeletonTile key={i} width={tileWidth} aspectRatio={aspect} />
         ))}
       </View>
     </View>
@@ -1120,13 +1176,14 @@ function SortRow({
 function FilterValues({
   group,
   items,
-  current,
+  active,
   onBack,
   onPick,
 }: {
   group: string
   items: ABSLibraryItem[]
-  current: string
+  /** Every active filter, so several values in one group can be ticked. */
+  active: string[]
   onBack: () => void
   onPick: (filter: string) => void
 }) {
@@ -1149,17 +1206,20 @@ function FilterValues({
       ) : (
         values.map((v) => {
           const f = `${group}|${v}`
-          const active = current === f
+          const on = active.includes(f)
           return (
-            <Touchable key={v} onPress={() => onPick(f)} style={styles.sheetRow}>
-              <AppText
-                variant="body"
-                color={active ? colors.accent : colors.text}
-                numberOfLines={1}
-              >
+            <Touchable
+              key={v}
+              onPress={() => onPick(f)}
+              style={styles.sheetRow}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: on }}
+              accessibilityLabel={v}
+            >
+              <AppText variant="body" color={on ? colors.accent : colors.text} numberOfLines={1}>
                 {v}
               </AppText>
-              {active && <IconButton name={icons.checkCircle} color={colors.accent} />}
+              {on && <IconButton name={icons.checkCircle} color={colors.accent} />}
             </Touchable>
           )
         })
@@ -1357,13 +1417,7 @@ function GroupsView({ libraryId, mode }: { libraryId: string; mode: ViewMode }) 
   }, [load])
 
   if (error) {
-    return (
-      <Centered>
-        <AppText variant="meta" color={colors.destructive}>
-          {error}
-        </AppText>
-      </Centered>
-    )
+    return <ErrorState message={error} onRetry={() => void load({ blank: true })} />
   }
   if (!sorted) return <Loading />
   if (sorted.length === 0) {
@@ -1689,15 +1743,18 @@ const makeStyles = (colors: Palette) =>
       borderColor: colors.hairline,
     },
     ctrlBadge: {
+      // minHeight, not height: the label inside scales with the user's text
+      // size (app cap is 1.6x), and a hard 17 clipped it.
       minWidth: 17,
-      height: 17,
+      minHeight: 17,
       paddingHorizontal: 4,
+      paddingVertical: 1,
       borderRadius: 9,
       backgroundColor: colors.accent,
       alignItems: 'center',
       justifyContent: 'center',
     },
-    ctrlBadgeText: { fontSize: 10, fontWeight: '700', lineHeight: 14 },
+    ctrlBadgeText: { fontSize: 10, fontWeight: '700' },
     offlineChip: {
       flexDirection: 'row',
       alignItems: 'center',
