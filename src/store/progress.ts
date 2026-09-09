@@ -643,9 +643,29 @@ function keepFresherLocalPositions(
     //
     // Keep the drop floor so this only ever protects a felt loss; a stale row
     // level with (or ahead of) ours still converges normally.
+    // `concurrentRace` is the second way to know, and leaving it out of this
+    // branch was a real hole: the guard above could decide the server row is not
+    // a newer observation at all, and then the age check would drop the position
+    // anyway, in the SAME refresh. Observed on 0.8.13 (HS-MOBILEAPP-15), two
+    // breadcrumbs one millisecond apart:
+    //
+    //   server row 9873s behind local ... - keeping local position (concurrent write)
+    //   local position for 616570e9 too old (87554s) - server row kept
+    //
+    // The listener lost 2h44m that the previous line had just decided to keep.
+    // matchesOurLastPush could not save it because the watermark is an EXACT
+    // match against our own confirmed push, and after an unclean restart there
+    // was nothing to match - the same restart shape as the hydration race.
+    //
+    // impossibleBackwardsJump had already proved the row stale on physics rather
+    // than on stamps: 9873s of position cannot disappear across a 3588s gap by
+    // listening. Age cannot make that conclusion less true - an old local row and
+    // a server row that provably describes an earlier moment is exactly the
+    // "played on with no successful sync" case this branch's own comment says it
+    // must not punish.
     const staleServerRow =
       local.currentTime - server.currentTime > CONCURRENT_MIN_DROP_SEC &&
-      matchesOurLastPush(id, server.currentTime)
+      (matchesOurLastPush(id, server.currentTime) || concurrentRace)
     if (now - localAt > LOCAL_POSITION_MAX_AGE_MS && !staleServerRow) {
       breadcrumb(
         'progress',
@@ -662,9 +682,16 @@ function keepFresherLocalPositions(
       continue
     }
     if (staleServerRow && now - localAt > LOCAL_POSITION_MAX_AGE_MS) {
+      // Say WHICH predicate saved the row. The two mean different things when
+      // reading a trail back: the watermark route means the server is handing us
+      // our own push, the physics route means the drop is too large for the
+      // elapsed stamp gap to explain however the row got there.
+      const why = matchesOurLastPush(id, server.currentTime)
+        ? 'is at or behind what ABS confirmed from us'
+        : 'dropped more than the stamp gap can explain'
       breadcrumb(
         'progress',
-        `local position for ${id.slice(0, 8)} is ${Math.round((now - localAt) / 1000)}s old but server row (${Math.round(server.currentTime)}s) is at or behind what ABS confirmed from us - keeping local ${Math.round(local.currentTime)}s`,
+        `local position for ${id.slice(0, 8)} is ${Math.round((now - localAt) / 1000)}s old but server row (${Math.round(server.currentTime)}s) ${why} - keeping local ${Math.round(local.currentTime)}s`,
       )
     }
     const duration = server.duration || local.duration || 0
