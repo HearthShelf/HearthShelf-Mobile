@@ -395,8 +395,34 @@ function stub(itemId: string, finished: boolean, duration = 0): ABSMediaProgress
  *  the /api/me response so callers can reuse it (e.g. bookmarks) without a
  *  second request. */
 export async function refreshProgress(): Promise<ABSMeResponse> {
-  const prev = state.byId
+  // The disk rows AND their confirmed-position watermarks must both be in memory
+  // before the guard runs, or it silently decides with less than it has.
+  //
+  // hydrateProgress() is started unawaited at mount, so on a cold start this
+  // refresh races it - and after an unclean death that race is routinely lost,
+  // because the app reopens straight onto the player and refreshes within
+  // seconds. Two distinct losses, one cause:
+  //
+  //  - Rows not yet loaded: `prev` is empty, so keepFresherLocalPositions()
+  //    hits `if (!local) continue` on every row and every guard below it is
+  //    skipped. The server row wins unconditionally, and because the skip is
+  //    the no-local-row path it does not even self-report - an invisible reset.
+  //  - Rows loaded but watermarks not: staleAgainstConfirmed() and
+  //    matchesOurLastPush() both read serverConfirmedSec, so an empty map makes
+  //    them answer false, the two stamp tests decline a wide gap on their own,
+  //    and a live position is dropped on the server_newer branch
+  //    (HS-MOBILEAPP-15: 6751s dropped across a 10.1h stamp gap, reported 5s
+  //    after a relaunch whose prior run ended uncleanly).
+  //
+  // Awaiting settled hydration costs nothing once it has resolved, and the same
+  // fix already guards the resume path (see progressHydrated).
+  await progressHydrated()
   const me = await getMe()
+  // Snapshot AFTER both awaits, not before: a tick that lands while the request
+  // is in flight is exactly the local write this guard exists to protect, and
+  // capturing earlier would compare the server's answer against a state that
+  // predates it.
+  const prev = state.byId
   const next = new Map(me.mediaProgress.map((p) => [p.libraryItemId, p] as const))
   // Snapshot the server's stamps before any local write can restamp these rows.
   for (const p of me.mediaProgress) {
@@ -502,7 +528,30 @@ function keepFresherLocalPositions(
   const now = Date.now()
   for (const [id, server] of next) {
     const local = prev.get(id)
-    if (!local || !(local.currentTime > 0)) continue
+    if (!local || !(local.currentTime > 0)) {
+      // No local row means there is nothing to protect - normally because this
+      // book is simply new to this device, which is not worth an event.
+      //
+      // The exception is a book we ourselves pushed a position for: the
+      // watermark only moves on an ABS acknowledgement, so holding one while
+      // holding no row says the rows are missing rather than absent - the
+      // hydration race refreshProgress() now awaits. If the incoming server row
+      // also sits materially behind that acknowledgement, this refresh is about
+      // to move the listener backwards with every guard skipped, which is the
+      // failure mode that produced no telemetry at all before.
+      const confirmed = serverConfirmedSec.get(id)
+      if (confirmed !== undefined && confirmed - server.currentTime > CONCURRENT_MIN_DROP_SEC) {
+        reportProgressDrop({
+          itemId: id,
+          localSec: confirmed,
+          serverSec: server.currentTime,
+          localUpdatedAt: 0,
+          serverUpdatedAt: typeof server.lastUpdate === 'number' ? server.lastUpdate : 0,
+          branch: 'no_local_row',
+        })
+      }
+      continue
+    }
     const localAt = typeof local.lastUpdate === 'number' ? local.lastUpdate : 0
     const serverAt = typeof server.lastUpdate === 'number' ? server.lastUpdate : 0
     // A server stamp that is only MARGINALLY newer while its position is

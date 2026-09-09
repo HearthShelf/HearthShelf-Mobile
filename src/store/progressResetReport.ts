@@ -43,8 +43,14 @@ export interface ProgressDropDetail {
   /** ms epoch stamps that drove the decision. */
   localUpdatedAt: number
   serverUpdatedAt: number
-  /** Which guard branch let it through, so the fix has a target. */
-  branch: 'server_newer' | 'local_too_old'
+  /** Which guard branch let it through, so the fix has a target.
+   *
+   *  `no_local_row` is the one that used to be invisible: with no local row to
+   *  compare against, keepFresherLocalPositions() skipped the book before any
+   *  guard ran, so a reset from a lost hydration race produced no event at all.
+   *  refreshProgress() now awaits hydration, which should make it unreachable -
+   *  it is reported so that "should" is checkable rather than assumed. */
+  branch: 'server_newer' | 'local_too_old' | 'no_local_row'
 }
 
 /**
@@ -76,9 +82,7 @@ export function reportProgressDrop(d: ProgressDropDetail): void {
         // path) or the local row simply aged out.
         stampGapMs: d.serverUpdatedAt - d.localUpdatedAt,
         localUpdatedAt: new Date(d.localUpdatedAt).toISOString(),
-        serverUpdatedAt: d.serverUpdatedAt
-          ? new Date(d.serverUpdatedAt).toISOString()
-          : 'none',
+        serverUpdatedAt: d.serverUpdatedAt ? new Date(d.serverUpdatedAt).toISOString() : 'none',
       },
     })
   } catch {
