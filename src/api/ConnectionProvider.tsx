@@ -13,7 +13,7 @@
  */
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { AppState } from 'react-native'
-import { useSession } from '@/auth/client'
+import { useAuthResolved } from '@/auth/useAuthResolved'
 import { getSessionToken } from '@/auth/token'
 import { hasCachedSession } from '@/auth/sessionCache'
 import { fetchLinkedServers, acceptInvite, ApiError, type LinkedServer } from './controlPlane'
@@ -329,11 +329,9 @@ async function backfillDownloadedCatalog(): Promise<void> {
 }
 
 export function ConnectionProvider({ children }: { children: React.ReactNode }) {
-  // `isPending` is the auth client's "still resolving" state, so !isPending is
-  // the old isLoaded. A session object present means signed in.
-  const { data: session, isPending } = useSession()
-  const isLoaded = !isPending
-  const isSignedIn = !!session
+  // isLoaded is STICKY - see useAuthResolved. Deriving it from `isPending`
+  // directly makes it flip back to false on every background session refetch.
+  const { session, isLoaded, isSignedIn } = useAuthResolved()
   const [status, setStatus] = useState<ConnectionStatus>({ phase: 'connecting' })
   const [activeRole, setActiveRole] = useState<'admin' | 'user'>('user')
   // Does this device have a cached session (was signed in on a prior run)?

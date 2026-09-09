@@ -13,8 +13,9 @@
  * opaque-and-regenerable.
  */
 import { useCallback } from 'react'
-import { authClient, useSession } from './client'
+import { authClient } from './client'
 import { clearCachedSession } from './sessionCache'
+import { useAuthResolved } from './useAuthResolved'
 
 export interface AuthUser {
   id: string
@@ -47,7 +48,9 @@ export function useAuth(): {
   user: AuthUser | null
   signOut: () => Promise<void>
 } {
-  const { data: session, isPending } = useSession()
+  // isLoaded is sticky once auth has answered - see useAuthResolved for why a
+  // plain `!isPending` blinks.
+  const { session, isLoaded, isSignedIn } = useAuthResolved()
 
   // Clearing the stored session locally as well as calling the service: sign-out
   // has to work when the service is unreachable, or a user on a dead network is
@@ -77,5 +80,5 @@ export function useAuth(): {
       }
     : null
 
-  return { isLoaded: !isPending, isSignedIn: !!session, user, signOut }
+  return { isLoaded, isSignedIn, user, signOut }
 }

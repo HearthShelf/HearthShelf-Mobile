@@ -7,7 +7,8 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import * as SplashScreen from 'expo-splash-screen'
-import { useSession, authClient } from '@/auth/client'
+import { authClient } from '@/auth/client'
+import { useAuthResolved } from '@/auth/useAuthResolved'
 import { getSessionToken } from '@/auth/token'
 // Aliased: AuthGate has local state also called hasCachedSession.
 import { hasCachedSession as readCachedSession, clearCachedSession } from '@/auth/sessionCache'
@@ -165,11 +166,11 @@ function hideOsSplash() {
 const AUTH_LOAD_TIMEOUT_MS = 4000
 
 function AuthGate({ children }: { children: React.ReactNode }) {
-  // `isPending` is the auth client's "still resolving" state, so !isPending is
-  // the old isLoaded; a session object present means signed in.
-  const { data: session, isPending } = useSession()
-  const isLoaded = !isPending
-  const isSignedIn = !!session
+  // isLoaded is STICKY: Better Auth reports isPending again on every background
+  // refetch, and deriving isLoaded from it directly made this gate redirect to
+  // /sign-in, re-splash, and redirect again several times a second - the blinking
+  // login screen. See useAuthResolved.
+  const { isLoaded, isSignedIn } = useAuthResolved()
   const segments = useSegments()
   const router = useRouter()
   // Flush a prior-run crash report exactly once, the first time we have a
