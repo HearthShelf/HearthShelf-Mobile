@@ -19,6 +19,7 @@ import { getSettingsState } from '@/store/settings'
 import { parseHHMM } from '@/lib/timeFormat'
 import { haptics } from '@/ui/haptics'
 import { syncStateSeeked, syncStateLeftCar } from './syncState'
+import { pauseAutoPlayback } from './autoBridge'
 // crashLog imports only expo-file-system, so this stays a leaf dependency and
 // cannot cycle back into the player.
 import { breadcrumb } from '@/lib/crashLog'
@@ -912,6 +913,9 @@ export function addSleepMinutes(mins: number, viaShake = false): AddSleepMinutes
  */
 function fireStop(position: number): void {
   const { rewindSec, chapterBarrier } = state.sleepBehavior
+  // Read before the set() below, so this does not depend on what that patch
+  // does or does not carry.
+  const carOwnsPlayback = state.carActive
   let target = position
   if (rewindSec > 0) {
     target = Math.max(0, position - rewindSec)
@@ -926,6 +930,15 @@ function fireStop(position: number): void {
   notePaused()
   if (target !== position) suppressNextRewind()
   set({ position: target, sleepTimer: null, isPlaying: false, volume: 1 })
+  // `isPlaying: false` only stands down the phone's <Video> host. When the car
+  // owns playback the audio is coming from a separate native ExoPlayer in the
+  // car service, which never observes this store - so the timer fired, the app
+  // went quiet, and Android Auto kept playing (HS-MOBILEAPP-2Q).
+  //
+  // Native pause() routes by whoever holds playback, so it is correct in both
+  // cases; the phone-only path is already covered by the state change above, and
+  // pausing an already-paused player is a no-op.
+  if (carOwnsPlayback) pauseAutoPlayback()
   if (target !== position) requestSeek(target)
 }
 

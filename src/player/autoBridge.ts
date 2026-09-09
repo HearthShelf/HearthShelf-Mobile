@@ -85,6 +85,10 @@ interface HearthShelfAutoNative {
   ): void
   loadCarBook(itemId: string, positionSec: number): void
   syncCarState(): void
+  /** Pause whoever currently owns playback. Native routes to the car player when
+   *  the car holds it and to the phone service otherwise, so this is the only
+   *  pause that reaches the car. */
+  pause(): void
   clearSession(): void
 }
 
@@ -285,6 +289,23 @@ export function loadAutoCarBook(itemId: string, positionSec: number): void {
  */
 export function syncAutoCarState(): void {
   if (Platform.OS === 'android') native?.syncCarState()
+}
+
+/**
+ * Pause the player that actually owns playback right now.
+ *
+ * Setting `isPlaying: false` in the JS store only stands down the phone's
+ * <Video> host. When the car owns playback the audio is coming from a SEPARATE
+ * native ExoPlayer in the car service, which never sees that state - so the
+ * sleep timer fired, the app went quiet, and the car played on
+ * (HS-MOBILEAPP-2Q).
+ *
+ * Native pause() routes by carPlayer (car when it holds playback, phone service
+ * otherwise), so this is the one call that reaches both. Android only: iOS
+ * CarPlay shares a single player, so the store's own pause already covers it.
+ */
+export function pauseAutoPlayback(): void {
+  if (Platform.OS === 'android') native?.pause()
 }
 
 export function clearAutoSession(): void {
