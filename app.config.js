@@ -195,15 +195,21 @@ module.exports = {
     // that domain's /.well-known/). Team ID HCU6KVPTDC + this bundle id make the
     // appID in that file. Invite links resolve in-app instead of the browser.
     associatedDomains: ['applinks:app.hearthshelf.com'],
+    // Adds the "Sign in with Apple" entitlement. Apple's native sheet refuses to
+    // present without it, so native Apple sign-in silently falls back to the
+    // browser flow when this is missing.
+    usesAppleSignIn: true,
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
       // audio: background playback; processing: offline-progress background flush
       // (expo-background-task also adds this during prebuild).
       UIBackgroundModes: ['audio', 'processing'],
-      // Reversed-client-ID URL scheme for Clerk's native Google sign-in on iOS.
-      // The native Google flow redirects back to the app via this scheme; without
-      // it registered here the redirect has nowhere to land and native Google
-      // can't complete on iOS. (Android uses Credential Manager, no scheme needed.)
+      // Reversed-client-ID URL scheme for native Google sign-in on iOS. The
+      // native flow redirects back to the app via this scheme; without it
+      // registered here the redirect has nowhere to land and native Google
+      // can't complete on iOS. (Android uses Credential Manager, no scheme
+      // needed.) The google-signin config plugin writes this too - kept here
+      // explicitly so the requirement is visible where the rest of iOS is.
       CFBundleURLTypes: [{ CFBundleURLSchemes: [GOOGLE_IOS_URL_SCHEME] }],
     },
   },
@@ -260,6 +266,15 @@ module.exports = {
       },
     ],
     '@react-native-community/datetimepicker',
+    [
+      // Native Google sign-in (the OS account picker instead of a browser tab).
+      // Android gets Credential Manager; iOS needs the reversed-client-ID URL
+      // scheme registered, which is what this option writes.
+      '@react-native-google-signin/google-signin',
+      { iosUrlScheme: GOOGLE_IOS_URL_SCHEME },
+    ],
+    // Native "Sign in with Apple" sheet. Pairs with ios.usesAppleSignIn above.
+    'expo-apple-authentication',
     [
       // Screenshot attachments on the feedback form. The plugin's job here is
       // the iOS usage string - the default copy is generic ("access your

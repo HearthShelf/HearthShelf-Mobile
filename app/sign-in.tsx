@@ -29,6 +29,7 @@ import { LinearGradient } from 'expo-linear-gradient'
 import Svg, { Path } from 'react-native-svg'
 import { APPLE_ENABLED } from '@/lib/config'
 import { authClient } from '@/auth/client'
+import { signInWithAppleNatively, signInWithGoogleNatively, type NativeResult } from '@/auth/native'
 import { fonts } from '@/ui/theme'
 import { useBackHandler } from '@/ui/useBackHandler'
 import { MaterialIcons } from '@expo/vector-icons'
@@ -189,8 +190,47 @@ export default function SignInScreen() {
     }
   }
 
-  const social = (provider: 'google' | 'apple' | 'discord', label: string) => () =>
+  /**
+   * Browser-tab OAuth: opens a tab, runs the redirect, deep-links back. The
+   * only path for Discord, and the fallback for Google / Apple.
+   */
+  const browserSocial = (provider: 'google' | 'apple' | 'discord', label: string) => () =>
     run(label, () => authClient.signIn.social({ provider, callbackURL: '/(tabs)' }))
+
+  /**
+   * Google / Apple, preferring the OS account picker.
+   *
+   * Falls through to the browser tab only on `unavailable` - a device or build
+   * that cannot show the native sheet. A `cancelled` deliberately does nothing:
+   * popping a browser tab open because someone dismissed the picker would look
+   * like a bug, not a fallback.
+   */
+  const nativeSocial = (provider: 'google' | 'apple', label: string) => async () => {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    let outcome: NativeResult
+    try {
+      outcome =
+        provider === 'google' ? await signInWithGoogleNatively() : await signInWithAppleNatively()
+    } catch (e) {
+      outcome = { status: 'error', message: (e as Error)?.message || label + ' failed' }
+    } finally {
+      setBusy(false)
+    }
+
+    if (outcome.status === 'signed-in') {
+      done()
+      return
+    }
+    if (outcome.status === 'cancelled') return
+    if (outcome.status === 'error') {
+      setError(outcome.message)
+      return
+    }
+    // unavailable - take the browser flow without saying anything about it.
+    browserSocial(provider, label)()
+  }
 
   /**
    * Sign in with a passkey.
@@ -427,7 +467,7 @@ export default function SignInScreen() {
 
                 <TouchableOpacity
                   style={styles.google}
-                  onPress={social('google', 'Google sign-in')}
+                  onPress={nativeSocial('google', 'Google sign-in')}
                   disabled={busy}
                 >
                   <GoogleLogo />
@@ -437,7 +477,7 @@ export default function SignInScreen() {
                 {APPLE_ENABLED ? (
                   <TouchableOpacity
                     style={styles.apple}
-                    onPress={social('apple', 'Apple sign-in')}
+                    onPress={nativeSocial('apple', 'Apple sign-in')}
                     disabled={busy}
                   >
                     <AppleLogo />
@@ -447,7 +487,7 @@ export default function SignInScreen() {
 
                 <TouchableOpacity
                   style={styles.discord}
-                  onPress={social('discord', 'Discord sign-in')}
+                  onPress={browserSocial('discord', 'Discord sign-in')}
                   disabled={busy}
                 >
                   <DiscordLogo />

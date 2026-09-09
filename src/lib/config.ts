@@ -9,9 +9,10 @@
  * the web bundle too); the Google client *secret* lives only in the Clerk
  * dashboard, never here.
  *
- * The Google OAuth client IDs are NOT read here - Clerk's native Google module
- * reads them itself from `expoConfig.extra`, where app.config.js bakes committed
- * public defaults. See NATIVE_GOOGLE_ENABLED below.
+ * The Google OAuth client IDs ARE read here. Clerk used to read them itself
+ * from `expoConfig.extra`; Better Auth ships no native Google module, so our own
+ * code configures one and needs the ids in JS. app.config.js still bakes the
+ * same committed public defaults. See NATIVE_GOOGLE_ENABLED below.
  */
 import Constants from 'expo-constants'
 import { Platform } from 'react-native'
@@ -78,25 +79,38 @@ export const SENTRY_DSN = cfg(
   'https://de02a3cd2a5b81852eaabf7bf0a34459@o4511760230907904.ingest.us.sentry.io/4511924430110720',
 )
 
-/**
- * Whether to offer the native Google account-picker (vs the browser-tab OAuth
- * fallback). The Google OAuth client IDs are public and baked into every build
- * as committed defaults in app.config.js, where Clerk's native Google module
- * reads them from `expoConfig.extra` - so native Google is available on both
- * platforms. Android uses Credential Manager; iOS uses the reversed-client-ID
- * URL scheme (registered in ios.infoPlist.CFBundleURLTypes, app.config.js).
- * Web has no native flow, so it stays on browser OAuth.
- */
-export const NATIVE_GOOGLE_ENABLED = Platform.OS === 'android' || Platform.OS === 'ios'
+// Google OAuth client IDs. Public by design - a client id ships inside every
+// app bundle, and only the client SECRET is confidential (it lives on the auth
+// service, never here). The env-var names keep their historical CLERK_ prefix so
+// the values baked into app.config.js and set in CI keep resolving.
+//
+// Which id matters where:
+//   WEB     - passed to the native module as `webClientId`. Google mints the id
+//             token against it, so it is the `aud` the auth service verifies,
+//             and it is what makes the token backend-verifiable at all.
+//   IOS     - the iOS client, needed by the native module on that platform.
+// The ANDROID client id is never referenced in JS: Google resolves it from the
+// package name + signing certificate registered in the Google console. It still
+// has to be listed in the auth service's GOOGLE_NATIVE_CLIENT_IDS, because on
+// Android the token's `aud` comes back as that android client.
+export const GOOGLE_WEB_CLIENT_ID = cfg('EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID', '')
+export const GOOGLE_IOS_CLIENT_ID = cfg('EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID', '')
 
 /**
- * Whether to offer "Sign in with Apple". Apple only allows its button on Apple
- * platforms, so this is iOS-only. The sign-in itself runs through Clerk's
- * browser-tab OAuth flow (useSSO strategy 'oauth_apple'), which needs no native
- * module - just the `oauth_apple` strategy enabled in the Clerk dashboard.
+ * Whether to offer the native Google account-picker (vs the browser-tab OAuth
+ * fallback).
  *
- * The native one-tap sheet (useSignInWithApple) would additionally require the
- * expo-apple-authentication module plus the `usesAppleSignIn` iOS entitlement;
- * until those are added the browser flow is the path.
+ * Requires a webClientId: without one Google returns no id token, and the id
+ * token IS the credential the auth service verifies - so a native sign-in with
+ * no web client id cannot succeed and the browser flow is the only real path.
+ *
+ * Web has no native flow, so it stays on browser OAuth.
+ */
+export const NATIVE_GOOGLE_ENABLED =
+  (Platform.OS === 'android' || Platform.OS === 'ios') && !!GOOGLE_WEB_CLIENT_ID
+
+/**
+ * Whether to offer Apple sign-in at all (iOS only - Apple's sheet does not
+ * exist on Android, and the browser flow there adds a provider nobody expects).
  */
 export const APPLE_ENABLED = Platform.OS === 'ios'
