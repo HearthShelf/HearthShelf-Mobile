@@ -901,7 +901,29 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
               </>
             ) : null}
             {settings.playerBg === 'hearth' ? (
-              <Image source={HEARTH_BG} style={styles.hearthBg} resizeMode="cover" />
+              <>
+                <Image source={HEARTH_BG} style={styles.hearthBg} resizeMode="cover" />
+                {/* The hearth art is a dark photograph, but every control above it
+                is painted with theme tokens - and in light mode those are
+                near-black (#1b1916), so the transport buttons and labels
+                disappeared into the picture (HS-MOBILEAPP-33).
+
+                Same remedy the blurred branch already uses: fade the art into
+                the scaffold so the foreground sits on its own theme's base
+                near the controls. Lighter at the top, where the artwork should
+                still read, and opaque at the very bottom where the transport
+                lives. On a dark theme the scaffold is dark too, so this is
+                close to a no-op and the picture keeps its presence. */}
+                <LinearGradient
+                  colors={[
+                    withAlpha(colors.scaffold, 0.12),
+                    withAlpha(colors.scaffold, 0.55),
+                    colors.scaffold,
+                  ]}
+                  locations={[0, 0.62, 1]}
+                  style={StyleSheet.absoluteFill}
+                />
+              </>
             ) : null}
             {settings.playerBg === 'gradient' ? <CoverGlow hue={hue} height={430} breathe /> : null}
           </View>
@@ -2368,7 +2390,8 @@ const makeStyles = (colors: Palette, shadow: ActiveTheme['shadow']) =>
     // measured artwork slot at large display/text scales. Let it float over the
     // player chrome while composing; the artwork itself remains size-capped.
     coverAreaComposing: { overflow: 'visible', zIndex: 30, elevation: 30 },
-    // Full-strength art, shown on its own with no scrim over it.
+    // Full-strength art. A scaffold-fading gradient sits over it so the
+    // theme-token controls stay legible - see the hearth branch above.
     hearthBg: {
       position: 'absolute',
       top: 0,
