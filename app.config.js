@@ -259,7 +259,6 @@ module.exports = {
         },
       },
     ],
-    '@clerk/expo',
     '@react-native-community/datetimepicker',
     [
       // Screenshot attachments on the feedback form. The plugin's job here is
