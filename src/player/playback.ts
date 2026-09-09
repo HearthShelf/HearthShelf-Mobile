@@ -21,6 +21,7 @@ import {
   ABSRequestError,
 } from '@/api/abs'
 import { getSession } from '@/api/session'
+import { startPhase } from '@/lib/startupTrace'
 import type { ABSMediaProgress } from '@hearthshelf/core'
 import {
   progressFor,
@@ -387,7 +388,17 @@ export async function playItemById(
   // tick then synced that 0 over the real server position, persisting the reset.
   // Awaiting here costs nothing once hydrated (a settled promise) and only ever
   // delays the very first tap after launch.
+  // Traced because a cold launch that lands on the player leaves a hole in the
+  // trace otherwise: a /player ui.load of 8740ms whose only child was a 619ms
+  // cold start, with ~8.1s unaccounted for and no error (trace
+  // a51029d7b9a74374979311383b6dad84, 0.9.0). Nothing failed - that window is
+  // simply not instrumented, so a slow resume and a hung one look identical.
+  //
+  // startPhase() no-ops once the startup trace has finished, so this only ever
+  // records the launch-time resume, not every later play tap.
+  const hydratePhase = startPhase('resume:progress-hydrate')
   await progressHydrated()
+  hydratePhase.end()
 
   const local = localSourceFor(itemId)
   const resumeAt =
@@ -415,7 +426,14 @@ export async function playItemById(
   // Deferred to the first play (see ensureSessionForPlayback), which every
   // transport path already funnels through.
   if (!autoPlay) {
-    await loadPreview(itemId, local, online, resumeAt)
+    // The cold-start-onto-the-player path (the Now Playing tab rendering your
+    // last book), and the larger half of the untraced window above.
+    const previewPhase = startPhase('resume:load-preview')
+    try {
+      await loadPreview(itemId, local, online, resumeAt)
+    } finally {
+      previewPhase.end()
+    }
     return
   }
 
@@ -609,7 +627,16 @@ async function loadPreview(
   // Not downloaded: we need a stream URL and chapters, which a session would
   // normally have carried. getItemDetail is a plain read - it creates no session
   // and records no listening, and it carries the chapters itself.
-  const detail = await getItemDetail(itemId)
+  // Split out from the preview phase: a streaming resume waits on this read, so
+  // when a launch-time preview is slow this says whether the server was the
+  // reason or the work around it was.
+  const detailPhase = startPhase('resume:item-detail')
+  let detail
+  try {
+    detail = await getItemDetail(itemId)
+  } finally {
+    detailPhase.end()
+  }
   const files = detail.media?.audioFiles ?? []
   const file = files[0]
   if (!file) throw new Error('no_audio_track')
