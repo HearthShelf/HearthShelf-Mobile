@@ -414,24 +414,24 @@ export default function SignInScreen() {
               </View>
             ) : (
               <View style={styles.providers}>
-                <TouchableOpacity style={styles.google} onPress={onPasskey} disabled={busy}>
+                <TouchableOpacity style={styles.passkey} onPress={onPasskey} disabled={busy}>
                   {busy ? (
                     <ActivityIndicator color="#1f1f1f" />
                   ) : (
                     <>
                       <MaterialIcons name="fingerprint" size={20} color="#1f1f1f" />
-                      <Text style={styles.googleText}>Sign in with a passkey</Text>
+                      <Text style={styles.passkeyText}>Sign in with a passkey</Text>
                     </>
                   )}
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={styles.discord}
+                  style={styles.google}
                   onPress={social('google', 'Google sign-in')}
                   disabled={busy}
                 >
                   <GoogleLogo />
-                  <Text style={styles.discordText}>Continue with Google</Text>
+                  <Text style={styles.googleText}>Continue with Google</Text>
                 </TouchableOpacity>
 
                 {APPLE_ENABLED ? (
@@ -517,6 +517,16 @@ const styles = StyleSheet.create({
   brandShelf: { color: INK.shelf, fontFamily: fonts.brand, fontWeight: '700' },
 
   providers: { gap: 12 },
+  passkey: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    paddingVertical: 15,
+  },
+  passkeyText: { color: '#1f1f1f', fontSize: 15, fontWeight: '600' },
   google: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -525,6 +535,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 16,
     paddingVertical: 15,
+    borderWidth: 1,
+    borderColor: '#dadce0',
   },
   googleText: { color: '#1f1f1f', fontSize: 15, fontWeight: '600' },
   discord: {
