@@ -74,6 +74,15 @@ export interface PlayerSnapshot {
   /** The position this book resumed at, so a reset is visible as a gap. */
   startPosition: number | null
   duration: number | null
+  /** Chapter state at `position`. A report about the chapter BAR was previously
+   *  indistinguishable from one about the playhead, because the snapshot carried
+   *  the position and nothing about the chapter around it (HS-MOBILEAPP-37).
+   *  `chapterIndex` is -1 when no chapter contains the position - itself the
+   *  signal that a chapter list was swapped out from under the playhead. */
+  chaptersLen: number
+  chapterIndex: number
+  chapterStart: number | null
+  chapterEnd: number | null
   isPlaying: boolean
   buffering: boolean
   /** True while a car surface owns playback (its own session, different sync). */
@@ -174,6 +183,17 @@ function playerSnapshot(): PlayerSnapshot {
     position: sec(s.position),
     startPosition: sec(np?.startPosition),
     duration: sec(np?.duration),
+    // Chapter state, because a report about the CHAPTER bar could not previously
+    // be told apart from one about position: the context carried the playhead
+    // and nothing about the chapter it sat in (HS-MOBILEAPP-37). With these, a
+    // chapter index that disagrees with the position, or bounds that do not
+    // contain it, is visible in the report itself rather than inferred.
+    chaptersLen: np?.chapters?.length ?? 0,
+    chapterIndex: np?.chapters?.findIndex((c) => s.position >= c.start && s.position < c.end) ?? -1,
+    chapterStart: sec(
+      np?.chapters?.find((c) => s.position >= c.start && s.position < c.end)?.start,
+    ),
+    chapterEnd: sec(np?.chapters?.find((c) => s.position >= c.start && s.position < c.end)?.end),
     isPlaying: s.isPlaying,
     buffering: s.buffering,
     carActive: s.carActive,

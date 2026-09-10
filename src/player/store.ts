@@ -306,7 +306,26 @@ export function attachSessionId(sessionId: string): void {
 export function updateChapters(itemId: string, chapters: ChapterMark[]): void {
   const np = state.nowPlaying
   if (!np || np.itemId !== itemId) return
+  // Breadcrumbed because this is the ONE place the chapter list changes under a
+  // fixed position, and it was silent. refreshOpenBookMetadata calls it
+  // fire-and-forget, so the swap can land long after the load that started it -
+  // including after a background/foreground round trip.
+  //
+  // If the new boundaries re-bucket the current position, the chapter bar jumps
+  // under the listener with nothing in the trail to say why; if they no longer
+  // cover it at all, currentChapterAt falls back to the LAST chapter and the
+  // bar reads as pinned. Both are indistinguishable in a report from a frozen
+  // scrubber (HS-MOBILEAPP-37), so record enough to tell them apart: whether the
+  // chapter under the playhead actually moved, not merely that a swap happened.
+  const before = currentChapterAt(state.position)
   set({ nowPlaying: { ...np, chapters } })
+  const after = currentChapterAt(state.position)
+  if (before?.start !== after?.start || before?.end !== after?.end) {
+    breadcrumb(
+      'player',
+      `chapters replaced for ${itemId.slice(0, 8)} (${np.chapters.length} -> ${chapters.length}); chapter under @${Math.round(state.position)}s moved ${Math.round(before?.start ?? -1)}-${Math.round(before?.end ?? -1)}s -> ${Math.round(after?.start ?? -1)}-${Math.round(after?.end ?? -1)}s`,
+    )
+  }
 }
 
 export function setPlaying(isPlaying: boolean): void {
