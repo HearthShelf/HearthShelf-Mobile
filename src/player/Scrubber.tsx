@@ -18,7 +18,7 @@
  * that thickens while dragging.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
+import { AppState, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, {
   runOnJS,
@@ -152,6 +152,33 @@ export function Scrubber({
     setDragRatio(null)
     onDrag?.(null)
   }, [onDrag, lineWidth])
+
+  // Backgrounding mid-touch must not strand the drag state.
+  //
+  // `begin` fires on touch-DOWN (minDistance(0), so a tap and a drag share one
+  // gesture), and the only paths that clear the drag are onEnd and a !success
+  // onFinalize. If the OS takes the touch stream away on an app switch - the
+  // recents gesture and the notification shade both start as a drag from the
+  // screen edge - the terminal state may never reach JS, and nothing else ever
+  // resets it: no unmount, no effect, no AppState listener.
+  //
+  // Stranded, three values freeze the bar together: `dragRatio` here makes
+  // `shown` ignore the `ratio` prop, `dragPct` overrides the width on the UI
+  // thread, and the parent's `previewRatio` drops `position` out of its own
+  // display maths entirely. The result is a scrubber that shows a stale spot and
+  // never moves again while audio plays on (HS-MOBILEAPP-37).
+  //
+  // Clearing on any departure from 'active' is safe: a real drag has ended long
+  // before the app can background, so this only ever fires on the stuck case.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') return
+      dragPct.value = -1
+      setDragRatio(null)
+      onDrag?.(null)
+    })
+    return () => sub.remove()
+  }, [dragPct, onDrag])
 
   // Pan recognizes a tap too (min distance 0), so tap-to-seek and drag share one
   // gesture. `x` is clamped in ratioFromX, so overshoot past the ends is fine.

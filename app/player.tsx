@@ -15,7 +15,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react'
-import { Image, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native'
+import { AppState, Image, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
@@ -289,6 +289,18 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
   // While dragging the scrubber, preview the target time in the labels without
   // committing a seek (seek fires once, on release - see Scrubber).
   const [previewRatio, setPreviewRatio] = useState<number | null>(null)
+  // A non-null previewRatio removes `position` from the display maths below
+  // (see shownPos), so a stranded one freezes the bar and the time labels while
+  // audio plays on - the reported "chapter progress bar is not updating"
+  // (HS-MOBILEAPP-37). The Scrubber clears its own drag state on the same edge
+  // and calls onDrag(null), which lands here; this is the independent belt, so
+  // the screen self-heals even if that callback is ever missed.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') setPreviewRatio(null)
+    })
+    return () => sub.remove()
+  }, [])
 
   // Carousel deck state: page count, active index, and the browsed book (drives
   // the header title + the deck transport when off the live page).
