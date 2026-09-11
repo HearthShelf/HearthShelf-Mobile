@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Widget metadata.
+
+  updatePeriodMillis is 0 on purpose: it has a 30-minute floor and is ignored
+  below that, so it cannot track a playhead. The widget is pushed instead - from
+  JS on a nowPlaying write, and from the player service's own playback edges.
+  Leaving it non-zero would cost battery and still be stale.
+
+  resizeMode horizontal|vertical is what lets the user reach the tall layout;
+  minResizeHeight stays at the short card so shrinking cannot clip the transport.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:minResizeWidth="180dp"
+    android:minResizeHeight="110dp"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/hs_widget"
+    android:previewImage="@drawable/ic_hs_notification"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen" />

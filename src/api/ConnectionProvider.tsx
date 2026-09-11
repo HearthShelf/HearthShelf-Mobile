@@ -31,6 +31,7 @@ import {
   isAirplaneMode,
 } from '@/player/autoBridge'
 import { startQueueSync } from '@/player/queueSync'
+import { startWidgetNowPlaying } from '@/player/widgetNowPlaying'
 import { refreshSubscriptions } from '@/player/subscriptions'
 import { ensurePushRegistered } from '@/player/pushRegister'
 import { startClubSync } from '@/player/clubSync'
@@ -754,6 +755,10 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     // snapshot an offline car has no book list and no controls at all. Not gated
     // on connecting - the whole point is the launch that never reaches a server.
     startOfflineLibrarySync()
+    // Keep the home-screen widget's record in step with the player. Same reason
+    // this is not gated on a session: the widget must be able to show the right
+    // book after a reboot, offline, or while signed out.
+    startWidgetNowPlaying()
   }, [])
 
   // Does this device have downloads to fall back on? Read reactively (the

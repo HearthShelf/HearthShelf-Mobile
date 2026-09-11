@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The hero card's ground: a dark, rounded surface the white content palette is
+     anchored to. Theme-independent on purpose - the launcher never tells us the
+     app's chosen theme, and the hero solves the same problem the same way. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <corners android:radius="20dp" />
+    <solid android:color="#1A120B" />
+</shape>

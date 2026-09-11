@@ -96,6 +96,43 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
   }
 
   /**
+   * Publish what is playing RIGHT NOW, for the home-screen widget.
+   *
+   * Deliberately its own key rather than a read of `offlineLibrary`, which looks
+   * like it would do the job and does not: that snapshot holds only COMPLETED
+   * downloads, and it is gated on car mode (cleared on the same edge). A
+   * streaming-only listener, or anyone with car mode off, would get a
+   * permanently blank widget.
+   *
+   * So this is written on every play/pause/track change regardless of car mode,
+   * download state, or whether a session is open. It is the only native-readable
+   * notion of "the current book" - the home hero derives from a network call,
+   * which a launcher-process widget cannot make.
+   *
+   * Shape: { itemId, title, author, cover, position, duration, isPlaying }.
+   * `cover` is a file:// uri when the book is downloaded, else "".
+   */
+  @ReactMethod
+  fun setNowPlaying(json: String) {
+    prefs().edit().putString("nowPlaying", json).apply()
+    HearthShelfWidgetProvider.refresh(ctx)
+  }
+
+  /**
+   * Up-next titles for the widget's tall layout.
+   *
+   * The queue itself is deliberately server-persisted with no local copy (see
+   * queue.ts), so the widget has nothing to read unless JS hands it one. Titles
+   * only - that is all the section draws, and anything more would be a second
+   * snapshot to keep honest.
+   */
+  @ReactMethod
+  fun setWidgetQueue(json: String) {
+    prefs().edit().putString("widgetQueue", json).apply()
+    HearthShelfWidgetProvider.refresh(ctx)
+  }
+
+  /**
    * Publish the downloaded books - local file paths, chapters, cover, saved
    * position - so the car has a browse tree and something to play with no network.
    * Everything the car surface does is otherwise a request to ABS, which is why an

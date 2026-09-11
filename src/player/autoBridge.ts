@@ -85,6 +85,10 @@ interface HearthShelfAutoNative {
   ): void
   loadCarBook(itemId: string, positionSec: number): void
   syncCarState(): void
+  /** Publish what is playing now, for the home-screen widget. */
+  setNowPlaying(json: string): void
+  /** Publish up-next titles for the widget's tall layout. */
+  setWidgetQueue(json: string): void
   /** Pause whoever currently owns playback. Native routes to the car player when
    *  the car holds it and to the phone service otherwise, so this is the only
    *  pause that reaches the car. */
@@ -306,6 +310,51 @@ export function syncAutoCarState(): void {
  */
 export function pauseAutoPlayback(): void {
   if (Platform.OS === 'android') native?.pause()
+}
+
+/** One book as the home-screen widget sees it. */
+export interface WidgetNowPlaying {
+  itemId: string
+  title: string
+  author: string
+  /** file:// uri of the downloaded cover, or '' - RemoteViews cannot load a
+   *  network image, so a streaming book shows the placeholder tile. */
+  cover: string
+  position: number
+  duration: number
+  isPlaying: boolean
+}
+
+/**
+ * Publish the current book to the widget.
+ *
+ * Its own prefs key, NOT a read of the car's offlineLibrary snapshot. That
+ * snapshot looks like it would serve: it already carries title, author, cover
+ * and position. But it holds only COMPLETED downloads and it is gated on car
+ * mode (cleared on the same edge), so a streaming-only listener - or anyone with
+ * car mode off - would get a permanently blank widget.
+ *
+ * This is also the only native-readable notion of "the current book" in the app.
+ * The home hero derives from getItemsInProgress(), a network call, which a
+ * widget running in the launcher process cannot make.
+ *
+ * Android only: iOS widgets are a separate (unbuilt) surface.
+ */
+export function setAutoNowPlaying(np: WidgetNowPlaying | null): void {
+  if (Platform.OS !== 'android') return
+  native?.setNowPlaying(JSON.stringify(np ?? {}))
+}
+
+/**
+ * Publish up-next titles for the widget's tall layout.
+ *
+ * The queue is server-persisted with no local store (queue.ts is explicit about
+ * keeping no AsyncStorage copy), so without this the widget's up-next section
+ * has no data source at all. Titles only - that is everything the section draws.
+ */
+export function setAutoWidgetQueue(titles: string[]): void {
+  if (Platform.OS !== 'android') return
+  native?.setWidgetQueue(JSON.stringify({ items: titles.map((title) => ({ title })) }))
 }
 
 export function clearAutoSession(): void {

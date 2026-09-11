@@ -43,6 +43,8 @@ function copyKotlin(config) {
         'HearthShelfPlayerService.kt',
         // Handles club note-pop voice/text replies (Phase 7).
         'NoteReplyReceiver.kt',
+        // Home-screen widget: resume the current book from the launcher.
+        'HearthShelfWidgetProvider.kt',
       ]) {
         fs.copyFileSync(path.join(src, f), path.join(dest, f))
       }
@@ -60,6 +62,24 @@ function copyKotlin(config) {
         path.join(src, 'automotive_app_desc.xml'),
         path.join(resXml, 'automotive_app_desc.xml'),
       )
+      // Declares the widget's sizing, resize modes and initial layout.
+      fs.copyFileSync(path.join(src, 'hs_widget_info.xml'), path.join(resXml, 'hs_widget_info.xml'))
+
+      // Widget layouts. RemoteViews needs real XML layouts - there is no React in
+      // the launcher process - so these ship as resources like the drawables.
+      const layoutSrc = path.join(src, 'res', 'layout')
+      const layoutDest = path.join(
+        cfg.modRequest.platformProjectRoot,
+        'app',
+        'src',
+        'main',
+        'res',
+        'layout',
+      )
+      fs.mkdirSync(layoutDest, { recursive: true })
+      for (const f of fs.readdirSync(layoutSrc)) {
+        fs.copyFileSync(path.join(layoutSrc, f), path.join(layoutDest, f))
+      }
 
       // Custom media-control vector icons (circular skip / chapter / play /
       // pause) referenced by the MediaSession command layout.
@@ -171,6 +191,39 @@ function addManifestService(config) {
         'intent-filter': [
           {
             action: [{ $: { 'android:name': 'com.hearthshelf.NOTE_REPLY' } }],
+          },
+        ],
+      })
+    }
+
+    // The home-screen widget. Exported because the LAUNCHER binds it, and its
+    // APPWIDGET_UPDATE filter is what makes it appear in the widget picker at
+    // all. The provider meta-data points at the sizing descriptor.
+    const WIDGET = `${PKG}.HearthShelfWidgetProvider`
+    const hasWidget = app.receiver.find((r) => r.$ && r.$['android:name'] === WIDGET)
+    if (!hasWidget) {
+      app.receiver.push({
+        $: {
+          'android:name': WIDGET,
+          'android:exported': 'true',
+        },
+        'intent-filter': [
+          {
+            action: [
+              { $: { 'android:name': 'android.appwidget.action.APPWIDGET_UPDATE' } },
+              // Our own transport taps come back through the same receiver.
+              { $: { 'android:name': 'com.hearthshelf.WIDGET_PLAY_PAUSE' } },
+              { $: { 'android:name': 'com.hearthshelf.WIDGET_BACK' } },
+              { $: { 'android:name': 'com.hearthshelf.WIDGET_FORWARD' } },
+            ],
+          },
+        ],
+        'meta-data': [
+          {
+            $: {
+              'android:name': 'android.appwidget.provider',
+              'android:resource': '@xml/hs_widget_info',
+            },
           },
         ],
       })

@@ -408,6 +408,11 @@ class HearthShelfPlayerService : MediaSessionService() {
         } else if (HearthShelfAutoModule.carPlayer == null) {
           exo?.let { HearthShelfAutoModule.emitProgress(it.currentPosition / 1000.0) }
         }
+        // Flip the widget's play/pause glyph with the real transport, whatever
+        // moved it - the notification, the widget itself, a headset button, or
+        // the app. updatePeriodMillis cannot do this (30-minute floor), so the
+        // widget is only ever as fresh as the pushes it gets.
+        HearthShelfWidgetProvider.refresh(this@HearthShelfPlayerService)
         // Pausing/resuming flips the shake gate (only listen while playing).
         evaluateShake()
       }

@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Short widget: cover on the left, title/author, progress, transport.
+
+  Evokes the home hero rather than porting it. RemoteViews has no flexbox, no
+  gradients as components, no shadows and no percentage widths, so the scrim is a
+  drawable and the fill is a tinted ProgressBar.
+
+  Colours are the hero's CONTENT-ANCHORED constants (white on a dark ground),
+  not theme tokens. The hero's art is dark-scrimmed regardless of theme, which is
+  what makes that palette theme-independent - and it sidesteps the light-mode
+  contrast class of bug entirely, since the launcher never tells us the app's
+  chosen theme.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/hs_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:background="@drawable/hs_widget_bg"
+    android:padding="12dp"
+    android:gravity="center_vertical">
+
+    <ImageView
+        android:id="@+id/hs_widget_cover"
+        android:layout_width="64dp"
+        android:layout_height="64dp"
+        android:scaleType="centerCrop"
+        android:contentDescription="Cover art"
+        android:src="@drawable/hs_widget_cover_fallback" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_marginStart="12dp">
+
+        <TextView
+            android:id="@+id/hs_widget_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="#FAFAFA" />
+
+        <TextView
+            android:id="@+id/hs_widget_author"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textSize="12sp"
+            android:layout_marginTop="1dp"
+            android:textColor="#C7C7C7" />
+
+        <ProgressBar
+            android:id="@+id/hs_widget_progress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="3dp"
+            android:layout_marginTop="7dp"
+            android:max="100"
+            android:progressDrawable="@drawable/hs_widget_progress" />
+
+        <LinearLayout
+            android:id="@+id/hs_widget_transport"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="6dp"
+            android:gravity="center_vertical">
+
+            <ImageView
+                android:id="@+id/hs_widget_back"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:padding="3dp"
+                android:contentDescription="Skip back"
+                android:src="@drawable/ic_hs_rewind_15" />
+
+            <ImageView
+                android:id="@+id/hs_widget_play"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:padding="3dp"
+                android:layout_marginStart="10dp"
+                android:contentDescription="Play or pause"
+                android:src="@drawable/ic_hs_play" />
+
+            <ImageView
+                android:id="@+id/hs_widget_forward"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:padding="3dp"
+                android:layout_marginStart="10dp"
+                android:contentDescription="Skip forward"
+                android:src="@drawable/ic_hs_forward_30" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>
