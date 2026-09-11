@@ -130,8 +130,9 @@ for a fidelity gain that should be judged on a real device first.
 1. **Native cold-start playback** without opening the app. Decide then whether
    to extract the resolver out of `HearthShelfAutoService` properly rather than
    bolting onto it.
-2. **The up-next section** (the user's own "maybe"). Needs a queue prefs
-   channel that does not exist yet.
+2. ~~**The up-next section**~~ - SHIPPED. It got its own `widgetQueue` prefs
+   channel (`setAutoWidgetQueue`), and the adaptive reading won over a second
+   widget: `onAppWidgetOptionsChanged` swaps to the tall layout past 220dp.
 3. **A second dedicated queue widget**, only once the provider and snapshot are
    proven.
 4. Per-instance configuration (pin a book vs. always-current).
