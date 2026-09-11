@@ -39,3 +39,34 @@ export async function getCompletionsPage(offset = 0, limit = 25): Promise<HSComp
     return UNAVAILABLE
   }
 }
+
+/**
+ * Correct a book's completion count.
+ *
+ * `completions` is not re-derivable once the nightly job has counted it, so an
+ * accidental re-finish - open a finished book, progress resets to 1%, mark it
+ * finished again - permanently inflates a yearly stat. This is the only way to
+ * put it back (HS-MOBILEAPP-35).
+ *
+ * Passing 0 removes the entry entirely ("I never finished this"). Returns false
+ * on any failure rather than throwing: the caller is a list row, and a failed
+ * correction should show a toast, not tear down the screen.
+ */
+export async function adjustCompletion(mediaItemId: string, completions: number): Promise<boolean> {
+  const s = getSession()
+  if (!s) return false
+  try {
+    const res = await fetch(`${s.serverUrl}/hs/completions`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${s.token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ mediaItemId, completions }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}

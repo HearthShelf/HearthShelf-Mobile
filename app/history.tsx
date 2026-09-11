@@ -49,7 +49,7 @@ import {
   updateListeningSession,
   type SessionRow,
 } from '@/api/abs'
-import { getCompletionsPage } from '@/api/completions'
+import { getCompletionsPage, adjustCompletion } from '@/api/completions'
 import { AppText, Cover, Screen, Touchable } from '@/ui/primitives'
 import { DeviceKindIcon } from '@/ui/DeviceKindIcon'
 import { EmptyState, ErrorState, SkeletonRow } from '@/ui/states'
@@ -429,6 +429,65 @@ function BooksView() {
   )
 
   const rereads = useMemo(() => list.rows.filter((r) => r.completions > 1).length, [list.rows])
+  const { message: toastMsg, show: showToast } = useToast()
+
+  /**
+   * Correct a completion count.
+   *
+   * This is the only way to undo an accidental re-finish: opening a finished
+   * book resets progress, re-marking it finished moves finishedAt forward, and
+   * the nightly job reads that as a genuine re-read. The count is not
+   * re-derivable afterwards, so without this the yearly stat stays wrong forever
+   * (HS-MOBILEAPP-35).
+   */
+  const applyAdjust = async (row: HSCompletion, next: number) => {
+    const ok = await adjustCompletion(row.mediaItemId, next)
+    if (!ok) {
+      showToast('Could not update that. Try again.')
+      return
+    }
+    showToast(next === 0 ? 'Removed from your finished books.' : `Now counted as ${next}x.`)
+    // Reload rather than patching in place: the row may have been deleted, and
+    // the header tiles count off the same list.
+    list.reload()
+  }
+
+  const openCompletionActions = (row: HSCompletion) => {
+    haptics.select()
+    const actions: AlertButton[] = []
+    // Only offer a decrement when there is something to take back.
+    if (row.completions > 1) {
+      actions.push({
+        text: `Count as ${row.completions - 1}x instead`,
+        onPress: () => void applyAdjust(row, row.completions - 1),
+      })
+    }
+    actions.push({
+      text: 'I never finished this',
+      style: 'destructive',
+      onPress: () =>
+        Alert.alert(
+          'Remove from finished books?',
+          `"${row.title}" will stop counting toward your totals. If the book is still marked finished on your server it may come back on the next nightly refresh.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Remove',
+              style: 'destructive',
+              onPress: () => void applyAdjust(row, 0),
+            },
+          ],
+        ),
+    })
+    actions.push({ text: 'Cancel', style: 'cancel' })
+    Alert.alert(
+      row.title,
+      row.completions > 1
+        ? `Counted as finished ${row.completions} times.`
+        : 'Counted as finished once.',
+      actions,
+    )
+  }
 
   if (list.firstLoad) return <FirstLoad />
 
@@ -472,19 +531,36 @@ function BooksView() {
       }
       renderSectionHeader={({ section }) => <DayHeader title={section.title} />}
       renderItem={({ item }) => (
-        <BookRowView row={item} onOpen={() => router.push(`/item/${item.libraryItemId}`)} />
+        <BookRowView
+          row={item}
+          onOpen={() => router.push(`/item/${item.libraryItemId}`)}
+          onManage={() => openCompletionActions(item)}
+        />
       )}
       ListFooterComponent={
-        <ListFooter
-          list={list}
-          endLabel={`That's all ${list.total} ${list.total === 1 ? 'book' : 'books'}.`}
-        />
+        <>
+          <ListFooter
+            list={list}
+            endLabel={`That's all ${list.total} ${list.total === 1 ? 'book' : 'books'}.`}
+          />
+          {/* Confirms a correction landed. Inside the footer so it rides the
+              list rather than needing a wrapper that would change the layout. */}
+          <Toast message={toastMsg} />
+        </>
       }
     />
   )
 }
 
-function BookRowView({ row, onOpen }: { row: HSCompletion; onOpen: () => void }) {
+function BookRowView({
+  row,
+  onOpen,
+  onManage,
+}: {
+  row: HSCompletion
+  onOpen: () => void
+  onManage: () => void
+}) {
   const colors = useColors()
   const s = makeStyles(colors)
   const finished =
@@ -498,8 +574,10 @@ function BookRowView({ row, onOpen }: { row: HSCompletion; onOpen: () => void })
   return (
     <Touchable
       onPress={onOpen}
+      onLongPress={onManage}
       style={s.row}
       accessibilityRole="button"
+      accessibilityHint="Long press to correct how many times this counts"
       accessibilityLabel={`${row.title}, finished ${finished}${
         row.completions > 1 ? `, read ${row.completions} times` : ''
       }`}
