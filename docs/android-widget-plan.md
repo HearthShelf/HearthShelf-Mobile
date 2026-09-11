@@ -1,4 +1,8 @@
-# Android home-screen widget - implementation plan
+# Android home-screen widget - implementation notes
+
+> **Built 2026-09-10** (commit cddac39). Steps 1 and 2 below shipped; the Step 3
+> items are still deferred and are the honest backlog. Kept as the record of what
+> the constraints actually were, since most of them are not obvious from the code.
 
 Source: user feedback HS-MOBILEAPP-36 (Pixel 10 Pro XL, Android 17, app 0.9.0).
 
