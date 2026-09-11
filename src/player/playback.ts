@@ -21,7 +21,7 @@ import {
   ABSRequestError,
 } from '@/api/abs'
 import { getSession } from '@/api/session'
-import { startPhase } from '@/lib/startupTrace'
+import { startAnytimePhase } from '@/lib/startupTrace'
 import type { ABSMediaProgress } from '@hearthshelf/core'
 import {
   progressFor,
@@ -394,9 +394,10 @@ export async function playItemById(
   // a51029d7b9a74374979311383b6dad84, 0.9.0). Nothing failed - that window is
   // simply not instrumented, so a slow resume and a hung one look identical.
   //
-  // startPhase() no-ops once the startup trace has finished, so this only ever
-  // records the launch-time resume, not every later play tap.
-  const hydratePhase = startPhase('resume:progress-hydrate')
+  // Recorded whether or not the launch trace is still open: a warm start into
+  // the player happens AFTER it settles, which is exactly the case the original
+  // hole was measured in.
+  const hydratePhase = startAnytimePhase('resume:progress-hydrate')
   await progressHydrated()
   hydratePhase.end()
 
@@ -428,7 +429,7 @@ export async function playItemById(
   if (!autoPlay) {
     // The cold-start-onto-the-player path (the Now Playing tab rendering your
     // last book), and the larger half of the untraced window above.
-    const previewPhase = startPhase('resume:load-preview')
+    const previewPhase = startAnytimePhase('resume:load-preview')
     try {
       await loadPreview(itemId, local, online, resumeAt)
     } finally {
@@ -630,7 +631,7 @@ async function loadPreview(
   // Split out from the preview phase: a streaming resume waits on this read, so
   // when a launch-time preview is slow this says whether the server was the
   // reason or the work around it was.
-  const detailPhase = startPhase('resume:item-detail')
+  const detailPhase = startAnytimePhase('resume:item-detail')
   let detail
   try {
     detail = await getItemDetail(itemId)

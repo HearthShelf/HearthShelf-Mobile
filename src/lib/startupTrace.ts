@@ -110,6 +110,42 @@ export function beginStartupTrace(): void {
 }
 
 /**
+ * A span for work that is NOT bounded by the launch window.
+ *
+ * startPhase() no-ops once finishStartupTrace has run, which is right for launch
+ * phases - they cannot happen twice - but wrong for the resume path. Opening the
+ * player from a warm start happens AFTER the launch settles, so those phases
+ * recorded nothing, and the trace kept the hole the tracing was added to close:
+ * a /player ui.load of 10977ms whose only child was a 1072ms warm start, ~9.9s
+ * unaccounted for with zero errors (trace e9514d9a on 0.9.0).
+ *
+ * Deliberately not routed through the watchdog: that reports a launch that never
+ * lifted the splash, and a slow resume an hour into a session is not that. This
+ * only times the work.
+ */
+export function startAnytimePhase(name: string): SpanHandle {
+  let span: ReturnType<typeof Sentry.startInactiveSpan> | undefined
+  try {
+    span = Sentry.startInactiveSpan({ name, op: 'startup.phase' })
+  } catch {
+    // tracing off or unsampled - nothing to record, and never a throw into the
+    // path being measured.
+  }
+  let ended = false
+  return {
+    end: () => {
+      if (ended) return
+      ended = true
+      try {
+        span?.end()
+      } catch {
+        // ignore
+      }
+    },
+  }
+}
+
+/**
  * Open a child span for one startup phase. Returns a handle whose end() closes
  * it. Records the phase as in-flight for the watchdog. A hang inside the phase
  * leaves the span open (visible in the trace) and the phase named (visible on
