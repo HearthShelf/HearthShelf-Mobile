@@ -11,6 +11,7 @@ import { useRouter } from 'expo-router'
 import type { ABSLibraryItem } from '@hearthshelf/core'
 import { getItemsInProgress, getLibraries, getPersonalized } from '@/api/abs'
 import { playItemById } from '@/player/playback'
+import { startAnytimePhase } from '@/lib/startupTrace'
 import { getTrack, subscribe } from '@/player/store'
 import { breadcrumb } from '@/lib/crashLog'
 import { getProgressState, subscribeProgress, refreshProgress } from '@/store/progress'
@@ -70,8 +71,25 @@ function IdleResolver() {
         // car advanced ABS's progress, the phone opened with yesterday's disk
         // copy, and ABS resumed this device's old still-open session on top of
         // it, so nothing on the phone knew the book had moved on.
-        await refreshProgress().catch(() => {})
-        const items = await getItemsInProgress()
+        // Traced because these two network calls sit BEFORE playItemById and were
+        // the untraced half of the resume path. Three /player loads of 10-12s
+        // arrived with only a ~1s warm start inside them and no error (traces
+        // e9514d9a, 0c86670b), and the resume spans added earlier cover only what
+        // happens after this point - so a slow refresh or a slow in-progress
+        // fetch looked identical to a hang with nothing in between.
+        const refreshPhase = startAnytimePhase('resume:refresh-progress')
+        try {
+          await refreshProgress().catch(() => {})
+        } finally {
+          refreshPhase.end()
+        }
+        const inProgressPhase = startAnytimePhase('resume:items-in-progress')
+        let items
+        try {
+          items = await getItemsInProgress()
+        } finally {
+          inProgressPhase.end()
+        }
         const last = items[0]
         if (!last) {
           if (!cancelled) setPhase('empty')
