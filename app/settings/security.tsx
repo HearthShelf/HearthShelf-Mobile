@@ -17,7 +17,9 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Linking, Pressable, StyleSheet, TextInput, View } from 'react-native'
+import * as Device from 'expo-device'
 import { authClient } from '@/auth/client'
+import { passkeysSupported, registerPasskey } from '@/auth/passkeys'
 import { useAuth } from '@/auth/useAuth'
 import { AppText } from '@/ui/primitives'
 import { SettingsPanel, SettingsGroup, SettingsLabel, SettingsRow } from '@/ui/settingsControls'
@@ -172,19 +174,23 @@ export default function SecurityScreen() {
     }
   }
 
-  function addPasskey() {
-    // The auth library's passkey client is browser-only: it calls
-    // navigator.credentials, which does not exist in a native app, so calling it
-    // here fails with "WebAuthn is not supported on this browser" - an error
-    // that is unfixable from this screen and confusing besides, since there is
-    // no browser in sight. Say what is actually true instead.
-    //
-    // Creating one needs a native passkey module and a rebuild. The server half
-    // is already done: hearthshelf.com now publishes the Android and Apple
-    // association files a phone needs to verify this app owns the domain.
-    // Existing passkeys still LIST and can be removed here - only creating one
-    // is unavailable, so the section stays useful.
-    showToast('Adding a passkey from the phone app is coming soon - use the web app for now')
+  async function addPasskey() {
+    setBusy('passkey')
+    try {
+      // Named after the device so two passkeys are tellable apart in the list;
+      // the phone knows what it is, so there is nothing to ask.
+      const outcome = await registerPasskey(Device.deviceName || 'This phone')
+      if (outcome.status === 'ok') {
+        showToast('Passkey added')
+        await loadPasskeys()
+        return
+      }
+      // A dismissed sheet is not a failure and must not be reported as one.
+      if (outcome.status === 'cancelled') return
+      showToast(outcome.status === 'unsupported' ? outcome.reason : outcome.message)
+    } finally {
+      setBusy(null)
+    }
   }
 
   async function removePasskey(row: PasskeyRow) {
@@ -443,8 +449,12 @@ export default function SecurityScreen() {
         ))}
         <SettingsRow
           title="Add a passkey"
-          desc="Sign in with your face, fingerprint, or screen lock. Add one from the web app for now."
-          onPress={addPasskey}
+          desc={
+            passkeysSupported()
+              ? 'Sign in with your face, fingerprint, or screen lock - no password to remember.'
+              : 'This device cannot use passkeys. Add a screen lock to turn them on.'
+          }
+          onPress={() => void addPasskey()}
           last
         />
       </SettingsGroup>

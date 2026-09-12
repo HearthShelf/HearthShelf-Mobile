@@ -30,6 +30,7 @@ import Svg, { Path } from 'react-native-svg'
 import { APP_SCHEME, APPLE_ENABLED, WEBAPP_URL } from '@/lib/config'
 import { authClient } from '@/auth/client'
 import { signInWithAppleNatively, signInWithGoogleNatively, type NativeResult } from '@/auth/native'
+import { signInWithPasskey } from '@/auth/passkeys'
 import { fonts } from '@/ui/theme'
 import { useBackHandler } from '@/ui/useBackHandler'
 import { MaterialIcons } from '@expo/vector-icons'
@@ -252,16 +253,25 @@ export default function SignInScreen() {
    */
   function onPasskey() {
     return run('Passkey sign-in', async () => {
-      const res = await authClient.signIn.passkey()
-      if (res?.error) {
-        return {
-          error: {
-            message:
-              'No passkey found on this device. Sign in another way, then add a passkey in Settings.',
-          },
-        }
+      // The native credential sheet, NOT authClient.signIn.passkey() - that
+      // path runs Better Auth's browser client, which calls an API React Native
+      // does not have and fails with "WebAuthn is not supported on this
+      // browser". Same endpoints either way; only the middle step differs.
+      const outcome = await signInWithPasskey()
+      if (outcome.status === 'ok') return undefined
+      // Dismissing the sheet is not an error: report nothing and leave the user
+      // on the screen with every other method still in front of them.
+      if (outcome.status === 'cancelled') return { error: null }
+      return {
+        error: {
+          message:
+            outcome.status === 'unsupported'
+              ? outcome.reason
+              : // The OS cannot tell "no passkey for this account" apart from a
+                // dismissal, so say what to do next rather than guessing which.
+                'No passkey found on this device. Sign in another way, then add a passkey in Settings.',
+        },
       }
-      return res
     })
   }
 

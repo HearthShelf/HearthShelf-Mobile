@@ -194,7 +194,14 @@ module.exports = {
     // directly (verified against the apple-app-site-association file hosted at
     // that domain's /.well-known/). Team ID HCU6KVPTDC + this bundle id make the
     // appID in that file. Invite links resolve in-app instead of the browser.
-    associatedDomains: ['applinks:app.hearthshelf.com'],
+    //
+    // `webcredentials` is what lets iOS offer and create THIS app's passkeys for
+    // the domain, and it is a separate grant from applinks - having one says
+    // nothing about the other. It must name the passkey Relying Party ID, which
+    // is the apex `hearthshelf.com` (see PASSKEY_RP_ID in the auth service): a
+    // passkey is bound to its RP ID for life, and iOS fetches the association
+    // file from that exact domain, not from the app subdomain.
+    associatedDomains: ['applinks:app.hearthshelf.com', 'webcredentials:hearthshelf.com'],
     // Adds the "Sign in with Apple" entitlement. Apple's native sheet refuses to
     // present without it, so native Apple sign-in silently falls back to the
     // browser flow when this is missing.
@@ -404,6 +411,12 @@ module.exports = {
             // rather than keep.
             '-dontwarn kotlin.MustUseReturnValues',
           ].join('\n'),
+        },
+        ios: {
+          // react-native-passkeys needs iOS 15+ (the platform public-key
+          // credential provider APIs). Expo's default floor is lower and the pod
+          // will not build without this.
+          deploymentTarget: '15.1',
         },
       },
     ],
