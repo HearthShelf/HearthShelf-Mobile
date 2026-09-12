@@ -254,6 +254,17 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const onAuthRoute = segments[0] === 'sign-in' || segments[0] === 'sso-callback'
   const gatedSignedIn = !onAuthRoute && (effectiveSignedIn || wasSignedIn.current || rehydrating)
 
+  // Report the route the navigator actually settles on. The gate can log that it
+  // sent the user to (tabs) while the sign-in screen is still what renders, and
+  // only the real segments distinguish "navigation was reverted" from "(tabs)
+  // mounted but something else is drawn on top".
+  useEffect(() => {
+    console.log(
+      '[auth.gate] segments',
+      JSON.stringify({ segments, ready, isLoaded, isSignedIn, gatedSignedIn }),
+    )
+  }, [segments, ready, isLoaded, isSignedIn, gatedSignedIn])
+
   useEffect(() => {
     if (!ready) return
     // `onAuthRoute` (declared above, and shared with the gate) also covers
