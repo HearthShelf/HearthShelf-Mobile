@@ -27,6 +27,7 @@
 import { Platform } from 'react-native'
 import * as AppleAuthentication from 'expo-apple-authentication'
 import * as Crypto from 'expo-crypto'
+import * as Sentry from '@sentry/react-native'
 import { authClient } from './client'
 import {
   APPLE_ENABLED,
@@ -52,6 +53,20 @@ export type NativeResult =
 
 /** Google's module is configured lazily and exactly once per app run. */
 let googleConfigured = false
+
+/**
+ * Record a step of native sign-in.
+ *
+ * This path had NO logging at all, which is why a failure here looked like the
+ * button doing nothing: Google's own errors arrive with an empty message, the
+ * result is classified as `unavailable`, and the fallback runs silently. The
+ * trail rides along on whatever is eventually reported, and `console` makes it
+ * visible in `adb logcat` while debugging on a device.
+ */
+function trace(step: string, data?: Record<string, unknown>): void {
+  Sentry.addBreadcrumb({ category: 'auth.native', level: 'info', message: step, data })
+  console.log(`[auth.native] ${step}`, data ? JSON.stringify(data) : '')
+}
 
 async function configureGoogle() {
   if (googleConfigured) return
@@ -93,16 +108,20 @@ export async function signInWithGoogleNatively(): Promise<NativeResult> {
       if (!ok) return { status: 'unavailable', reason: 'Google Play Services unavailable' }
     }
 
+    trace('google: opening picker')
     const res = await GoogleSignin.signIn()
+    trace('google: picker returned', { type: res?.type })
     if (res.type === 'cancelled') return { status: 'cancelled' }
 
     const idToken = res.data.idToken
     if (!idToken) {
       // Reachable when webClientId is wrong for this project: the picker
       // succeeds, but Google has nothing to address the token to.
+      trace('google: NO id token in response')
       return { status: 'unavailable', reason: 'Google returned no identity token' }
     }
 
+    trace('google: got id token, posting to auth service')
     return await postIdToken('google', idToken)
   } catch (e) {
     return classify(e, 'Google sign-in')
@@ -191,8 +210,14 @@ async function postIdToken(
     },
   })
   if (res?.error) {
+    trace('postIdToken: auth service rejected', {
+      provider,
+      message: res.error.message,
+      status: (res.error as { status?: number })?.status,
+    })
     return { status: 'error', message: res.error.message || 'The sign-in could not be verified' }
   }
+  trace('postIdToken: session created', { provider })
 
   // Pull the session so `useSession()` reflects it before anyone navigates.
   //
@@ -231,6 +256,10 @@ function classify(e: unknown, label: string): NativeResult {
   const err = e as { code?: string; message?: string }
   const code = err?.code || ''
   const message = err?.message || ''
+  // The raw code is the whole diagnosis here and it is otherwise discarded:
+  // Google surfaces DEVELOPER_ERROR, SIGN_IN_FAILED and friends with an empty
+  // message, so without this the reason a sign-in died is simply lost.
+  trace('native error', { label, code, message })
 
   // Apple's cancellation arrives as a code; Google's normal cancel is the
   // `cancelled` result handled above, but its older surfaces still throw one.
