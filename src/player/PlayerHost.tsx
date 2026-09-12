@@ -45,7 +45,7 @@ import {
 } from './carHandbackReport'
 import { coverUrl } from '@/api/abs'
 import { addBookmarkPending } from './pendingBookmarks'
-import { localCoverFor } from './downloads'
+import { localCoverFor, deleteDownload } from './downloads'
 import {
   handOffToCar,
   playItemById,
@@ -504,7 +504,37 @@ export function PlayerHost() {
       // lastPlaying too means the isPlaying we still have set will be re-pushed as
       // a fresh play edge once the reload completes, so the user's tap is honored
       // rather than needing a second one.
-      emitter.addListener('onPlaybackLost', () => recoverLostPlayback('native')),
+      emitter.addListener('onPlaybackLost', (e: { reason?: string }) => {
+        // A local file that is gone or unreadable cannot be fixed by reloading
+        // the same file - the reload reproduces it instantly, which is exactly
+        // what the field report showed: four failures in 295ms on a fresh
+        // launch, position frozen, and a "Playback stopped" toast that never
+        // mentioned the download (HS-MOBILEAPP-2 / -38 / -39).
+        //
+        // Drop the broken download and re-resolve. playItemById then falls back
+        // to streaming, so the listener gets audio instead of a dead button, and
+        // the book can be downloaded again cleanly.
+        if (e?.reason === 'local-file') {
+          const s = getState()
+          const itemId = s.nowPlaying?.itemId
+          if (!itemId) return
+          breadcrumb(
+            'player',
+            `local file unusable for ${itemId.slice(0, 8)}; dropping download and streaming`,
+          )
+          showToast('That download was damaged. Streaming instead.')
+          void (async () => {
+            try {
+              await deleteDownload(itemId)
+              await playItemById(itemId, s.isPlaying, { resumeAt: s.position })
+            } catch {
+              // Falling back is best-effort; the stand-down below is the floor.
+            }
+          })()
+          return
+        }
+        recoverLostPlayback('native')
+      }),
       // Native playback failed (expired stream token, network stall, unplayable
       // format). Drop the optimistic playing state so the UI stops showing
       // "playing" over silence, and surface the reason. Sync the lastPlaying

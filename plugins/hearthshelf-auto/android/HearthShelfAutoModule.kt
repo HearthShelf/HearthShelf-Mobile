@@ -710,8 +710,16 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
      * JS responds by reloading the current book from the live store position, so
      * the tap the user made turns into actual audio.
      */
-    fun emitPlaybackLost() {
-      emitter?.invoke("onPlaybackLost", Arguments.createMap())
+    fun emitPlaybackLost(reason: String = "unknown") {
+      // Carry WHY. JS recovers by reloading the book, which is right for a
+      // dropped stream and useless for a local file that is gone or unreadable -
+      // that reload reproduces the same failure instantly, four times, and the
+      // listener is told "Playback stopped" with no idea the download is the
+      // problem (HS-MOBILEAPP-2 / -38 / -39: four failures in 295ms on a fresh
+      // launch, position frozen, downloaded book).
+      val params = Arguments.createMap()
+      params.putString("reason", reason)
+      emitter?.invoke("onPlaybackLost", params)
     }
 
     /**
@@ -771,6 +779,22 @@ fun isRecoverableSourceError(error: androidx.media3.common.PlaybackException): B
     androidx.media3.common.PlaybackException.ERROR_CODE_IO_NO_PERMISSION,
     androidx.media3.common.PlaybackException.ERROR_CODE_IO_CLEARTEXT_NOT_PERMITTED,
     androidx.media3.common.PlaybackException.ERROR_CODE_TIMEOUT -> true
+    else -> false
+  }
+
+/**
+ * A local file that is gone, unreadable, or not what the index claims.
+ *
+ * Deliberately NOT part of isRecoverableSourceError: reloading cannot conjure
+ * the file back, and the reload path proves it by failing again in milliseconds.
+ * But it must still reach JS, because the remedy is specific and only JS can
+ * offer it - drop the broken download and stream (or re-download) instead.
+ */
+fun isMissingLocalFile(error: androidx.media3.common.PlaybackException): Boolean =
+  when (error.errorCode) {
+    androidx.media3.common.PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
+    androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+    androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED -> true
     else -> false
   }
 

@@ -970,7 +970,13 @@ export function localSourceFor(itemId: string): DownloadEntry | null {
   const e = state.byId.get(itemId)
   if (!e || e.status !== 'done' || e.tracks.length === 0) return null
   try {
-    if (!new File(e.tracks[0].uri).exists) {
+    // Check EVERY track, not just the first. A multi-track book whose later
+    // files went missing passed this check and then failed in native the moment
+    // playback reached them - reported as an instant, repeating "native lost the
+    // track" with the position frozen (HS-MOBILEAPP-2 / -38 / -39). Checking the
+    // whole set is a handful of stats on a list we already hold, and it turns a
+    // mid-book dead end into an honest "not downloaded" before playback starts.
+    if (e.tracks.some((t) => !new File(t.uri).exists)) {
       void deleteDownload(itemId)
       return null
     }

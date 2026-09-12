@@ -435,7 +435,12 @@ class HearthShelfPlayerService : MediaSessionService() {
         Log.e(TAG, "phone playerError ${error.errorCodeName}", error)
         if (HearthShelfAutoModule.carPlayer != null) return
         if (isRecoverableSourceError(error)) {
-          HearthShelfAutoModule.emitPlaybackLost()
+          HearthShelfAutoModule.emitPlaybackLost("source")
+        } else if (isMissingLocalFile(error)) {
+          // Reloading cannot bring the file back, so this is reported with its
+          // own reason rather than retried. JS drops the broken download and
+          // falls back to streaming, which is the only remedy that works.
+          HearthShelfAutoModule.emitPlaybackLost("local-file")
         } else {
           HearthShelfAutoModule.emitState(false)
         }
