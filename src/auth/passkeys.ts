@@ -108,7 +108,14 @@ export async function registerPasskey(name: string): Promise<PasskeyResult> {
     const created = await passkeys.create(options)
     // A null return is the user dismissing the sheet - not a failure, and it
     // must not be reported as one.
-    if (!created) return { status: 'cancelled' }
+    if (!created) {
+      // On Android a null here is ALSO what an incomplete system flow looks
+      // like - the credential is made, the OS logs success, and nothing comes
+      // back - so record it rather than treating every null as a user tapping
+      // away. The two are indistinguishable from here.
+      trace('register: no credential returned')
+      return { status: 'cancelled' }
+    }
 
     trace('register: verifying with the server')
     // `clientExtensionResults` is stripped for the same reason the web client
@@ -122,6 +129,10 @@ export async function registerPasskey(name: string): Promise<PasskeyResult> {
       body: { response, name },
     })
     if (verified?.error) {
+      // The server's own words, verbatim - CHALLENGE_NOT_FOUND and an origin
+      // mismatch are different problems with different fixes, and a generic
+      // message hides which one this is.
+      trace('register: server rejected', { message: verified.error.message ?? null })
       return {
         status: 'error',
         message: verified.error.message || 'That passkey could not be saved',
