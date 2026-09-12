@@ -240,6 +240,23 @@ function classify(e: unknown, label: string): NativeResult {
   if (code === 'PLAY_SERVICES_NOT_AVAILABLE') {
     return { status: 'unavailable', reason: 'Google Play Services unavailable' }
   }
+  // DEVELOPER_ERROR (Google status 10): the request is rejected before any UI
+  // is shown, so from the outside the picker "never opens" - it launches and
+  // closes in a few hundred ms with an empty message, which used to fall
+  // through to a blank error and look like nothing happened at all.
+  //
+  // It always means the app's signing certificate is not registered against the
+  // Android OAuth client for this project. Debug builds are signed with the
+  // shared Expo debug keystore, whose SHA-1 differs from a release build's, so
+  // BOTH fingerprints have to be on the client. Falling back to the browser tab
+  // keeps sign-in working on a machine whose debug key was never registered.
+  if (code === 'DEVELOPER_ERROR' || code === '10') {
+    return {
+      status: 'unavailable',
+      reason:
+        "This build's signing certificate is not registered with Google - add its SHA-1 to the Android OAuth client",
+    }
+  }
   // The native module is missing from this binary - the case after adding these
   // packages without a rebuild. Falling back keeps sign-in usable in a stale
   // build instead of hard-failing.
