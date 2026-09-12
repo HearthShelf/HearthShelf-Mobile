@@ -435,12 +435,12 @@ class HearthShelfPlayerService : MediaSessionService() {
         Log.e(TAG, "phone playerError ${error.errorCodeName}", error)
         if (HearthShelfAutoModule.carPlayer != null) return
         if (isRecoverableSourceError(error)) {
-          HearthShelfAutoModule.emitPlaybackLost("source")
+          HearthShelfAutoModule.emitPlaybackLost("source", error.errorCodeName)
         } else if (isMissingLocalFile(error)) {
           // Reloading cannot bring the file back, so this is reported with its
           // own reason rather than retried. JS drops the broken download and
           // falls back to streaming, which is the only remedy that works.
-          HearthShelfAutoModule.emitPlaybackLost("local-file")
+          HearthShelfAutoModule.emitPlaybackLost("local-file", error.errorCodeName)
         } else {
           HearthShelfAutoModule.emitState(false)
         }
@@ -630,11 +630,18 @@ class HearthShelfPlayerService : MediaSessionService() {
    *     reclaimed between the answer and the play. Deciding and acting in one
    *     main-thread hop cannot tear.
    *
-   * `onLost` is invoked on the main thread when there was nothing to play.
+   * `onLost` is invoked on the main thread when there was nothing to play, and
+   * is told WHICH of the two nothings it was. They look identical from JS but
+   * have different causes: a null player means the service outlived its
+   * ExoPlayer (released and not rebuilt), while an empty one means the player
+   * exists but its playlist was cleared. Reporting both as "unknown" is what
+   * made HS-MOBILEAPP-2 unreadable - the breadcrumb could not distinguish
+   * either of them from a genuine source error.
    */
-  fun playOrReportLost(onLost: () -> Unit) = runOnMain {
+  fun playOrReportLost(onLost: (String) -> Unit) = runOnMain {
     val p = exo
-    if (p == null || p.mediaItemCount == 0) onLost()
+    if (p == null) onLost("no-player")
+    else if (p.mediaItemCount == 0) onLost("empty-player")
     else p.playWhenReady = true
   }
 

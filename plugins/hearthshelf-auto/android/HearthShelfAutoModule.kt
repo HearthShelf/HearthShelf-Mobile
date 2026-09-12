@@ -537,14 +537,14 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     //
     // No instance at all: answer here, since there is nothing to hop onto.
     if (svc == null) {
-      emitPlaybackLost()
+      emitPlaybackLost("no-service")
       return
     }
     // Otherwise the service decides on the main thread and calls back - asking it
     // synchronously from this (RN bridge) thread would throw, because ExoPlayer
     // verifies thread affinity on reads as well as writes. See
     // HearthShelfPlayerService.playOrReportLost.
-    svc.playOrReportLost { emitPlaybackLost() }
+    svc.playOrReportLost { emitPlaybackLost(it) }
   }
   @ReactMethod fun pause() {
     val car = carPlayer
@@ -710,15 +710,20 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
      * JS responds by reloading the current book from the live store position, so
      * the tap the user made turns into actual audio.
      */
-    fun emitPlaybackLost(reason: String = "unknown") {
+    fun emitPlaybackLost(reason: String = "unknown", errorCodeName: String? = null) {
       // Carry WHY. JS recovers by reloading the book, which is right for a
       // dropped stream and useless for a local file that is gone or unreadable -
       // that reload reproduces the same failure instantly, four times, and the
       // listener is told "Playback stopped" with no idea the download is the
       // problem (HS-MOBILEAPP-2 / -38 / -39: four failures in 295ms on a fresh
       // launch, position frozen, downloaded book).
+      //
+      // errorCodeName narrows the "source" bucket, which is otherwise far too
+      // broad to act on: a truncated file and a dropped connection both land in
+      // it and want opposite remedies.
       val params = Arguments.createMap()
       params.putString("reason", reason)
+      if (errorCodeName != null) params.putString("errorCodeName", errorCodeName)
       emitter?.invoke("onPlaybackLost", params)
     }
 

@@ -60,12 +60,11 @@ const INK = {
   faint: '#6f6557',
   line: '#383530',
   field: 'rgba(42,40,37,0.85)',
-  glass: 'rgba(28,26,23,0.6)',
   dangerBg: 'rgba(224,101,74,0.16)',
 }
 function GoogleLogo() {
   return (
-    <Svg width={20} height={20} viewBox="0 0 24 24">
+    <Svg width={22} height={22} viewBox="0 0 24 24">
       <Path
         fill="#4285F4"
         d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z"
@@ -88,7 +87,7 @@ function GoogleLogo() {
 
 function AppleLogo() {
   return (
-    <Svg width={20} height={20} viewBox="0 0 24 24" fill="#fff">
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="#fff">
       <Path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
     </Svg>
   )
@@ -96,7 +95,7 @@ function AppleLogo() {
 
 function DiscordLogo() {
   return (
-    <Svg width={20} height={20} viewBox="0 0 127.14 96.36" fill="#fff">
+    <Svg width={22} height={22} viewBox="0 0 127.14 96.36" fill="#5865F2">
       <Path d="M107.7,8.07A105.15,105.15,0,0,0,81.47,0a72.06,72.06,0,0,0-3.36,6.83A97.68,97.68,0,0,0,49,6.83,72.37,72.37,0,0,0,45.64,0,105.89,105.89,0,0,0,19.39,8.09C2.79,32.65-1.71,56.6.54,80.21h0A105.73,105.73,0,0,0,32.71,96.36,77.7,77.7,0,0,0,39.6,85.25a68.42,68.42,0,0,1-10.85-5.18c.91-.66,1.8-1.34,2.66-2a75.57,75.57,0,0,0,64.32,0c.87.71,1.76,1.39,2.66,2a68.68,68.68,0,0,1-10.87,5.19,77,77,0,0,0,6.89,11.1A105.25,105.25,0,0,0,126.6,80.22h0C129.24,52.84,122.09,29.11,107.7,8.07ZM42.45,65.69C36.18,65.69,31,60,31,53s5-12.74,11.43-12.74S54,46,53.89,53,48.84,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.25,60,73.25,53s5-12.74,11.44-12.74S96.23,46,96.12,53,91.08,65.69,84.69,65.69Z" />
     </Svg>
   )
@@ -465,41 +464,62 @@ export default function SignInScreen() {
                   )}
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.google}
-                  onPress={nativeSocial('google', 'Google sign-in')}
-                  disabled={busy}
-                >
-                  <GoogleLogo />
-                  <Text style={styles.googleText}>Continue with Google</Text>
-                </TouchableOpacity>
+                <View style={styles.providerDivider}>
+                  <View style={styles.providerDividerLine} />
+                  <Text style={styles.providerDividerText}>OR CONTINUE WITH</Text>
+                  <View style={styles.providerDividerLine} />
+                </View>
 
-                {APPLE_ENABLED ? (
+                <View style={styles.socialRow}>
                   <TouchableOpacity
-                    style={styles.apple}
-                    onPress={nativeSocial('apple', 'Apple sign-in')}
+                    style={styles.socialButton}
+                    onPress={nativeSocial('google', 'Google sign-in')}
                     disabled={busy}
+                    activeOpacity={0.6}
+                    accessibilityRole="button"
+                    accessibilityLabel="Continue with Google"
+                    accessibilityHint="Signs in using your Google account"
                   >
-                    <AppleLogo />
-                    <Text style={styles.appleText}>Continue with Apple</Text>
+                    <GoogleLogo />
                   </TouchableOpacity>
-                ) : null}
 
-                <TouchableOpacity
-                  style={styles.discord}
-                  onPress={browserSocial('discord', 'Discord sign-in')}
-                  disabled={busy}
-                >
-                  <DiscordLogo />
-                  <Text style={styles.discordText}>Continue with Discord</Text>
-                </TouchableOpacity>
+                  {APPLE_ENABLED ? (
+                    <TouchableOpacity
+                      style={styles.socialButton}
+                      onPress={nativeSocial('apple', 'Apple sign-in')}
+                      disabled={busy}
+                      activeOpacity={0.6}
+                      accessibilityRole="button"
+                      accessibilityLabel="Continue with Apple"
+                      accessibilityHint="Signs in using your Apple account"
+                    >
+                      <AppleLogo />
+                    </TouchableOpacity>
+                  ) : null}
+
+                  <TouchableOpacity
+                    style={styles.socialButton}
+                    onPress={browserSocial('discord', 'Discord sign-in')}
+                    disabled={busy}
+                    activeOpacity={0.6}
+                    accessibilityRole="button"
+                    accessibilityLabel="Continue with Discord"
+                    accessibilityHint="Signs in using your Discord account"
+                  >
+                    <DiscordLogo />
+                  </TouchableOpacity>
+                </View>
 
                 <TouchableOpacity
                   style={styles.emailButton}
                   onPress={() => setStep('email')}
                   disabled={busy}
+                  activeOpacity={0.6}
+                  accessibilityRole="button"
+                  accessibilityLabel="Use email instead"
                 >
-                  <Text style={styles.emailButtonText}>Continue with email</Text>
+                  <MaterialIcons name="mail-outline" size={18} color={INK.muted} />
+                  <Text style={styles.emailButtonText}>Use email instead</Text>
                 </TouchableOpacity>
 
                 {errorBanner}
@@ -567,48 +587,43 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
   },
   passkeyText: { color: '#1f1f1f', fontSize: 15, fontWeight: '600' },
-  google: {
+  providerDivider: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: 12,
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    paddingVertical: 15,
-    borderWidth: 1,
-    borderColor: '#dadce0',
   },
-  googleText: { color: '#1f1f1f', fontSize: 15, fontWeight: '600' },
-  discord: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    backgroundColor: '#5865F2',
-    borderRadius: 16,
-    paddingVertical: 15,
+  providerDividerLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: INK.line,
   },
-  discordText: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  apple: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    backgroundColor: '#000',
-    borderRadius: 16,
-    paddingVertical: 15,
+  providerDividerText: {
+    color: INK.muted,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.7,
   },
-  appleText: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  emailButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
+  socialRow: { flexDirection: 'row', gap: 12 },
+  socialButton: {
+    flex: 1,
+    minWidth: 0,
+    height: 56,
     borderRadius: 16,
-    paddingVertical: 13,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: INK.line,
-    backgroundColor: INK.glass,
+    backgroundColor: INK.field,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  emailButtonText: { color: INK.text, fontSize: 14.5, fontWeight: '600' },
+  emailButton: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 12,
+  },
+  emailButtonText: { color: INK.muted, fontSize: 14, fontWeight: '600' },
 
   formCard: { gap: 12 },
   stepTitle: { color: INK.text, fontSize: 20, fontWeight: '700', textAlign: 'center' },

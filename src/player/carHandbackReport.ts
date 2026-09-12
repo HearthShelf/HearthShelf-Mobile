@@ -100,6 +100,14 @@ export function reportPlaybackLost(recovered: boolean, detail: Record<string, un
         area: 'playback_reclaim',
         playback_reclaim_recovered: 'false',
         playback_lost_cause: typeof detail.cause === 'string' ? detail.cause : 'native',
+        // Native's own classification: which of the several very different
+        // failures behind 'native' this actually was - a released service, an
+        // emptied player, or a source error with its ExoPlayer code. A tag
+        // rather than only extra, because the whole point is to be able to
+        // split this issue by it. Before this existed, a corrupt download and
+        // an OS service reclaim were indistinguishable in the report, and
+        // HS-MOBILEAPP-2 could not be diagnosed from its own evidence.
+        playback_lost_detail: typeof detail.detail === 'string' ? detail.detail : 'none',
       },
       extra: detail,
     })

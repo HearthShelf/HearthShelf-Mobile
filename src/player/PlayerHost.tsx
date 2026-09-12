@@ -275,8 +275,22 @@ export function PlayerHost() {
   // can capture it safely.
   const recoverLostPlayback = useCallback(function recoverLostPlaybackAttempt(
     cause: 'native' | 'stall',
+    // What native said went wrong, when it was native that told us. The service
+    // classifies this already - a released service, an emptied player, a source
+    // error with its ExoPlayer code - and every one of them used to arrive here
+    // and get written to the breadcrumb as the same six words, "native lost the
+    // track". That made HS-MOBILEAPP-2 unreadable: the one field that says
+    // whether the file, the network, or the service is at fault was computed,
+    // handed to JS, and dropped before anything logged it.
+    detail?: string,
   ): void {
     const now = Date.now()
+    // Every breadcrumb below names the cause the same way, with native's own
+    // classification appended when it gave one.
+    const what =
+      cause === 'stall'
+        ? 'playback stalled'
+        : `native lost the track${detail ? ` (${detail})` : ''}`
     // Already gave up on THIS book recently: do not start the bounce over.
     // Without this the stand-down lasted only as long as RECLAIM_WINDOW_MS,
     // because the counter reset the moment the window lapsed.
@@ -288,7 +302,7 @@ export function PlayerHost() {
     ) {
       breadcrumb(
         'player',
-        `${cause === 'stall' ? 'playback stalled' : 'native lost the track'} again ${Math.round((now - gaveUp.at) / 1000)}s after giving up; leaving it alone`,
+        `${what} again ${Math.round((now - gaveUp.at) / 1000)}s after giving up; leaving it alone`,
       )
       return
     }
@@ -304,15 +318,23 @@ export function PlayerHost() {
       // intent so the UI stops claiming it is playing over silence, and so
       // sync() has no play edge left to re-issue - that intent is what native
       // keeps answering with onPlaybackLost.
-      breadcrumb(
-        'player',
-        `${cause === 'stall' ? 'playback stalled' : 'native lost the track'} ${reclaimAttempts.current}x; giving up on reload`,
-      )
+      breadcrumb('player', `${what} ${reclaimAttempts.current}x; giving up on reload`)
       lastPlaying.current = false
       setPlaying(false)
       // Remember it, so the next lost-track edge does not restart the same
       // bounce the moment the window lapses.
-      reclaimGaveUpOn.current = { itemId: getState().nowPlaying?.itemId ?? '', at: now }
+      //
+      // Only when there IS an item. This used to fall back to '', which the
+      // guard above compares against `nowPlaying?.itemId` - and '' === undefined
+      // is false, so a marker written while nowPlaying was null could never
+      // match and the five-minute stand-down silently never engaged. That is not
+      // a corner case here: the losses being defended against arrive right after
+      // a foreground transition logged as `item=none`, which is exactly when
+      // nowPlaying is null (HS-MOBILEAPP-2 gave up four times in under two
+      // minutes with this supposedly in force). With no item there is nothing to
+      // key on, so write nothing and let the attempt cap be the floor.
+      const gaveUpItemId = getState().nowPlaying?.itemId
+      if (gaveUpItemId) reclaimGaveUpOn.current = { itemId: gaveUpItemId, at: now }
       showToast('Playback stopped. Tap play to start again.')
       return
     }
@@ -324,15 +346,12 @@ export function PlayerHost() {
     // another onPlaybackLost - the bounce this guard exists to stop. The
     // car has its own empty-player recovery (onCarNeedsBook).
     if (s.carActive) {
-      breadcrumb(
-        'player',
-        `${cause === 'stall' ? 'playback stalled' : 'native lost the track'} while the car owns playback; ignoring`,
-      )
+      breadcrumb('player', `${what} while the car owns playback; ignoring`)
       return
     }
     breadcrumb(
       'player',
-      `${cause === 'stall' ? 'playback stalled (no progress while playing)' : 'native lost the track'}; reloading from store`,
+      `${cause === 'stall' ? 'playback stalled (no progress while playing)' : what}; reloading from store`,
     )
     loadedKey.current = null
     lastPlaying.current = null
@@ -412,6 +431,10 @@ export function PlayerHost() {
       }
       reportPlaybackLost(recovered, {
         cause,
+        // Native's classification of the failure, when it had one. Without it
+        // every non-local-file loss reported as the bare word "native", which
+        // is the same for a reclaimed service and a dead connection.
+        detail: detail ?? null,
         itemId: s.nowPlaying?.itemId ?? null,
         wantedPlaying,
         playingAfter: after.isPlaying,
@@ -504,7 +527,7 @@ export function PlayerHost() {
       // lastPlaying too means the isPlaying we still have set will be re-pushed as
       // a fresh play edge once the reload completes, so the user's tap is honored
       // rather than needing a second one.
-      emitter.addListener('onPlaybackLost', (e: { reason?: string }) => {
+      emitter.addListener('onPlaybackLost', (e: { reason?: string; errorCodeName?: string }) => {
         // A local file that is gone or unreadable cannot be fixed by reloading
         // the same file - the reload reproduces it instantly, which is exactly
         // what the field report showed: four failures in 295ms on a fresh
@@ -533,7 +556,11 @@ export function PlayerHost() {
           })()
           return
         }
-        recoverLostPlayback('native')
+        // Pass native's own classification through. Everything that is not a
+        // local file lands here - a released service, an emptied player, a
+        // source error - and they want the same reload but read very
+        // differently in a report.
+        recoverLostPlayback('native', e?.errorCodeName ?? e?.reason)
       }),
       // Native playback failed (expired stream token, network stall, unplayable
       // format). Drop the optimistic playing state so the UI stops showing
