@@ -27,7 +27,7 @@ import { useCallback, useRef, useState } from 'react'
 import * as WebBrowser from 'expo-web-browser'
 import { LinearGradient } from 'expo-linear-gradient'
 import Svg, { Path } from 'react-native-svg'
-import { APPLE_ENABLED } from '@/lib/config'
+import { APP_SCHEME, APPLE_ENABLED } from '@/lib/config'
 import { authClient } from '@/auth/client'
 import { signInWithAppleNatively, signInWithGoogleNatively, type NativeResult } from '@/auth/native'
 import { fonts } from '@/ui/theme'
@@ -194,7 +194,18 @@ export default function SignInScreen() {
    * only path for Discord, and the fallback for Google / Apple.
    */
   const browserSocial = (provider: 'google' | 'apple' | 'discord', label: string) => () =>
-    run(label, () => authClient.signIn.social({ provider, callbackURL: '/(tabs)' }))
+    run(
+      label,
+      () =>
+        // An ABSOLUTE deep link, not a route path. This is the address the OS
+        // sends the browser tab back to when the provider is done, so it has to
+        // be something Android/iOS can route to us - a bare "/(tabs)" resolves
+        // against nothing and the tab never comes home.
+        authClient.signIn.social({ provider, callbackURL: `${APP_SCHEME}://` }),
+      // The auth client drives the browser tab itself; navigating here would
+      // race it and land us on a screen we are not signed in to yet.
+      () => {},
+    )
 
   /**
    * Google / Apple, preferring the OS account picker.

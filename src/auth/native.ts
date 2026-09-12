@@ -193,6 +193,16 @@ async function postIdToken(
   if (res?.error) {
     return { status: 'error', message: res.error.message || 'The sign-in could not be verified' }
   }
+
+  // Pull the session so `useSession()` reflects it before anyone navigates.
+  //
+  // The browser flow ends in a redirect, which remounts the app and refetches
+  // the session on the way past. This path never leaves the screen: the request
+  // succeeds, the cookie is stored, and the session atom still holds its old
+  // null. The caller then navigates to the tabs, the auth gate reads
+  // `isSignedIn === false`, and bounces straight back to sign-in - a dashboard
+  // that flashes for one frame and disappears.
+  await authClient.getSession({ query: { disableCookieCache: true } })
   return { status: 'signed-in' }
 }
 
