@@ -67,6 +67,7 @@ export default function SettingsLayout() {
           <Stack.Screen name="reading" options={{ title: 'Reading' }} />
           <Stack.Screen name="integrations" options={{ title: 'Integrations' }} />
           <Stack.Screen name="account" options={{ title: 'Account' }} />
+          <Stack.Screen name="security" options={{ title: 'Sign-in & security' }} />
           <Stack.Screen name="servers" options={{ title: 'My libraries' }} />
           <Stack.Screen name="admin" options={{ title: 'Server Admin' }} />
           <Stack.Screen name="player-buttons" options={{ title: 'Player buttons' }} />

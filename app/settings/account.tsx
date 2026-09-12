@@ -1,8 +1,12 @@
 /**
- * Account & HearthShelf Account. Reached from the profile card / menu. Mirrors the
- * WebApp's AccountSettings.tsx scope (profile note, real Clerk identity fields,
- * sign out) - password/SSO management stays in Clerk's hosted UI for now, so this
- * is a read view + sign out rather than a form. Header comes from settings/_layout.
+ * Account. Reached from the profile card / menu: who you are, your photo, and
+ * the way out.
+ *
+ * Everything that CHANGES how you sign in - passkeys, password, two-factor,
+ * connected accounts, signed-in devices, deletion - lives on the security screen
+ * behind the row below, matching the web app's split between an account page and
+ * its Sign-in & security section. This screen stays a read view plus sign out.
+ * Header comes from settings/_layout.
  */
 import { useMemo } from 'react'
 import { useAuth } from '@/auth/useAuth'
@@ -96,6 +100,16 @@ export default function AccountScreen() {
         />
         <SettingsRow icon="badge" title="Account type" desc="HearthShelf account" />
         <SettingsRow icon="calendar-today" title="Member since" desc={memberSince} last />
+      </SettingsGroup>
+
+      <SettingsGroup>
+        <SettingsRow
+          icon="login"
+          title="Sign-in & security"
+          desc="Passkeys, password, two-factor, connected accounts, and your signed-in devices."
+          onPress={() => router.push('/settings/security')}
+          last
+        />
       </SettingsGroup>
 
       <SettingsGroup>

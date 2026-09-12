@@ -25,6 +25,8 @@ export interface AuthUser {
   name: string
   /** Display username, when the account has one set. */
   username?: string
+  /** Whether authenticator-based two-factor protection is enabled. */
+  twoFactorEnabled?: boolean
   /** Profile photo URL from the sign-in provider, when there is one. */
   imageUrl?: string
   /** Account creation time, for "member since". */
@@ -78,6 +80,7 @@ export function useAuth(): {
         name,
         username: (raw as { username?: string }).username ?? undefined,
         imageUrl: raw.image ?? undefined,
+        twoFactorEnabled: (raw as { twoFactorEnabled?: boolean }).twoFactorEnabled ?? undefined,
         createdAt: raw.createdAt ? new Date(raw.createdAt) : undefined,
         fullName: name,
         firstName: name.split(' ')[0] ?? '',
