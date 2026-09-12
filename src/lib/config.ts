@@ -35,6 +35,12 @@ export const CLERK_PUBLISHABLE_KEY = cfg(
 // HearthShelf's own auth service (passkeys, social, magic link, email OTP, 2FA).
 export const AUTH_SERVICE_URL = cfg('EXPO_PUBLIC_AUTH_SERVICE_URL', 'https://auth.hearthshelf.com')
 
+// The hosted web app. A magic link has to land somewhere a MAIL CLIENT can open
+// - possibly on a different device from the one that asked for it - so it points
+// here rather than at the app's own deep-link scheme, which only resolves on the
+// phone that installed it.
+export const WEBAPP_URL = cfg('EXPO_PUBLIC_WEBAPP_URL', 'https://app.hearthshelf.com')
+
 // WebAuthn Relying Party ID for passkeys. MUST match the auth service's
 // PASSKEY_RP_ID and the domain in the app's associated-domains / assetlinks
 // entries - a passkey is bound to its RP ID permanently and cannot be re-scoped.

@@ -27,7 +27,7 @@ import { useCallback, useRef, useState } from 'react'
 import * as WebBrowser from 'expo-web-browser'
 import { LinearGradient } from 'expo-linear-gradient'
 import Svg, { Path } from 'react-native-svg'
-import { APP_SCHEME, APPLE_ENABLED } from '@/lib/config'
+import { APP_SCHEME, APPLE_ENABLED, WEBAPP_URL } from '@/lib/config'
 import { authClient } from '@/auth/client'
 import { signInWithAppleNatively, signInWithGoogleNatively, type NativeResult } from '@/auth/native'
 import { fonts } from '@/ui/theme'
@@ -272,7 +272,12 @@ export default function SignInScreen() {
     }
     return run(
       'Magic link',
-      () => authClient.signIn.magicLink({ email: email.trim(), callbackURL: '/(tabs)' }),
+      () =>
+        // Where the browser lands AFTER the link is verified, so it must be a
+        // real web address: the mail app may well be on a laptop, where a
+        // hearthshelf:// deep link resolves to nothing. "/(tabs)" resolved
+        // against the accounts service and stranded people there.
+        authClient.signIn.magicLink({ email: email.trim(), callbackURL: WEBAPP_URL }),
       () => setStep('magic-sent'),
     )
   }
@@ -561,6 +566,19 @@ export default function SignInScreen() {
   )
 }
 
+// Shared field surface. Hoisted out of StyleSheet.create because entries there
+// cannot reference one another, and the code field needs the same colours.
+const inputBase = {
+  backgroundColor: INK.field,
+  color: INK.text,
+  borderRadius: 16,
+  borderWidth: 1,
+  borderColor: INK.line,
+  paddingHorizontal: 16,
+  paddingVertical: 15,
+  fontSize: 15,
+} as const
+
 const styles = StyleSheet.create({
   bg: { flex: 1, backgroundColor: INK.bg },
   bgImage: {
@@ -645,17 +663,18 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     lineHeight: 19,
   },
-  input: {
-    backgroundColor: INK.field,
-    color: INK.text,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: INK.line,
-    paddingHorizontal: 16,
-    paddingVertical: 15,
-    fontSize: 15,
+  input: inputBase,
+  // Spreads the base input so the code field keeps the same surface, border and
+  // TEXT COLOUR as every other field. Applied alone it inherited the platform
+  // default - near-black digits on a dark card, so the code you typed was
+  // invisible.
+  codeInput: {
+    ...inputBase,
+    textAlign: 'center',
+    letterSpacing: 8,
+    fontSize: 22,
+    fontWeight: '700',
   },
-  codeInput: { textAlign: 'center', letterSpacing: 8, fontSize: 22, fontWeight: '700' },
   passwordRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   eyeBtn: {
     width: 48,
