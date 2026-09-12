@@ -268,7 +268,11 @@ export interface SettingsState {
 
   // Social / community (account). Tri-state presence sharing: null = never chose
   // (follow the server's community default, which ships OFF for presence).
-  useGravatar: boolean
+  // useGravatar is tri-state too, but its unset default is ON: the server ranks
+  // an explicit true ABOVE a synced sign-in photo and an unset null below it, so
+  // storing a plain false here would both mis-render the toggle and, once
+  // touched, turn Gravatar off account-wide.
+  useGravatar: boolean | null
   shareReadBooks: boolean | null
   shareCurrentlyListening: boolean | null
 
@@ -379,7 +383,7 @@ let state: SettingsState = {
   playerActionsIconOnly: false,
   navItems: DEFAULT_NAV_ITEMS,
 
-  useGravatar: false,
+  useGravatar: null,
   shareReadBooks: null,
   shareCurrentlyListening: null,
   clubsEnabled: true,

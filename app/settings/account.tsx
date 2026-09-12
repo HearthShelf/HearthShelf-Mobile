@@ -16,6 +16,7 @@ import { stopQueueSync } from '@/player/queueSync'
 import { clearSubscriptions } from '@/player/subscriptions'
 import { resetPushRegistration } from '@/player/pushRegister'
 import { AppText } from '@/ui/primitives'
+import { MyAvatar } from '@/ui/MyAvatar'
 import { spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { confirm } from '@/ui/confirm'
@@ -39,7 +40,6 @@ export default function AccountScreen() {
   const displayName = user?.fullName || user?.username || 'You'
   const email = user?.primaryEmailAddress?.emailAddress ?? 'Not set'
   const memberSince = fmtDay(user?.createdAt)
-  const initial = displayName.charAt(0).toUpperCase()
 
   async function handleSignOut() {
     if (
@@ -65,11 +65,7 @@ export default function AccountScreen() {
   return (
     <SettingsPanel>
       <View style={styles.heroCard}>
-        <View style={styles.avatar}>
-          <AppText variant="mono" color={colors.brandHearth} style={{ fontSize: 24 }}>
-            {initial}
-          </AppText>
-        </View>
+        <MyAvatar size={72} name={displayName} hue={colors.accentTile} />
         <AppText variant="title" style={{ marginTop: spacing.md }}>
           {displayName}
         </AppText>
@@ -82,7 +78,8 @@ export default function AccountScreen() {
         <SettingsRow
           icon="account-circle"
           title="Profile photo"
-          desc="Shown from your HearthShelf account. Mobile upload needs the native image-picker pass."
+          desc="Your uploaded photo, or your Gravatar. Upload one from the web app."
+          control={<MyAvatar size={34} name={displayName} hue={colors.accentTile} />}
         />
         <SettingsRow
           icon="public"
@@ -90,7 +87,9 @@ export default function AccountScreen() {
           desc="Show your Gravatar when no profile photo is uploaded."
           control={
             <SettingsToggle
-              on={settings.useGravatar}
+              // Unset means on: the server falls back to Gravatar unless the
+              // user has explicitly turned it off.
+              on={settings.useGravatar !== false}
               onChange={(v) => setSetting('useGravatar', v)}
             />
           }
@@ -109,12 +108,4 @@ export default function AccountScreen() {
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
     heroCard: { alignItems: 'center', paddingVertical: spacing.xl },
-    avatar: {
-      width: 72,
-      height: 72,
-      borderRadius: 36,
-      backgroundColor: colors.accentTile,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
   })

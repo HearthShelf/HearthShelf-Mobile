@@ -18,6 +18,7 @@ import { FULL_VERSION } from '@/lib/config'
 import { WhatsNewModal } from '@/ui/WhatsNew'
 import { getSettingsState, setSetting, subscribeSettings } from '@/store/settings'
 import { AppText, Screen } from '@/ui/primitives'
+import { MyAvatar } from '@/ui/MyAvatar'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { Icon, type IconName } from '@/ui/icons'
@@ -211,7 +212,6 @@ export default function MoreScreen() {
 
   const displayName = user?.fullName || user?.username || 'You'
   const email = user?.primaryEmailAddress?.emailAddress ?? ''
-  const initial = displayName.charAt(0).toUpperCase()
 
   // Settings search: fuzzy-match a row's title, description, and synonym
   // keywords, then show only the groups with a hit. 17 settings routes is a long
@@ -294,11 +294,7 @@ export default function MoreScreen() {
               onPress={() => router.push('/settings/account')}
               style={({ pressed }) => [styles.userCard, pressed && styles.pressed]}
             >
-              <View style={styles.avatar}>
-                <AppText variant="mono" color={colors.brandHearth} style={{ fontSize: 19 }}>
-                  {initial}
-                </AppText>
-              </View>
+              <MyAvatar size={52} name={displayName} hue={colors.accentTile} />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <AppText variant="label" numberOfLines={1}>
                   {displayName}
@@ -441,13 +437,5 @@ const makeStyles = (colors: Palette) =>
       paddingVertical: spacing.sm + 2,
       color: colors.text,
       fontSize: 15,
-    },
-    avatar: {
-      width: 52,
-      height: 52,
-      borderRadius: 26,
-      backgroundColor: colors.accentTile,
-      alignItems: 'center',
-      justifyContent: 'center',
     },
   })
