@@ -14,6 +14,7 @@
  */
 import { useCallback } from 'react'
 import { authClient } from './client'
+import { signOutOfGoogleNatively } from './native'
 import { clearCachedSession } from './sessionCache'
 import { useAuthResolved } from './useAuthResolved'
 
@@ -59,6 +60,10 @@ export function useAuth(): {
     try {
       await authClient.signOut()
     } finally {
+      // Also end the OS-level Google session, or the next sign-in silently
+      // re-uses this account and never offers the picker. See
+      // signOutOfGoogleNatively.
+      await signOutOfGoogleNatively()
       await clearCachedSession()
     }
   }, [])

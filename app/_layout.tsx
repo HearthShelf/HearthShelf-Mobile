@@ -8,6 +8,7 @@ import { BottomSheetModalProvider } from '@gorhom/bottom-sheet'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import * as SplashScreen from 'expo-splash-screen'
 import { authClient } from '@/auth/client'
+import { signOutOfGoogleNatively } from '@/auth/native'
 import { useAuthResolved } from '@/auth/useAuthResolved'
 import { getSessionToken } from '@/auth/token'
 // Aliased: AuthGate has local state also called hasCachedSession.
@@ -254,17 +255,6 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const onAuthRoute = segments[0] === 'sign-in' || segments[0] === 'sso-callback'
   const gatedSignedIn = !onAuthRoute && (effectiveSignedIn || wasSignedIn.current || rehydrating)
 
-  // Report the route the navigator actually settles on. The gate can log that it
-  // sent the user to (tabs) while the sign-in screen is still what renders, and
-  // only the real segments distinguish "navigation was reverted" from "(tabs)
-  // mounted but something else is drawn on top".
-  useEffect(() => {
-    console.log(
-      '[auth.gate] segments',
-      JSON.stringify({ segments, ready, isLoaded, isSignedIn, gatedSignedIn }),
-    )
-  }, [segments, ready, isLoaded, isSignedIn, gatedSignedIn])
-
   useEffect(() => {
     if (!ready) return
     // `onAuthRoute` (declared above, and shared with the gate) also covers
@@ -272,7 +262,6 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     // app/sso-callback.tsx) and routes itself once the session settles - so don't yank
     // it to /sign-in while the session is still being established.
     if (effectiveSignedIn && segments[0] === 'sign-in') {
-      console.log('[auth.gate] signed in on /sign-in -> (tabs)')
       router.replace('/(tabs)')
       return
     }
@@ -308,12 +297,6 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       // Terminal launch outcome: genuinely signed out. The loader gives way to
       // the sign-in screen - a completed launch, not a hang.
       finishStartupTrace('signed-out')
-      // A bounce straight after a successful sign-in is indistinguishable from
-      // "the button did nothing", so say which reading caused it.
-      console.log(
-        '[auth.gate] redirecting to /sign-in',
-        JSON.stringify({ isLoaded, isSignedIn, hasCachedSession, segment: segments[0] ?? null }),
-      )
       router.replace('/sign-in')
     }
   }, [ready, effectiveSignedIn, segments, router, hasCachedSession, isLoaded, isSignedIn])
@@ -355,6 +338,10 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
     try {
       await authClient.signOut()
     } finally {
+      // Also end the OS-level Google session, or the next sign-in silently
+      // re-uses this account and never offers the picker. See
+      // signOutOfGoogleNatively.
+      await signOutOfGoogleNatively()
       await clearCachedSession()
     }
   }, [])

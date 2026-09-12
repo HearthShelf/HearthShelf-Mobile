@@ -60,12 +60,10 @@ let googleConfigured = false
  * This path had NO logging at all, which is why a failure here looked like the
  * button doing nothing: Google's own errors arrive with an empty message, the
  * result is classified as `unavailable`, and the fallback runs silently. The
- * trail rides along on whatever is eventually reported, and `console` makes it
- * visible in `adb logcat` while debugging on a device.
+ * trail rides along on whatever is eventually reported.
  */
 function trace(step: string, data?: Record<string, unknown>): void {
   Sentry.addBreadcrumb({ category: 'auth.native', level: 'info', message: step, data })
-  console.log(`[auth.native] ${step}`, data ? JSON.stringify(data) : '')
 }
 
 async function configureGoogle() {
@@ -227,18 +225,41 @@ async function postIdToken(
   // null. The caller then navigates to the tabs, the auth gate reads
   // `isSignedIn === false`, and bounces straight back to sign-in - a dashboard
   // that flashes for one frame and disappears.
-  const cookie = await authClient.getCookie()
   const after = await authClient.getSession({ query: { disableCookieCache: true } })
-  trace('postIdToken: session after refetch', {
-    // The whole question this answers: did the session cookie survive the
-    // sign-in response, and does the client now see a user? A created session
-    // that the client cannot read looks exactly like a sign-in that failed.
-    hasCookie: !!cookie,
-    cookieNames: cookie ? cookie.split(';').map((c) => c.split('=')[0].trim()) : [],
-    hasUser: !!after?.data?.user,
-    error: after?.error?.message ?? null,
-  })
+  // Whether the client can actually SEE the session it just created. A created
+  // session the client reads back as empty is the signature of a transport
+  // problem rather than a rejected sign-in, and it is otherwise silent.
+  trace('postIdToken: session refetched', { hasUser: !!after?.data?.user })
   return { status: 'signed-in' }
+}
+
+/**
+ * End the OS-level Google session.
+ *
+ * WHY SIGNING OUT OF HEARTHSHELF IS NOT ENOUGH. Google keeps its own session,
+ * independent of ours. Clearing only ours leaves the previous authorization
+ * standing, so the next tap re-uses that account silently and NO PICKER IS
+ * SHOWN - on a device with two accounts there is then no way to reach the
+ * second one. The tell is the timing: the picker "returned success" in ~370ms,
+ * far too fast for anyone to have chosen anything.
+ *
+ * Only the native session is ended, not the app's authorization
+ * (`revokeAccess`), so signing back in is still one tap with no consent screen
+ * to re-approve - the user just gets to choose who.
+ *
+ * Best-effort by design: this runs while signing out, and a failure here must
+ * never be what stops someone signing out. Nothing is thrown, and no attempt is
+ * made when the native flow is unavailable (there is no Google session to end).
+ */
+export async function signOutOfGoogleNatively(): Promise<void> {
+  if (!NATIVE_GOOGLE_ENABLED) return
+  try {
+    const { GoogleSignin } = await import('@react-native-google-signin/google-signin')
+    await GoogleSignin.signOut()
+  } catch {
+    // Nothing to clear, or the module is absent from this build. Either way the
+    // HearthShelf sign-out continues.
+  }
 }
 
 /**
