@@ -254,6 +254,13 @@ async function postIdToken(
 export async function signOutOfGoogleNatively(): Promise<void> {
   if (!NATIVE_GOOGLE_ENABLED) return
   try {
+    // configure() FIRST, and this is the whole trick. The native module builds
+    // its Google client inside configure(); signOut() on a module that has not
+    // been configured this run rejects with a null-client error instead of
+    // clearing anything. Signing out without having signed in during the same
+    // app run - the ordinary case after a relaunch - would otherwise silently
+    // do nothing, and the picker would still not appear.
+    await configureGoogle()
     const { GoogleSignin } = await import('@react-native-google-signin/google-signin')
     await GoogleSignin.signOut()
   } catch {
