@@ -67,6 +67,22 @@ export function useAuth(): {
       // signOutOfGoogleNatively.
       await signOutOfGoogleNatively()
       await clearCachedSession()
+      // Listening positions belong to the account that earned them. They are
+      // stored under one global key with no account in it, so without this the
+      // next person to sign in on this device inherits them - and the merge in
+      // keepFresherLocalPositions then weighs their real server rows against a
+      // stranger's positions, which is how a 15-hour "progress loss" was
+      // reported (HS-MOBILEAPP-15).
+      //
+      // Imported lazily to keep the auth module free of a store dependency, and
+      // best-effort for the same reason the rest of this block is: sign-out must
+      // finish even when a piece of cleanup cannot.
+      try {
+        const { clearAllProgress } = await import('@/store/progress')
+        await clearAllProgress()
+      } catch {
+        // Sign-out still has to complete.
+      }
     }
   }, [])
 

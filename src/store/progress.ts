@@ -835,6 +835,35 @@ export async function resetItemProgress(itemId: string): Promise<void> {
   void refreshProgress().catch(() => {})
 }
 
+/**
+ * Forget every listening position, on disk and in memory.
+ *
+ * Called when the account changes. STORE_KEY is a single global key with no
+ * account in it, and nothing used to clear it, so one person's positions stayed
+ * on the device and were compared against the next person's rows. A row from the
+ * previous account carries a real position and a real stamp, so it reaches
+ * keepFresherLocalPositions looking exactly like a live local row - and the
+ * merge then argues about which of two unrelated accounts is "newer" (an
+ * emulator hit this after re-authenticating: 53914s of local position against a
+ * server row at 1s, reported as a 15-hour loss, HS-MOBILEAPP-15).
+ *
+ * Everything keyed by item has to go together. Leaving the watermarks or the
+ * stamps behind would arm the guards in keepFresherLocalPositions with the old
+ * account's evidence, which is worse than having no guard at all: they are
+ * designed to override the server, so stale ones override it wrongly.
+ *
+ * Hydration is reset too, so a sign-in on the same run re-reads rather than
+ * replaying the resolved promise from the previous account.
+ */
+export async function clearAllProgress(): Promise<void> {
+  overrides.clear()
+  serverUpdatedAt.clear()
+  serverConfirmedSec.clear()
+  hydration = null
+  emit(new Map())
+  await AsyncStorage.removeItem(STORE_KEY).catch(() => {})
+}
+
 export async function markFinished(
   itemId: string,
   finished: boolean,

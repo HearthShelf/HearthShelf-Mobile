@@ -19,6 +19,7 @@
  * large enough to be felt is worth an event; everything else stays a breadcrumb.
  */
 import * as Sentry from '@sentry/react-native'
+import { currentServerId } from '@/api/session'
 
 /** How far backwards the position must move to count as a felt loss. Below this
  *  the two sides are effectively the same spot (ordinary rounding between a tick
@@ -83,6 +84,13 @@ export function reportProgressDrop(d: ProgressDropDetail): void {
         stampGapMs: d.serverUpdatedAt - d.localUpdatedAt,
         localUpdatedAt: new Date(d.localUpdatedAt).toISOString(),
         serverUpdatedAt: d.serverUpdatedAt ? new Date(d.serverUpdatedAt).toISOString() : 'none',
+        // Which server these rows came from. Positions are stored under one
+        // global key with no account in it, so a row can outlive the account
+        // that made it and be weighed against a different server's rows. That
+        // is what the largest reported drop turned out to be, and nothing in
+        // the event said so. A drop whose server id is not this run's is
+        // contamination, not a lost listen.
+        serverId: currentServerId() ?? 'unknown',
       },
     })
   } catch {

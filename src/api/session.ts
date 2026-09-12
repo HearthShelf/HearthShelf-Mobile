@@ -57,8 +57,23 @@ export async function takePendingInviteToken(): Promise<string | null> {
   }
 }
 
+/** The server id this run is connected to, readable without awaiting storage.
+ *
+ *  Telemetry needs it on paths that cannot await - reportProgressDrop runs
+ *  mid-refresh and must not re-enter storage or the store it is observing - and
+ *  a progress drop is only interpretable if you know which server the rows came
+ *  from (HS-MOBILEAPP-15 turned out to be rows from a different account, which
+ *  was invisible in the report). */
+let lastServerIdCache: string | null = null
+
+/** Server id for this run, or null before a connection is established. */
+export function currentServerId(): string | null {
+  return lastServerIdCache
+}
+
 /** Remember which linked server the user last connected to (multi-server). */
 export async function setLastServerId(serverId: string): Promise<void> {
+  lastServerIdCache = serverId
   try {
     await SecureStore.setItemAsync(LAST_SERVER_KEY, serverId)
   } catch {
@@ -68,7 +83,9 @@ export async function setLastServerId(serverId: string): Promise<void> {
 
 export async function getLastServerId(): Promise<string | null> {
   try {
-    return await SecureStore.getItemAsync(LAST_SERVER_KEY)
+    const id = await SecureStore.getItemAsync(LAST_SERVER_KEY)
+    if (id) lastServerIdCache = id
+    return id
   } catch {
     return null
   }
