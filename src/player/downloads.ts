@@ -603,6 +603,45 @@ export async function deleteDownload(itemId: string): Promise<void> {
   persist()
   // Drop its offline browse metadata too.
   void removeCatalogItem(itemId)
+  // If the player is holding THIS book on a file:// url, that url now points at
+  // a file we just deleted. Nothing else tells it, so it keeps trying to play a
+  // path that cannot open: the reload fails in milliseconds, the retry cap
+  // trips, and the listener gets "Playback stopped" with no way out
+  // (HS-MOBILEAPP-2 - reported with downloaded:false alongside localSource:true,
+  // which is exactly this mismatch: the downloads index had dropped the book
+  // while the loaded track still pointed into it).
+  //
+  // Re-resolve so it falls back to streaming. Dynamic import because playback
+  // imports this module, so a static one would close a cycle.
+  void reResolveIfPlaying(itemId)
+}
+
+/**
+ * Reload a book from its best remaining source, if it is the one loaded.
+ *
+ * Called after the local copy goes away. Best-effort throughout: this runs on a
+ * delete path, and a failure here must never stop the delete from completing.
+ */
+async function reResolveIfPlaying(itemId: string): Promise<void> {
+  try {
+    const [{ getState }, { playItemById }] = await Promise.all([
+      import('./store'),
+      import('./playback'),
+    ])
+    const s = getState()
+    if (s.nowPlaying?.itemId !== itemId) return
+    if (!s.nowPlaying.url?.startsWith('file://')) return
+    // A book deleted BECAUSE it just finished (removeDownloadOnFinish) must not
+    // be re-resolved: it would open a streaming session for a book nobody is
+    // listening to any more, which is the phantom-listen shape loadPreview was
+    // written to avoid. Only a book still in progress needs its source back.
+    const { isFinished } = await import('@/store/progress')
+    if (isFinished(itemId)) return
+    breadcrumb('play', `download removed for ${itemId.slice(0, 8)} while loaded; re-resolving`)
+    await playItemById(itemId, s.isPlaying, { resumeAt: s.position })
+  } catch {
+    // Best-effort: the delete itself has already succeeded.
+  }
 }
 
 /** True when two chapter lists differ in length, title, or bounds. */
