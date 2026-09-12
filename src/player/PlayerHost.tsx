@@ -109,6 +109,23 @@ const RECLAIM_WINDOW_MS = 30_000
  *  the failure to be reported once rather than burning the battery. */
 const RECLAIM_MAX_ATTEMPTS = 3
 
+/** How long a book that exhausted its retries is left alone before the recovery
+ *  will chase it again.
+ *
+ *  RECLAIM_WINDOW_MS bounds ONE bounce, and nothing remembered that a bounce had
+ *  already been lost. So standing down lasted exactly as long as the window: it
+ *  lapsed, the counter reset to 0, and the identical four attempts ran again.
+ *  Observed on a downloaded book whose position never moved off 2443s
+ *  (HS-MOBILEAPP-2): gave up at 02:04:20, again at 02:05:08, 02:05:29 and
+ *  02:05:59 - four full bounces in under two minutes, each ending in the same
+ *  "Playback stopped" toast, with the audio dead throughout.
+ *
+ *  Deliberately longer than the window it supersedes. A reclaim that failed four
+ *  times in a row is not going to succeed on the fifth a few seconds later; what
+ *  changes the outcome is the user acting, and an explicit play tap clears this
+ *  immediately. */
+const RECLAIM_GIVE_UP_COOLDOWN_MS = 5 * 60_000
+
 /** How far the position must move before we count it as real playback rather
  *  than the tail of a tick that was already in flight. */
 const RECLAIM_PROGRESS_EPSILON_SEC = 2
@@ -192,6 +209,9 @@ export function PlayerHost() {
   // (see RECLAIM_MAX_ATTEMPTS).
   const reclaimAttempts = useRef(0)
   const reclaimWindowStart = useRef(0)
+  /** The book we stood down on, and when. Keyed by item so switching books is
+   *  never punished for a previous book's failure. */
+  const reclaimGaveUpOn = useRef<{ itemId: string; at: number } | null>(null)
   // When onProgress last arrived. 0 means "nothing yet this run"; the watchdog
   // seeds it on the play edge so a book that never produces a single tick still
   // trips the stall check.
@@ -257,6 +277,21 @@ export function PlayerHost() {
     cause: 'native' | 'stall',
   ): void {
     const now = Date.now()
+    // Already gave up on THIS book recently: do not start the bounce over.
+    // Without this the stand-down lasted only as long as RECLAIM_WINDOW_MS,
+    // because the counter reset the moment the window lapsed.
+    const gaveUp = reclaimGaveUpOn.current
+    if (
+      gaveUp &&
+      gaveUp.itemId === getState().nowPlaying?.itemId &&
+      now - gaveUp.at < RECLAIM_GIVE_UP_COOLDOWN_MS
+    ) {
+      breadcrumb(
+        'player',
+        `${cause === 'stall' ? 'playback stalled' : 'native lost the track'} again ${Math.round((now - gaveUp.at) / 1000)}s after giving up; leaving it alone`,
+      )
+      return
+    }
     // Open a fresh window if the last reclaim is old enough that this one is
     // a genuinely new incident rather than the same bounce continuing.
     if (now - reclaimWindowStart.current > RECLAIM_WINDOW_MS) {
@@ -275,6 +310,9 @@ export function PlayerHost() {
       )
       lastPlaying.current = false
       setPlaying(false)
+      // Remember it, so the next lost-track edge does not restart the same
+      // bounce the moment the window lapses.
+      reclaimGaveUpOn.current = { itemId: getState().nowPlaying?.itemId ?? '', at: now }
       showToast('Playback stopped. Tap play to start again.')
       return
     }
@@ -990,6 +1028,11 @@ export function PlayerHost() {
       if (s.isPlaying !== lastPlaying.current) {
         lastPlaying.current = s.isPlaying
         if (s.isPlaying) {
+          // A play edge is the user (or a transport surface) asking again, which
+          // is the one thing that can change the outcome after we stood down. It
+          // clears the give-up cooldown so the recovery is armed for this attempt
+          // rather than ignoring a real request.
+          reclaimGaveUpOn.current = null
           Native.play()
           // A book loaded paused (the Now Playing tab) has no ABS session yet -
           // opening one at load made the server record a listen for a book
