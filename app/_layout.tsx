@@ -261,6 +261,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     // app/sso-callback.tsx) and routes itself once the session settles - so don't yank
     // it to /sign-in while the session is still being established.
     if (effectiveSignedIn && segments[0] === 'sign-in') {
+      console.log('[auth.gate] signed in on /sign-in -> (tabs)')
       router.replace('/(tabs)')
       return
     }
@@ -296,6 +297,12 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       // Terminal launch outcome: genuinely signed out. The loader gives way to
       // the sign-in screen - a completed launch, not a hang.
       finishStartupTrace('signed-out')
+      // A bounce straight after a successful sign-in is indistinguishable from
+      // "the button did nothing", so say which reading caused it.
+      console.log(
+        '[auth.gate] redirecting to /sign-in',
+        JSON.stringify({ isLoaded, isSignedIn, hasCachedSession, segment: segments[0] ?? null }),
+      )
       router.replace('/sign-in')
     }
   }, [ready, effectiveSignedIn, segments, router, hasCachedSession, isLoaded, isSignedIn])

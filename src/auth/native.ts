@@ -227,7 +227,17 @@ async function postIdToken(
   // null. The caller then navigates to the tabs, the auth gate reads
   // `isSignedIn === false`, and bounces straight back to sign-in - a dashboard
   // that flashes for one frame and disappears.
-  await authClient.getSession({ query: { disableCookieCache: true } })
+  const cookie = await authClient.getCookie()
+  const after = await authClient.getSession({ query: { disableCookieCache: true } })
+  trace('postIdToken: session after refetch', {
+    // The whole question this answers: did the session cookie survive the
+    // sign-in response, and does the client now see a user? A created session
+    // that the client cannot read looks exactly like a sign-in that failed.
+    hasCookie: !!cookie,
+    cookieNames: cookie ? cookie.split(';').map((c) => c.split('=')[0].trim()) : [],
+    hasUser: !!after?.data?.user,
+    error: after?.error?.message ?? null,
+  })
   return { status: 'signed-in' }
 }
 
