@@ -156,6 +156,7 @@ export function SettingsRow({
   icon,
   title,
   desc,
+  descColor,
   control,
   onPress,
   last,
@@ -166,6 +167,9 @@ export function SettingsRow({
   icon?: IconName
   title: string
   desc?: string
+  /** Tints `desc`. For status lines where the STATE is the point ("Connected"),
+   *  since the default muted grey reads identically either way. */
+  descColor?: string
   control?: React.ReactNode
   onPress?: () => void
   last?: boolean
@@ -197,7 +201,11 @@ export function SettingsRow({
             {title}
           </AppText>
           {desc ? (
-            <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 2 }}>
+            <AppText
+              variant="caption"
+              color={descColor ?? colors.textMuted}
+              style={{ marginTop: 2 }}
+            >
               {desc}
             </AppText>
           ) : null}

@@ -172,23 +172,19 @@ export default function SecurityScreen() {
     }
   }
 
-  async function addPasskey() {
-    setBusy('passkey')
-    try {
-      // The name is what tells two passkeys apart in the list, and the phone
-      // knows what it is - so no prompt.
-      const res = await authClient.passkey.addPasskey({ name: 'This phone' })
-      if (res?.error) {
-        showToast(res.error.message || 'Could not add a passkey on this device')
-        return
-      }
-      showToast('Passkey added')
-      await loadPasskeys()
-    } catch (e) {
-      showToast((e as Error)?.message || 'Could not add a passkey on this device')
-    } finally {
-      setBusy(null)
-    }
+  function addPasskey() {
+    // The auth library's passkey client is browser-only: it calls
+    // navigator.credentials, which does not exist in a native app, so calling it
+    // here fails with "WebAuthn is not supported on this browser" - an error
+    // that is unfixable from this screen and confusing besides, since there is
+    // no browser in sight. Say what is actually true instead.
+    //
+    // Creating one needs a native passkey module and a rebuild. The server half
+    // is already done: hearthshelf.com now publishes the Android and Apple
+    // association files a phone needs to verify this app owns the domain.
+    // Existing passkeys still LIST and can be removed here - only creating one
+    // is unavailable, so the section stays useful.
+    showToast('Adding a passkey from the phone app is coming soon - use the web app for now')
   }
 
   async function removePasskey(row: PasskeyRow) {
@@ -355,7 +351,10 @@ export default function SecurityScreen() {
             <SettingsRow
               key={p.id}
               title={p.label}
+              // Muted grey reads identically linked or not - the one thing this
+              // row exists to tell you. Green carries it at a glance, as on web.
               desc={existing ? 'Connected' : 'Not connected'}
+              descColor={existing ? colors.success : undefined}
               last={i === PROVIDERS.length - 1}
               control={
                 <Pressable
@@ -444,8 +443,8 @@ export default function SecurityScreen() {
         ))}
         <SettingsRow
           title="Add a passkey"
-          desc="Sign in with your face, fingerprint, or screen lock - no password to remember."
-          onPress={() => void addPasskey()}
+          desc="Sign in with your face, fingerprint, or screen lock. Add one from the web app for now."
+          onPress={addPasskey}
           last
         />
       </SettingsGroup>
