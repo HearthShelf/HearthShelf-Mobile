@@ -413,10 +413,11 @@ module.exports = {
           ].join('\n'),
         },
         ios: {
-          // react-native-passkeys needs iOS 15+ (the platform public-key
-          // credential provider APIs). Expo's default floor is lower and the pod
-          // will not build without this.
-          deploymentTarget: '15.1',
+          // react-native-passkeys needs iOS 15+ for the platform public-key
+          // credential provider APIs; this SDK's own floor is already higher
+          // (expo-build-properties refuses anything below 16.4), so match that
+          // rather than setting a number the toolchain will reject.
+          deploymentTarget: '16.4',
         },
       },
     ],

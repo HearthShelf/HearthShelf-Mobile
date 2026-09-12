@@ -40,8 +40,6 @@ import { Platform } from 'react-native'
 import * as passkeys from 'react-native-passkeys'
 import * as Sentry from '@sentry/react-native'
 import { authClient } from './client'
-import { getSessionToken } from './token'
-import { AUTH_SERVICE_URL } from '@/lib/config'
 
 /**
  * What an attempt did.
@@ -70,34 +68,6 @@ function trace(step: string, data?: Record<string, unknown>): void {
   Sentry.addBreadcrumb({ category: 'auth.passkey', level: 'info', message: step, data })
 }
 
-/** The auth service, with any trailing slash removed so paths join cleanly. */
-const base = AUTH_SERVICE_URL.replace(/\/$/, '')
-
-/**
- * Call the auth service with the stored session.
- *
- * The bearer token is the session cookie's VALUE, not the cookie header - see
- * getSessionToken, where sending the whole header silently broke every
- * authenticated call.
- */
-async function authFetch(path: string, init?: RequestInit): Promise<Response> {
-  const token = await getSessionToken()
-  const headers = new Headers(init?.headers)
-  headers.set('Content-Type', 'application/json')
-  if (token) headers.set('Authorization', `Bearer ${token}`)
-  return fetch(`${base}/api/auth${path}`, { ...init, headers })
-}
-
-/** Pull a useful message out of an error body, falling back to the status. */
-async function failureMessage(res: Response, fallback: string): Promise<string> {
-  try {
-    const body = (await res.json()) as { message?: string; error?: string }
-    return body.message || body.error || fallback
-  } catch {
-    return fallback
-  }
-}
-
 /**
  * Register a passkey for the signed-in user.
  *
@@ -117,13 +87,22 @@ export async function registerPasskey(name: string): Promise<PasskeyResult> {
 
   try {
     trace('register: requesting options')
-    const optionsRes = await authFetch(
-      `/passkey/generate-register-options?name=${encodeURIComponent(name)}`,
+    // BOTH halves go through the auth client, and that is load-bearing. The
+    // server hands out a signed CHALLENGE COOKIE with these options and demands
+    // it back on verification (CHALLENGE_NOT_FOUND otherwise). Only the client's
+    // own fetch hook stores and replays that cookie - a bare fetch drops it, so
+    // the OS creates a perfectly good credential that the server then refuses.
+    const optionsRes = await authClient.$fetch<Parameters<typeof passkeys.create>[0]>(
+      '/passkey/generate-register-options',
+      { method: 'GET', query: { name } },
     )
-    if (!optionsRes.ok) {
-      return { status: 'error', message: await failureMessage(optionsRes, 'Could not start') }
+    if (optionsRes?.error || !optionsRes?.data) {
+      return {
+        status: 'error',
+        message: optionsRes?.error?.message || 'Could not start adding a passkey',
+      }
     }
-    const options = (await optionsRes.json()) as Parameters<typeof passkeys.create>[0]
+    const options = optionsRes.data
 
     trace('register: opening the credential sheet')
     const created = await passkeys.create(options)
@@ -169,11 +148,15 @@ export async function signInWithPasskey(): Promise<PasskeyResult> {
 
   try {
     trace('sign-in: requesting options')
-    const optionsRes = await fetch(`${base}/api/auth/passkey/generate-authenticate-options`)
-    if (!optionsRes.ok) {
-      return { status: 'error', message: await failureMessage(optionsRes, 'Could not start') }
+    // Through the client for the challenge cookie - see registerPasskey.
+    const optionsRes = await authClient.$fetch<Parameters<typeof passkeys.get>[0]>(
+      '/passkey/generate-authenticate-options',
+      { method: 'GET' },
+    )
+    if (optionsRes?.error || !optionsRes?.data) {
+      return { status: 'error', message: optionsRes?.error?.message || 'Could not start' }
     }
-    const options = (await optionsRes.json()) as Parameters<typeof passkeys.get>[0]
+    const options = optionsRes.data
 
     trace('sign-in: opening the credential sheet')
     const assertion = await passkeys.get(options)
