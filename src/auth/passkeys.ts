@@ -69,6 +69,31 @@ function trace(step: string, data?: Record<string, unknown>): void {
 }
 
 /**
+ * Report a passkey failure, with the trail that led to it.
+ *
+ * WHY BREADCRUMBS ALONE ARE NOT ENOUGH. `addBreadcrumb` only ATTACHES to an
+ * event - it never sends anything by itself. Every failure here is a value we
+ * return rather than an exception we throw, so nothing else was ever going to
+ * file one: the trail was being written and then discarded, and a failure on a
+ * real phone would be exactly as silent as it was on the emulator.
+ *
+ * ONLY REAL FAILURES ARE EVENTS. Someone closing the sheet, and a device
+ * without passkey support, are both ordinary - they stay breadcrumbs. An event
+ * means the ceremony genuinely broke, which is the case worth waking up to.
+ *
+ * `fingerprint` groups by the step that failed rather than the message, so a
+ * domain that stops verifying is one issue rather than one per device.
+ */
+function report(step: string, detail: Record<string, unknown>): void {
+  Sentry.captureMessage(`passkey ${step}`, {
+    level: 'error',
+    tags: { feature: 'passkey', step, platform: Platform.OS },
+    extra: detail,
+    fingerprint: ['passkey', step],
+  })
+}
+
+/**
  * Register a passkey for the signed-in user.
  *
  * `name` is what tells two passkeys apart in the list; the caller supplies
@@ -97,12 +122,18 @@ export async function registerPasskey(name: string): Promise<PasskeyResult> {
       { method: 'GET', query: { name } },
     )
     if (optionsRes?.error || !optionsRes?.data) {
+      report('options-failed', { message: optionsRes?.error?.message ?? null })
       return {
         status: 'error',
         message: optionsRes?.error?.message || 'Could not start adding a passkey',
       }
     }
     const options = optionsRes.data
+    // The Relying Party ID the phone will try to verify. It is THE field that
+    // decides whether the OS accepts this app for the domain, and a mismatch
+    // between it and the published association files is the most likely real
+    // failure - so every report below carries it.
+    const rpId = (options as { rp?: { id?: string } })?.rp?.id ?? null
 
     trace('register: opening the credential sheet')
     const created = await passkeys.create(options)
@@ -114,6 +145,11 @@ export async function registerPasskey(name: string): Promise<PasskeyResult> {
       // back - so record it rather than treating every null as a user tapping
       // away. The two are indistinguishable from here.
       trace('register: no credential returned')
+      // Indistinguishable from a dismissal at this layer, so it is reported
+      // rather than assumed: on the emulator this exact shape was the system
+      // creating the credential and never handing it back, which looked like
+      // the button doing nothing at all.
+      report('create-returned-nothing', { rpId, hasOptions: !!options })
       return { status: 'cancelled' }
     }
 
@@ -133,6 +169,15 @@ export async function registerPasskey(name: string): Promise<PasskeyResult> {
       // mismatch are different problems with different fixes, and a generic
       // message hides which one this is.
       trace('register: server rejected', { message: verified.error.message ?? null })
+      // The server's own words. CHALLENGE_NOT_FOUND (the challenge cookie did
+      // not come back) and an origin mismatch are different faults with
+      // different fixes, and both are invisible without this.
+      report('verify-rejected', {
+        message: verified.error.message ?? null,
+        status: (verified.error as { status?: number })?.status ?? null,
+        code: (verified.error as { code?: string })?.code ?? null,
+        rpId,
+      })
       return {
         status: 'error',
         message: verified.error.message || 'That passkey could not be saved',
@@ -165,6 +210,7 @@ export async function signInWithPasskey(): Promise<PasskeyResult> {
       { method: 'GET' },
     )
     if (optionsRes?.error || !optionsRes?.data) {
+      report('signin-options-failed', { message: optionsRes?.error?.message ?? null })
       return { status: 'error', message: optionsRes?.error?.message || 'Could not start' }
     }
     const options = optionsRes.data
@@ -183,6 +229,10 @@ export async function signInWithPasskey(): Promise<PasskeyResult> {
       body: { response },
     })
     if (verified?.error) {
+      report('signin-verify-rejected', {
+        message: verified.error.message ?? null,
+        status: (verified.error as { status?: number })?.status ?? null,
+      })
       return {
         status: 'error',
         message: verified.error.message || 'That passkey was not accepted',
@@ -212,9 +262,18 @@ function describe(e: unknown, verb: string): PasskeyResult {
   const message = err?.message ?? ''
   trace('failed', { verb, code: err?.code, message })
 
+  // A dismissal is ordinary and stays a breadcrumb - reporting it would file an
+  // issue describing someone changing their mind.
   if (/cancel|abort|user denied|NotAllowed/i.test(`${err?.code ?? ''} ${message}`)) {
     return { status: 'cancelled' }
   }
+
+  // Everything else is a genuine break, and this is where a thrown OS error
+  // lands - the domain refusing to validate arrives here as a DomError. It is
+  // the single most likely real-device failure, so it reports with the raw
+  // message intact rather than being flattened into friendly text and lost.
+  report('threw', { verb, code: err?.code ?? null, message: message || null })
+
   if (!message) {
     return {
       status: 'error',
