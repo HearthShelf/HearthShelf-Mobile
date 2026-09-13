@@ -171,7 +171,11 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   // refetch, and deriving isLoaded from it directly made this gate redirect to
   // /sign-in, re-splash, and redirect again several times a second - the blinking
   // login screen. See useAuthResolved.
-  const { isLoaded, isSignedIn } = useAuthResolved()
+  const { isLoaded, isSignedIn, session } = useAuthResolved()
+  // A social sign-up creates the account with NO username - the provider gives
+  // a real name instead. Checked against the raw session rather than useAuth's
+  // view, which deliberately falls back to that name and so can never be empty.
+  const needsUsername = !!session?.user && !(session.user as { username?: string | null }).username
   const segments = useSegments()
   const router = useRouter()
   // Flush a prior-run crash report exactly once, the first time we have a
@@ -252,7 +256,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   // The gate's own contract (below) is that it only wraps the signed-in state;
   // keying it on the route enforces that for every path into /sign-in, rather
   // than trusting each caller to also unwind the auth state.
-  const onAuthRoute = segments[0] === 'sign-in' || segments[0] === 'sso-callback'
+  const onAuthRoute =
+    segments[0] === 'sign-in' || segments[0] === 'sso-callback' || segments[0] === 'choose-username'
   const gatedSignedIn = !onAuthRoute && (effectiveSignedIn || wasSignedIn.current || rehydrating)
 
   useEffect(() => {
@@ -262,7 +267,18 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     // app/sso-callback.tsx) and routes itself once the session settles - so don't yank
     // it to /sign-in while the session is still being established.
     if (effectiveSignedIn && segments[0] === 'sign-in') {
-      router.replace('/(tabs)')
+      // A social sign-up arrives with no username - the provider supplies a real
+      // NAME instead, and that is what every other listener would see on clubs,
+      // notes and the leaderboard. Ask before letting them in. See
+      // app/choose-username.tsx for why this is a gate and not a sign-in step.
+      router.replace(needsUsername ? '/choose-username' : '/(tabs)')
+      return
+    }
+    // Also catches a session that was already established - a returning user
+    // whose account predates this step, or one that got in through a path that
+    // did not pass through /sign-in this run.
+    if (effectiveSignedIn && needsUsername && !onAuthRoute) {
+      router.replace('/choose-username')
       return
     }
     if (effectiveSignedIn || onAuthRoute) return
@@ -484,6 +500,14 @@ function ThemedStack() {
           gestureEnabled: Platform.OS === 'ios',
           fullScreenGestureEnabled: false,
         }}
+      />
+      {/* No swipe-back and no header: this is a gate, and the only way past it
+          is to pick a handle. Backing out would land on the tabs with the
+          account still publishing the person's real name, which is the exact
+          thing the screen exists to prevent. */}
+      <Stack.Screen
+        name="choose-username"
+        options={{ gestureEnabled: false, headerShown: false }}
       />
     </Stack>
   )
