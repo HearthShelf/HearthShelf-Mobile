@@ -37,6 +37,7 @@
  * the possibilities out rather than passing the raw message through.
  */
 import { Platform } from 'react-native'
+import * as Device from 'expo-device'
 import * as passkeys from 'react-native-passkeys'
 import * as Sentry from '@sentry/react-native'
 import { authClient } from './client'
@@ -84,7 +85,38 @@ function trace(step: string, data?: Record<string, unknown>): void {
  * `fingerprint` groups by the step that failed rather than the message, so a
  * domain that stops verifying is one issue rather than one per device.
  */
+/**
+ * An emulator cannot finish a passkey ceremony, however much the API claims.
+ *
+ * `passkeys.isSupported()` is an API-capability check: it asks whether the
+ * platform exposes the credential APIs, and an emulator answers yes. What an
+ * emulator lacks is the hardware-backed keystore the ceremony needs to actually
+ * produce key material, so it consents and then fails at the last step with
+ * `NotAllowedError - Get Key Material failed after Record Consent`
+ * (HS-MOBILEAPP-3B).
+ *
+ * That is an environment limit, not a break. describe() is deliberately right to
+ * report NotAllowedError on a real device - it is the shape a stale
+ * assetlinks.json arrives as, and the whole reason this reporting exists - so
+ * the emulator is excluded narrowly here rather than by loosening that rule.
+ *
+ * Matched on the message as well as the device, so a real phone that somehow
+ * produced this text would still report.
+ */
+function isEmulatorKeyMaterialFailure(detail: Record<string, unknown>): boolean {
+  if (Device.isDevice) return false
+  const message = typeof detail.message === 'string' ? detail.message : ''
+  return /get key material failed/i.test(message)
+}
+
 function report(step: string, detail: Record<string, unknown>): void {
+  if (isEmulatorKeyMaterialFailure(detail)) {
+    // Still leave a trail - it explains the on-screen error to anyone reading
+    // the log - but do not file an issue for a device that was never going to
+    // be able to do this.
+    trace('emulator cannot produce key material; not reporting', detail)
+    return
+  }
   // `captureMessage` titles the issue after the CALLING FUNCTION, so every one
   // of these arrived in the list as "describe" - identical, and useless to scan.
   // A synthetic exception puts the step in the title where it belongs.
@@ -293,6 +325,17 @@ function describe(e: unknown, verb: string): PasskeyResult {
     code: err?.code ?? null,
     message: message || null,
   })
+
+  // An emulator gets a sentence instead of the raw DomError, which says nothing
+  // to a person. Real devices keep the raw message on purpose - it is what names
+  // a stale assetlinks.json, and flattening it would lose the one detail worth
+  // having.
+  if (isEmulatorKeyMaterialFailure({ message })) {
+    return {
+      status: 'error',
+      message: `Emulators cannot ${verb} passkeys - there is no secure hardware to store one. Try on a real device.`,
+    }
+  }
 
   if (!message) {
     return {
