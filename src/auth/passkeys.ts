@@ -85,7 +85,12 @@ function trace(step: string, data?: Record<string, unknown>): void {
  * domain that stops verifying is one issue rather than one per device.
  */
 function report(step: string, detail: Record<string, unknown>): void {
-  Sentry.captureMessage(`passkey ${step}`, {
+  // `captureMessage` titles the issue after the CALLING FUNCTION, so every one
+  // of these arrived in the list as "describe" - identical, and useless to scan.
+  // A synthetic exception puts the step in the title where it belongs.
+  const err = new Error(`passkey ${step}`)
+  err.name = 'PasskeyFailure'
+  Sentry.captureException(err, {
     level: 'error',
     tags: { feature: 'passkey', step, platform: Platform.OS },
     extra: detail,
@@ -264,7 +269,16 @@ function describe(e: unknown, verb: string): PasskeyResult {
 
   // A dismissal is ordinary and stays a breadcrumb - reporting it would file an
   // issue describing someone changing their mind.
-  if (/cancel|abort|user denied|NotAllowed/i.test(`${err?.code ?? ''} ${message}`)) {
+  //
+  // `NotAllowedError` is deliberately NOT treated as one. WebAuthn uses it as a
+  // catch-all: the spec mandates it for a genuine failure as well as a
+  // dismissal, precisely so a site cannot tell which happened. Matching it here
+  // classified every real break as "the user changed their mind" and returned
+  // before reporting - the exact reason a failed ceremony looked like the button
+  // doing nothing. A dismissal that reaches this function instead carries an
+  // explicit cancellation code, which is what this matches now.
+  const cancelText = `${err?.code ?? ''} ${message}`
+  if (/cancel|abort|user denied/i.test(cancelText)) {
     return { status: 'cancelled' }
   }
 
@@ -272,7 +286,13 @@ function describe(e: unknown, verb: string): PasskeyResult {
   // lands - the domain refusing to validate arrives here as a DomError. It is
   // the single most likely real-device failure, so it reports with the raw
   // message intact rather than being flattened into friendly text and lost.
-  report('threw', { verb, code: err?.code ?? null, message: message || null })
+  // NotAllowedError keeps its own step so the catch-all case stays legible in
+  // the issue list: it is the shape a domain that will not verify arrives as.
+  report(/NotAllowed/i.test(cancelText) ? 'rejected-by-os' : 'threw', {
+    verb,
+    code: err?.code ?? null,
+    message: message || null,
+  })
 
   if (!message) {
     return {
