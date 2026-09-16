@@ -16,6 +16,7 @@
     android:padding="12dp">
 
     <LinearLayout
+        android:id="@+id/hs_widget_header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
@@ -102,10 +103,18 @@
         </LinearLayout>
     </LinearLayout>
 
+    <!--
+      Takes the leftover height (weight=1) rather than wrapping its rows, so the
+      free space below the book becomes up-next instead of an empty band. Rows
+      that have no title are hidden by renderUpNext, and the section as a whole
+      is hidden when the queue is empty - in which case the header block above
+      expands into the space on its own.
+    -->
     <LinearLayout
         android:id="@+id/hs_widget_upnext"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         android:orientation="vertical"
         android:layout_marginTop="10dp">
 

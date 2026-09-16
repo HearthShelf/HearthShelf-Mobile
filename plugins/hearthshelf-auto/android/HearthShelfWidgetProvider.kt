@@ -150,7 +150,15 @@ class HearthShelfWidgetProvider : AppWidgetProvider() {
   private fun renderUpNext(ctx: Context, views: RemoteViews) {
     val rows = readQueue(ctx)
     if (rows.isEmpty()) {
-      views.setViewVisibility(R.id.hs_widget_upnext, android.view.View.GONE)
+      // Nothing queued: show the section with the header row only. GONE would
+      // strand its weighted space - RemoteViews cannot reassign a layout weight,
+      // so the gap would simply go unclaimed - and an "Up next" header with
+      // nothing under it reads as an empty queue rather than as a broken card.
+      views.setViewVisibility(R.id.hs_widget_upnext, android.view.View.VISIBLE)
+      views.setTextViewText(R.id.hs_widget_next1, "Nothing queued")
+      views.setViewVisibility(R.id.hs_widget_next1, android.view.View.VISIBLE)
+      views.setViewVisibility(R.id.hs_widget_next2, android.view.View.GONE)
+      views.setViewVisibility(R.id.hs_widget_next3, android.view.View.GONE)
       return
     }
     views.setViewVisibility(R.id.hs_widget_upnext, android.view.View.VISIBLE)
@@ -292,7 +300,16 @@ class HearthShelfWidgetProvider : AppWidgetProvider() {
 
     /** Cell height (dp) at which the up-next section earns its place. Roughly
      *  three rows tall on a standard launcher grid. */
-    private const val TALL_DP = 220
+    /**
+     * Cell height at which the up-next section is worth showing.
+     *
+     * Was 220dp, which is roughly a 4-row cell on a Pixel - so a widget the user
+     * had already sized well past the short card still rendered the short layout
+     * and left an empty band under the transport. The header block needs about
+     * 88dp (64dp cover plus padding), so anything past ~150dp has room for a
+     * header row and at least one title.
+     */
+    private const val TALL_DP = 150
 
     /** Target cover edge in px. Comfortably above the drawn size on an xxhdpi
      *  screen and far below the RemoteViews transaction cap. */

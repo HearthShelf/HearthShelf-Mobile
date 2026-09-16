@@ -21,19 +21,26 @@
     android:padding="12dp"
     android:gravity="center_vertical">
 
+    <!--
+      Fixed square rather than a stretched one. centerCrop ignores
+      adjustViewBounds, and wrap_content on a cropped image gives an
+      unpredictable width - so the cover stays square and the text column beside
+      it takes the height instead (it is the part with something to distribute).
+    -->
     <ImageView
         android:id="@+id/hs_widget_cover"
-        android:layout_width="64dp"
-        android:layout_height="64dp"
+        android:layout_width="72dp"
+        android:layout_height="72dp"
         android:scaleType="centerCrop"
         android:contentDescription="Cover art"
         android:src="@drawable/hs_widget_cover_fallback" />
 
     <LinearLayout
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
+        android:layout_height="match_parent"
         android:layout_weight="1"
         android:orientation="vertical"
+        android:gravity="center_vertical"
         android:layout_marginStart="12dp">
 
         <TextView
