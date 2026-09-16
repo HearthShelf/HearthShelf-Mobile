@@ -70,6 +70,54 @@ function publish(): void {
   setAutoNowPlaying(next)
 }
 
+/**
+ * Show the book the listener would resume, when the player itself is empty.
+ *
+ * The widget only ever knew about a book LOADED into the player, and nothing is
+ * loaded until play is pressed. So a listener with a book plainly sitting in
+ * their Home hero saw "Your hearth is ready" on the home screen until they
+ * opened the app and started it - the prefs record had simply never been
+ * written (reported on 0.9.0).
+ *
+ * Home passes its already-resolved hero rather than this file re-deriving one:
+ * that choice runs through dismissals, locally-finished books and ABS's habit of
+ * returning finished books as in-progress, and a second implementation here
+ * would drift out of step with what the listener actually sees.
+ *
+ * Deliberately yields to the player: once a book is loaded, `publish()` owns the
+ * record and this is a no-op, so a seed can never overwrite what is playing.
+ */
+export function seedWidgetFromHero(
+  hero: {
+    itemId: string
+    title: string
+    author: string
+    position: number
+    duration: number
+  } | null,
+): void {
+  if (Platform.OS !== 'android') return
+  // A loaded book outranks any hero - publish() is authoritative from then on.
+  if (getState().nowPlaying) return
+  if (!hero) return
+  const next: WidgetNowPlaying = {
+    itemId: hero.itemId,
+    title: hero.title,
+    author: hero.author,
+    cover: localCoverFor(hero.itemId) ?? '',
+    position: Math.max(0, Math.round(hero.position)),
+    duration: Math.max(0, Math.round(hero.duration)),
+    // Nothing is loaded, so nothing is playing - the widget draws its transport
+    // from this and must not offer pause for a book that is not running.
+    isPlaying: false,
+  }
+  const key = `${next.itemId}|${next.title}|${next.author}|${next.cover}|${next.duration}|${next.isPlaying}`
+  if (key === lastKey && Math.abs(next.position - lastPositionSec) < POSITION_STEP_SEC) return
+  lastKey = key
+  lastPositionSec = next.position
+  setAutoNowPlaying(next)
+}
+
 let lastQueueKey = ''
 
 /** Mirror the first few up-next titles; the tall layout draws at most three. */

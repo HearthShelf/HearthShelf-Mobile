@@ -65,6 +65,7 @@ import {
   itemAuthor,
   itemTitle,
 } from '@/api/abs'
+import { seedWidgetFromHero } from '@/player/widgetNowPlaying'
 import { getProgressState, subscribeProgress, refreshProgress } from '@/store/progress'
 import { playItemById } from '@/player/playback'
 import {
@@ -193,6 +194,21 @@ export default function HomeScreen() {
   )
   const hero = visibleInProgress[0]
   const heroId = hero?.id
+  // Mirror the hero into the home-screen widget while the player is empty, so
+  // the widget shows the book the listener is actually mid-way through rather
+  // than "Your hearth is ready". No-ops once a book is loaded - the player owns
+  // the record from then on.
+  useEffect(() => {
+    if (!hero) return
+    const saved = progressById.get(hero.id)
+    seedWidgetFromHero({
+      itemId: hero.id,
+      title: hero.media.metadata.title ?? 'Untitled',
+      author: hero.media.metadata.authorName ?? '',
+      position: saved?.currentTime ?? 0,
+      duration: saved?.duration ?? (hero.media as { duration?: number }).duration ?? 0,
+    })
+  }, [hero, progressById])
   // The user's Home arrangement drives which bands render and in what order.
   const { homeSections } = useSyncExternalStore(subscribeSettings, getSettingsState)
   // Edit mode replaces the shelves with draggable section headers (covers off).
