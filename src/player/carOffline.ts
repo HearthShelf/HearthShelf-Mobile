@@ -86,17 +86,18 @@ function buildOfflineLibrary(): AutoOfflineBook[] {
 }
 
 /**
- * Push the current downloads to the car surface. Skipped when car mode is off -
- * that setting means "don't feed the car", and the native clearSession drops the
- * snapshot on the same edge. Also skipped when nothing changed, so a chatty
- * progress store doesn't rewrite prefs every tick.
+ * Push the current downloads to the car surface.
+ *
+ * NOT gated on the `carMode` setting: that selects a large-touch-target display
+ * shell, not whether Android Auto works. Skipping the push on 'off' left the car
+ * with no offline library, so it browsed an empty tree and could not resolve a
+ * downloaded book (HS-MOBILEAPP-3K/-3M).
+ *
+ * Skipped only when nothing changed, so a chatty progress store doesn't rewrite
+ * prefs every tick.
  */
 export function publishOfflineLibrary(): void {
   if (Platform.OS !== 'android') return
-  if (getSettingsState().carMode === 'off') {
-    lastPublished = null
-    return
-  }
   const books = buildOfflineLibrary()
   const json = JSON.stringify(books)
   if (json === lastPublished) return

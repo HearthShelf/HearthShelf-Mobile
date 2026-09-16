@@ -1015,10 +1015,20 @@ export function localSourceFor(itemId: string): DownloadEntry | null {
     // track" with the position frozen (HS-MOBILEAPP-2 / -38 / -39). Checking the
     // whole set is a handful of stats on a list we already hold, and it turns a
     // mid-book dead end into an honest "not downloaded" before playback starts.
-    if (e.tracks.some((t) => !new File(t.uri).exists)) {
-      void deleteDownload(itemId)
-      return null
-    }
+    // NON-DESTRUCTIVE on purpose. This used to call deleteDownload(), which is
+    // not a de-index: it does `dir.delete()` FIRST, so one stat coming back
+    // false destroyed every remaining good file in the book. It also emptied the
+    // book out of the car's offline snapshot (buildOfflineLibrary iterates this
+    // index), which is what left Android Auto showing "no items" and refusing to
+    // load the book on every single attempt (HS-MOBILEAPP-3H / -3J).
+    //
+    // Returning null already delivers the fix this check was written for - the
+    // listen falls back to streaming instead of dying on a dead play button.
+    // Erasing the download was never needed for that, and a stale absolute uri
+    // (an OS storage migration, a reinstall, a container rebase) is a far more
+    // likely reading than the files genuinely being gone. So the entry stays:
+    // this listen streams, and a re-download or a path repair can still find it.
+    if (e.tracks.some((t) => !new File(t.uri).exists)) return null
   } catch {
     // Can't stat: trust the index. Refusing to play here would break offline
     // playback on any device that won't answer the question.

@@ -755,6 +755,27 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     fun emitCarLoadFailed() {
       emitter?.invoke("onCarLoadFailed", Arguments.createMap())
     }
+
+    /**
+     * What the service actually saw when it built a browse node.
+     *
+     * "Android Auto says no items" is decided entirely inside the service, out of
+     * reach of the JS breadcrumb trail that ships with a feedback report - so the
+     * one question that matters (did the car have a session, and how many items
+     * did it produce) could only be answered from Logcat, which a driver cannot
+     * capture. This puts it in the trail. Booleans and counts only, never the
+     * token.
+     */
+    fun emitCarBrowse(parentId: String, count: Int, hasServer: Boolean, hasToken: Boolean, offline: Boolean, downloads: Int) {
+      val map = Arguments.createMap()
+      map.putString("parentId", parentId)
+      map.putInt("count", count)
+      map.putBoolean("hasServer", hasServer)
+      map.putBoolean("hasToken", hasToken)
+      map.putBoolean("offline", offline)
+      map.putInt("downloads", downloads)
+      emitter?.invoke("onCarBrowse", map)
+    }
   }
 }
 

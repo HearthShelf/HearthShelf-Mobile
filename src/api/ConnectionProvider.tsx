@@ -75,6 +75,7 @@ import { hydrateSessionCache, refreshSessionCache } from '@/player/sessionCache'
 import { subscribeServerReached, setOfflineMode } from '@/player/syncState'
 import { hydrateProgress } from '@/store/progress'
 import type { SplashServer } from '@/ui/SplashScreen'
+import { breadcrumb } from '@/lib/crashLog'
 
 /**
  * Why the launch is taking a while, when we know. Drives the splash copy: sitting
@@ -226,7 +227,6 @@ const Ctx = createContext<ConnectionValue | null>(null)
 // connect). Guarded so re-connects don't stack subscriptions.
 let notePopsMirrorArmed = false
 let lastMirroredNotePops: boolean | null = null
-let carModeMirrorArmed = false
 let skipMirrorArmed = false
 let lastMirroredSkip: { back: number; forward: number } | null = null
 let lastAutoSession: { serverUrl: string; token: string } | null = null
@@ -277,20 +277,25 @@ function ensureSkipMirror(): void {
   subscribeSettings(push)
 }
 
+/**
+ * Hand the ABS session to the native car surface.
+ *
+ * Deliberately NOT gated on the `carMode` setting. That setting selects a
+ * large-touch-target DISPLAY shell (it is what the web app switches its own UI
+ * with, and it is kept here for an eventual phone equivalent) - it says nothing
+ * about whether Android Auto or CarPlay should work. Gating this on it meant a
+ * stored 'off' cleared serverUrl, token and the offline library out of native
+ * prefs on every connect, so the head unit browsed an empty tree and refused
+ * every book, with nothing on the phone to suggest why (HS-MOBILEAPP-3K/-3M).
+ *
+ * Android Auto and CarPlay are the OS deciding to show our media service; the
+ * user opts out of those in the car or the OS, not in a display preference here.
+ */
 function pushAutoSession(serverUrl: string, token: string): void {
-  const { carMode, skipBack, skipForward } = getSettingsState()
+  const { skipBack, skipForward } = getSettingsState()
   lastAutoSession = { serverUrl, token }
-  if (carMode === 'off') clearAutoSession()
-  else setAutoSession(serverUrl, token, skipBack, skipForward)
-}
-
-function ensureCarModeMirror(): void {
-  if (carModeMirrorArmed) return
-  carModeMirrorArmed = true
-  subscribeSettings(() => {
-    if (!lastAutoSession) return
-    pushAutoSession(lastAutoSession.serverUrl, lastAutoSession.token)
-  })
+  breadcrumb('car', 'push session')
+  setAutoSession(serverUrl, token, skipBack, skipForward)
 }
 
 class NoLinkedServersError extends Error {
@@ -432,7 +437,6 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
           Promise.all([ensureDeviceId(), hydrateSettings()]),
         )
         pushAutoSession(serverUrl, token)
-        ensureCarModeMirror()
         // Push skip-second settings to native (phone notification honors these),
         // independent of car mode, and keep them in sync as the user changes them.
         ensureSkipMirror()

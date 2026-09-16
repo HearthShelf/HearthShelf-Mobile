@@ -7,6 +7,7 @@
  * module.
  */
 import { NativeModules, Platform } from 'react-native'
+import { breadcrumb } from '@/lib/crashLog'
 
 /** One Discover row handed to the car: a label and its books (id/title/author). */
 export interface AutoDiscoverShelf {
@@ -98,6 +99,18 @@ interface HearthShelfAutoNative {
 
 const native: HearthShelfAutoNative | undefined = NativeModules.HearthShelfAuto
 
+/**
+ * Whether the native car module resolved at all.
+ *
+ * EVERY call in this file is `native?.something()`, so if the module is missing
+ * the whole car surface no-ops in total silence: the app looks healthy, the car
+ * gets no session, and nothing anywhere says why. That is indistinguishable
+ * from "the session was never pushed" in a report, so state it outright.
+ */
+export function autoNativeAvailable(): boolean {
+  return !!native
+}
+
 export function setAutoSession(
   serverUrl: string,
   token: string,
@@ -105,7 +118,25 @@ export function setAutoSession(
   skipForwardSec: number,
 ): void {
   if (Platform.OS === 'android' || Platform.OS === 'ios') {
+    // The car reads serverUrl/token from native prefs and serves an EMPTY browse
+    // tree without them, so whether this line ran is the first thing any "Android
+    // Auto says no items" report needs to answer. Says the host, never the token.
+    breadcrumb(
+      'car',
+      native
+        ? `session -> native for ${hostOf(serverUrl)} (skip ${skipBackSec}/${skipForwardSec})`
+        : `session NOT pushed: native car module missing (${Platform.OS})`,
+    )
     native?.setSession(serverUrl, token, skipBackSec, skipForwardSec)
+  }
+}
+
+/** Host only - never log a token, and a full url can carry one in a query. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return 'unparseable-url'
   }
 }
 
@@ -358,5 +389,12 @@ export function setAutoWidgetQueue(titles: string[]): void {
 }
 
 export function clearAutoSession(): void {
-  if (Platform.OS === 'android' || Platform.OS === 'ios') native?.clearSession()
+  if (Platform.OS === 'android' || Platform.OS === 'ios') {
+    // Wipes serverUrl, token AND the offline library out of native prefs, which
+    // is precisely the state that makes the car show nothing. It is a legitimate
+    // sign-out/car-mode-off action, but an unexpected one is indistinguishable
+    // from a session that was never pushed - so mark it.
+    breadcrumb('car', 'session CLEARED from native (sign-out or car mode off)')
+    native?.clearSession()
+  }
 }

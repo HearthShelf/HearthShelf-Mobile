@@ -131,6 +131,24 @@ const RECLAIM_GIVE_UP_COOLDOWN_MS = 5 * 60_000
  *  than the tail of a tick that was already in flight. */
 const RECLAIM_PROGRESS_EPSILON_SEC = 2
 
+/** How long a book the car refused to load is left alone before we offer it
+ *  again.
+ *
+ *  A failed handoff clears `carBook` so a later tap can retry - but `sync` re-
+ *  hands the book whenever `carBook` does not match the loaded item, and it runs
+ *  on EVERY store write. The car mirrors a progress tick about once a second, so
+ *  clearing the marker immediately re-armed the next attempt: hand, fail, clear,
+ *  hand, on a ~10ms cycle for as long as the car stayed connected
+ *  (HS-MOBILEAPP-3H / -3J, where the same book failed to load dozens of times in
+ *  a row and the driver got a toast each round).
+ *
+ *  Whatever makes the car refuse a book - no token, no network, the download
+ *  gone from the offline snapshot - does not resolve inside a second, so the
+ *  retry cannot be what fixes it. Same reasoning, and same shape, as
+ *  RECLAIM_GIVE_UP_COOLDOWN_MS: stand down, and let an explicit play tap clear
+ *  it at once. */
+const CAR_LOAD_FAIL_COOLDOWN_MS = 60_000
+
 /** How late the reclaim probe may run and still be trusted to judge recovery.
  *
  *  Android suspends JS timers for a backgrounded app, so an armed probe can
@@ -181,10 +199,18 @@ const PAUSE_GRACE_MS = 10_000
  * here, since the load is asynchronous and several of these routes can fire
  * within a few hundred ms of each other.
  */
-function handBookToCar(held: MutableRefObject<string | null>): void {
+function handBookToCar(
+  held: MutableRefObject<string | null>,
+  refused?: MutableRefObject<{ itemId: string; at: number } | null>,
+): void {
   const s = getState()
   const np = s.nowPlaying
   if (!np?.itemId || held.current === np.itemId) return
+  // The car already refused this exact book moments ago. sync() calls us on
+  // every store write and the car ticks about once a second, so without this
+  // the failure re-arms itself forever (see CAR_LOAD_FAIL_COOLDOWN_MS).
+  const no = refused?.current
+  if (no && no.itemId === np.itemId && Date.now() - no.at < CAR_LOAD_FAIL_COOLDOWN_MS) return
   held.current = np.itemId
   breadcrumb('car', `hand ${np.itemId} to the car @${Math.round(s.position)}s`)
   loadAutoCarBook(np.itemId, s.position)
@@ -226,6 +252,10 @@ export function PlayerHost() {
   // The book we believe the CAR player holds (see handBookToCar). null means the
   // car has nothing loaded, which is how it always connects.
   const carBook = useRef<string | null>(null)
+  /** The book the car last refused, and when. Keyed by item so switching books
+   *  is never punished for a previous book's failure (see
+   *  CAR_LOAD_FAIL_COOLDOWN_MS). */
+  const carRefused = useRef<{ itemId: string; at: number } | null>(null)
 
   // Shake-to-extend the sleep timer. Mounted here (the one persistent host) so
   // it can fire a confirmation toast in component context.
@@ -701,6 +731,26 @@ export function PlayerHost() {
       // audio never stopped and nothing about the book changed - only our belief
       // was wrong. So just clear the flag and let sync() resume driving the phone
       // player, which is where the audio already is.
+      // What the car service saw when it built a browse node. This is the only
+      // window into why Android Auto shows "no items": that decision is made
+      // entirely inside the native service, and its Logcat line never reaches a
+      // feedback report.
+      emitter.addListener(
+        'onCarBrowse',
+        (e: {
+          parentId: string
+          count: number
+          hasServer: boolean
+          hasToken: boolean
+          offline: boolean
+          downloads: number
+        }) => {
+          breadcrumb(
+            'car',
+            `browse ${e.parentId} -> ${e.count} items (server=${e.hasServer} token=${e.hasToken} offline=${e.offline} downloads=${e.downloads})`,
+          )
+        },
+      ),
       emitter.addListener('onCarAbsent', () => {
         if (!getState().carActive) return
         breadcrumb('car', 'no car attached but carActive was set; clearing stale car ownership')
@@ -755,9 +805,18 @@ export function PlayerHost() {
       // network, not downloaded). Forget that we handed it over so the next tap
       // tries again, and say so rather than leaving a dead play button.
       emitter.addListener('onCarLoadFailed', () => {
-        breadcrumb('car', `car could not load ${carBook.current ?? 'the book'}`)
+        const failed = carBook.current ?? getState().nowPlaying?.itemId ?? null
+        breadcrumb('car', `car could not load ${failed ?? 'the book'}`)
         carBook.current = null
-        showToast("Couldn't start that book in the car")
+        // Stand down on THIS book for a while. Clearing carBook alone re-arms
+        // the next attempt on the very next store tick, which is how one failed
+        // handoff turned into an endless hand/fail loop and a toast per round.
+        const repeat =
+          carRefused.current?.itemId === failed &&
+          Date.now() - carRefused.current.at < CAR_LOAD_FAIL_COOLDOWN_MS
+        if (failed) carRefused.current = { itemId: failed, at: Date.now() }
+        // One toast per stand-down, not one per attempt.
+        if (!repeat) showToast("Couldn't start that book in the car")
       }),
       // The car loaded a book: mirror it into the store so the phone UI shows the
       // same cover/title/chapters and its scrubber tracks the car.
@@ -1035,7 +1094,7 @@ export function PlayerHost() {
         // Clear the held marker so handBookToCar re-issues for the same book
         // (it no-ops when the car is already believed to hold it).
         carBook.current = null
-        handBookToCar(carBook)
+        handBookToCar(carBook, carRefused)
         return
       }
       // A genuine rebuffer already explains the silence, and the engine reports
@@ -1087,7 +1146,7 @@ export function PlayerHost() {
         // intent to play does.
         if (s.isPlaying && np?.itemId && carBook.current !== np.itemId) {
           lastPlaying.current = true
-          handBookToCar(carBook)
+          handBookToCar(carBook, carRefused)
           return
         }
         // Still forward transport intent - the module dispatches it to the car.
@@ -1180,6 +1239,10 @@ export function PlayerHost() {
           // clears the give-up cooldown so the recovery is armed for this attempt
           // rather than ignoring a real request.
           reclaimGaveUpOn.current = null
+          // Same reasoning for the car: an explicit play request is the one
+          // thing that can change the outcome, so it re-arms the handoff
+          // instead of being swallowed by the stand-down.
+          carRefused.current = null
           Native.play()
           // A book loaded paused (the Now Playing tab) has no ABS session yet -
           // opening one at load made the server record a listen for a book

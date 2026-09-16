@@ -1219,6 +1219,16 @@ class HearthShelfAutoService : MediaLibraryService() {
         try {
           val kids = childrenOf(parentId)
           Log.i(TAG, "onGetChildren parent=$parentId -> ${kids.size} items")
+          // Mirror the decision into the JS trail: an empty tree is invisible
+          // from JS otherwise, and Logcat is not something a driver can capture.
+          HearthShelfAutoModule.emitCarBrowse(
+            parentId,
+            kids.size,
+            serverUrl != null,
+            token != null,
+            offlineMode(),
+            offlineLibrary().size,
+          )
           LibraryResult.ofItemList(kids, params)
         } catch (e: Exception) {
           Log.e(TAG, "onGetChildren parent=$parentId FAILED", e)
@@ -2551,11 +2561,14 @@ class HearthShelfAutoService : MediaLibraryService() {
   private fun offlineChildrenOf(parentId: String): ImmutableList<MediaItem> {
     val books = offlineLibrary()
     if (books.isEmpty()) {
-      // An empty root reads as a broken app, so say what's actually true - but
-      // only to a signed-in user. With no session at all (signed out, or car mode
-      // switched off) "no downloaded books" would be the wrong explanation.
-      val explain = parentId == ROOT && serverUrl != null
-      return if (explain) ImmutableList.of(offlineNotice()) else ImmutableList.of()
+      // An empty root reads as a broken app, so ALWAYS say what is actually
+      // true. This used to stay silent whenever there was no session, which is
+      // precisely the case a driver is most likely to hit and least able to
+      // diagnose: a bare "no items" screen with nothing to act on
+      // (HS-MOBILEAPP-3H). The two causes need different advice, so say which
+      // one it is.
+      if (parentId != ROOT) return ImmutableList.of()
+      return ImmutableList.of(if (serverUrl == null) signedOutNotice() else offlineNotice())
     }
     val byTitle = books.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.sortKey })
     return when {
@@ -2625,6 +2638,22 @@ class HearthShelfAutoService : MediaLibraryService() {
         MediaMetadata.Builder()
           .setTitle("No connection - no downloaded books")
           .setSubtitle("Download books in the app to hear them here.")
+          .setIsBrowsable(false)
+          .setIsPlayable(false)
+          .build()
+      )
+      .build()
+
+  /** Shown when the car has no session at all. "No downloaded books" would be
+   *  the wrong advice here - downloading more would not help; opening the app is
+   *  what does. */
+  private fun signedOutNotice(): MediaItem =
+    MediaItem.Builder()
+      .setMediaId("off:signedout")
+      .setMediaMetadata(
+        MediaMetadata.Builder()
+          .setTitle("Open HearthShelf on your phone")
+          .setSubtitle("Sign in there, then come back to see your books.")
           .setIsBrowsable(false)
           .setIsPlayable(false)
           .build()
