@@ -200,9 +200,35 @@ const SEEK_SETTLE_TOLERANCE_SEC = 2
  *  the position readout. Matches PlayerHost's own 1.5s seek transient window,
  *  plus headroom for an unbuffered region. */
 const SEEK_SETTLE_TIMEOUT_MS = 4000
+/**
+ * Absolute ceiling on how long ticks may be held, measured from when the seek
+ * was first armed.
+ *
+ * SEEK_SETTLE_TIMEOUT_MS alone does not bound this. Its deadline is wall-clock
+ * but it is only ever SAMPLED when a tick arrives - every branch that can retire
+ * `pendingSeek` lives inside reportPosition, so ticks are the only thing that can
+ * release a hold whose whole job is to drop ticks. When the native 1s tick is
+ * deferred (Doze/App Standby, see MAX_TICK_GAP in playback.ts) ticks land minutes
+ * apart, and the re-issue branch below re-arms `until` from Date.now() afresh
+ * each time. Three ticks at that cadence is bounded in tick COUNT and unbounded
+ * in the only clock the user experiences: the progress bar sat frozen for ~10
+ * minutes while audio played (HS-MOBILEAPP-3D).
+ *
+ * So cap the total hold independently of tick arrival. Generous next to the ~2s
+ * a real seek takes to settle, so it cannot fire on a healthy seek and undo the
+ * anti-rollback the hold exists for (HS-MOBILEAPP-Z, HS-MOBILEAPP-2S).
+ */
+const SEEK_HOLD_CEILING_MS = 15000
 /** The seek we are waiting for the engine to land (see reportPosition). Declared
  *  here rather than beside requestSeek because loadTrack below arms it too. */
-let pendingSeek: { target: number; until: number; retries: number } | null = null
+let pendingSeek: {
+  target: number
+  until: number
+  retries: number
+  /** When this seek was FIRST armed; re-issues carry it forward so the ceiling
+   *  measures the whole hold, not the latest re-arm. */
+  armedAt: number
+} | null = null
 
 /** Tick telemetry for the frozen-progress-bar reports (HS-MOBILEAPP-3D).
  *
@@ -273,7 +299,12 @@ export function loadTrack(track: NowPlaying, autoPlay = true): void {
   // as a user seek, and the same escape hatch if it never lands.
   pendingSeek =
     track.startPosition > 0
-      ? { target: track.startPosition, until: Date.now() + SEEK_SETTLE_TIMEOUT_MS, retries: 0 }
+      ? {
+          target: track.startPosition,
+          until: Date.now() + SEEK_SETTLE_TIMEOUT_MS,
+          retries: 0,
+          armedAt: Date.now(),
+        }
       : null
   set({
     nowPlaying: track,
@@ -604,7 +635,12 @@ export function requestSeek(seconds: number): void {
   // Hold native progress ticks until the engine reports back near this target,
   // so an in-flight seek can't be rolled back by a tick describing the old spot
   // (and a rapid second skip measures from where the first one put us).
-  pendingSeek = { target, until: Date.now() + SEEK_SETTLE_TIMEOUT_MS, retries: 0 }
+  pendingSeek = {
+    target,
+    until: Date.now() + SEEK_SETTLE_TIMEOUT_MS,
+    retries: 0,
+    armedAt: Date.now(),
+  }
   // A seek (esp. while paused) makes the server's position stale with no new
   // listened-time: mark sync dirty so the header icon goes orange and a tap can
   // push this spot. syncState is a leaf store (no deps back into here).
@@ -1006,6 +1042,16 @@ export function reportPosition(position: number): void {
   if (pendingSeek !== null) {
     if (Math.abs(position - pendingSeek.target) <= SEEK_SETTLE_TOLERANCE_SEC) {
       pendingSeek = null
+    } else if (Date.now() - pendingSeek.armedAt >= SEEK_HOLD_CEILING_MS) {
+      // Held longer than any real seek could need. Surrender and adopt the
+      // engine's position rather than keep freezing the readout - the same
+      // surrender the retries-exhausted branch below performs, made reachable in
+      // wall-clock rather than only in tick count.
+      breadcrumb(
+        'player',
+        `seek to ${Math.round(pendingSeek.target)}s held ${Math.round((Date.now() - pendingSeek.armedAt) / 1000)}s without landing (engine at ${Math.round(position)}s); releasing hold`,
+      )
+      pendingSeek = null
     } else if (Date.now() < pendingSeek.until) {
       tickDropsPendingSeek += 1
       return
@@ -1023,7 +1069,15 @@ export function reportPosition(position: number): void {
         'player',
         `seek to ${Math.round(target)}s has not landed (engine at ${Math.round(position)}s); re-issuing ${retries}/${SEEK_REISSUE_LIMIT}`,
       )
-      pendingSeek = { target, until: Date.now() + SEEK_SETTLE_TIMEOUT_MS, retries }
+      // `until` is clamped to the ceiling so re-issues cannot extend the hold
+      // past it; `armedAt` carries forward for the same reason.
+      const armedAt = pendingSeek.armedAt
+      pendingSeek = {
+        target,
+        until: Math.min(Date.now() + SEEK_SETTLE_TIMEOUT_MS, armedAt + SEEK_HOLD_CEILING_MS),
+        retries,
+        armedAt,
+      }
       set({ seekTo: target })
       return
     } else {
