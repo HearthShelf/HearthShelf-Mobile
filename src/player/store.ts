@@ -203,6 +203,29 @@ const SEEK_SETTLE_TIMEOUT_MS = 4000
 /** The seek we are waiting for the engine to land (see reportPosition). Declared
  *  here rather than beside requestSeek because loadTrack below arms it too. */
 let pendingSeek: { target: number; until: number; retries: number } | null = null
+
+/** Tick telemetry for the frozen-progress-bar reports (HS-MOBILEAPP-3D).
+ *
+ *  A bar that sits still while audio plays has exactly two possible causes, and
+ *  the crumbs could not previously tell them apart: either no onProgress tick
+ *  reached JS at all (the RN runtime was suspended, or native stopped emitting),
+ *  or ticks DID arrive and reportPosition discarded them - the pendingSeek hold
+ *  above returns early, so a seek that never lands silently drops every tick
+ *  after it. Counting both arrivals and drops makes the next report say which. */
+let tickArrivals = 0
+let tickDropsPendingSeek = 0
+let lastTickAtMs = 0
+
+/** Arrivals/drops since launch plus the age of the most recent tick. Read by the
+ *  lifecycle crumb; never resets, so deltas across a background window are what
+ *  matter, not the absolute values. */
+export function getTickStats(): { arrivals: number; dropped: number; sinceLastMs: number | null } {
+  return {
+    arrivals: tickArrivals,
+    dropped: tickDropsPendingSeek,
+    sinceLastMs: lastTickAtMs === 0 ? null : Date.now() - lastTickAtMs,
+  }
+}
 /**
  * How many times a lapsed seek is re-issued before we accept the engine's
  * position instead.
@@ -963,6 +986,8 @@ function fireStop(position: number): void {
 
 /** Called by the <Video> host on each progress tick. */
 export function reportPosition(position: number): void {
+  tickArrivals += 1
+  lastTickAtMs = Date.now()
   // Drop ticks that are still describing where we WERE while a seek is in
   // flight.
   //
@@ -982,6 +1007,7 @@ export function reportPosition(position: number): void {
     if (Math.abs(position - pendingSeek.target) <= SEEK_SETTLE_TOLERANCE_SEC) {
       pendingSeek = null
     } else if (Date.now() < pendingSeek.until) {
+      tickDropsPendingSeek += 1
       return
     } else if (pendingSeek.retries < SEEK_REISSUE_LIMIT) {
       // The window lapsed with the engine still elsewhere. Before believing it,

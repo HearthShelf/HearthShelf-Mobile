@@ -33,7 +33,7 @@
  * tokens, no server URLs, and no account credentials.
  */
 import * as Sentry from '@sentry/react-native'
-import { getState } from '@/player/store'
+import { getState, getTickStats } from '@/player/store'
 import { getSyncState } from '@/player/syncState'
 import { getProgressState } from '@/store/progress'
 import { isDownloaded } from '@/player/downloads'
@@ -97,6 +97,13 @@ export interface PlayerSnapshot {
    *  A local value AHEAD of the server is the fingerprint of a kill-before-sync. */
   localPosition: number | null
   localAgeSeconds: number | null
+  /** Progress ticks delivered to JS this launch, ticks discarded by the seek
+   *  hold, and how long since the last one. A frozen progress bar reported with
+   *  tickSinceLastSec in the hundreds means the store stopped being fed
+   *  (HS-MOBILEAPP-3D); a rising tickDropped means it was fed and ignored. */
+  tickArrivals: number
+  tickDropped: number
+  tickSinceLastSec: number | null
   downloaded: boolean
   /** The armed sleep timer, or null. Captured because a sleep timer is the one
    *  thing that STOPS playback without any failure to report: an "it stopped"
@@ -175,6 +182,7 @@ function playerSnapshot(): PlayerSnapshot {
   const s = getState()
   const np = s.nowPlaying
   const sync = getSyncState()
+  const ticks = getTickStats()
   const saved = np?.itemId ? getProgressState().byId.get(np.itemId) : undefined
   const now = Date.now()
   return {
@@ -207,6 +215,9 @@ function playerSnapshot(): PlayerSnapshot {
     secondsSinceSync: sync.lastSyncedAt ? Math.round((now - sync.lastSyncedAt) / 1000) : null,
     localPosition: sec(saved?.currentTime),
     localAgeSeconds: saved?.lastUpdate ? Math.round((now - saved.lastUpdate) / 1000) : null,
+    tickArrivals: ticks.arrivals,
+    tickDropped: ticks.dropped,
+    tickSinceLastSec: ticks.sinceLastMs === null ? null : Math.round(ticks.sinceLastMs / 1000),
     downloaded: np?.itemId ? isDownloaded(np.itemId) : false,
   }
 }

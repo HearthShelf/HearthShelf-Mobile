@@ -24,7 +24,7 @@
  */
 import { AppState, type AppStateStatus } from 'react-native'
 import { breadcrumb } from '@/lib/crashLog'
-import { getState } from './store'
+import { getState, getTickStats } from './store'
 
 let sub: { remove: () => void } | null = null
 let leftAt: number | null = null
@@ -42,6 +42,13 @@ function snapshot(): { pos: number; item: string; playing: boolean; car: boolean
   }
 }
 
+/** Progress-tick delta across the background window, for the frozen-bar reports.
+ *  A foreground crumb reading `ticks +0` means no onProgress reached JS at all
+ *  while away - the store could not have advanced. `dropped` rising instead means
+ *  ticks arrived and the pendingSeek hold discarded them. Those are different
+ *  bugs and the crumbs previously looked identical. */
+let leftTicks: { arrivals: number; dropped: number } | null = null
+
 function onChange(next: AppStateStatus): void {
   // 'inactive' is a transient iOS state (and fires on Android for some system
   // dialogs); only the settled states are worth a crumb.
@@ -49,6 +56,8 @@ function onChange(next: AppStateStatus): void {
     const { pos, item, playing, car } = snapshot()
     leftAt = Date.now()
     leftPosition = pos
+    const t = getTickStats()
+    leftTicks = { arrivals: t.arrivals, dropped: t.dropped }
     breadcrumb('lifecycle', `background @${pos}s item=${item} playing=${playing} car=${car}`)
     return
   }
@@ -69,12 +78,19 @@ function onChange(next: AppStateStatus): void {
       : delta < -5
         ? ` REWOUND ${Math.abs(delta)}s`
         : ` moved ${delta >= 0 ? '+' : ''}${delta}s`
+  const t = getTickStats()
+  const ticks = leftTicks
+    ? ` ticks +${t.arrivals - leftTicks.arrivals} dropped +${t.dropped - leftTicks.dropped}`
+    : ''
+  const lastTick =
+    t.sinceLastMs === null ? '' : ` lastTick ${Math.round(t.sinceLastMs / 1000)}s ago`
   breadcrumb(
     'lifecycle',
-    `foreground after ${awaySec}s away @${pos}s (was ${leftPosition ?? '?'}s)${move} item=${item} playing=${playing} car=${car}`,
+    `foreground after ${awaySec}s away @${pos}s (was ${leftPosition ?? '?'}s)${move} item=${item} playing=${playing} car=${car}${ticks}${lastTick}`,
   )
   leftAt = null
   leftPosition = null
+  leftTicks = null
 }
 
 /** Mount once from the root layout. Returns an unsubscribe for symmetry with the
@@ -87,5 +103,6 @@ export function mountLifecycleTrace(): () => void {
     sub = null
     leftAt = null
     leftPosition = null
+    leftTicks = null
   }
 }
