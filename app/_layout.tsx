@@ -271,6 +271,13 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       // NAME instead, and that is what every other listener would see on clubs,
       // notes and the leaderboard. Ask before letting them in. See
       // app/choose-username.tsx for why this is a gate and not a sign-in step.
+      if (needsUsername) {
+        // Terminal launch outcome: the app is up and waiting on the user to pick
+        // a handle. The ConnectionGate is not mounted on an auth route, so nothing
+        // else will disarm the startup watchdog - and a user reading the screen
+        // for over a minute would otherwise be reported as a startup stall.
+        finishStartupTrace('needs-username')
+      }
       router.replace(needsUsername ? '/choose-username' : '/(tabs)')
       return
     }
@@ -278,6 +285,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     // whose account predates this step, or one that got in through a path that
     // did not pass through /sign-in this run.
     if (effectiveSignedIn && needsUsername && !onAuthRoute) {
+      finishStartupTrace('needs-username')
       router.replace('/choose-username')
       return
     }
