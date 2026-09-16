@@ -138,16 +138,24 @@ function BookTileBase({
           <View style={[styles.selOverlay, { borderColor: colors.accent }]} pointerEvents="none" />
         ) : null}
       </View>
-      {inProgress ? (
-        <View style={[styles.track, { backgroundColor: colors.fillStrong }]}>
+      {/* Always laid out, even with no progress to draw. Rendering this
+          conditionally made a tile with a bar 10px taller than one without, so
+          in any row mixing the two the titles sat on different baselines - most
+          visible on the home shelves, where the in-progress book leads the row
+          and every tile after it rode up. */}
+      <View
+        style={[styles.track, inProgress && { backgroundColor: colors.fillStrong }]}
+        pointerEvents="none"
+      >
+        {inProgress ? (
           <View
             style={[
               styles.trackFill,
               { width: `${progress! * 100}%`, backgroundColor: colors.accent },
             ]}
           />
-        </View>
-      ) : null}
+        ) : null}
+      </View>
       <View style={styles.meta}>
         <AppText variant="caption" numberOfLines={2}>
           {title}
