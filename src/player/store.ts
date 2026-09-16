@@ -382,11 +382,28 @@ export function updateChapters(itemId: string, chapters: ChapterMark[]): void {
   }
 }
 
+/** When isPlaying last went false, epoch ms (0 = never this launch).
+ *
+ *  The stall watchdog's "store says paused but ticks are still arriving" branch
+ *  cannot otherwise tell a DELIBERATE pause from the false pause it exists to
+ *  catch (a reclaim leaving the store paused while audio runs). Both look like
+ *  isPlaying=false plus a recent tick - and in the car, where the head unit
+ *  mirrors a tick every second, a normal pause hits that shape instantly. */
+let pausedAtMs = 0
+
+/** How long since the store last went paused, or null if it never has. */
+export function msSincePaused(): number | null {
+  return pausedAtMs === 0 ? null : Date.now() - pausedAtMs
+}
+
 export function setPlaying(isPlaying: boolean): void {
   if (!state.nowPlaying) return
   // A transient audio-focus duck (call, nav prompt) reaches us as an ordinary
   // pause, which is what we want: both should rewind a little on resume.
-  if (!isPlaying) notePaused()
+  if (!isPlaying) {
+    notePaused()
+    pausedAtMs = Date.now()
+  }
   set({ isPlaying })
   if (isPlaying) {
     expireStaleSleepTimer()

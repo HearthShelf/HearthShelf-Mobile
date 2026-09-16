@@ -35,6 +35,7 @@ import {
   currentChapter,
   setDeadTransportReporter,
   setRemoteResumeChecker,
+  msSincePaused,
 } from './store'
 import { syncStateCarOwned } from './syncState'
 import { breadcrumb } from '@/lib/crashLog'
@@ -160,6 +161,12 @@ const STALL_CHECK_MS = 5000
  *  playback), so it must not fire on a rebuffer a driver would have simply waited
  *  out. */
 const CAR_STALL_AFTER_MS = 60_000
+
+/** How long a deliberate pause is believed before the "paused but still
+ *  ticking" branch may treat it as a stall. Native ticks stop within a second or
+ *  two of a real pause, so anything still ticking past this is a genuine
+ *  disagreement rather than the tail of the pause itself. */
+const PAUSE_GRACE_MS = 10_000
 
 /**
  * Hand the store's current book to the car player.
@@ -774,6 +781,20 @@ export function PlayerHost() {
           // The car's own answer to "what are you holding", so the pushes below
           // stop once it has the book.
           const isRepublish = carBook.current === e.itemId
+          // A first load FORCES isPlaying true (below). That is right when the
+          // car is genuinely starting a book and wrong for anything else - and
+          // `carBook` is cleared on disconnect, stale-absent, needs-book and
+          // load-failed, so a re-announce that arrives after any of those is
+          // misread as a first load and restarts audio the user had paused.
+          // Traced because that is indistinguishable from a real first load in
+          // the trail otherwise, and it is a prime suspect for "I paused in the
+          // car and it started again".
+          if (!isRepublish && !getState().isPlaying && getState().carActive) {
+            breadcrumb(
+              'car',
+              `car announced ${e.itemId.slice(0, 8)} @${Math.round(e.position)}s as a FIRST load while the store is paused; forcing play`,
+            )
+          }
           carBook.current = e.itemId
           mirrorCarTrack(
             {
@@ -940,9 +961,40 @@ export function PlayerHost() {
         // nothing watching it.
         const last = lastProgressAt.current
         if (!last || Date.now() - last > STALL_AFTER_MS) return
+
+        // A DELIBERATE pause looks identical to the false pause this branch is
+        // built for: isPlaying=false with a tick moments ago. In the car that is
+        // not even a race - the head unit mirrors a tick every second, so a
+        // normal pause lands inside the window immediately, and recovering would
+        // restart audio the user just stopped.
+        //
+        // Ticks stop within a second or two of a real pause, so anything still
+        // ticking well AFTER the pause is the disagreement worth acting on. A
+        // pause younger than that is taken at face value.
+        const sincePause = msSincePaused()
+        if (sincePause !== null && sincePause < PAUSE_GRACE_MS) {
+          breadcrumb(
+            'player',
+            `paused ${Math.round(sincePause / 1000)}s ago with ticks ${Math.round((Date.now() - last) / 1000)}s ago; honoring the pause`,
+          )
+          return
+        }
+
+        // Never route the car through here. recoverLostPlayback reloads the
+        // PHONE player, which would play the book a second time over the car -
+        // the same hazard the car-stall branch below is written to avoid. The
+        // car has its own watchdog (CAR_STALL_AFTER_MS) and its own recovery.
+        if (s.carActive) {
+          breadcrumb(
+            'player',
+            `car paused ${sincePause === null ? '?' : Math.round(sincePause / 1000)}s ago but ticks arrived ${Math.round((Date.now() - last) / 1000)}s ago; leaving it to the car`,
+          )
+          return
+        }
+
         breadcrumb(
           'player',
-          `store says paused but ticks arrived ${Math.round((Date.now() - last) / 1000)}s ago; treating as a stall`,
+          `store says paused but ticks arrived ${Math.round((Date.now() - last) / 1000)}s ago (paused ${sincePause === null ? '?' : Math.round(sincePause / 1000)}s ago); treating as a stall`,
         )
         lastProgressAt.current = Date.now()
         recoverLostPlayback('stall', 'paused-but-ticking')
@@ -968,8 +1020,18 @@ export function PlayerHost() {
           return
         }
         if (Date.now() - last < CAR_STALL_AFTER_MS) return
+        // A long DELIBERATE pause in the car looks exactly like a silent stall:
+        // the head unit stops mirroring ticks either way. Re-handing the book
+        // then restarts audio the user stopped on purpose. Only the store's
+        // isPlaying separates the two, so trust it - and say so in the trail,
+        // because if a pause still resumes itself after this, the flag was
+        // already wrong before the watchdog ran and the bug is upstream.
+        const sinceCarPause = msSincePaused()
+        breadcrumb(
+          'car',
+          `car quiet ${Math.round((Date.now() - last) / 1000)}s @${Math.round(s.position)}s (paused ${sinceCarPause === null ? '?' : Math.round(sinceCarPause / 1000)}s ago); re-handing the book`,
+        )
         lastProgressAt.current = Date.now()
-        breadcrumb('car', `car playback stalled @${Math.round(s.position)}s; re-handing the book`)
         // Clear the held marker so handBookToCar re-issues for the same book
         // (it no-ops when the car is already believed to hold it).
         carBook.current = null
