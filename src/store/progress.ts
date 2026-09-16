@@ -583,7 +583,10 @@ function keepFresherLocalPositions(
     if (concurrentRace) {
       breadcrumb(
         'progress',
-        `server row ${Math.round(dropSec)}s behind local for ${id.slice(0, 8)} but only ${stampGapMs}ms newer - keeping local position (concurrent write)`,
+        // Say "older" when the gap is negative. It read as "only -454ms newer",
+        // which is not a thing, and cost real time during a triage that was
+        // reading these lines as evidence of something anomalous.
+        `server row ${Math.round(dropSec)}s behind local for ${id.slice(0, 8)} but only ${Math.abs(stampGapMs)}ms ${stampGapMs < 0 ? 'older' : 'newer'} - keeping local position (concurrent write)`,
       )
     }
     // Strictly newer only: equal stamps mean this row already came from the

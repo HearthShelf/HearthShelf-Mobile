@@ -919,7 +919,35 @@ export function PlayerHost() {
   useEffect(() => {
     const id = setInterval(() => {
       const s = getState()
-      if (!s.isPlaying || !s.nowPlaying) return
+      if (!s.nowPlaying) return
+      if (!s.isPlaying) {
+        // The store says paused. Usually true, and there is nothing to watch -
+        // but this gate is also the one blind spot in the whole watchdog, because
+        // the thing it is built to notice can itself turn the flag off.
+        //
+        // A reclaim or a suppressed state event can leave the store paused while
+        // the native service keeps playing. Every check below is then skipped, so
+        // the stall is never observed: the position stops advancing, the bar sits
+        // still, and nothing reports it. A listener saw exactly that - four
+        // background/foreground cycles over nine minutes, all reading
+        // `@24s (was 24s) moved +0s playing=false`, ending in a backstop push
+        // that credited 0s of listening (HS-MOBILEAPP-3D).
+        //
+        // Ticks are the tiebreaker. onProgress only fires while the engine is
+        // decoding, so a RECENT tick alongside isPlaying=false means the two
+        // disagree and the flag is the one that is wrong. Treat that as a stall
+        // rather than returning, since audio the user can hear is running with
+        // nothing watching it.
+        const last = lastProgressAt.current
+        if (!last || Date.now() - last > STALL_AFTER_MS) return
+        breadcrumb(
+          'player',
+          `store says paused but ticks arrived ${Math.round((Date.now() - last) / 1000)}s ago; treating as a stall`,
+        )
+        lastProgressAt.current = Date.now()
+        recoverLostPlayback('stall', 'paused-but-ticking')
+        return
+      }
       // The car runs its own player, but it mirrors a progress tick to JS every
       // second while audio runs (HearthShelfAutoService's tick loop), so its
       // silence is just as observable - and it had no watchdog of its own. The
