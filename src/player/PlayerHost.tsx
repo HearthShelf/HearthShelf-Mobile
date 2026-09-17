@@ -46,7 +46,7 @@ import {
 } from './carHandbackReport'
 import { coverUrl } from '@/api/abs'
 import { addBookmarkPending } from './pendingBookmarks'
-import { localCoverFor, deleteDownload } from './downloads'
+import { localCoverFor } from './downloads'
 import {
   handOffToCar,
   playItemById,
@@ -201,7 +201,12 @@ const PAUSE_GRACE_MS = 10_000
  */
 function handBookToCar(
   held: MutableRefObject<string | null>,
-  refused?: MutableRefObject<{ itemId: string; at: number } | null>,
+  // Required, not optional. As an optional it was passed by the two tick-driven
+  // callers and omitted by the two play-driven ones, so `refused?.current` read
+  // undefined there and the stand-down below was skipped on exactly the paths a
+  // refused book comes back through. Making it required is what stops a fifth
+  // caller quietly opting out again.
+  refused: MutableRefObject<{ itemId: string; at: number } | null>,
 ): void {
   const s = getState()
   const np = s.nowPlaying
@@ -209,7 +214,7 @@ function handBookToCar(
   // The car already refused this exact book moments ago. sync() calls us on
   // every store write and the car ticks about once a second, so without this
   // the failure re-arms itself forever (see CAR_LOAD_FAIL_COOLDOWN_MS).
-  const no = refused?.current
+  const no = refused.current
   if (no && no.itemId === np.itemId && Date.now() - no.at < CAR_LOAD_FAIL_COOLDOWN_MS) return
   held.current = np.itemId
   breadcrumb('car', `hand ${np.itemId} to the car @${Math.round(s.position)}s`)
@@ -571,21 +576,32 @@ export function PlayerHost() {
         // launch, position frozen, and a "Playback stopped" toast that never
         // mentioned the download (HS-MOBILEAPP-2 / -38 / -39).
         //
-        // Drop the broken download and re-resolve. playItemById then falls back
-        // to streaming, so the listener gets audio instead of a dead button, and
-        // the book can be downloaded again cleanly.
+        // Re-resolve so playItemById falls back to streaming and the listener
+        // gets audio instead of a dead button.
+        //
+        // The download is LEFT ALONE. This used to delete it first, on the
+        // reasoning that an unreadable file is worthless - but deleteDownload
+        // removes the whole book's folder, and ERROR_CODE_IO_FILE_NOT_FOUND is
+        // exactly what a stale saved path produces after the OS moves the app's
+        // data container. The files are then perfectly good and we would destroy
+        // every one of them over a path that needed rebasing. localSourceFor
+        // stopped deleting on a miss for this same reason; this path was the
+        // sibling that kept doing it.
+        //
+        // Streaming already gets the listener their audio, and a download that
+        // really is broken costs a re-download the user can ask for. That is the
+        // cheaper mistake of the two.
         if (e?.reason === 'local-file') {
           const s = getState()
           const itemId = s.nowPlaying?.itemId
           if (!itemId) return
           breadcrumb(
             'player',
-            `local file unusable for ${itemId.slice(0, 8)}; dropping download and streaming`,
+            `local file unusable for ${itemId.slice(0, 8)} (${e.errorCodeName ?? 'no code'}); streaming instead`,
           )
-          showToast('That download was damaged. Streaming instead.')
+          showToast("Couldn't read that download. Streaming instead.")
           void (async () => {
             try {
-              await deleteDownload(itemId)
               await playItemById(itemId, s.isPlaying, { resumeAt: s.position })
             } catch {
               // Falling back is best-effort; the stand-down below is the floor.
@@ -710,7 +726,7 @@ export function PlayerHost() {
         // reaches the car whenever the listener picks one.
         void handOffToCar()
           .catch(() => {})
-          .finally(() => handBookToCar(carBook))
+          .finally(() => handBookToCar(carBook, carRefused))
       }),
       // Native bounced a transport command back: the car owns playback but its
       // player is empty, so there was nothing for that command to act on. Answer
@@ -799,7 +815,7 @@ export function PlayerHost() {
         // forever, leaving a permanently dead play button that only tapping the
         // book on the car screen could clear.
         carBook.current = null
-        handBookToCar(carBook)
+        handBookToCar(carBook, carRefused)
       }),
       // The handover didn't take (couldn't resolve the book - no session, no
       // network, not downloaded). Forget that we handed it over so the next tap
