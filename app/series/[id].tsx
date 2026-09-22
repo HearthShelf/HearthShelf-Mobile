@@ -46,6 +46,13 @@ import {
   dismiss,
   restore,
 } from '@/store/dismissals'
+import {
+  getSubscriptionsState,
+  refreshSubscriptions,
+  subscribe,
+  subscribeSubscriptions,
+  unsubscribe,
+} from '@/player/subscriptions'
 import { requestSeek } from '@/player/store'
 import { playItemById } from '@/player/playback'
 import { upcomingBookPath } from '@/lib/upcomingBookRoute'
@@ -105,6 +112,10 @@ export default function SeriesDetailScreen() {
   // whether the request backend can fulfill them. Both best-effort; unresolved
   // or offline leaves missing empty and the screen behaves as before.
   const [missing, setMissing] = useState<HSAudibleSeriesBook[]>([])
+  /** The series' Audible ASIN, once the roster resolves. A series follow is keyed
+   *  by it (a NAME can match two distinct series) and the server rejects one
+   *  without it, so a null here means the series cannot be followed yet. */
+  const [seriesAsin, setSeriesAsin] = useState<string | null>(null)
   const [rmabEnabled, setRmabEnabled] = useState(false)
   const selection = useBookSelection()
   const miniInset = useMiniPlayerInset()
@@ -164,10 +175,39 @@ export default function SeriesDetailScreen() {
   // being suggested (Auto queue, Continue Series, Discover, QuestGiver) but
   // stays in the library and in search, and on this page.
   const seriesIgnored = id ? dismissals.seriesIds.includes(id) : false
+  const subscriptions = useSyncExternalStore(subscribeSubscriptions, getSubscriptionsState)
+  const seriesSub = seriesAsin
+    ? subscriptions.subscriptions.find(
+        (sub) => sub.kind === 'series' && sub.seriesAsin === seriesAsin,
+      )
+    : undefined
+  const toggleFollowSeries = () => {
+    if (!seriesAsin || !seriesName) return
+    if (seriesSub) {
+      void unsubscribe(seriesSub.id).catch(() => {})
+      return
+    }
+    void subscribe({
+      kind: 'series',
+      seriesAsin,
+      // The route param IS the ABS series id, so the release job can match this
+      // follow to the library by id rather than by name.
+      ...(id ? { absSeriesId: id } : {}),
+      title: seriesName,
+      // BOTH title and seriesTitle, deliberately. The server requires `title`
+      // on any subscription, but the release job gates the whole series branch
+      // on `sub.seriesTitle` - send only the former and the follow is accepted
+      // and then silently never fires.
+      seriesTitle: seriesName,
+    }).catch(() => {})
+  }
   // This screen is reachable without passing through Home (deep link, search),
   // which is where the store is otherwise hydrated.
   useEffect(() => {
     void hydrateDismissals().catch(() => {})
+    // Same reason: without this a deep link renders "Follow" for a series the
+    // user already follows.
+    void refreshSubscriptions().catch(() => {})
   }, [])
   useEffect(() => {
     if (!seriesName || !series) return
@@ -179,7 +219,10 @@ export default function SeriesDetailScreen() {
     // Paint immediately from the in-process cache so re-opening a series doesn't
     // flash owned-only before the missing rows arrive. The fetch below refreshes.
     const cached = peekAudibleSeries(seriesName)
-    if (cached?.seriesAsin) setMissing(missingSeriesBooks(cached.books, ownedBooks, ignoredAsins))
+    if (cached?.seriesAsin) {
+      setSeriesAsin(cached.seriesAsin)
+      setMissing(missingSeriesBooks(cached.books, ownedBooks, ignoredAsins))
+    }
     void (async () => {
       const [audible, enabled] = await Promise.all([
         fetchAudibleSeries(seriesName),
@@ -187,6 +230,10 @@ export default function SeriesDetailScreen() {
       ])
       if (cancelled) return
       setRmabEnabled(enabled)
+      // Kept, not just tested: following a series is keyed by its Audible ASIN
+      // (a series NAME can match two distinct series), and the server rejects a
+      // series subscription without one.
+      setSeriesAsin(audible.seriesAsin ?? null)
       setMissing(
         audible.seriesAsin ? missingSeriesBooks(audible.books, ownedBooks, ignoredAsins) : [],
       )
@@ -322,6 +369,8 @@ export default function SeriesDetailScreen() {
         onMarkSeries={() => void markSeries()}
         ignored={seriesIgnored}
         onToggleIgnore={() => void toggleIgnoreSeries()}
+        following={Boolean(seriesSub)}
+        onToggleFollow={seriesAsin ? toggleFollowSeries : undefined}
       />
       <ScrollView
         style={{ flex: 1 }}
@@ -802,6 +851,8 @@ function Header({
   onMarkSeries,
   ignored,
   onToggleIgnore,
+  following,
+  onToggleFollow,
 }: {
   onBack: () => void
   allFinished?: boolean
@@ -809,6 +860,10 @@ function Header({
   onMarkSeries?: () => void
   ignored?: boolean
   onToggleIgnore?: () => void
+  /** Whether this series is followed. undefined when it cannot be followed at
+   *  all (no Audible series ASIN resolved), which hides the row. */
+  following?: boolean
+  onToggleFollow?: () => void
 }) {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
@@ -830,6 +885,41 @@ function Header({
             style={styles.headerBtn}
           />
           <Sheet ref={overflowRef} title="Series options">
+            {/* Following is the affirmative action, so it leads - the other two
+                rows are terminal (finished) or negative (ignore).
+                Hidden entirely when the series has no Audible ASIN: a follow is
+                keyed by it and the server rejects one without it, so the row
+                would be dead rather than merely unhelpful.
+                Deliberately says "Follow" and not "get notified": on Android,
+                push is disabled in any build without google-services.json, and
+                following still does real work regardless (the Home countdown,
+                the Following list, the upcoming-book screen). Delivery is
+                disclosed in Settings > Notifications, which already reports it. */}
+            {onToggleFollow ? (
+              <Touchable
+                style={styles.overflowRow}
+                onPress={() => {
+                  overflowRef.current?.dismiss()
+                  onToggleFollow()
+                }}
+              >
+                <Icon
+                  name={following ? icons.bellActive : icons.bell}
+                  size={22}
+                  color={following ? colors.accent : colors.text}
+                />
+                <View style={{ flex: 1 }}>
+                  <AppText variant="body">
+                    {following ? 'Following series' : 'Follow series'}
+                  </AppText>
+                  <AppText variant="caption" color={colors.textMuted}>
+                    {following
+                      ? 'New books show up in Following'
+                      : 'Track new books in this series'}
+                  </AppText>
+                </View>
+              </Touchable>
+            ) : null}
             <Touchable
               style={styles.overflowRow}
               disabled={marking}
