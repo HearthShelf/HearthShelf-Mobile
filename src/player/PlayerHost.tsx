@@ -650,6 +650,19 @@ export function PlayerHost() {
           // Whatever the car held went away with it; the next takeover starts from
           // an empty player and has to be handed a book again.
           carBook.current = null
+          // Those progress ticks were the CAR's. Handback loads the book paused
+          // (below) and clears carActive, so the "store says paused but ticks
+          // arrived Xs ago" stall branch would fire moments later against the
+          // car's leftover timestamp - with carActive already false, its own
+          // guard cannot stop it - and "recover" straight back into playing.
+          // That is the pause resurrecting itself a second after the listener
+          // stopped, on the first pause after every handback (HS-MOBILEAPP-3S:
+          // `paused 308s ago` with `ticks arrived 1s ago`, twice, both ending in
+          // wantedPlaying:false -> playingAfter:true).
+          //
+          // Zeroing it means the phone's watchdog starts counting from the first
+          // tick the PHONE player actually produces.
+          lastProgressAt.current = 0
           breadcrumb(
             'car',
             `handback${resume ? ` re-resolve ${resume.itemId} @${Math.round(resume.position)}s` : ' (phone track already loaded)'}`,
@@ -1071,6 +1084,21 @@ export function PlayerHost() {
           'player',
           `store says paused but ticks arrived ${Math.round((Date.now() - last) / 1000)}s ago (paused ${sincePause === null ? '?' : Math.round(sincePause / 1000)}s ago); treating as a stall`,
         )
+        // Recovery stands down on a book it already gave up on, and the
+        // condition that tripped this branch - paused, with a tick moments ago -
+        // does not change when it does. So the watchdog re-detected it every
+        // STALL_CHECK_MS and logged the same pair of lines indefinitely: 17
+        // rounds in 85 seconds in one report (HS-MOBILEAPP-3T), noise that
+        // buries whatever else the trail was about to say. Skip the detection
+        // entirely while that stand-down is in force; a play edge clears it.
+        const gaveUp = reclaimGaveUpOn.current
+        if (
+          gaveUp &&
+          gaveUp.itemId === s.nowPlaying?.itemId &&
+          Date.now() - gaveUp.at < RECLAIM_GIVE_UP_COOLDOWN_MS
+        ) {
+          return
+        }
         lastProgressAt.current = Date.now()
         recoverLostPlayback('stall', 'paused-but-ticking')
         return
