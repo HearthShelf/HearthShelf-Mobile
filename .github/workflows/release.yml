@@ -31,7 +31,9 @@ name: Release
 #
 # Required repository secrets:
 #   Android: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS,
-#            ANDROID_KEY_PASSWORD, PLAY_SERVICE_ACCOUNT_JSON, CHANGELOG_API_KEY
+#            ANDROID_KEY_PASSWORD, PLAY_SERVICE_ACCOUNT_JSON, CHANGELOG_API_KEY,
+#            GOOGLE_SERVICES_JSON_BASE64 (base64 of google-services.json; without
+#            it the build ships with push silently disabled)
 #   iOS:     ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_BASE64, IOS_DIST_P12_BASE64,
 #            IOS_DIST_P12_PASSWORD, IOS_PROVISION_PROFILE_BASE64
 #   Both:    SENTRY_AUTH_TOKEN (source-map + debug-symbol upload; optional -
@@ -98,8 +100,19 @@ jobs:
           # broken build much later.
           test -s "$RUNNER_TEMP/upload.jks" || { echo "::error::ANDROID_KEYSTORE_BASE64 is empty or missing"; exit 1; }
 
+      # Without this the build SUCCEEDS and silently ships with no FCM sender, so
+      # no push token ever mints and every reply, reaction and mention dies
+      # quietly - the failure app.config.js warns about and pushRegister reports
+      # as 'unsupported'. google-services.json is gitignored, so checkout cannot
+      # provide it; it has to come from a secret, exactly like the keystore above.
+      - name: Decode google-services.json (Android push)
+        run: |
+          echo "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" | base64 -d > "$RUNNER_TEMP/google-services.json"
+          test -s "$RUNNER_TEMP/google-services.json" || { echo "::error::GOOGLE_SERVICES_JSON_BASE64 is empty or missing - Android push would be dead in this build"; exit 1; }
+
       - name: Prebuild (runs config plugins, incl. release signing)
         env:
+          GOOGLE_SERVICES_JSON: ${{ runner.temp }}/google-services.json
           HEARTHSHELF_RELEASE_SIGNING: '1'
           HEARTHSHELF_RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/upload.jks
           HEARTHSHELF_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
