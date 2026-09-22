@@ -598,11 +598,28 @@ class HearthShelfAutoService : MediaLibraryService() {
     // Audiobook audio attributes + focus handling, and pause when the output
     // route drops to the phone speaker (car disconnect, BT drop, headset yank) -
     // playback must not continue out loud on the phone when the car goes away.
+    //
+    // MUSIC, not SPEECH, and only on the CAR player.
+    //
+    // SPEECH is the honest description of an audiobook, but a head unit reads
+    // the content type to decide which of its own streams we are - and many map
+    // SPEECH to the voice/navigation/announcement stream rather than
+    // entertainment. On one truck the steering-wheel volume rocker is bound to
+    // the media stream, so while the book played the rocker addressed something
+    // else and the unit fell back to its last real media source: pressing volume
+    // switched the truck to AM radio, but only while playing, never while paused
+    // (HS-MOBILEAPP-3Q). MUSIC is what audiobook apps generally declare, for
+    // exactly this reason.
+    //
+    // Left as SPEECH on the phone player (HearthShelfPlayerService): nothing is
+    // reported wrong there, and the content type feeds ducking and focus, so a
+    // blind change to both would risk the phone's behaviour with no evidence
+    // asking for it. If the car proves out, the phone can follow.
     val player = ExoPlayer.Builder(this)
       .setAudioAttributes(
         AudioAttributes.Builder()
           .setUsage(C.USAGE_MEDIA)
-          .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
+          .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
           .build(),
         true
       )
