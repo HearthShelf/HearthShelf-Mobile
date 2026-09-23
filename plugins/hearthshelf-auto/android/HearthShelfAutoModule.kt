@@ -588,8 +588,8 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
    * first item (the up-next queue head) instead of resuming the current book.
    * No-op when the car isn't the active player (nothing to take over).
    */
-  @ReactMethod fun loadCarBook(itemId: String, positionSec: Double) {
-    carPlayer?.loadBook(itemId, positionSec)
+  @ReactMethod fun loadCarBook(itemId: String, positionSec: Double, playWhenReady: Boolean) {
+    carPlayer?.loadBook(itemId, positionSec, playWhenReady)
   }
 
   // RN NativeEventEmitter requires these no-op stubs on the module.
@@ -606,7 +606,7 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     fun stop()
     /** Load a book into the car player at the given absolute position, so the car
      *  resumes what the phone was playing instead of the browse tree's first item. */
-    fun loadBook(itemId: String, positionSec: Double)
+    fun loadBook(itemId: String, positionSec: Double, playWhenReady: Boolean)
     /** The book the car has resolved, or null while its player is empty. Drives
      *  the "does a transport command have anything to act on" checks above. */
     fun loadedItemId(): String?

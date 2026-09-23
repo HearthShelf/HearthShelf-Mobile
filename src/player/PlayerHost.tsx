@@ -207,6 +207,11 @@ function handBookToCar(
   // refused book comes back through. Making it required is what stops a fifth
   // caller quietly opting out again.
   refused: MutableRefObject<{ itemId: string; at: number } | null>,
+  // Which route is handing over. Four callers reach here and only one of them
+  // is a play tap, so a trail reading just "hand X to the car" could not say
+  // whether a restarted book was asked for or re-handed behind a pause
+  // (HS-MOBILEAPP-3V had exactly that ambiguity).
+  why: 'takeover' | 'needs-book' | 'car-quiet' | 'play',
 ): void {
   const s = getState()
   const np = s.nowPlaying
@@ -217,8 +222,14 @@ function handBookToCar(
   const no = refused.current
   if (no && no.itemId === np.itemId && Date.now() - no.at < CAR_LOAD_FAIL_COOLDOWN_MS) return
   held.current = np.itemId
-  breadcrumb('car', `hand ${np.itemId} to the car @${Math.round(s.position)}s`)
-  loadAutoCarBook(np.itemId, s.position)
+  // Load in the listener's own state. The native load used to start the book
+  // no matter what, so any re-hand arriving after a pause undid the pause.
+  const play = s.isPlaying
+  breadcrumb(
+    'car',
+    `hand ${np.itemId} to the car @${Math.round(s.position)}s (${why}, ${play ? 'playing' : 'paused'})`,
+  )
+  loadAutoCarBook(np.itemId, s.position, play)
 }
 
 export function PlayerHost() {
@@ -739,7 +750,7 @@ export function PlayerHost() {
         // reaches the car whenever the listener picks one.
         void handOffToCar()
           .catch(() => {})
-          .finally(() => handBookToCar(carBook, carRefused))
+          .finally(() => handBookToCar(carBook, carRefused, 'takeover'))
       }),
       // Native bounced a transport command back: the car owns playback but its
       // player is empty, so there was nothing for that command to act on. Answer
@@ -828,7 +839,7 @@ export function PlayerHost() {
         // forever, leaving a permanently dead play button that only tapping the
         // book on the car screen could clear.
         carBook.current = null
-        handBookToCar(carBook, carRefused)
+        handBookToCar(carBook, carRefused, 'needs-book')
       }),
       // The handover didn't take (couldn't resolve the book - no session, no
       // network, not downloaded). Forget that we handed it over so the next tap
@@ -1138,7 +1149,7 @@ export function PlayerHost() {
         // Clear the held marker so handBookToCar re-issues for the same book
         // (it no-ops when the car is already believed to hold it).
         carBook.current = null
-        handBookToCar(carBook, carRefused)
+        handBookToCar(carBook, carRefused, 'car-quiet')
         return
       }
       // A genuine rebuffer already explains the silence, and the engine reports
@@ -1184,13 +1195,13 @@ export function PlayerHost() {
         }
         // A book the car isn't holding can't be played by forwarding transport at
         // it - the commands land on an empty player and nothing happens. Hand it
-        // over instead, which loads AND starts it (loadBookIntoCar prepares with
-        // playWhenReady). Gated on isPlaying so merely opening Now Playing while
+        // over instead, which loads AND starts it (handBookToCar passes the
+        // store's isPlaying, true here). Gated on isPlaying so merely opening Now Playing while
         // driving can't swap the book out from under the car; only an actual
         // intent to play does.
         if (s.isPlaying && np?.itemId && carBook.current !== np.itemId) {
           lastPlaying.current = true
-          handBookToCar(carBook, carRefused)
+          handBookToCar(carBook, carRefused, 'play')
           return
         }
         // Still forward transport intent - the module dispatches it to the car.

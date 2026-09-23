@@ -177,7 +177,8 @@ class HearthShelfAutoService : MediaLibraryService() {
       session?.setMediaButtonPreferences(customLayout())
     }
     override fun stop() = runOnMain { rawPlayer?.pause() }
-    override fun loadBook(itemId: String, positionSec: Double) = loadBookIntoCar(itemId, positionSec)
+    override fun loadBook(itemId: String, positionSec: Double, playWhenReady: Boolean) =
+      loadBookIntoCar(itemId, positionSec, playWhenReady)
     override fun loadedItemId(): String? = currentItemId
     override fun republishLoaded() = republishCarLoaded()
   }
@@ -258,7 +259,19 @@ class HearthShelfAutoService : MediaLibraryService() {
     return true
   }
 
-  private fun loadBookIntoCar(itemId: String, positionSec: Double) {
+  private fun loadBookIntoCar(itemId: String, positionSec: Double, playWhenReady: Boolean) {
+    // Load in the state the listener left it, not always playing. This used to
+    // set carWantsPlayback = true unconditionally, on the belief that JS only
+    // hands a book over for a real play intent. Only one of the four JS routes
+    // does: the takeover edge, "car player is empty" and the car-stall watchdog
+    // all re-hand the book WITHOUT checking, so a re-hand that landed after a
+    // pause started the book again - "paused, and a second later it resumed",
+    // on whichever pause a re-hand happened to follow (HS-MOBILEAPP-3V).
+    //
+    // Set BEFORE the de-dupe below, so the newest intent wins even when this
+    // push is dropped as a duplicate of a load already in flight. A pause
+    // arriving while resolveBook runs still changes it through the bridges.
+    carWantsPlayback = playWhenReady
     // De-dupe: two controllers connect per takeover, so JS pushes the same book
     // twice within ~200ms. Without this each push opens its own ABS play session
     // and reloads the player, doubling the time before audio starts.
@@ -266,9 +279,6 @@ class HearthShelfAutoService : MediaLibraryService() {
       if (loadingItemId == itemId) return
       loadingItemId = itemId
     }
-    // A JS handoff only calls this for a real play intent. A pause arriving while
-    // resolveBook runs changes this back to false through either bridge below.
-    carWantsPlayback = true
     submitIo("loadBookIntoCar") {
       val loaded = resolveBook(itemId)
       if (loaded == null) {

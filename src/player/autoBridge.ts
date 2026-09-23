@@ -84,7 +84,7 @@ interface HearthShelfAutoNative {
     volume: number,
     remainingSec: number,
   ): void
-  loadCarBook(itemId: string, positionSec: number): void
+  loadCarBook(itemId: string, positionSec: number, playWhenReady: boolean): void
   syncCarState(): void
   /** Publish what is playing now, for the home-screen widget. */
   setNowPlaying(json: string): void
@@ -311,8 +311,11 @@ export function setAutoSleepBeep(
  * head) instead of resuming the current book. Android only: iOS CarPlay shares
  * one player, so there's nothing to hand over.
  */
-export function loadAutoCarBook(itemId: string, positionSec: number): void {
-  if (Platform.OS === 'android') native?.loadCarBook(itemId, positionSec)
+/** Load a book into the car player. `playWhenReady` is the listener's own
+ *  intent - the car loads paused if they had paused, rather than always
+ *  starting (HS-MOBILEAPP-3V). */
+export function loadAutoCarBook(itemId: string, positionSec: number, playWhenReady: boolean): void {
+  if (Platform.OS === 'android') native?.loadCarBook(itemId, positionSec, playWhenReady)
 }
 
 /**
