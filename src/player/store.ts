@@ -684,7 +684,19 @@ export function dismissReturnPosition(): void {
 export function jumpBy(delta: number): void {
   if (!state.nowPlaying) return
   haptics.transport()
-  requestSeek(state.position + delta)
+  // Every skip surface lands here (player, mini player, Home, and the
+  // notification/headset buttons via onJump), so this is the one place a report
+  // can show what a skip actually did. "The bar didn't move when I skipped"
+  // (HS-MOBILEAPP-3W) arrived with no skip in the trail at all, so there was no
+  // way to tell a skip that landed but was not drawn from one that never ran.
+  // `hold` says whether an earlier seek was still waiting to land, which is the
+  // state that holds position ticks back.
+  const from = state.position
+  breadcrumb(
+    'player',
+    `skip ${delta > 0 ? '+' : ''}${delta}s: ${Math.round(from)}s -> ${Math.round(from + delta)}s (hold ${pendingSeek ? 'pending' : 'clear'})`,
+  )
+  requestSeek(from + delta)
 }
 
 // ---- chapter navigation ----

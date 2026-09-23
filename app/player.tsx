@@ -135,6 +135,7 @@ import { PlayerSettingsSheet } from '@/player/PlayerSettingsSheet'
 import { TimelineMarkers } from '@/social/TimelineMarkers'
 import { useTimelineMarkers } from '@/social/useTimelineMarkers'
 import type { PlayerActionKey } from '@/store/settings'
+import { breadcrumb } from '@/lib/crashLog'
 
 const HEARTH_BG = require('../assets/images/hearth-centered.webp')
 // Bumped from `hs.playerInspectHint`: the chip used to teach tap-to-zoom, which
@@ -301,6 +302,35 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
     })
     return () => sub.remove()
   }, [])
+
+  // Report a preview that is pinning the bar while playback moves on. That is the
+  // one state in this screen's display maths that can hold the bar still while
+  // `position` changes, and the belt above only clears it on an app switch. "The
+  // bar did not move when I skipped" (HS-MOBILEAPP-3W) came with skips that
+  // demonstrably landed (180s of movement in 24s) and nothing in the trail to say
+  // whether this was why. Thresholds are well past any real drag: held over 10s
+  // AND moved over 10s underneath it. Logged once per pin.
+  const previewPin = useRef<{ at: number; pos: number; logged: boolean } | null>(null)
+  useEffect(() => {
+    if (previewRatio === null) {
+      previewPin.current = null
+      return
+    }
+    const pin = previewPin.current
+    if (!pin) {
+      previewPin.current = { at: Date.now(), pos: position, logged: false }
+      return
+    }
+    if (pin.logged) return
+    const heldMs = Date.now() - pin.at
+    if (heldMs > 10_000 && Math.abs(position - pin.pos) > 10) {
+      pin.logged = true
+      breadcrumb(
+        'player',
+        `bar pinned by a drag preview for ${Math.round(heldMs / 1000)}s while position moved ${Math.round(pin.pos)}s -> ${Math.round(position)}s`,
+      )
+    }
+  }, [previewRatio, position])
 
   // Carousel deck state: page count, active index, and the browsed book (drives
   // the header title + the deck transport when off the live page).
