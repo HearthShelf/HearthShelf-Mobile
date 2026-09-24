@@ -79,17 +79,17 @@ jobs:
           submodules: recursive
           fetch-depth: 0 # changelog needs full history + tags for the diff range
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 21 # RN 0.86 / Expo 57 request a Java 21 toolchain
 
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
 
       - run: npm ci
 
@@ -171,7 +171,7 @@ jobs:
         working-directory: android
 
       - name: Upload .aab artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app-release-aab-${{ github.run_number }}
           path: android/app/build/outputs/bundle/release/app-release.aab
@@ -206,7 +206,7 @@ jobs:
           fetch-depth: 0 # changelog needs full history + tags for the diff range
 
       - name: Download .aab artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: app-release-aab-${{ github.run_number }}
           path: release-assets
@@ -240,7 +240,7 @@ jobs:
           test -f CHANGELOG.md || .github/scripts/render-changelog.sh CHANGELOG.md
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: HearthShelf Mobile ${{ env.APP_VERSION }}
           body_path: CHANGELOG.md
@@ -267,7 +267,7 @@ jobs:
           submodules: recursive # packages/core is a submodule
           fetch-depth: 0
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
