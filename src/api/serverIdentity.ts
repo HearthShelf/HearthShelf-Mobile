@@ -33,7 +33,7 @@
  * replayed at us later, nor can a signature from server A pass as proof of server
  * B.
  */
-import { ed25519 } from '@noble/curves/ed25519'
+import { ed25519 } from '@noble/curves/ed25519.js'
 import * as Crypto from 'expo-crypto'
 import { fetchWithTimeout } from './fetchWithTimeout'
 
