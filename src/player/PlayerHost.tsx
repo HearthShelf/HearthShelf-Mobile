@@ -802,6 +802,12 @@ export function PlayerHost() {
           )
         },
       ),
+      // The car player's own account of what happened to it: controllers coming
+      // and going, hardware buttons, and why playback started or stopped. See
+      // HearthShelfAutoModule.emitCarTrace.
+      emitter.addListener('onCarTrace', (e: { message: string }) => {
+        breadcrumb('car', e.message)
+      }),
       emitter.addListener('onCarAbsent', () => {
         if (!getState().carActive) return
         breadcrumb('car', 'no car attached but carActive was set; clearing stale car ownership')

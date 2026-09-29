@@ -757,6 +757,19 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     }
 
     /**
+     * One line of the car player's own story for the JS trail: who connected,
+     * which hardware button arrived, and WHY the player started or stopped
+     * (a tap, lost audio focus, the route going away). Those decisions are made
+     * inside the service, so a report of "the car switched to the radio" could
+     * not say whether anything reached us at all (HS-MOBILEAPP-42/43).
+     * Never carries anything but names and numbers.
+     */
+    fun emitCarTrace(message: String) {
+      val map = Arguments.createMap().apply { putString("message", message) }
+      emitter?.invoke("onCarTrace", map)
+    }
+
+    /**
      * What the service actually saw when it built a browse node.
      *
      * "Android Auto says no items" is decided entirely inside the service, out of

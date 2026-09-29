@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
+import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
@@ -672,6 +673,16 @@ class HearthShelfAutoService : MediaLibraryService() {
           }
         }
       }
+      // Say WHY the car player started or stopped. A pause from a tap, from lost
+      // audio focus (the head unit switching source), or from the audio route
+      // going away all look the same from JS, and "the truck switched to the
+      // radio" reports (HS-MOBILEAPP-42/43) could not tell cause from effect.
+      override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+        trace("playWhenReady=$playWhenReady (${playWhenReadyReasonName(reason)})")
+      }
+      override fun onPlaybackSuppressionReasonChanged(reason: Int) {
+        trace("playback suppression: ${suppressionReasonName(reason)}")
+      }
       override fun onIsPlayingChanged(isPlaying: Boolean) {
         // Mirror car play/pause into the JS store so the phone UI stays in sync.
         HearthShelfAutoModule.emitState(isPlaying)
@@ -1026,6 +1037,28 @@ class HearthShelfAutoService : MediaLibraryService() {
   override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? =
     session
 
+  /** Logcat plus the JS trail (see HearthShelfAutoModule.emitCarTrace). */
+  private fun trace(message: String) {
+    Log.i(TAG, message)
+    HearthShelfAutoModule.emitCarTrace(message)
+  }
+
+  private fun playWhenReadyReasonName(reason: Int): String = when (reason) {
+    Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST -> "command"
+    Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS -> "audio focus lost"
+    Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY -> "audio route went away"
+    Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE -> "remote"
+    Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM -> "end of item"
+    Player.PLAY_WHEN_READY_CHANGE_REASON_SUPPRESSED_TOO_LONG -> "suppressed too long"
+    else -> "reason $reason"
+  }
+
+  private fun suppressionReasonName(reason: Int): String = when (reason) {
+    Player.PLAYBACK_SUPPRESSION_REASON_NONE -> "none"
+    Player.PLAYBACK_SUPPRESSION_REASON_TRANSIENT_AUDIO_FOCUS_LOSS -> "transient audio focus loss"
+    else -> "reason $reason"
+  }
+
   override fun onDestroy() {
     stopTick()
     // Hand control back to the phone player and tell JS the car is gone, so the
@@ -1136,6 +1169,9 @@ class HearthShelfAutoService : MediaLibraryService() {
       } else {
         MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS
       }
+      if (controller.packageName != packageName) {
+        trace("controller connected: ${controller.packageName}")
+      }
       if (isCarController(controller)) {
         // Announce the takeover exactly ONCE. Sentry showed `car took over`
         // firing twice (two controllers connecting), which drove JS to push the
@@ -1162,6 +1198,9 @@ class HearthShelfAutoService : MediaLibraryService() {
       session: MediaSession,
       controller: MediaSession.ControllerInfo
     ) {
+      if (controller.packageName != packageName) {
+        trace("controller disconnected: ${controller.packageName}")
+      }
       val wasLast = synchronized(carControllers) {
         val removed = carControllers.remove(controller.packageName)
         // Release the load guard so the NEXT takeover can load again.
@@ -1175,6 +1214,33 @@ class HearthShelfAutoService : MediaLibraryService() {
           HearthShelfAutoModule.emitCarActive(false)
         }
       }
+    }
+
+    /**
+     * Record every hardware media button the car session receives, then let
+     * Media3 handle it as it always has (returning false keeps the default).
+     *
+     * A double press of play/pause is turned into "next" by Media3, and a steering
+     * wheel can send keys the listener never meant as transport. Logging the key,
+     * how it repeated, and who sent it says whether a press that changed the
+     * truck's source ever reached the app at all (HS-MOBILEAPP-42/43).
+     */
+    override fun onMediaButtonEvent(
+      session: MediaSession,
+      controllerInfo: MediaSession.ControllerInfo,
+      intent: Intent
+    ): Boolean {
+      val key: KeyEvent? = if (Build.VERSION.SDK_INT >= 33) {
+        intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+      } else {
+        @Suppress("DEPRECATION")
+        intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+      }
+      if (key != null) {
+        val action = if (key.action == KeyEvent.ACTION_DOWN) "down" else "up"
+        trace("media button ${KeyEvent.keyCodeToString(key.keyCode)} $action repeat=${key.repeatCount} from ${controllerInfo.packageName}")
+      }
+      return false
     }
 
     /** True when a controller is a car head unit (Android Auto projection or
