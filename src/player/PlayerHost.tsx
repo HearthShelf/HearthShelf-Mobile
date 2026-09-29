@@ -186,6 +186,14 @@ const CAR_STALL_AFTER_MS = 60_000
  *  disagreement rather than the tail of the pause itself. */
 const PAUSE_GRACE_MS = 10_000
 
+/** How long after a pause the pause's own final tick may still arrive.
+ *
+ *  Native emits one last progress tick on the pause edge (so the exact stop
+ *  position lands), and it reaches JS a moment after the store flipped to paused.
+ *  A tick inside this tail belongs to the pause itself; only a tick arriving
+ *  later than this says the engine is still decoding behind a paused store. */
+const PAUSE_TICK_TAIL_MS = 3000
+
 /**
  * Hand the store's current book to the car player.
  *
@@ -265,6 +273,9 @@ export function PlayerHost() {
   // seeds it on the play edge so a book that never produces a single tick still
   // trips the stall check.
   const lastProgressAt = useRef(0)
+  // The tick the paused-but-ticking branch last recovered on. A recovery must be
+  // earned by a NEW tick; see the watchdog.
+  const pausedStallTickAt = useRef(0)
   // The book we believe the CAR player holds (see handBookToCar). null means the
   // car has nothing loaded, which is how it always connects.
   const carBook = useRef<string | null>(null)
@@ -1091,6 +1102,22 @@ export function PlayerHost() {
           return
         }
 
+        // The grace above only ages the PAUSE; it never asked when the tick came.
+        // Native sends one final tick on the pause edge, so once the grace ran
+        // out that tick alone (still under STALL_AFTER_MS old) read as "ticking
+        // after the pause" on every ordinary pause - 10 to 20 seconds after it
+        // (HS-MOBILEAPP-41: `ticks arrived 11s ago (paused 11s ago)`). Only a tick
+        // that arrived clearly AFTER the pause is evidence the engine kept going.
+        if (sincePause !== null && last - (Date.now() - sincePause) <= PAUSE_TICK_TAIL_MS) return
+        // And one tick buys one recovery. This branch used to stamp
+        // lastProgressAt with the current time before recovering, which is a
+        // tick nobody produced: five seconds later it looked like fresh evidence,
+        // so a single disagreement reloaded the book every check until the
+        // attempt cap gave up with "Playback stopped" (HS-MOBILEAPP-3X,
+        // HS-MOBILEAPP-41). A real engine running behind a paused store keeps
+        // sending ticks, so it still gets caught again.
+        if (last <= pausedStallTickAt.current) return
+
         breadcrumb(
           'player',
           `store says paused but ticks arrived ${Math.round((Date.now() - last) / 1000)}s ago (paused ${sincePause === null ? '?' : Math.round(sincePause / 1000)}s ago); treating as a stall`,
@@ -1110,7 +1137,7 @@ export function PlayerHost() {
         ) {
           return
         }
-        lastProgressAt.current = Date.now()
+        pausedStallTickAt.current = last
         recoverLostPlayback('stall', 'paused-but-ticking')
         return
       }

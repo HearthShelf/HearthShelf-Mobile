@@ -177,6 +177,11 @@ export function getIsPlaying(): boolean {
 
 function set(patch: Partial<PlayerState>): void {
   const leftCar = state.carActive && patch.carActive === false
+  // Stamp every playing -> paused edge, not only the ones that come through
+  // setPlaying: a pause tapped in the app (togglePlay) or fired by the sleep
+  // timer sets the flag directly, and the stall watchdog would then measure
+  // "ticks after the pause" against an older pause.
+  if (state.isPlaying && patch.isPlaying === false) pausedAtMs = Date.now()
   state = { ...state, ...patch }
   // Release the sync indicator the moment car ownership ends, wherever that
   // happens. Both exits (leaveCar on the disconnect edge, and the onCarAbsent
