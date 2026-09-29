@@ -233,6 +233,10 @@ let pendingSeek: {
   /** When this seek was FIRST armed; re-issues carry it forward so the ceiling
    *  measures the whole hold, not the latest re-arm. */
   armedAt: number
+  /** Armed while nothing was playing (a paused seek, or a paused load). */
+  armedWhilePaused: boolean
+  /** Whether any tick has reached the hold since it was armed. */
+  sawTick: boolean
 } | null = null
 
 /** Tick telemetry for the frozen-progress-bar reports (HS-MOBILEAPP-3D).
@@ -309,6 +313,8 @@ export function loadTrack(track: NowPlaying, autoPlay = true): void {
           until: Date.now() + SEEK_SETTLE_TIMEOUT_MS,
           retries: 0,
           armedAt: Date.now(),
+          armedWhilePaused: !autoPlay,
+          sawTick: false,
         }
       : null
   set({
@@ -662,6 +668,8 @@ export function requestSeek(seconds: number): void {
     until: Date.now() + SEEK_SETTLE_TIMEOUT_MS,
     retries: 0,
     armedAt: Date.now(),
+    armedWhilePaused: !state.isPlaying,
+    sawTick: false,
   }
   // A seek (esp. while paused) makes the server's position stale with no new
   // listened-time: mark sync dirty so the header icon goes orange and a tap can
@@ -1074,8 +1082,45 @@ export function reportPosition(position: number): void {
   // Held only until the engine reports a position near the target (or the window
   // lapses), so a genuine post-seek tick is never discarded.
   if (pendingSeek !== null) {
+    const firstTick = !pendingSeek.sawTick
+    pendingSeek.sawTick = true
     if (Math.abs(position - pendingSeek.target) <= SEEK_SETTLE_TOLERANCE_SEC) {
       pendingSeek = null
+    } else if (
+      firstTick &&
+      pendingSeek.armedWhilePaused &&
+      pendingSeek.retries < SEEK_REISSUE_LIMIT &&
+      Date.now() - pendingSeek.armedAt >= SEEK_HOLD_CEILING_MS
+    ) {
+      // A hold armed while paused only ever meets its first tick when play is
+      // pressed, which can be hours later - so the ceiling below has always
+      // lapsed by then, and it used to adopt wherever the engine happened to be.
+      // But the engine has only been playing for the second since that tap: if
+      // it is somewhere else, it never took the seek (a service rebuilt from an
+      // older load, say), and the listener has not heard a moment of audio from
+      // that spot. Adopting it threw a book back a whole chapter on play, and
+      // because the store position moved, the cross-device resume that followed
+      // was then discarded as "the listener moved it" (HS-MOBILEAPP-41: a hold
+      // on 64637s released after 35877s onto an engine at 59365s).
+      //
+      // Ask again instead, with a fresh window. Once only: `sawTick` is now set,
+      // so if the engine still refuses, the ceiling below surrenders as before.
+      const target = pendingSeek.target
+      breadcrumb(
+        'player',
+        `seek to ${Math.round(target)}s armed while paused ${Math.round((Date.now() - pendingSeek.armedAt) / 1000)}s ago never reached the engine (at ${Math.round(position)}s on play); re-issuing`,
+      )
+      pendingSeek = {
+        target,
+        until: Date.now() + SEEK_SETTLE_TIMEOUT_MS,
+        retries: pendingSeek.retries + 1,
+        armedAt: Date.now(),
+        armedWhilePaused: false,
+        sawTick: true,
+      }
+      tickDropsPendingSeek += 1
+      set({ seekTo: target })
+      return
     } else if (Date.now() - pendingSeek.armedAt >= SEEK_HOLD_CEILING_MS) {
       // Held longer than any real seek could need. Surrender and adopt the
       // engine's position rather than keep freezing the readout - the same
@@ -1111,6 +1156,8 @@ export function reportPosition(position: number): void {
         until: Math.min(Date.now() + SEEK_SETTLE_TIMEOUT_MS, armedAt + SEEK_HOLD_CEILING_MS),
         retries,
         armedAt,
+        armedWhilePaused: pendingSeek.armedWhilePaused,
+        sawTick: true,
       }
       set({ seekTo: target })
       return
