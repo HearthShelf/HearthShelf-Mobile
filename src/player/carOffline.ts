@@ -36,7 +36,9 @@ import {
   subscribeProgress,
   recordLocalProgress,
   markFinished,
+  progressHydrated,
 } from '@/store/progress'
+import { breadcrumb } from '@/lib/crashLog'
 import { getSettingsState, subscribeSettings } from '@/store/settings'
 import { getPendingSessionState, recordLocalSession, flushPendingProgress } from './pendingProgress'
 import { addBookmarkPending } from './pendingBookmarks'
@@ -158,10 +160,27 @@ export async function drainCarOfflineProgress(): Promise<void> {
   const entries = Object.entries(banked).filter(([, e]) => e && e.itemId)
   if (!entries.length) return
 
+  // The local rows must be loaded before they can be compared below.
+  await progressHydrated()
   for (const [, e] of entries) {
     // Move the local progress bar first: this is the last-known position for a
     // book the user may not have opened on the phone in days.
-    recordLocalProgress(e.itemId, e.currentTime, e.duration)
+    //
+    // Unless the phone has listened SINCE. The bank is only drained on a later
+    // launch or reconnect, and by then the phone may have played on well past
+    // it. Writing the car's older spot here stamps it as the newest thing the
+    // device knows, so the next resume starts from it: a quiet jump backwards
+    // to wherever the car left off.
+    const local = getProgressState().byId.get(e.itemId)
+    const localAt = typeof local?.lastUpdate === 'number' ? local.lastUpdate : 0
+    if (localAt > e.updatedAt) {
+      breadcrumb(
+        'progress',
+        `car offline listen for ${e.itemId.slice(0, 8)} @${Math.round(e.currentTime)}s is older than the phone's @${Math.round(local?.currentTime ?? 0)}s - keeping the phone's`,
+      )
+    } else {
+      recordLocalProgress(e.itemId, e.currentTime, e.duration)
+    }
 
     // Its OWN session, keyed on when the car started banking it. The phone's
     // ledger is separate and neither has counted the other's seconds, so a car
