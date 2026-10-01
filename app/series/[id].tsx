@@ -218,14 +218,14 @@ export default function SeriesDetailScreen() {
     }))
     // Paint immediately from the in-process cache so re-opening a series doesn't
     // flash owned-only before the missing rows arrive. The fetch below refreshes.
-    const cached = peekAudibleSeries(seriesName)
+    const cached = peekAudibleSeries(seriesName, id)
     if (cached?.seriesAsin) {
       setSeriesAsin(cached.seriesAsin)
-      setMissing(missingSeriesBooks(cached.books, ownedBooks, ignoredAsins))
+      setMissing(missingSeriesBooks(cached.books, ownedBooks, ignoredAsins, seriesName))
     }
     void (async () => {
       const [audible, enabled] = await Promise.all([
-        fetchAudibleSeries(seriesName),
+        fetchAudibleSeries(seriesName, id),
         getRmabEnabled(),
       ])
       if (cancelled) return
@@ -235,13 +235,15 @@ export default function SeriesDetailScreen() {
       // series subscription without one.
       setSeriesAsin(audible.seriesAsin ?? null)
       setMissing(
-        audible.seriesAsin ? missingSeriesBooks(audible.books, ownedBooks, ignoredAsins) : [],
+        audible.seriesAsin
+          ? missingSeriesBooks(audible.books, ownedBooks, ignoredAsins, seriesName)
+          : [],
       )
     })()
     return () => {
       cancelled = true
     }
-  }, [seriesName, series, ignoredAsins])
+  }, [id, seriesName, series, ignoredAsins])
 
   if (error) {
     return (
@@ -282,11 +284,17 @@ export default function SeriesDetailScreen() {
   let done = 0
   let sum = 0
   let totalHours = 0
+  // Weighted by each book's own length: averaging per-book fractions across the
+  // series total undercounts a long omnibus next to short books.
+  let listenedHours = 0
   for (const b of books) {
     const p = progressById.get(b.id)
     if (p?.isFinished) done++
-    sum += p?.isFinished ? 1 : (p?.progress ?? 0)
-    totalHours += (b.media.duration ?? 0) / 3600
+    const frac = p?.isFinished ? 1 : (p?.progress ?? 0)
+    sum += frac
+    const hours = (b.media.duration ?? 0) / 3600
+    totalHours += hours
+    listenedHours += hours * frac
   }
   // Completion measures against the whole series (owned + unowned), so owning 3
   // of 4 and finishing all 3 reads 75%. Degrades to owned-only when the Audible
@@ -305,9 +313,6 @@ export default function SeriesDetailScreen() {
     missingCount: missingReleased.length,
   })
   const pct = completion.pct
-  // Listened hours are an owned-books figure; scale by owned progress, not the
-  // full-series percentage.
-  const listenedHours = books.length ? totalHours * (sum / books.length) : 0
 
   // Next up = first unfinished in reading order, else the first book (to replay).
   const nextUpIdx = books.findIndex((b) => !progressById.get(b.id)?.isFinished)
@@ -502,7 +507,7 @@ export default function SeriesDetailScreen() {
           ))}
         </View>
 
-        {/* Unowned books collapse into their own section so the reading-order
+        {/* Unowned books get their own section so the reading-order
             list stays pure (owned books only). */}
         {!selection.selecting && missing.length > 0 ? (
           <MissingBooks books={missing} startSeq={books.length} rmabEnabled={rmabEnabled} />
@@ -705,7 +710,9 @@ function MissingBooks({
   const router = useRouter()
   const sheetRef = useRef<BottomSheetModal>(null)
   const [selected, setSelected] = useState<HSAudibleSeriesBook | null>(null)
-  const [expanded, setExpanded] = useState(false)
+  // Open by default, like the web series page: these rows are what the library
+  // list's "not in library" count promises, and a closed header hid them.
+  const [expanded, setExpanded] = useState(true)
   // This subsection renders inside the series screen but is its own component,
   // so it reads the origin tab from the route rather than through props.
   const { from } = useLocalSearchParams<{ from?: string }>()

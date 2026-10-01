@@ -13,7 +13,8 @@ import type {
   HSAudibleSeriesResponse,
 } from '@hearthshelf/core'
 
-// Module-level cache of resolved series rosters, keyed by lowercased name. The
+// Module-level cache of resolved series rosters, keyed by ABS series id when the
+// caller has one (two series can share a name), else by lowercased name. The
 // backend already caches these ~10min, but the mobile screen re-fetches on every
 // open - without this, the "you're missing books" state pops in a second late
 // each time. A cache hit lets the screen paint the missing rows immediately.
@@ -21,10 +22,14 @@ import type {
 const TTL_MS = 30 * 60 * 1000
 const cache = new Map<string, { at: number; value: HSAudibleSeriesResponse }>()
 
+function seriesCacheKey(name: string, seriesId?: string): string {
+  return seriesId ? `id:${seriesId}` : name.trim().toLowerCase()
+}
+
 /** Synchronous cache peek so a screen can seed its missing state on first paint
  *  (no round-trip flash). Null when absent or stale. */
-export function peekAudibleSeries(name: string): HSAudibleSeriesResponse | null {
-  const hit = cache.get(name.trim().toLowerCase())
+export function peekAudibleSeries(name: string, seriesId?: string): HSAudibleSeriesResponse | null {
+  const hit = cache.get(seriesCacheKey(name, seriesId))
   if (!hit || Date.now() - hit.at > TTL_MS) return null
   return hit.value
 }
@@ -34,21 +39,32 @@ export function clearAudibleCache(): void {
 }
 
 /**
- * Fetch a series' full Audible roster by name. Returns an unresolved result
+ * Fetch a series' full Audible roster. Returns an unresolved result
  * (`seriesAsin: null, books: []`) on any failure - disconnected, slim deploy
  * without /hs/audible, or no confident series match. Successful (resolved)
  * responses are cached in-process; unresolved results are not, so a transient
  * failure doesn't stick.
+ *
+ * Pass `seriesId` (ABS's series id) whenever it is known. The server then reads
+ * the same stored roster the library list counts from and re-stamps ownership
+ * against the library. By name alone it refuses an ambiguous name and falls
+ * back to a live lookup, so the series page could come back empty while the
+ * library list still reported missing books.
  */
-export async function fetchAudibleSeries(name: string): Promise<HSAudibleSeriesResponse> {
+export async function fetchAudibleSeries(
+  name: string,
+  seriesId?: string,
+): Promise<HSAudibleSeriesResponse> {
   const empty: HSAudibleSeriesResponse = { name, seriesAsin: null, books: [] }
   const s = getSession()
   if (!s || name.trim().length < 2) return empty
-  const key = name.trim().toLowerCase()
-  const cached = peekAudibleSeries(name)
+  const key = seriesCacheKey(name, seriesId)
+  const cached = peekAudibleSeries(name, seriesId)
   if (cached) return cached
   try {
-    const res = await fetch(`${s.serverUrl}/hs/audible/series?q=${encodeURIComponent(name)}`, {
+    const params = new URLSearchParams({ q: name })
+    if (seriesId) params.set('seriesId', seriesId)
+    const res = await fetch(`${s.serverUrl}/hs/audible/series?${params.toString()}`, {
       headers: { Accept: 'application/json', Authorization: `Bearer ${s.token}` },
     })
     if (!res.ok) return empty
