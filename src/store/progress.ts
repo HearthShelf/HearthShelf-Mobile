@@ -494,6 +494,20 @@ function sweepAbandonedNearEnd(rows: ReadonlyMap<string, ABSMediaProgress>): voi
 }
 
 /**
+ * The last reconcile verdict logged per book and kind. A kept local row for a
+ * book that is not playing is never pushed, so the same pair of rows meets on
+ * every refresh and logged the same verdict every few seconds, crowding the
+ * playing book out of the feedback log tail.
+ */
+const reconcileLogged = new Map<string, string>()
+
+function breadcrumbOnce(slot: string, key: string, message: string): void {
+  if (reconcileLogged.get(slot) === key) return
+  reconcileLogged.set(slot, key)
+  breadcrumb('progress', message)
+}
+
+/**
  * Carry a still-unsynced local position across a refresh.
  *
  * refreshProgress() replaces the whole map with the server's rows, which is right
@@ -567,22 +581,23 @@ function keepFresherLocalPositions(
     // more than a few seconds, so it still wins.
     const dropSec = local.currentTime - server.currentTime
     const stampGapMs = serverAt - localAt
+    const feltDrop = localAt > 0 && dropSec > CONCURRENT_MIN_DROP_SEC
+    // The stamps are close enough to be one race (the original, round-trip-sized
+    // window), or the backwards jump is too big for the elapsed time to explain
+    // at all (see impossibleBackwardsJump).
+    const raceByStamps =
+      feltDrop &&
+      (stampGapMs <= CONCURRENT_STAMP_MS || impossibleBackwardsJump(dropSec, stampGapMs))
+    // Or the server row has not moved past what we already know ABS accepted,
+    // which is the case stamps cannot see at all (see staleAgainstConfirmed). The
+    // minimum-drop floor gates all three, so ordinary tick/sync rounding
+    // converges normally and only a felt loss is ever overridden.
     const concurrentRace =
-      localAt > 0 &&
-      dropSec > CONCURRENT_MIN_DROP_SEC &&
-      // Any of: the stamps are close enough to be one race (the original,
-      // round-trip-sized window); the backwards jump is too big for the elapsed
-      // time to explain at all (see impossibleBackwardsJump); or the server row
-      // has not moved past what we already know ABS accepted, which is the case
-      // stamps cannot see at all (see staleAgainstConfirmed). The minimum-drop
-      // floor above still gates all three, so ordinary tick/sync rounding
-      // converges normally and only a felt loss is ever overridden.
-      (stampGapMs <= CONCURRENT_STAMP_MS ||
-        impossibleBackwardsJump(dropSec, stampGapMs) ||
-        staleAgainstConfirmed(id, server.currentTime))
+      raceByStamps || (feltDrop && staleAgainstConfirmed(id, server.currentTime))
     if (concurrentRace) {
-      breadcrumb(
-        'progress',
+      breadcrumbOnce(
+        `race:${id}`,
+        `${server.currentTime}|${serverAt}|${local.currentTime}`,
         // Say "older" when the gap is negative. It read as "only -454ms newer",
         // which is not a thing, and cost real time during a triage that was
         // reading these lines as evidence of something anomalous.
@@ -666,9 +681,17 @@ function keepFresherLocalPositions(
     // a server row that provably describes an earlier moment is exactly the
     // "played on with no successful sync" case this branch's own comment says it
     // must not punish.
+    //
+    // Only the stamp and physics halves of concurrentRace count here, never
+    // staleAgainstConfirmed on its own. That is the "at or below the watermark"
+    // test this comment rules out above, and the watermark is persisted and never
+    // ages, so it kept a two-day-old row for a book nobody was playing over a
+    // server row written nine hours after it, on every refresh, indefinitely
+    // (HS-MOBILEAPP-48/49: 30187s held over 28946s for 3e5d9725). A gap that wide
+    // is a later write from somewhere else, not a race.
     const staleServerRow =
       local.currentTime - server.currentTime > CONCURRENT_MIN_DROP_SEC &&
-      (matchesOurLastPush(id, server.currentTime) || concurrentRace)
+      (matchesOurLastPush(id, server.currentTime) || raceByStamps)
     if (now - localAt > LOCAL_POSITION_MAX_AGE_MS && !staleServerRow) {
       breadcrumb(
         'progress',
@@ -692,8 +715,9 @@ function keepFresherLocalPositions(
       const why = matchesOurLastPush(id, server.currentTime)
         ? 'is at or behind what ABS confirmed from us'
         : 'dropped more than the stamp gap can explain'
-      breadcrumb(
-        'progress',
+      breadcrumbOnce(
+        `old:${id}`,
+        `${server.currentTime}|${serverAt}|${local.currentTime}`,
         `local position for ${id.slice(0, 8)} is ${Math.round((now - localAt) / 1000)}s old but server row (${Math.round(server.currentTime)}s) ${why} - keeping local ${Math.round(local.currentTime)}s`,
       )
     }
