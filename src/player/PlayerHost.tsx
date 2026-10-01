@@ -240,9 +240,31 @@ function handBookToCar(
   loadAutoCarBook(np.itemId, s.position, play)
 }
 
+/**
+ * What the native player was last loaded with, and which book that was.
+ *
+ * Module scope, not refs: they describe the player service, which outlives this
+ * component. Android destroys and recreates the activity while the service plays
+ * on (opening the app after it was closed, or the OS reclaiming the activity),
+ * and the JS runtime survives that, so PlayerHost unmounts and remounts against
+ * a store and a player that never stopped. As refs they came back null, so the
+ * first sync after every remount reloaded the book, and because loadedItem no
+ * longer matched it reloaded at nowPlaying.startPosition - wherever the book was
+ * first opened this run, however long ago. Every open of the app threw the
+ * listener back to that spot and re-read the whole file (HS-MOBILEAPP-47).
+ *
+ * A player that really did go away while unmounted is still caught: a play
+ * against it reports lost and recoverLostPlayback reloads at the live position.
+ *
+ * `loadedKey` tracks what we last pushed, so store ticks don't re-issue
+ * identical commands. `loadedItem` distinguishes "reloading the book that is
+ * already playing" (resume at the live playhead) from "switching books" (resume
+ * at the new track's own start position).
+ */
+const loadedKey: { current: string | null } = { current: null }
+const loadedItem: { current: string | null } = { current: null }
+
 export function PlayerHost() {
-  // Track what we last pushed so store ticks don't re-issue identical commands.
-  const loadedKey = useRef<string | null>(null)
   const lastPlaying = useRef<boolean | null>(null)
   const lastRate = useRef<number | null>(null)
   const lastVolume = useRef<number | null>(null)
@@ -252,10 +274,6 @@ export function PlayerHost() {
   // The store->native reconciler, published so native event handlers (which live
   // in an earlier effect) can re-run it without waiting for a store change.
   const syncNative = useRef<(() => void) | null>(null)
-  // Which book loadedKey last referred to. Distinguishes "reloading the book that
-  // is already playing" (resume at the live playhead) from "switching books"
-  // (resume at the new track's own start position).
-  const loadedItem = useRef<string | null>(null)
   // Pending "did the reclaim recovery actually produce audio" check.
   const reclaimProbe = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Timestamp (ms) until which onState isPlaying=false is treated as the dying
