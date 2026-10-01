@@ -20,6 +20,7 @@
  * be pulled once the hang is diagnosed and fixed.
  */
 import * as Sentry from '@sentry/react-native'
+import { AppState, type NativeEventSubscription } from 'react-native'
 
 /** How long the loader may stay up before we treat the launch as stalled and
  *  report it.
@@ -41,6 +42,7 @@ type SpanHandle = { end: () => void }
 
 let startupSpan: ReturnType<typeof Sentry.startInactiveSpan> | undefined
 let watchdogTimer: ReturnType<typeof setTimeout> | undefined
+let appStateSub: NativeEventSubscription | undefined
 /** Phases started but not yet ended, attached to the watchdog report so a hang
  *  names the step(s) actually stuck. A SET (not a single value) because phases
  *  overlap - clerk-load and cached-session-check run concurrently - and because
@@ -65,6 +67,27 @@ export function beginStartupTrace(): void {
   } catch {
     // tracing disabled / not sampled - spans no-op, watchdog still useful
   }
+  // Only time spent on screen counts. A launch that goes to the background
+  // before it settles is not a hang anyone sees, and its overdue timer fired
+  // the moment the app came back, before the launch could finish (HS-MOBILEAPP-3C:
+  // 22 minutes in the background, reported 0.1s after returning, nothing in flight).
+  appStateSub = AppState.addEventListener('change', (state) => {
+    if (state === 'active') armWatchdog()
+    else disarmWatchdog()
+  })
+  if (AppState.currentState !== 'background') armWatchdog()
+}
+
+function disarmWatchdog(): void {
+  if (watchdogTimer) {
+    clearTimeout(watchdogTimer)
+    watchdogTimer = undefined
+  }
+}
+
+function armWatchdog(): void {
+  if (finished) return
+  disarmWatchdog()
   watchdogTimer = setTimeout(() => {
     // Still up after WATCHDOG_MS: the loader hung. Report it with the phase that
     // was in flight so the event is actionable on its own.
@@ -200,10 +223,9 @@ export function finishStartupTrace(outcome: string): void {
   if (finished) return
   finished = true
   inFlight.clear()
-  if (watchdogTimer) {
-    clearTimeout(watchdogTimer)
-    watchdogTimer = undefined
-  }
+  disarmWatchdog()
+  appStateSub?.remove()
+  appStateSub = undefined
   try {
     startupSpan?.setAttribute('outcome', outcome)
     startupSpan?.end()
