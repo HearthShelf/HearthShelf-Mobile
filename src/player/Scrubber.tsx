@@ -91,12 +91,23 @@ export function Scrubber({
   const dragPct = useSharedValue(-1)
   // Last ratio pushed across to JS, so onUpdate can rate-limit the bridge.
   const lastSentPct = useSharedValue(-1)
-  const fillStyle = useAnimatedStyle(() =>
-    dragPct.value >= 0 ? { width: `${dragPct.value * 100}%` } : {},
-  )
-  const linePosStyle = useAnimatedStyle(() =>
-    dragPct.value >= 0 ? { left: `${dragPct.value * 100}%` } : {},
-  )
+  // The playback ratio rides a shared value too, so the animated styles below
+  // always own width/left. Reanimated keeps the last value an animated style
+  // wrote and re-applies it over every later React commit; when these styles
+  // returned {} outside a drag, the inline width from `ratio` was overridden by
+  // the release point forever, and the fill froze after the first tap or drag
+  // while the labels kept counting (HS-MOBILEAPP-45, -46).
+  const shownRatio = Math.max(0, Math.min(1, dragRatio ?? ratio))
+  const ratioSV = useSharedValue(shownRatio)
+  useEffect(() => {
+    ratioSV.value = shownRatio
+  }, [shownRatio, ratioSV])
+  const fillStyle = useAnimatedStyle(() => ({
+    width: `${(dragPct.value >= 0 ? dragPct.value : ratioSV.value) * 100}%`,
+  }))
+  const linePosStyle = useAnimatedStyle(() => ({
+    left: `${(dragPct.value >= 0 ? dragPct.value : ratioSV.value) * 100}%`,
+  }))
 
   // Mirrored onto the UI thread: a worklet cannot read widthRef.
   const widthSV = useSharedValue(0)
@@ -213,15 +224,13 @@ export function Scrubber({
       }
     })
 
-  const shown = dragRatio ?? ratio
-  const pct = Math.max(0, Math.min(1, shown)) * 100
   const hasLabels = elapsed !== undefined || remain !== undefined || chapter !== undefined
 
   return (
     <GestureDetector gesture={pan}>
       <View style={styles.pill} onLayout={onLayout} hitSlop={{ top: 8, bottom: 8 }}>
         {/* two-tone fill, exactly pill height */}
-        <Animated.View style={[styles.fillClip, { width: `${pct}%` }, fillStyle]}>
+        <Animated.View style={[styles.fillClip, fillStyle]}>
           <LinearGradient
             colors={[FILL_START, colors.accent]}
             start={{ x: 0, y: 0 }}
@@ -235,10 +244,7 @@ export function Scrubber({
             `box-shadow: 0 0 8px 1px accent, 0 0 2px #ffe6cf` glow rides on a
             twin of the line whose opacity banks down while paused. */}
         {knob && (
-          <Animated.View
-            style={[styles.lineWrap, { left: `${pct}%` }, linePosStyle]}
-            pointerEvents="none"
-          >
+          <Animated.View style={[styles.lineWrap, linePosStyle]} pointerEvents="none">
             <Animated.View style={[styles.line, styles.lineGlow, lineStyle, glowStyle]} />
             <Animated.View style={[styles.line, lineStyle]} />
           </Animated.View>
