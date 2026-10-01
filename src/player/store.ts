@@ -39,6 +39,17 @@ export interface ChapterMark {
   end: number
 }
 
+/**
+ * One audio file of the loaded book and where it sits on the book timeline
+ * (seconds). A book is one or more of these back to back: a multi-file book,
+ * or a huge single file the server serves as small parts.
+ */
+export interface PlayTrack {
+  url: string
+  startOffset: number
+  duration: number
+}
+
 export interface NowPlaying {
   itemId: string
   /** ABS play-session id (for progress sync / close). */
@@ -46,8 +57,13 @@ export interface NowPlaying {
   title: string
   author: string
   artworkUrl?: string
-  /** Token-bearing absolute stream URL fed to <Video>. */
+  /** The first audio file's url (token-bearing stream or file://). Doubles as
+   *  "is there anything the phone can play": a car mirror carries ''. */
   url: string
+  /** Every audio file of the book, in order. Absent means one file: `url`.
+   *  Positions everywhere else are book time; only the native player needs to
+   *  know which file a position falls in. */
+  tracks?: PlayTrack[]
   duration: number
   /** Where to start playback (seconds) - ABS resume position. */
   startPosition: number

@@ -46,7 +46,8 @@ import {
 } from './carHandbackReport'
 import { coverUrl } from '@/api/abs'
 import { addBookmarkPending } from './pendingBookmarks'
-import { localCoverFor } from './downloads'
+import { localCoverFor, localSourceFor, isOversizedDownload } from './downloads'
+import { markPartsFailed, prepareAheadOf } from './parts'
 import {
   handOffToCar,
   playItemById,
@@ -65,6 +66,17 @@ import { Toast, useToast, showToast } from '@/ui/Toast'
 interface HSPlayer {
   load(
     url: string,
+    startSec: number,
+    title: string,
+    author: string,
+    artworkUri: string,
+    chaptersJson: string,
+    autoPlay: boolean,
+  ): void
+  /** Android: load a book of one or more files, [{ url, startOffset, duration }]
+   *  as JSON, on one book timeline. Absent on iOS, which plays one url. */
+  loadTracks?(
+    tracksJson: string,
     startSec: number,
     title: string,
     author: string,
@@ -287,6 +299,11 @@ export function PlayerHost() {
   /** The book we stood down on, and when. Keyed by item so switching books is
    *  never punished for a previous book's failure. */
   const reclaimGaveUpOn = useRef<{ itemId: string; at: number } | null>(null)
+  /** The root exception native gave with the last loss, if any. */
+  const lastNativeCause = useRef<string | null>(null)
+  /** The book the "getting this part ready" toast was last shown for, so a
+   *  long wait with many retries says so once. */
+  const partWaitToastFor = useRef<string | null>(null)
   // When onProgress last arrived. 0 means "nothing yet this run"; the watchdog
   // seeds it on the play edge so a book that never produces a single tick still
   // trips the stall check.
@@ -431,6 +448,23 @@ export function PlayerHost() {
       breadcrumb('player', `${what} while the car owns playback; ignoring`)
       return
     }
+    // A download of this book finished while it was streaming. Reloading the
+    // same stream (which is what failed) ignores it - the listener in
+    // HS-MOBILEAPP-44 kept failing on the stream with the finished copy on disk.
+    // Re-resolve instead, which picks the download.
+    const np = s.nowPlaying
+    const local = np ? localSourceFor(np.itemId) : null
+    if (
+      np &&
+      local &&
+      !isOversizedDownload(local) &&
+      !np.url.startsWith('file://') &&
+      (np.tracks ?? []).every((t) => !t.url.startsWith('file://'))
+    ) {
+      breadcrumb('player', `${what}; a download is ready, switching to it`)
+      void playItemById(np.itemId, s.isPlaying, { resumeAt: s.position }).catch(() => {})
+      return
+    }
     breadcrumb(
       'player',
       `${cause === 'stall' ? 'playback stalled (no progress while playing)' : what}; reloading from store`,
@@ -530,6 +564,9 @@ export function PlayerHost() {
         // a failed reload, which is the first thing to suspect otherwise.
         localSource: !!s.nowPlaying?.url?.startsWith('file://'),
         attempts: reclaimAttempts.current,
+        // The exception under native's error code, e.g. "OutOfMemoryError: ...",
+        // since one code covers failures that want opposite remedies.
+        nativeCause: lastNativeCause.current,
       })
     }, RECLAIM_CONFIRM_MS)
   }, [])
@@ -554,7 +591,30 @@ export function PlayerHost() {
         // flight, and pushing the raw value here would send that stale position to
         // ABS (and accrue listened-time for a stretch that was skipped past)
         // exactly when the store had just refused it.
-        if (!getState().carActive) syncProgress(getState().position)
+        if (!getState().carActive) {
+          syncProgress(getState().position)
+          // Playing from server parts: ask for the next part ahead of time.
+          const np = getState().nowPlaying
+          if (np?.tracks) prepareAheadOf(np.itemId, np.tracks, getState().position)
+        }
+      }),
+      // The player is waiting for the server to finish preparing the part of
+      // the book it needs (a huge book served in parts, the part not cut yet).
+      // A wait, not a failure: keep the play intent, show buffering, and keep
+      // the stall watchdog off it (it skips while buffering).
+      emitter.addListener('onPartWait', (e: { waiting: boolean; retryAfterSec?: number }) => {
+        setBuffering(e.waiting)
+        if (!e.waiting) return
+        lastProgressAt.current = Date.now()
+        const itemId = getState().nowPlaying?.itemId ?? ''
+        breadcrumb(
+          'player',
+          `waiting ${Math.round(e.retryAfterSec ?? 0)}s for the server to prepare part of ${itemId.slice(0, 8)}`,
+        )
+        if (partWaitToastFor.current !== itemId) {
+          partWaitToastFor.current = itemId
+          showToast('Getting this part of the book ready. It will start shortly.')
+        }
       }),
       emitter.addListener('onState', (e: { isPlaying: boolean }) => {
         // Ignore the brief play/pause ExoPlayer emits while it re-buffers a
@@ -609,52 +669,95 @@ export function PlayerHost() {
       // lastPlaying too means the isPlaying we still have set will be re-pushed as
       // a fresh play edge once the reload completes, so the user's tap is honored
       // rather than needing a second one.
-      emitter.addListener('onPlaybackLost', (e: { reason?: string; errorCodeName?: string }) => {
-        // A local file that is gone or unreadable cannot be fixed by reloading
-        // the same file - the reload reproduces it instantly, which is exactly
-        // what the field report showed: four failures in 295ms on a fresh
-        // launch, position frozen, and a "Playback stopped" toast that never
-        // mentioned the download (HS-MOBILEAPP-2 / -38 / -39).
-        //
-        // Re-resolve so playItemById falls back to streaming and the listener
-        // gets audio instead of a dead button.
-        //
-        // The download is LEFT ALONE. This used to delete it first, on the
-        // reasoning that an unreadable file is worthless - but deleteDownload
-        // removes the whole book's folder, and ERROR_CODE_IO_FILE_NOT_FOUND is
-        // exactly what a stale saved path produces after the OS moves the app's
-        // data container. The files are then perfectly good and we would destroy
-        // every one of them over a path that needed rebasing. localSourceFor
-        // stopped deleting on a miss for this same reason; this path was the
-        // sibling that kept doing it.
-        //
-        // Streaming already gets the listener their audio, and a download that
-        // really is broken costs a re-download the user can ask for. That is the
-        // cheaper mistake of the two.
-        if (e?.reason === 'local-file') {
-          const s = getState()
-          const itemId = s.nowPlaying?.itemId
-          if (!itemId) return
-          breadcrumb(
-            'player',
-            `local file unusable for ${itemId.slice(0, 8)} (${e.errorCodeName ?? 'no code'}); streaming instead`,
-          )
-          showToast("Couldn't read that download. Streaming instead.")
-          void (async () => {
-            try {
-              await playItemById(itemId, s.isPlaying, { resumeAt: s.position })
-            } catch {
-              // Falling back is best-effort; the stand-down below is the floor.
-            }
-          })()
-          return
-        }
-        // Pass native's own classification through. Everything that is not a
-        // local file lands here - a released service, an emptied player, a
-        // source error - and they want the same reload but read very
-        // differently in a report.
-        recoverLostPlayback('native', e?.errorCodeName ?? e?.reason)
-      }),
+      emitter.addListener(
+        'onPlaybackLost',
+        (e: { reason?: string; errorCodeName?: string; cause?: string }) => {
+          lastNativeCause.current = e?.cause ?? null
+          // Opening the file ran the app out of memory. Reloading hits the same
+          // wall every time, so stop here and say why rather than retrying four
+          // times into "Playback stopped" (HS-MOBILEAPP-44: a 70-hour .m4b whose
+          // sample table alone needed more than the heap).
+          // The server could not provide a part of the book (it failed to cut
+          // one, or says the book no longer needs parts). Reloading the same
+          // parts would fail the same way, so forget them for this book and
+          // re-resolve, which plays the book's own file instead. A file that
+          // is itself too big to open then lands in the too-large branch below.
+          if (e?.reason === 'parts-failed') {
+            const s = getState()
+            const itemId = s.nowPlaying?.itemId
+            if (!itemId) return
+            breadcrumb(
+              'player',
+              `server parts failed for ${itemId.slice(0, 8)} (${e.cause ?? 'no detail'}); playing the original file`,
+            )
+            markPartsFailed(itemId)
+            void playItemById(itemId, s.isPlaying, { resumeAt: s.position }).catch(() => {})
+            return
+          }
+          if (e?.reason === 'too-large') {
+            const itemId = getState().nowPlaying?.itemId ?? null
+            lastPlaying.current = false
+            setPlaying(false)
+            if (itemId) reclaimGaveUpOn.current = { itemId, at: Date.now() }
+            showToast('This book is too large for this phone to open.')
+            reportPlaybackLost(false, {
+              cause: 'too-large',
+              detail: e.errorCodeName ?? null,
+              nativeCause: e.cause ?? null,
+              itemId,
+              wantedPlaying: true,
+              playingAfter: false,
+              localSource: !!getState().nowPlaying?.url?.startsWith('file://'),
+              attempts: 0,
+            })
+            return
+          }
+          // A local file that is gone or unreadable cannot be fixed by reloading
+          // the same file - the reload reproduces it instantly, which is exactly
+          // what the field report showed: four failures in 295ms on a fresh
+          // launch, position frozen, and a "Playback stopped" toast that never
+          // mentioned the download (HS-MOBILEAPP-2 / -38 / -39).
+          //
+          // Re-resolve so playItemById falls back to streaming and the listener
+          // gets audio instead of a dead button.
+          //
+          // The download is LEFT ALONE. This used to delete it first, on the
+          // reasoning that an unreadable file is worthless - but deleteDownload
+          // removes the whole book's folder, and ERROR_CODE_IO_FILE_NOT_FOUND is
+          // exactly what a stale saved path produces after the OS moves the app's
+          // data container. The files are then perfectly good and we would destroy
+          // every one of them over a path that needed rebasing. localSourceFor
+          // stopped deleting on a miss for this same reason; this path was the
+          // sibling that kept doing it.
+          //
+          // Streaming already gets the listener their audio, and a download that
+          // really is broken costs a re-download the user can ask for. That is the
+          // cheaper mistake of the two.
+          if (e?.reason === 'local-file') {
+            const s = getState()
+            const itemId = s.nowPlaying?.itemId
+            if (!itemId) return
+            breadcrumb(
+              'player',
+              `local file unusable for ${itemId.slice(0, 8)} (${e.errorCodeName ?? 'no code'}); streaming instead`,
+            )
+            showToast("Couldn't read that download. Streaming instead.")
+            void (async () => {
+              try {
+                await playItemById(itemId, s.isPlaying, { resumeAt: s.position })
+              } catch {
+                // Falling back is best-effort; the stand-down below is the floor.
+              }
+            })()
+            return
+          }
+          // Pass native's own classification through. Everything that is not a
+          // local file lands here - a released service, an emptied player, a
+          // source error - and they want the same reload but read very
+          // differently in a report.
+          recoverLostPlayback('native', e?.errorCodeName ?? e?.reason)
+        },
+      ),
       // Native playback failed (expired stream token, network stall, unplayable
       // format). Drop the optimistic playing state so the UI stops showing
       // "playing" over silence, and surface the reason. Sync the lastPlaying
@@ -1297,7 +1400,15 @@ export function PlayerHost() {
       // position the track was loaded at. The url covers the cases that do
       // require a reload (a different book, or the same book switching between
       // stream and local file).
-      const key = `${np.itemId}:${np.url}`
+      //
+      // The first url plus the file count stands for the whole list: a book
+      // switching between its own files, server parts and a download changes
+      // the first url, and the count catches a list that grew or shrank.
+      const tracks =
+        np.tracks && np.tracks.length > 0
+          ? np.tracks
+          : [{ url: np.url, startOffset: 0, duration: np.duration }]
+      const key = `${np.itemId}:${tracks.length}:${np.url}`
       if (key !== loadedKey.current) {
         loadedKey.current = key
         lastPlaying.current = null
@@ -1319,15 +1430,30 @@ export function PlayerHost() {
             ? s.position
             : np.startPosition
         loadedItem.current = np.itemId
-        Native.load(
-          np.url,
-          resumeAt,
-          np.title,
-          np.author,
-          np.artworkUrl ?? '',
-          JSON.stringify(np.chapters ?? []),
-          s.isPlaying,
-        )
+        if (Native.loadTracks) {
+          // Every file, not just the first: the player keeps them on one book
+          // timeline, so positions, seeks and the end of the book all work in
+          // book time across file boundaries.
+          Native.loadTracks(
+            JSON.stringify(tracks),
+            resumeAt,
+            np.title,
+            np.author,
+            np.artworkUrl ?? '',
+            JSON.stringify(np.chapters ?? []),
+            s.isPlaying,
+          )
+        } else {
+          Native.load(
+            np.url,
+            resumeAt,
+            np.title,
+            np.author,
+            np.artworkUrl ?? '',
+            JSON.stringify(np.chapters ?? []),
+            s.isPlaying,
+          )
+        }
       }
 
       if (s.seekTo !== null) {

@@ -21,6 +21,7 @@
  * only be verified in a dev build, not in this environment.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import NetInfo from '@react-native-community/netinfo'
 import { Paths, File, Directory } from 'expo-file-system'
 import { createDownloadResumable, type DownloadResumable } from 'expo-file-system/legacy'
 import type { ABSChapter } from '@hearthshelf/core'
@@ -32,6 +33,7 @@ import {
   getItemDetail,
   getLibrarySeries,
 } from '@/api/abs'
+import { getSession } from '@/api/session'
 import {
   saveCatalogItem,
   saveSeriesSkeleton,
@@ -39,6 +41,7 @@ import {
   backfillFromDownloads,
 } from './offlineCatalog'
 import { subscribeQueue } from './queue'
+import { partsFor, markPartsFailed } from './parts'
 import { breadcrumb } from '@/lib/crashLog'
 
 export interface DownloadedTrack {
@@ -63,6 +66,14 @@ export interface DownloadEntry {
   duration: number
   chapters: ABSChapter[]
   tracks: DownloadedTrack[]
+  /**
+   * 'parts' when the audio on disk is the server's small parts of the book
+   * (part-<index>.m4a) rather than the book's own files (track-<index>.<ext>).
+   * Absent for the book's own files. Tracks carry their offsets either way, so
+   * playback treats both alike; this only says whether a huge single file still
+   * needs replacing (see migrateOversizedDownloads).
+   */
+  layout?: 'parts'
   error?: string
   /**
    * Where an interrupted download left off, so a retry resumes instead of
@@ -245,6 +256,9 @@ export async function hydrateDownloads(): Promise<void> {
     if (healed) persist()
     // Reclaim space from folders no entry points at anymore.
     void sweepOrphanedDownloads(byId)
+    // Connecting may have beaten this hydrate, in which case its call found
+    // nothing to move. The run itself waits for a session.
+    migrateOversizedDownloads()
     // Seed the offline catalog from what we know locally, so downloaded books are
     // browseable offline even before (or without) a richer server-detail backfill.
     // libraryId isn't stored per download; a shared 'offline' placeholder is fine -
@@ -330,6 +344,88 @@ function itemDir(itemId: string): Directory {
   return new Directory(Paths.document, 'downloads', itemId)
 }
 
+/** How long one "is this part ready" request may wait. The server itself gives
+ *  up after 15 minutes of cutting and answers 503. */
+const PART_READY_TIMEOUT_MS = 16 * 60 * 1000
+/** Rounds of 503 part_not_ready to sit through before calling the part stuck. */
+const PART_READY_MAX_WAITS = 20
+
+/** The server answered that it cannot provide a part at all. */
+class PartUnavailableError extends Error {
+  constructor(readonly status: number) {
+    super(`part_unavailable ${status}`)
+  }
+}
+
+/**
+ * Wait until the server has a part ready to send.
+ *
+ * A part the server has not cut yet is made on demand, and the request for it
+ * is held open until it is done - minutes for a four-hour part. The file
+ * download would time out long before that, so ask first with a HEAD (which
+ * waits the same way, and whose answer is cheap), and only download once the
+ * part is there. 503 part_not_ready means "still going, ask again after
+ * Retry-After".
+ */
+async function waitForPart(url: string): Promise<void> {
+  for (let round = 0; round < PART_READY_MAX_WAITS; round += 1) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), PART_READY_TIMEOUT_MS)
+    let res: Response
+    try {
+      res = await fetch(url, { method: 'HEAD', signal: controller.signal })
+    } catch {
+      throw new Error('part_unreachable')
+    } finally {
+      clearTimeout(timer)
+    }
+    if (res.ok) return
+    if (res.status !== 503) throw new PartUnavailableError(res.status)
+    const retryAfter = Number(res.headers.get('Retry-After'))
+    const waitSec = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 300) : 30
+    await new Promise((r) => setTimeout(r, waitSec * 1000))
+  }
+  throw new Error('part_not_ready')
+}
+
+/** One file to fetch for a download: a book file or a server part. */
+interface DownloadSource {
+  index: number
+  /** Server path, turned into a fetchable url by mediaUrl(). */
+  contentUrl: string
+  /** Name on disk inside the book's folder. */
+  fileName: string
+  startOffset: number
+  duration: number
+}
+
+/**
+ * AAC frames per second of audio, taken at 48 kHz (1024 samples a frame). The
+ * frame count is what sizes an MP4's sample table, which Media3 holds in memory
+ * whole: roughly 24 bytes a frame.
+ */
+const AAC_FRAMES_PER_SEC = 48000 / 1024
+
+/** Frames past which a single MP4 file is treated as too big to open. The 70-hour
+ *  book that failed had ~10.9M; this leaves room for books half that long,
+ *  which open, while catching anything in the range that does not. */
+const OVERSIZED_FRAMES = 4_500_000
+
+/**
+ * A finished download that is ONE huge MP4-family file - the shape the player
+ * cannot open (its sample table outgrows the heap, HS-MOBILEAPP-44). Such a copy
+ * is replaced by server parts when the server offers them (see
+ * migrateOversizedDownloads), and until then playback prefers streaming the
+ * parts over this file.
+ */
+export function isOversizedDownload(e: DownloadEntry): boolean {
+  if (e.layout === 'parts' || e.tracks.length !== 1) return false
+  const only = e.tracks[0]
+  if (!/\.(m4a|m4b|mp4)$/i.test(baseName(only.uri))) return false
+  const seconds = only.duration > 0 ? only.duration : e.duration
+  return seconds * AAC_FRAMES_PER_SEC > OVERSIZED_FRAMES
+}
+
 function extFor(mimeType: string, contentUrl: string): string {
   if (mimeType.includes('mp4') || mimeType.includes('m4b') || mimeType.includes('m4a')) return 'm4a'
   if (mimeType.includes('mpeg') || mimeType.includes('mp3')) return 'mp3'
@@ -351,8 +447,8 @@ export async function downloadItem(itemId: string, title: string, author: string
 
   // Resume point from an interrupted run, if any: the tracks that finished and
   // the one that was in flight. Retrying a failed download continues from here.
-  const priorTracks = existing?.tracks ?? []
-  const priorPartial = existing?.partial
+  let priorTracks = existing?.tracks ?? []
+  let priorPartial = existing?.partial
 
   upsert({
     itemId,
@@ -383,13 +479,57 @@ export async function downloadItem(itemId: string, title: string, author: string
     const dir = itemDir(itemId)
     if (!dir.exists) dir.create({ intermediates: true })
 
+    // A book the server offers as small parts is downloaded AS those parts.
+    // A huge single-file .m4b saved as-is cannot be opened by the player at all
+    // (its sample table outgrows the heap, HS-MOBILEAPP-44), so the parts are
+    // the only copy worth having. Everything else keeps the book's own files.
+    const parts = await partsFor(itemId)
+    const layout: DownloadEntry['layout'] = parts ? 'parts' : undefined
+    const audioTracks: DownloadSource[] = parts
+      ? parts.map((p) => ({
+          index: p.index,
+          contentUrl: p.url,
+          fileName: `part-${p.index}.m4a`,
+          startOffset: p.start,
+          duration: p.duration,
+        }))
+      : session.audioTracks.map((t) => ({
+          index: t.index,
+          contentUrl: t.contentUrl,
+          fileName: `track-${t.index}.${extFor(t.mimeType, t.contentUrl)}`,
+          startOffset: t.startOffset,
+          duration: t.duration,
+        }))
+    // A resume point left by the OTHER layout (the server started or stopped
+    // offering parts since) names different files, so it cannot be continued.
+    // Start clean rather than mix the two.
+    if (existing && existing.layout !== layout && (priorTracks.length > 0 || priorPartial)) {
+      for (const f of [...priorTracks.map((t) => t.uri), priorPartial?.uri]) {
+        if (!f) continue
+        try {
+          const file = new File(dir, baseName(f))
+          if (file.exists) file.delete()
+        } catch {
+          // leftovers are reclaimed with the folder when the book is removed
+        }
+      }
+      priorTracks = []
+      priorPartial = undefined
+    }
+    breadcrumb(
+      'downloads',
+      `download ${itemId.slice(0, 8)}: ${audioTracks.length} ${parts ? 'parts' : 'files'}${priorTracks.length > 0 || priorPartial ? ' (resuming)' : ''}`,
+    )
+
     patch(itemId, {
       status: 'downloading',
       duration: session.duration,
       chapters: session.chapters ?? [],
+      tracks: priorTracks,
+      partial: priorPartial,
+      layout,
     })
 
-    const audioTracks = session.audioTracks
     const totalDuration = Math.max(1, session.duration)
     // Carry over tracks a previous run already finished, so we neither re-fetch
     // them nor lose them. Keyed by index - track order comes from the session.
@@ -403,8 +543,7 @@ export async function downloadItem(itemId: string, title: string, author: string
     for (const track of audioTracks) {
       if (doneIndexes.has(track.index)) continue
 
-      const ext = extFor(track.mimeType, track.contentUrl)
-      const dest = new File(dir, `track-${track.index}.${ext}`)
+      const dest = new File(dir, track.fileName)
       // Resume this track only if the interrupted run stopped inside THIS one
       // and its half-written file is still on disk.
       const resumeData =
@@ -453,6 +592,19 @@ export async function downloadItem(itemId: string, title: string, author: string
         })
       }
 
+      // A server part may still need cutting; wait for it rather than let the
+      // download time out on a request the server is holding open.
+      if (layout === 'parts') {
+        try {
+          await waitForPart(mediaUrl(track.contentUrl))
+        } catch (e) {
+          // The server cannot make this book's parts. Forget them, so a retry
+          // downloads the book's own files instead.
+          if (e instanceof PartUnavailableError) markPartsFailed(itemId)
+          throw e
+        }
+      }
+
       const resumable = createDownloadResumable(
         mediaUrl(track.contentUrl),
         dest.uri,
@@ -481,6 +633,16 @@ export async function downloadItem(itemId: string, title: string, author: string
       const result = resumeData ? await resumable.resumeAsync() : await resumable.downloadAsync()
       active.delete(itemId)
       if (!result) throw new Error('download_cancelled')
+      // An error page saved as audio would pass for a finished track and then
+      // fail to play; count it as a failed download instead.
+      if (result.status >= 400) {
+        try {
+          if (dest.exists) dest.delete()
+        } catch {
+          // the retry overwrites it
+        }
+        throw new Error(`download_http_${result.status}`)
+      }
       const info = dest.exists ? (dest.size ?? 0) : 0
       cumulativeBytes += info
       downloaded.push({
@@ -514,8 +676,19 @@ export async function downloadItem(itemId: string, title: string, author: string
       tracks: downloaded,
       partial: undefined,
       error: undefined,
+      layout,
     })
     persist()
+    breadcrumb(
+      'downloads',
+      `download ${itemId.slice(0, 8)} done (${Math.round(cumulativeBytes / 1e6)} MB)`,
+    )
+    // The book may be loaded and streaming right now - it usually is, since
+    // starting a book is what auto-downloads it. Nothing used to tell the player,
+    // so it kept streaming (and, for a huge file, kept failing) with the copy
+    // sitting on disk (HS-MOBILEAPP-44: "downloaded" flipped to true two minutes
+    // after a play that had to stream).
+    void adoptDownloadIfLoaded(itemId)
 
     // Snapshot the book's library metadata (genres, series, narrator, year) so
     // Home / Library / Series can browse it offline. Best-effort: the download
@@ -542,6 +715,7 @@ export async function downloadItem(itemId: string, title: string, author: string
     if (msg === 'download_cancelled') {
       // cancel() already removed the entry + files
     } else {
+      breadcrumb('downloads', `download ${itemId.slice(0, 8)} failed: ${msg}`)
       // Capture a fresh resume token where we can. On a network drop the
       // resumable is still live, and pauseAsync() yields the exact byte offset
       // to continue from - better than the pre-transfer checkpoint. Best-effort:
@@ -591,6 +765,17 @@ export async function cancelDownload(itemId: string): Promise<void> {
 
 /** Delete a downloaded (or partially downloaded) book and free its space. */
 export async function deleteDownload(itemId: string): Promise<void> {
+  // A move to parts in flight for this book is writing into the folder about to
+  // go; stop it first so it does not recreate files or swap in a dead entry.
+  const moving = migrationActive.get(itemId)
+  if (moving) {
+    migrationActive.delete(itemId)
+    try {
+      await moving.cancelAsync()
+    } catch {
+      // the delete below wins either way
+    }
+  }
   try {
     const dir = itemDir(itemId)
     if (dir.exists) dir.delete()
@@ -642,6 +827,207 @@ async function reResolveIfPlaying(itemId: string): Promise<void> {
   } catch {
     // Best-effort: the delete itself has already succeeded.
   }
+}
+
+/**
+ * Move the player onto a finished (or re-shaped) download of the book it has
+ * loaded, when that copy is now the better source.
+ *
+ * Only while paused: swapping the source reloads the player, which a listener
+ * would hear. If the book is playing, wait for the next pause (or for the book
+ * to change, which makes it moot). Best-effort throughout.
+ */
+async function adoptDownloadIfLoaded(itemId: string): Promise<void> {
+  try {
+    const [{ getState, subscribe }, { playItemById }] = await Promise.all([
+      import('./store'),
+      import('./playback'),
+    ])
+    // The copy wins only when it is playable and not already what is loaded.
+    const wanted = (): boolean => {
+      const s = getState()
+      const np = s.nowPlaying
+      if (!np || np.itemId !== itemId || s.carActive || !np.url) return false
+      const local = localSourceFor(itemId)
+      if (!local || isOversizedDownload(local)) return false
+      const first = [...local.tracks].sort((a, b) => a.startOffset - b.startOffset)[0]
+      return !!first && np.url !== first.uri
+    }
+    const swap = (): void => {
+      const s = getState()
+      breadcrumb(
+        'play',
+        `download ready for ${itemId.slice(0, 8)} while loaded; switching to it @${Math.round(s.position)}s`,
+      )
+      void playItemById(itemId, false, { resumeAt: s.position }).catch(() => {})
+    }
+    if (!wanted()) return
+    if (!getState().isPlaying) {
+      swap()
+      return
+    }
+    const unsubscribe = subscribe(() => {
+      const s = getState()
+      if (s.nowPlaying?.itemId !== itemId) {
+        unsubscribe()
+        return
+      }
+      if (s.isPlaying) return
+      unsubscribe()
+      if (wanted()) swap()
+    })
+  } catch {
+    // The download itself is done; the next play picks it up regardless.
+  }
+}
+
+// ---- moving huge single-file downloads to server parts ----
+
+/** In-flight part fetches of a migration, so deleting the book can stop them. */
+const migrationActive = new Map<string, DownloadResumable>()
+let migrating = false
+let migrationTimer: ReturnType<typeof setTimeout> | null = null
+/** How long after connecting the migration waits, to stay off the launch path. */
+const MIGRATION_DELAY_MS = 30_000
+/** Headroom kept free on top of the new copy while both exist on disk. */
+const MIGRATION_SPARE_BYTES = 500 * 1024 * 1024
+
+/**
+ * Replace every downloaded huge single MP4 file with the server's parts of
+ * the same book, in the background, one book at a time.
+ *
+ * Such a download cannot be played (see isOversizedDownload), and nothing the
+ * listener can do fixes it - so this happens on its own. The parts are fetched
+ * next to the old file (each under a temporary name, renamed only once whole,
+ * so a part on disk under its real name is always complete and an interrupted
+ * run picks up where it stopped). When every part is in, the entry's tracks
+ * are swapped in one write and only then is the old file deleted. Until then
+ * the old file stays, and online playback streams the parts instead of it.
+ *
+ * Skipped on cellular (it is the size of the book), when the disk cannot hold
+ * both copies at once, and against a server with no parts for the book. Safe to
+ * call on every connect.
+ */
+export function migrateOversizedDownloads(delayMs = MIGRATION_DELAY_MS): void {
+  if (migrating) return
+  const any = [...state.byId.values()].some((e) => e.status === 'done' && isOversizedDownload(e))
+  if (!any) return
+  // The latest call wins: an earlier one (say, at launch before connecting)
+  // may fire with no session, so re-arm rather than keep it.
+  if (migrationTimer) clearTimeout(migrationTimer)
+  migrationTimer = setTimeout(() => {
+    migrationTimer = null
+    void runMigration()
+  }, delayMs)
+}
+
+async function runMigration(): Promise<void> {
+  if (migrating) return
+  migrating = true
+  try {
+    const ids = [...state.byId.values()]
+      .filter((e) => e.status === 'done' && isOversizedDownload(e))
+      .map((e) => e.itemId)
+    for (const id of ids) {
+      if (!getSession()) break
+      try {
+        await migrateOne(id)
+      } catch (e) {
+        breadcrumb(
+          'downloads',
+          `move to parts for ${id.slice(0, 8)} stopped: ${(e as Error).message}`,
+        )
+      }
+    }
+  } finally {
+    migrating = false
+  }
+}
+
+async function migrateOne(itemId: string): Promise<void> {
+  const entry = state.byId.get(itemId)
+  if (!entry || entry.status !== 'done' || !isOversizedDownload(entry)) return
+  const parts = await partsFor(itemId)
+  if (!parts) return
+
+  const net = await NetInfo.fetch().catch(() => null)
+  if (net?.type === 'cellular') {
+    breadcrumb('downloads', `move to parts for ${itemId.slice(0, 8)} waits for Wi-Fi`)
+    return
+  }
+
+  const dir = itemDir(itemId)
+  const oldName = baseName(entry.tracks[0].uri)
+  const oldFile = new File(dir, oldName)
+  const oldBytes = (oldFile.exists ? oldFile.size : null) ?? entry.bytes
+  // Parts already on disk from an earlier, interrupted run count as room made.
+  const have = parts.reduce((sum, p) => {
+    const f = new File(dir, `part-${p.index}.m4a`)
+    return sum + (f.exists ? (f.size ?? 0) : 0)
+  }, 0)
+  const free = diskSpace().free
+  if (free > 0 && free < Math.max(0, oldBytes - have) + MIGRATION_SPARE_BYTES) {
+    breadcrumb(
+      'downloads',
+      `move to parts for ${itemId.slice(0, 8)} needs ${Math.round((oldBytes - have) / 1e6)} MB free; skipped`,
+    )
+    return
+  }
+
+  breadcrumb('downloads', `moving ${itemId.slice(0, 8)} to ${parts.length} parts`)
+  const tracks: DownloadedTrack[] = []
+  let bytes = 0
+  for (const p of parts) {
+    const finalName = `part-${p.index}.m4a`
+    const final = new File(dir, finalName)
+    if (!final.exists) {
+      const tmp = new File(dir, `${finalName}.partial`)
+      if (tmp.exists) tmp.delete()
+      try {
+        await waitForPart(mediaUrl(p.url))
+      } catch (e) {
+        if (e instanceof PartUnavailableError) markPartsFailed(itemId)
+        throw e
+      }
+      if (!state.byId.has(itemId)) return
+      const resumable = createDownloadResumable(mediaUrl(p.url), tmp.uri, {})
+      migrationActive.set(itemId, resumable)
+      const result = await resumable.downloadAsync()
+      const cancelled = migrationActive.get(itemId) !== resumable
+      migrationActive.delete(itemId)
+      // Deleted (or cancelled) meanwhile: the folder is going, nothing to swap.
+      if (cancelled || !state.byId.has(itemId)) return
+      if (!result || result.status < 200 || result.status >= 300) {
+        try {
+          if (tmp.exists) tmp.delete()
+        } catch {
+          // retried next run
+        }
+        throw new Error(`part ${p.index} http ${result?.status ?? 'none'}`)
+      }
+      tmp.rename(finalName)
+    }
+    const done = new File(dir, finalName)
+    tracks.push({ index: p.index, uri: done.uri, startOffset: p.start, duration: p.duration })
+    bytes += done.size ?? 0
+  }
+
+  // Swap only onto the entry we started from. Anything else (deleted, re-
+  // downloaded, already swapped) means this result is no longer wanted.
+  const cur = state.byId.get(itemId)
+  if (!cur || cur.status !== 'done' || !isOversizedDownload(cur)) return
+  patch(itemId, { tracks, layout: 'parts', bytes })
+  persist()
+  try {
+    if (oldFile.exists) oldFile.delete()
+  } catch {
+    // An undeleted old file wastes space but breaks nothing; the entry no
+    // longer points at it.
+  }
+  breadcrumb('downloads', `moved ${itemId.slice(0, 8)} to ${tracks.length} parts`)
+  // If the old file is what the player holds, move it to the parts now (paused)
+  // or at the next pause.
+  void adoptDownloadIfLoaded(itemId)
 }
 
 /** True when two chapter lists differ in length, title, or bounds. */

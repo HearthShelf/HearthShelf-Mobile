@@ -1079,6 +1079,100 @@ export async function startPlay(itemId: string, purpose?: 'download'): Promise<A
   })
 }
 
+/**
+ * One part of a book the server has cut into small files. `start` and
+ * `duration` are seconds on the book timeline; parts are contiguous and sorted.
+ * `url` is a server path, fetched through mediaUrl() like any audio file.
+ */
+export interface HSPart {
+  index: number
+  start: number
+  duration: number
+  url: string
+}
+
+/** What GET /hs/parts/:itemId answered. */
+export type HSPartsAnswer =
+  /** The server offers these parts for the book. */
+  | { kind: 'parts'; parts: HSPart[] }
+  /** The server has the feature but this book needs no parts. */
+  | { kind: 'none' }
+  /** The server predates the feature (404/405). */
+  | { kind: 'unsupported' }
+
+/**
+ * Ask the HearthShelf server for a book as small parts (GET /hs/parts/:itemId).
+ *
+ * A single very long .m4b cannot be opened by the Android player at all - it
+ * reads the whole sample table into memory first, and a 70-hour book's table
+ * outgrew the heap (HS-MOBILEAPP-44). The server can serve such a book as a
+ * run of ordinary small .m4a files instead.
+ *
+ * Throws on a network failure or any other error status, so the caller can tell
+ * "couldn't ask" (try again later) from a real answer.
+ */
+export async function getParts(itemId: string, prepare?: number): Promise<HSPartsAnswer> {
+  const path = `/hs/parts/${encodeURIComponent(itemId)}${prepare !== undefined ? `?prepare=${prepare}` : ''}`
+  // Not absRequest: the error BODY matters here. A 404 naming the item
+  // (unknown_item) is about this book, while a bare 404 means the server has no
+  // parts route at all - and only the second should stop us asking for others.
+  const send = async (): Promise<Response> => {
+    const { serverUrl, token } = requireSession()
+    const controller = new AbortController()
+    // It sits in front of starting playback, so a slow answer must not hold the
+    // listener up for the full default window.
+    const timer = setTimeout(() => controller.abort(), 4000)
+    try {
+      return await fetch(`${serverUrl}${path}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      })
+    } catch {
+      throw new Error(`abs_request_unreachable ${path}`)
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+  let res = await send()
+  if (res.status === 401 && (await refreshSession())) res = await send()
+  const text = await res.text().catch(() => '')
+  let data: { parts?: unknown; error?: unknown } | null = null
+  try {
+    data = text ? (JSON.parse(text) as { parts?: unknown; error?: unknown }) : null
+  } catch {
+    data = null
+  }
+  if (!res.ok) {
+    // The book is gone or no longer needs parts: an answer about this book.
+    if ((res.status === 404 && data?.error === 'unknown_item') || res.status === 409) {
+      return { kind: 'none' }
+    }
+    if (res.status === 404 || res.status === 405) return { kind: 'unsupported' }
+    // 401/403, and 502 when the server cannot reach ABS: no answer this time.
+    throw new ABSRequestError(res.status, path)
+  }
+  const raw = Array.isArray(data?.parts) ? (data.parts as unknown[]) : null
+  if (!raw) return { kind: 'none' }
+  const parts: HSPart[] = []
+  for (const p of raw) {
+    if (!p || typeof p !== 'object') continue
+    const { index, start, duration, url } = p as Record<string, unknown>
+    if (
+      typeof url !== 'string' ||
+      !url ||
+      typeof start !== 'number' ||
+      !Number.isFinite(start) ||
+      typeof duration !== 'number' ||
+      !(duration > 0)
+    ) {
+      continue
+    }
+    parts.push({ index: typeof index === 'number' ? index : parts.length, start, duration, url })
+  }
+  parts.sort((a, b) => a.start - b.start)
+  return parts.length > 0 ? { kind: 'parts', parts } : { kind: 'none' }
+}
+
 export interface SyncPayload {
   currentTime: number
   timeListened: number

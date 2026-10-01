@@ -35,6 +35,7 @@ import {
   refreshProgress,
 } from '@/store/progress'
 import { endOfListenVerdict } from './completion'
+import type { ABSLibraryItemDetail, ABSPlaybackSession } from '@hearthshelf/core'
 import {
   loadTrack,
   getState,
@@ -42,8 +43,18 @@ import {
   updateChapters,
   type NowPlaying,
   type ChapterMark,
+  type PlayTrack,
 } from './store'
-import { localSourceFor, applyAutoDownloads, refreshDownloadMetadata } from './downloads'
+import {
+  localSourceFor,
+  applyAutoDownloads,
+  refreshDownloadMetadata,
+  isOversizedDownload,
+  migrateOversizedDownloads,
+  type DownloadEntry,
+} from './downloads'
+import { partsFor, partTracks, partIndexAt, preparePart } from './parts'
+import type { HSPart } from '@/api/abs'
 import {
   recordLocalSession,
   setStreamingPending,
@@ -365,6 +376,56 @@ function sanitizeChapters(raw: { title?: unknown; start: number; end: number }[]
   })
 }
 
+// ---- where the audio comes from ----
+//
+// A book is one or more audio files on one timeline. Every path below builds
+// the full list (never just the first file - that used to leave a multi-file
+// book silent after its first file on the phone) and hands it to the player,
+// which maps book positions onto files natively.
+
+/** Every audio file of a play session, in book order, as stream urls. */
+function sessionTracks(session: ABSPlaybackSession): PlayTrack[] {
+  return [...(session.audioTracks ?? [])]
+    .sort((a, b) => a.startOffset - b.startOffset)
+    .map((t) => ({
+      url: mediaUrl(t.contentUrl),
+      startOffset: t.startOffset ?? 0,
+      duration: t.duration ?? 0,
+    }))
+}
+
+/** A download's files, in book order, as file:// urls. */
+function localTracks(local: DownloadEntry): PlayTrack[] {
+  return [...local.tracks]
+    .sort((a, b) => a.startOffset - b.startOffset)
+    .map((t) => ({ url: t.uri, startOffset: t.startOffset, duration: t.duration }))
+}
+
+/** A book's audio files from the item detail (no session): its playable
+ *  files in ABS's order, laid end to end. */
+function detailTracks(itemId: string, detail: ABSLibraryItemDetail): PlayTrack[] {
+  const files = [...(detail.media?.audioFiles ?? [])]
+    // ABS leaves excluded files out of the book it plays; the type omits the flag.
+    .filter((f) => (f as { exclude?: boolean }).exclude !== true)
+    .sort((a, b) => a.index - b.index)
+  let offset = 0
+  return files.map((f) => {
+    const track = {
+      url: mediaUrl(`/api/items/${itemId}/file/${f.ino}`),
+      startOffset: offset,
+      duration: f.duration || 0,
+    }
+    offset += f.duration || 0
+    return track
+  })
+}
+
+/** Ask the server to start cutting the part a book will start in. */
+function prepareStartPart(itemId: string, parts: HSPart[], position: number): void {
+  const idx = partIndexAt(parts, position)
+  if (idx >= 0) preparePart(itemId, parts[idx].index)
+}
+
 /** Start playback for an ABS library item id. Title/author fall back to the
  *  play-session's display fields, so the car can play an item with only its id.
  *  Downloaded books play from local files (data-saving), and still report
@@ -402,6 +463,11 @@ export async function playItemById(
   hydratePhase.end()
 
   const local = localSourceFor(itemId)
+  // A download that is one huge MP4 file cannot be opened by the player (its
+  // sample table outgrows the heap, HS-MOBILEAPP-44). While a server can offer
+  // the book as parts, those win over the file; the file is kept for offline,
+  // where it is still the only copy (and the too-large handling is the floor).
+  const localOversized = !!local && isOversizedDownload(local)
   const resumeAt =
     typeof opts.resumeAt === 'number' && Number.isFinite(opts.resumeAt)
       ? Math.max(0, opts.resumeAt)
@@ -431,7 +497,7 @@ export async function playItemById(
     // last book), and the larger half of the untraced window above.
     const previewPhase = startAnytimePhase('resume:load-preview')
     try {
-      await loadPreview(itemId, local, online, resumeAt)
+      await loadPreview(itemId, local, localOversized, online, resumeAt)
     } finally {
       previewPhase.end()
     }
@@ -456,9 +522,16 @@ export async function playItemById(
 
   // Online (streaming OR downloaded): open a real ABS session so listening is
   // recorded. Downloaded books swap in the local file URL to save data.
+  //
+  // The parts question rides alongside the session so it costs no extra wait;
+  // a usable download never needs it. partsFor never throws.
   let session
+  let parts: HSPart[] | null
   try {
-    session = await startPlay(itemId)
+    ;[session, parts] = await Promise.all([
+      startPlay(itemId),
+      local && !localOversized ? Promise.resolve(null) : partsFor(itemId),
+    ])
   } catch (e) {
     // Server unreachable mid-attempt: fall back to a local-only session if the
     // book is downloaded, otherwise surface the error.
@@ -469,8 +542,18 @@ export async function playItemById(
     throw e
   }
 
-  const track = session.audioTracks[0]
-  if (!track && !local) throw new Error('no_audio_track')
+  const source: 'local file' | 'parts' | 'stream' =
+    local && !localOversized ? 'local file' : parts ? 'parts' : local ? 'local file' : 'stream'
+  const tracks =
+    source === 'local file'
+      ? localTracks(local!)
+      : source === 'parts'
+        ? partTracks(parts!)
+        : sessionTracks(session)
+  if (tracks.length === 0) throw new Error('no_audio_track')
+  // The download is kept but cannot be played; replace it with the parts in
+  // the background (a no-op unless there is something to move).
+  if (localOversized && parts) migrateOversizedDownloads()
 
   // Close any prior ABS session first.
   if (active) await safeClose(true)
@@ -518,17 +601,21 @@ export async function playItemById(
     title: session.displayTitle || local?.title || '',
     author: session.displayAuthor ?? local?.author ?? '',
     artworkUrl: local?.coverUri ?? coverUrl(itemId),
-    // Downloaded: play the local file (no streaming data). Otherwise stream.
-    url: local?.tracks[0]?.uri ?? mediaUrl(track!.contentUrl),
+    // Downloaded: play the local files (no streaming data). Otherwise stream.
+    url: tracks[0].url,
+    tracks,
     duration: session.duration,
     startPosition: startAt,
     // The play-session already carries chapters - no extra detail fetch needed.
+    // Server parts carry none of their own, so these are the book's chapters on
+    // the book timeline whatever the source.
     chapters: sanitizeChapters(session.chapters ?? []),
   }
+  if (source === 'parts') prepareStartPart(itemId, parts!, startAt)
   loadTrack(np, autoPlay)
   breadcrumb(
     'play',
-    `${itemId} online @${Math.round(startAt)}s (session ${session.currentTime > 0 ? 'had' : 'no'} pos, ${local ? 'local file' : 'stream'})`,
+    `${itemId} online @${Math.round(startAt)}s (session ${session.currentTime > 0 ? 'had' : 'no'} pos, ${source}${tracks.length > 1 ? `, ${tracks.length} files` : ''})`,
   )
 
   const opened: ActiveSession = {
@@ -587,6 +674,7 @@ export async function playItemById(
 async function loadPreview(
   itemId: string,
   local: ReturnType<typeof localSourceFor>,
+  localOversized: boolean,
   online: boolean,
   resumeAt?: number,
 ): Promise<void> {
@@ -599,9 +687,12 @@ async function loadPreview(
 
   const startAt = resumeAt ?? resumePositionFor(progressFor(itemId))
 
-  if (local) {
-    const first = local.tracks[0]
-    if (!first) throw new Error('no_local_track')
+  // A download too big to open plays from server parts while there are any
+  // (see playItemById); the download still supplies the title and chapters.
+  const partsInstead = local && localOversized && online ? await partsFor(itemId) : null
+  if (local && partsInstead) {
+    const tracks = partTracks(partsInstead)
+    prepareStartPart(itemId, partsInstead, startAt)
     loadTrack(
       {
         itemId,
@@ -609,7 +700,32 @@ async function loadPreview(
         title: local.title,
         author: local.author,
         artworkUrl: local.coverUri ?? coverUrl(itemId),
-        url: first.uri,
+        url: tracks[0].url,
+        tracks,
+        duration: local.duration,
+        startPosition: startAt,
+        chapters: sanitizeChapters(local.chapters),
+      },
+      false,
+    )
+    breadcrumb('play', `${itemId} preview (parts, ${tracks.length} files) @${Math.round(startAt)}s`)
+    migrateOversizedDownloads()
+    void refreshOpenBookMetadata(itemId)
+    return
+  }
+
+  if (local) {
+    const tracks = localTracks(local)
+    if (tracks.length === 0) throw new Error('no_local_track')
+    loadTrack(
+      {
+        itemId,
+        sessionId: '',
+        title: local.title,
+        author: local.author,
+        artworkUrl: local.coverUri ?? coverUrl(itemId),
+        url: tracks[0].url,
+        tracks,
         duration: local.duration,
         startPosition: startAt,
         chapters: sanitizeChapters(local.chapters),
@@ -633,16 +749,19 @@ async function loadPreview(
   // reason or the work around it was.
   const detailPhase = startAnytimePhase('resume:item-detail')
   let detail
+  let parts: HSPart[] | null
   try {
-    detail = await getItemDetail(itemId)
+    // The parts question rides alongside, so it adds no wait of its own.
+    ;[detail, parts] = await Promise.all([getItemDetail(itemId), partsFor(itemId)])
   } finally {
     detailPhase.end()
   }
-  const files = detail.media?.audioFiles ?? []
-  const file = files[0]
-  if (!file) throw new Error('no_audio_track')
+  const fileTracks = detailTracks(itemId, detail)
+  if (fileTracks.length === 0) throw new Error('no_audio_track')
   // The detail response omits a top-level duration; the audio files sum to it.
-  const duration = files.reduce((t, f) => t + (f.duration || 0), 0)
+  const duration = fileTracks.reduce((t, f) => t + f.duration, 0)
+  const tracks = parts ? partTracks(parts) : fileTracks
+  if (parts) prepareStartPart(itemId, parts, startAt)
   loadTrack(
     {
       itemId,
@@ -650,14 +769,18 @@ async function loadPreview(
       title: detail.media?.metadata?.title ?? '',
       author: detail.media?.metadata?.authorName ?? '',
       artworkUrl: coverUrl(itemId),
-      url: mediaUrl(`/api/items/${itemId}/file/${file.ino}`),
+      url: tracks[0].url,
+      tracks,
       duration,
       startPosition: startAt,
       chapters: sanitizeChapters(detail.media?.chapters ?? []),
     },
     false,
   )
-  breadcrumb('play', `${itemId} preview (stream) @${Math.round(startAt)}s`)
+  breadcrumb(
+    'play',
+    `${itemId} preview (${parts ? 'parts' : 'stream'}${tracks.length > 1 ? `, ${tracks.length} files` : ''}) @${Math.round(startAt)}s`,
+  )
 }
 
 /**
@@ -723,8 +846,8 @@ async function playFromDownloadOffline(
 ): Promise<void> {
   const local = localSourceFor(itemId)
   if (!local) throw new Error('not_downloaded')
-  const first = local.tracks[0]
-  if (!first) throw new Error('no_local_track')
+  const tracks = localTracks(local)
+  if (tracks.length === 0) throw new Error('no_local_track')
 
   if (active) await safeClose(true)
   lastTickTime = null
@@ -775,7 +898,8 @@ async function playFromDownloadOffline(
     title: local.title,
     author: local.author,
     artworkUrl: local.coverUri ?? coverUrl(itemId),
-    url: first.uri,
+    url: tracks[0].url,
+    tracks,
     duration: local.duration,
     startPosition: startAt,
     chapters: sanitizeChapters(local.chapters),

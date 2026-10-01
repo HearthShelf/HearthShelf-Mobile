@@ -434,6 +434,7 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     }
   }
 
+  /** One-file load, kept for callers that have a single url. */
   @ReactMethod
   fun load(
     url: String,
@@ -444,6 +445,45 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     chaptersJson: String,
     autoPlay: Boolean
   ) {
+    loadBook(
+      listOf(HearthShelfPlayerService.Track(url, 0.0, 0.0)),
+      startSec, title, author, artworkUri, chaptersJson, autoPlay,
+    )
+  }
+
+  /**
+   * Load a book made of one or more files. `tracksJson` is
+   * [{ url, startOffset, duration }] on the book timeline (seconds); positions,
+   * seeks and progress all stay in book time, so JS never needs to know which
+   * file is playing. Multi-file books and huge single files the server serves
+   * as small parts both come through here.
+   */
+  @ReactMethod
+  fun loadTracks(
+    tracksJson: String,
+    startSec: Double,
+    title: String,
+    author: String,
+    artworkUri: String,
+    chaptersJson: String,
+    autoPlay: Boolean
+  ) {
+    loadBook(
+      HearthShelfPlayerService.parseTracks(tracksJson),
+      startSec, title, author, artworkUri, chaptersJson, autoPlay,
+    )
+  }
+
+  private fun loadBook(
+    tracks: List<HearthShelfPlayerService.Track>,
+    startSec: Double,
+    title: String,
+    author: String,
+    artworkUri: String,
+    chaptersJson: String,
+    autoPlay: Boolean
+  ) {
+    if (tracks.isEmpty()) return
     // The car owns playback: this book belongs in the CAR player, not the phone
     // service. Loading it here anyway is what produced audio the car knew nothing
     // about - Android Auto is bound to the car session, so it showed "tap to open
@@ -466,11 +506,11 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
       svc = HearthShelfPlayerService.instance
       if (svc == null) {
         HearthShelfPlayerService.pendingLoad =
-          HearthShelfPlayerService.PendingLoad(url, startSec, title, author, artworkUri, chaptersJson, autoPlay)
+          HearthShelfPlayerService.PendingLoad(tracks, startSec, title, author, artworkUri, chaptersJson, autoPlay)
       }
     }
     val live = svc
-    if (live != null) live.load(url, startSec, title, author, artworkUri, chaptersJson, autoPlay)
+    if (live != null) live.loadTracks(tracks, startSec, title, author, artworkUri, chaptersJson, autoPlay)
     else ensureService()
   }
 
@@ -710,7 +750,7 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
      * JS responds by reloading the current book from the live store position, so
      * the tap the user made turns into actual audio.
      */
-    fun emitPlaybackLost(reason: String = "unknown", errorCodeName: String? = null) {
+    fun emitPlaybackLost(reason: String = "unknown", errorCodeName: String? = null, cause: String? = null) {
       // Carry WHY. JS recovers by reloading the book, which is right for a
       // dropped stream and useless for a local file that is gone or unreadable -
       // that reload reproduces the same failure instantly, four times, and the
@@ -724,6 +764,9 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
       val params = Arguments.createMap()
       params.putString("reason", reason)
       if (errorCodeName != null) params.putString("errorCodeName", errorCodeName)
+      // The code alone hides what actually failed: an OutOfMemoryError while
+      // opening a file and a reset connection are both ERROR_CODE_IO_UNSPECIFIED.
+      if (cause != null) params.putString("cause", cause)
       emitter?.invoke("onPlaybackLost", params)
     }
 
@@ -767,6 +810,19 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
     fun emitCarTrace(message: String) {
       val map = Arguments.createMap().apply { putString("message", message) }
       emitter?.invoke("onCarTrace", map)
+    }
+
+    /**
+     * The phone player is waiting for the server to finish preparing the part
+     * of the book it needs (see partFailureOf). Not a failure: JS keeps the play
+     * intent, shows the wait, and leaves recovery alone while it lasts.
+     */
+    fun emitPartWait(waiting: Boolean, retryAfterSec: Long) {
+      val map = Arguments.createMap().apply {
+        putBoolean("waiting", waiting)
+        putDouble("retryAfterSec", retryAfterSec.toDouble())
+      }
+      emitter?.invoke("onPartWait", map)
     }
 
     /**
@@ -821,6 +877,23 @@ fun isRecoverableSourceError(error: androidx.media3.common.PlaybackException): B
     else -> false
   }
 
+/** The innermost cause, as `ClassName: message`, cut to 200 characters. */
+fun rootCauseOf(error: Throwable): String {
+  var cause: Throwable = error
+  while (cause.cause != null && cause.cause !== cause) cause = cause.cause!!
+  return "${cause.javaClass.simpleName}: ${cause.message ?: ""}".take(200)
+}
+
+/** Whether opening the media ran the app out of memory somewhere down the chain. */
+fun ranOutOfMemory(error: Throwable): Boolean {
+  var cause: Throwable? = error
+  while (cause != null) {
+    if (cause is OutOfMemoryError) return true
+    cause = if (cause.cause === cause) null else cause.cause
+  }
+  return false
+}
+
 /**
  * A local file that is gone, unreadable, or not what the index claims.
  *
@@ -836,6 +909,115 @@ fun isMissingLocalFile(error: androidx.media3.common.PlaybackException): Boolean
     androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED -> true
     else -> false
   }
+
+// ---- HearthShelf server parts (shared by the phone and car players) ----
+//
+// A huge single-file book is served by the HearthShelf server as small .m4a
+// parts (/hs/parts/<itemId>/<index>). A part that is not cached yet is cut on
+// demand, and the server holds the request open until it is ready - for a
+// four-hour part that is a 41 MB index read plus ~210 MB copied, far past
+// Media3's 8 second read timeout. So part urls get a long read timeout, a part
+// still being prepared (503 part_not_ready, or a read that timed out waiting)
+// is waited out rather than treated as a failure, and a part the server cannot
+// make at all sends the player back to the book's own file.
+
+/** Whether a uri is a HearthShelf server part. */
+fun isPartUri(uri: android.net.Uri?): Boolean = uri?.path?.contains("/hs/parts/") == true
+
+/** How long to wait for a part being prepared before giving up on it (ms). The
+ *  server itself gives up after 15 minutes. */
+const val PART_READ_TIMEOUT_MS = 120_000
+
+/**
+ * What went wrong fetching a server part, when a playback error was that.
+ *  - notReady: still being prepared; retry after `retryAfterSec`.
+ *  - failed: the server cannot provide it (409 parts_not_needed, 404, 5xx other
+ *    than 503); play the book's own file instead.
+ */
+data class PartFailure(val notReady: Boolean, val status: Int, val retryAfterSec: Long)
+
+fun partFailureOf(error: Throwable): PartFailure? {
+  var c: Throwable? = error
+  while (c != null) {
+    if (c is androidx.media3.datasource.HttpDataSource.HttpDataSourceException && isPartUri(c.dataSpec.uri)) {
+      if (c is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+        val code = c.responseCode
+        return when {
+          code == 503 -> PartFailure(true, code, retryAfterOf(c.headerFields))
+          // An expired token is not a parts problem; the normal reload fetches a
+          // fresh one.
+          code == 401 || code == 403 -> null
+          else -> PartFailure(false, code, 0)
+        }
+      }
+      // No status at all: the read timed out while the server was still making
+      // the part.
+      if (c.cause is java.net.SocketTimeoutException) return PartFailure(true, -1, 5)
+      return null
+    }
+    c = if (c.cause === c) null else c.cause
+  }
+  return null
+}
+
+private fun retryAfterOf(headers: Map<String, List<String>>): Long {
+  val raw = headers.entries.firstOrNull { it.key.equals("Retry-After", ignoreCase = true) }
+    ?.value?.firstOrNull()
+  return raw?.trim()?.toLongOrNull()?.coerceIn(1, 300) ?: 30
+}
+
+/**
+ * Media source factory for both players: the stock one, except that server
+ * part urls use a long read timeout (see PART_READ_TIMEOUT_MS). Everything else
+ * keeps Media3's defaults, so a dead connection on an ordinary stream is still
+ * noticed quickly.
+ */
+fun partsAwareMediaSourceFactory(context: Context): androidx.media3.exoplayer.source.MediaSource.Factory {
+  val normal = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+  val slow = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+    .setReadTimeoutMs(PART_READ_TIMEOUT_MS)
+  val http = androidx.media3.datasource.DataSource.Factory {
+    PartsAwareHttpDataSource(normal.createDataSource(), slow.createDataSource())
+  }
+  return androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
+    androidx.media3.datasource.DefaultDataSource.Factory(context, http)
+  )
+}
+
+/** An http data source that picks the long-timeout one for part urls. */
+class PartsAwareHttpDataSource(
+  private val normal: androidx.media3.datasource.DataSource,
+  private val slow: androidx.media3.datasource.DataSource,
+) : androidx.media3.datasource.DataSource {
+  private var current: androidx.media3.datasource.DataSource? = null
+
+  override fun addTransferListener(transferListener: androidx.media3.datasource.TransferListener) {
+    normal.addTransferListener(transferListener)
+    slow.addTransferListener(transferListener)
+  }
+
+  override fun open(dataSpec: androidx.media3.datasource.DataSpec): Long {
+    val ds = if (isPartUri(dataSpec.uri)) slow else normal
+    current = ds
+    return ds.open(dataSpec)
+  }
+
+  override fun read(buffer: ByteArray, offset: Int, length: Int): Int =
+    (current ?: throw java.io.IOException("read before open")).read(buffer, offset, length)
+
+  override fun getUri(): android.net.Uri? = current?.uri
+
+  override fun getResponseHeaders(): Map<String, List<String>> =
+    current?.responseHeaders ?: emptyMap()
+
+  override fun close() {
+    try {
+      current?.close()
+    } finally {
+      current = null
+    }
+  }
+}
 
 @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
 class HearthShelfAutoPackage : ReactPackage {

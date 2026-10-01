@@ -138,6 +138,14 @@ function addManifestService(config) {
     }
 
     const app = AndroidConfig.Manifest.getMainApplicationOrThrow(cfg.modResults)
+    // Media3 reads an MP4's whole sample table into memory before playing:
+    // about 24 bytes per AAC frame, so roughly 3.7 MB per hour of audio. A
+    // 70-hour single-file .m4b needs ~260 MB for that table alone, past the
+    // standard 256 MB app heap, and failed to open with an OutOfMemoryError
+    // in BoxParser.parseStbl that Media3 surfaces as ERROR_CODE_IO_UNSPECIFIED
+    // (HS-MOBILEAPP-44 / -4). largeHeap raises the ceiling (512 MB on a Pixel
+    // 10 Pro XL), the same choice the official audiobookshelf-app makes.
+    app.$['android:largeHeap'] = 'true'
     app.service = app.service || []
     const already = app.service.find((s) => s.$ && s.$['android:name'] === SERVICE)
     if (!already) {

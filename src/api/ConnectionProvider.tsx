@@ -47,6 +47,7 @@ import {
   subscribeDownloads,
   applyAutoDownloadsOnReconnect,
   startMetadataSweep,
+  migrateOversizedDownloads,
 } from '@/player/downloads'
 import { getQueueState } from '@/player/queue'
 import { hydrateCatalog, backfillCatalog } from '@/player/offlineCatalog'
@@ -477,6 +478,10 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         // server was previously invisible on this device forever. Self-throttled
         // and delayed well past launch; metadata only, no audio.
         startMetadataSweep()
+        // Replace any download that is one file too big for the player to open
+        // with the server's parts of it. Delayed and serial; skipped on cellular
+        // and when the server has no parts to offer.
+        migrateOversizedDownloads()
         // The picker path (SplashServer) has no role; only linked-server objects
         // carry it. Fall back to 'user' so admin UI stays hidden when unknown.
         setActiveRole('role' in server && server.role === 'admin' ? 'admin' : 'user')
