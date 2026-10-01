@@ -164,6 +164,43 @@ export async function diagnoseReachability(
   return (await probeReachable()) ? 'server-down' : 'all-down'
 }
 
+export type Outage = 'airplane' | 'no-network' | 'no-internet' | 'hearthshelf-down' | 'server-down'
+
+/** A host that is not ours and answers anywhere with internet. Tells "the internet
+ *  is down" apart from "only HearthShelf.com is down". */
+const NEUTRAL_PROBE_URL = 'https://www.gstatic.com/generate_204'
+
+async function probeUrl(url: string): Promise<boolean> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS)
+  try {
+    await fetch(url, { method: 'HEAD', cache: 'no-store', signal: controller.signal })
+    return true
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * After a failed connect, pin down WHERE the break is. Run only on the failure
+ * path (it spends up to ~3.5s). Order matters: the device first, then the
+ * HearthShelf control plane, then a neutral host to split "internet down" from
+ * "HearthShelf.com down". If the control plane answers, the user's own server is
+ * the one that is not.
+ */
+export async function diagnoseOutage(airplane: boolean): Promise<Outage> {
+  if (airplane) return 'airplane'
+  if (!(await isCurrentlyReachable())) return 'no-network'
+  const [controlPlane, neutral] = await Promise.all([
+    probeUrl(`${CONTROL_PLANE_URL}/`),
+    probeUrl(NEUTRAL_PROBE_URL),
+  ])
+  if (controlPlane) return 'server-down'
+  return neutral ? 'hearthshelf-down' : 'no-internet'
+}
+
 /**
  * Start watching connectivity. `onOnline` fires when the device is online and
  * either it wasn't online on the previous event OR the network type changed

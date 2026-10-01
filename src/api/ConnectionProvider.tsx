@@ -58,6 +58,8 @@ import {
   probeReachable,
   pokeConnectivity,
   isCurrentlyReachable,
+  diagnoseOutage,
+  type Outage,
 } from '@/player/connectivity'
 import {
   startOfflineLibrarySync,
@@ -129,10 +131,6 @@ function offlineReason(e: unknown): string | undefined {
   switch (e.kind) {
     case 'dns':
       return "Offline - can't find that server"
-    case 'refused':
-      return "Offline - server isn't answering"
-    case 'timeout':
-      return 'Offline - server timed out'
     case 'tls':
       return 'Offline - secure connection failed'
     case 'auth':
@@ -141,6 +139,41 @@ function offlineReason(e: unknown): string | undefined {
       return 'Offline - the server had an error'
     default:
       return undefined
+  }
+}
+
+const OUTAGE_REASON: Record<Outage, string> = {
+  airplane: 'Offline - airplane mode is on',
+  'no-network': 'Offline - no Wi-Fi or mobile signal',
+  'no-internet': "Offline - your Wi-Fi or mobile data isn't reaching the internet",
+  'hearthshelf-down': "You're online, but HearthShelf.com isn't answering",
+  'server-down': "You're online and HearthShelf.com is up, but your server isn't answering",
+}
+
+/** Error-screen version for people with nothing downloaded: same diagnosis, with
+ *  the original error's details row kept. */
+async function explainedErrorStatus(e: unknown): Promise<ConnectionStatus> {
+  const base = errorStatus(e)
+  if (base.phase !== 'error' || offlineReason(e)) return base
+  const reason = await explainOutage(e)
+  if (!reason) return base
+  const plain = reason.replace(/^Offline - /, '')
+  return { ...base, message: plain.charAt(0).toUpperCase() + plain.slice(1) + '.' }
+}
+
+/**
+ * Pin the failure to one link in the chain: device, internet, HearthShelf.com, or
+ * the user's own server. A specific error (bad address, certificate, rejected
+ * sign-in) is already the answer, so only the ambiguous "didn't answer" failures
+ * are probed.
+ */
+async function explainOutage(e: unknown): Promise<string | undefined> {
+  const specific = offlineReason(e)
+  if (specific) return specific
+  try {
+    return OUTAGE_REASON[await diagnoseOutage(await isAirplaneMode())]
+  } catch {
+    return undefined
   }
 }
 
@@ -512,8 +545,8 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         // their home server is down but the phone is still on Wi-Fi). A dead-end
         // error screen would needlessly hide the downloaded books they can still
         // play. Only with nothing downloaded is a hard error the right outcome.
-        if (hasOfflineContent()) setStatus({ phase: 'offline', reason: offlineReason(e) })
-        else setStatus(errorStatus(e))
+        if (hasOfflineContent()) setStatus({ phase: 'offline', reason: await explainOutage(e) })
+        else setStatus(await explainedErrorStatus(e))
       }
     },
     [tokenFn],
@@ -584,11 +617,11 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
    * already landed. With nothing downloaded there's nowhere to drop TO, so the
    * splash stays up and only the explanation changes.
    */
-  const dropToOffline = useCallback((issue: ConnectIssue) => {
+  const dropToOffline = useCallback((issue: ConnectIssue, reason?: string) => {
     setStatus((cur) => {
       if (cur.phase !== 'connecting') return cur
       if (!hasOfflineContent()) return { ...cur, issue }
-      return { phase: 'offline', reason: OFFLINE_REASON[issue] }
+      return { phase: 'offline', reason: reason ?? OFFLINE_REASON[issue] }
     })
   }, [])
 
@@ -664,8 +697,8 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
           // This is what makes a dead WAN resolve in ~3.5s instead of ~44s: the
           // handshake keeps going (and still wins if it lands), but the user stops
           // staring at a covered splash for a connect that isn't coming.
-          void probeReachable().then((ok) => {
-            if (!ok) dropToOffline('unreachable')
+          void probeReachable().then(async (ok) => {
+            if (!ok) dropToOffline('unreachable', await explainOutage(undefined))
           })
           // Race the connect against a timeout: a dead network can leave the ABS
           // fetch hanging well past when we should stop waiting.
@@ -714,8 +747,8 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
           }
           // Truly unreachable (or out of retries): play downloads offline rather
           // than stranding the user on an error.
-          if (hasOfflineContent()) setStatus({ phase: 'offline', reason: offlineReason(e) })
-          else setStatus(errorStatus(e))
+          if (hasOfflineContent()) setStatus({ phase: 'offline', reason: await explainOutage(e) })
+          else setStatus(await explainedErrorStatus(e))
           return
         }
       }

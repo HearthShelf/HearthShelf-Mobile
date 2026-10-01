@@ -36,25 +36,39 @@ export interface GetNotesParams {
   finished?: boolean
 }
 
+// Several seek bars (mini player, full player, chapter bar) each mount
+// useTimelineMarkers and fetch on the same position tick. Identical requests
+// that overlap share one network call; nothing is cached once it settles, so
+// a refetch after posting or deleting a note is always fresh.
+const inFlightNotes = new Map<string, Promise<HSNotesResponse>>()
+
 /** Fetch the gated notes + locked stubs for a book (public or club scope). */
-export async function getNotes(params: GetNotesParams): Promise<HSNotesResponse> {
+export function getNotes(params: GetNotesParams): Promise<HSNotesResponse> {
   const session = getSession()
-  if (!session) return DISABLED_NOTES
+  if (!session) return Promise.resolve(DISABLED_NOTES)
   const { serverUrl, token } = session
   const q = new URLSearchParams({ libraryItemId: params.libraryItemId })
   if (params.clubId) q.set('clubId', params.clubId)
   if (params.position != null) q.set('position', String(Math.round(params.position)))
   if (params.after != null) q.set('after', String(params.after))
   if (params.finished) q.set('finished', '1')
-  try {
-    const res = await fetch(`${serverUrl}/hs/notes?${q.toString()}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    if (!res.ok) return DISABLED_NOTES
-    return (await res.json()) as HSNotesResponse
-  } catch {
-    return DISABLED_NOTES
-  }
+  const url = `${serverUrl}/hs/notes?${q.toString()}`
+  const key = `${token}|${url}`
+  const existing = inFlightNotes.get(key)
+  if (existing) return existing
+  const request = (async (): Promise<HSNotesResponse> => {
+    try {
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) return DISABLED_NOTES
+      return (await res.json()) as HSNotesResponse
+    } catch {
+      return DISABLED_NOTES
+    }
+  })().finally(() => {
+    inFlightNotes.delete(key)
+  })
+  inFlightNotes.set(key, request)
+  return request
 }
 
 export interface PostNoteParams {

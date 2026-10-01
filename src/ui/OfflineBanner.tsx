@@ -24,7 +24,7 @@ export function OfflineBanner({ onRetry, reason }: { onRetry: () => void; reason
   return (
     <View style={[styles.bar, { paddingTop: insets.top + spacing.xs }]} pointerEvents="box-none">
       <Icon name={icons.cloudOff} size={16} color={colors.brandHearth} />
-      <AppText variant="caption" color={colors.text} numberOfLines={1} style={styles.label}>
+      <AppText variant="caption" color={colors.text} numberOfLines={2} style={styles.label}>
         {label}
       </AppText>
       <Pressable style={styles.retryBtn} onPress={onRetry} accessibilityRole="button" hitSlop={6}>
