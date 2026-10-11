@@ -56,6 +56,7 @@ import {
 import { requestSeek } from '@/player/store'
 import { playItemById } from '@/player/playback'
 import { upcomingBookPath } from '@/lib/upcomingBookRoute'
+import { interleaveMissing, orderBooks, seqLabel, seriesSeqLabel } from '@/lib/seriesOrder'
 import {
   AppText,
   Centered,
@@ -82,16 +83,6 @@ import { useMiniPlayerInset } from '@/ui/useContentInset'
 import { adaptiveContentMaxWidth } from '@/ui/responsive'
 import { useColors } from '@/ui/ThemeProvider'
 
-/** ABS stores a book's sequence in the denormalized seriesName ("Foundation #2").
- *  Parse the trailing "#<n>" and sort ascending; unsequenced books sort first. */
-function orderBooks(books: ABSLibraryItem[]): ABSLibraryItem[] {
-  const seqOf = (item: ABSLibraryItem) => {
-    const match = item.media.metadata.seriesName?.match(/#?([\d.]+)\s*$/)
-    return Number(match?.[1] ?? 0)
-  }
-  return [...books].sort((a, b) => seqOf(a) - seqOf(b))
-}
-
 export default function SeriesDetailScreen() {
   const router = useRouter()
   // Hardware back closes an open sheet first; only with none open does it pop
@@ -117,6 +108,9 @@ export default function SeriesDetailScreen() {
    *  without it, so a null here means the series cannot be followed yet. */
   const [seriesAsin, setSeriesAsin] = useState<string | null>(null)
   const [rmabEnabled, setRmabEnabled] = useState(false)
+  // The unowned book whose "you don't own this" sheet is open.
+  const notOwnedRef = useRef<BottomSheetModal>(null)
+  const [notOwned, setNotOwned] = useState<HSAudibleSeriesBook | null>(null)
   const selection = useBookSelection()
   const miniInset = useMiniPlayerInset()
   const { width: winWidth } = useWindowDimensions()
@@ -317,7 +311,8 @@ export default function SeriesDetailScreen() {
   // Next up = first unfinished in reading order, else the first book (to replay).
   const nextUpIdx = books.findIndex((b) => !progressById.get(b.id)?.isFinished)
   const nextUp = nextUpIdx === -1 ? books[0] : books[nextUpIdx]
-  const nextUpNum = (nextUpIdx === -1 ? 0 : nextUpIdx) + 1
+  const nextUpNum =
+    (nextUp && seriesSeqLabel(nextUp)) || String((nextUpIdx === -1 ? 0 : nextUpIdx) + 1)
 
   const allSeriesFinished =
     books.length > 0 && books.every((b) => progressById.get(b.id)?.isFinished)
@@ -359,6 +354,24 @@ export default function SeriesDetailScreen() {
     const start = p?.isFinished ? 0 : (p?.currentTime ?? 0)
     if (start > 0) requestSeek(start)
     router.push('/player')
+  }
+
+  // Long-press is the tray, matching how an owned book behaves: it holds the
+  // per-book actions (follow, ignore, request/buy) rather than navigating.
+  const openNotOwned = (b: HSAudibleSeriesBook) => {
+    setNotOwned(b)
+    notOwnedRef.current?.present()
+  }
+  // Upcoming (unreleased) book -> the follow/countdown page; already-released
+  // but unowned -> the request/buy sheet.
+  const onPressMissing = (b: HSAudibleSeriesBook) => {
+    if ((b.upcoming ?? isUpcoming(b, Date.now())) && b.asin) {
+      // Forward this screen's own active tab so the bar does not change under
+      // the listener on the way into the upcoming page.
+      router.push(upcomingBookPath(b, active))
+      return
+    }
+    openNotOwned(b)
   }
 
   return (
@@ -485,34 +498,47 @@ export default function SeriesDetailScreen() {
           </View>
         )}
 
-        {/* Book list */}
+        {/* Book list. Unowned books sit at their own place in the series, so a
+            novella like #10.5 lands between 10 and 11. */}
         <View style={styles.list}>
-          {books.map((b, i) => (
+          {interleaveMissing(books, selection.selecting ? [] : missing).map((row, i) =>
+            row.kind === 'missing' ? (
+              <MissingBookRow
+                key={row.book.asin}
+                book={row.book}
+                num={seqLabel(row.book.sequence) || String(i + 1)}
+                rmabEnabled={rmabEnabled}
+                onPress={() => onPressMissing(row.book)}
+                onLongPress={() => openNotOwned(row.book)}
+              />
+            ) : (
             <BookRow
-              key={b.id}
-              book={b}
-              index={i}
-              progress={progressById.get(b.id) ?? null}
+              key={row.book.id}
+              book={row.book}
+              num={seriesSeqLabel(row.book) || String(i + 1)}
+              progress={progressById.get(row.book.id) ?? null}
               selecting={selection.selecting}
-              selected={selection.isSelected(b.id)}
+              selected={selection.isSelected(row.book.id)}
               onPress={() =>
                 selection.selecting
-                  ? selection.toggle(b.id)
-                  : router.push(`/item/${b.id}?from=${active}`)
+                  ? selection.toggle(row.book.id)
+                  : router.push(`/item/${row.book.id}?from=${active}`)
               }
-              onLongPress={() => selection.begin(b.id)}
-              onToggle={() => selection.toggle(b.id)}
-              onPlay={() => play(b.id)}
+              onLongPress={() => selection.begin(row.book.id)}
+              onToggle={() => selection.toggle(row.book.id)}
+              onPlay={() => play(row.book.id)}
             />
-          ))}
+            ),
+          )}
         </View>
 
-        {/* Unowned books get their own section so the reading-order
-            list stays pure (owned books only). */}
-        {!selection.selecting && missing.length > 0 ? (
-          <MissingBooks books={missing} startSeq={books.length} rmabEnabled={rmabEnabled} />
-        ) : null}
       </ScrollView>
+      <NotOwnedSheet
+        ref={notOwnedRef}
+        book={notOwned}
+        rmabEnabled={rmabEnabled}
+        onDismiss={() => setNotOwned(null)}
+      />
     </Screen>
   )
 }
@@ -602,7 +628,7 @@ function SegmentTrack({
 
 function BookRow({
   book,
-  index,
+  num,
   progress,
   selecting,
   selected,
@@ -612,7 +638,8 @@ function BookRow({
   onPlay,
 }: {
   book: ABSLibraryItem
-  index: number
+  // The book's series number ("4", "10.5", "1-3.5"), or its list position.
+  num: string
   progress: ABSMediaProgress | null
   selecting: boolean
   selected: boolean
@@ -649,8 +676,12 @@ function BookRow({
           {selected ? <IconButton name={icons.check} size={16} color={colors.onAccent} /> : null}
         </Pressable>
       ) : (
-        <AppText variant="title" color={colors.textMuted} style={styles.num}>
-          {index + 1}
+        <AppText
+          variant="title"
+          color={colors.textMuted}
+          style={[styles.num, num.length > 2 && styles.numLong]}
+        >
+          {num}
         </AppText>
       )}
       <Cover
@@ -693,96 +724,18 @@ function BookRow({
   )
 }
 
-/** The unowned books in this series, folded into the list as dimmed rows. Tapping
- *  one opens a "you don't own this book" sheet with Close / Open Audible / Request
+/** One unowned book, as a dimmed row at its place in the series. Tapping it
+ *  opens a "you don't own this book" sheet with Close / Open Audible / Request
  *  (Request only when the request backend is connected). */
-function MissingBooks({
-  books,
-  startSeq,
-  rmabEnabled,
-}: {
-  books: HSAudibleSeriesBook[]
-  startSeq: number
-  rmabEnabled: boolean
-}) {
-  const colors = useColors()
-  const styles = useMemo(() => makeStyles(colors), [colors])
-  const router = useRouter()
-  const sheetRef = useRef<BottomSheetModal>(null)
-  const [selected, setSelected] = useState<HSAudibleSeriesBook | null>(null)
-  // Open by default, like the web series page: these rows are what the library
-  // list's "not in library" count promises, and a closed header hid them.
-  const [expanded, setExpanded] = useState(true)
-  // This subsection renders inside the series screen but is its own component,
-  // so it reads the origin tab from the route rather than through props.
-  const { from } = useLocalSearchParams<{ from?: string }>()
-
-  // Long-press is the tray, matching how an owned book behaves: it holds the
-  // per-book actions (follow, ignore, request/buy) rather than navigating.
-  const onLongPressRow = (b: HSAudibleSeriesBook) => {
-    setSelected(b)
-    sheetRef.current?.present()
-  }
-
-  const onPressRow = (b: HSAudibleSeriesBook) => {
-    // Upcoming (unreleased) book -> the follow/countdown page; already-released
-    // but unowned -> the request/buy sheet as before.
-    if ((b.upcoming ?? isUpcoming(b, Date.now())) && b.asin) {
-      // Forward this screen's own active tab so the bar does not change under
-      // the listener on the way into the upcoming page.
-      router.push(upcomingBookPath(b, from ?? 'library'))
-      return
-    }
-    setSelected(b)
-    sheetRef.current?.present()
-  }
-
-  return (
-    <View style={styles.missingSection}>
-      <Touchable style={styles.missingHead} onPress={() => setExpanded((e) => !e)}>
-        <View style={styles.listHeadTitle}>
-          <IconButton name={icons.hidden} size={18} color={colors.textMuted} />
-          <AppText variant="title">Not in your library ({books.length})</AppText>
-        </View>
-        <IconButton
-          name={expanded ? icons.collapse : icons.chevronDown}
-          size={22}
-          color={colors.textMuted}
-        />
-      </Touchable>
-      {expanded ? (
-        <View style={styles.list}>
-          {books.map((b, i) => (
-            <MissingBookRow
-              key={b.asin}
-              book={b}
-              index={startSeq + i}
-              rmabEnabled={rmabEnabled}
-              onPress={() => onPressRow(b)}
-              onLongPress={() => onLongPressRow(b)}
-            />
-          ))}
-        </View>
-      ) : null}
-      <NotOwnedSheet
-        ref={sheetRef}
-        book={selected}
-        rmabEnabled={rmabEnabled}
-        onDismiss={() => setSelected(null)}
-      />
-    </View>
-  )
-}
-
 function MissingBookRow({
   book,
-  index,
+  num,
   rmabEnabled,
   onPress,
   onLongPress,
 }: {
   book: HSAudibleSeriesBook
-  index: number
+  num: string
   rmabEnabled: boolean
   onPress: () => void
   onLongPress: () => void
@@ -795,8 +748,12 @@ function MissingBookRow({
   const countdown = upcoming ? countdownLabel(book, Date.now()) : null
   return (
     <Touchable onPress={onPress} onLongPress={onLongPress} style={[styles.row, styles.rowMissing]}>
-      <AppText variant="title" color={colors.textFaint} style={styles.num}>
-        {index + 1}
+      <AppText
+        variant="title"
+        color={colors.textFaint}
+        style={[styles.num, num.length > 2 && styles.numLong]}
+      >
+        {num}
       </AppText>
       <Cover
         uri={book.coverArtUrl}
@@ -1041,14 +998,6 @@ const makeStyles = (colors: Palette) =>
       borderWidth: 1,
       borderColor: 'rgba(216,68,58,0.6)',
     },
-    missingSection: { marginTop: spacing.lg },
-    missingHead: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: spacing.lg,
-      paddingVertical: spacing.sm,
-    },
     overflowRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1123,7 +1072,9 @@ const makeStyles = (colors: Palette) =>
       borderColor: colors.hairline,
     },
     sheetGhostBtn: { alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.sm },
-    num: { width: 24, textAlign: 'center', fontWeight: '700' },
+    num: { width: 30, textAlign: 'center', fontWeight: '700' },
+    // Omnibus ranges ("1-3.5") and half-steps ("10.5") step down to fit.
+    numLong: { fontSize: 12 },
     check: {
       width: 24,
       height: 24,
