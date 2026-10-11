@@ -254,8 +254,8 @@ let pendingSeek: {
   /** Whether any tick has reached the hold since it was armed. */
   sawTick: boolean
   /** Where the playhead was when the seek was asked for, or null when unknown
-   *  (a fresh load). Kept with the hold so a re-issued or restored seek still
-   *  knows where it started. */
+   *  (a fresh load). Bounds the landing window so a tick still describing the
+   *  pre-seek spot can never pass for a landed seek (see seekLanded). */
   from: number | null
 } | null = null
 
@@ -289,6 +289,27 @@ const ENGINE_REGRESSION_SEC = 30
  *  its position is accepted. Reset by every deliberate move. */
 const REGRESSION_RESTORE_LIMIT = 2
 let regressionRestores = 0
+
+/** How much playback (seconds, at 1x) a single tick may already carry past a
+ *  seek target. Native ticks once a second of wall clock, so at 2x or 3x the
+ *  first tick after a landed seek sits 2-3 seconds of book time past it - which
+ *  the fixed tolerance used to read as "not landed", holding every tick and
+ *  re-seeking backwards after each skip (the frozen bar after repeated +30s). */
+const SEEK_LANDED_TICK_SEC = 1.5
+
+/** Has the engine landed the held seek? See SEEK_LANDED_TICK_SEC. */
+function seekLanded(position: number, hold: NonNullable<typeof pendingSeek>): boolean {
+  const off = position - hold.target
+  if (Math.abs(off) <= SEEK_SETTLE_TOLERANCE_SEC) return true
+  if (off <= 0) return false
+  let ceiling = SEEK_SETTLE_TOLERANCE_SEC + Math.max(1, state.rate) * SEEK_LANDED_TICK_SEC
+  // A backwards seek leaves the pre-seek ticks AHEAD of the target; stay below
+  // them so one of those can never pass for a landing.
+  if (hold.from !== null && hold.from > hold.target) {
+    ceiling = Math.min(ceiling, hold.from - hold.target - 1)
+  }
+  return off <= ceiling
+}
 
 /**
  * Where a (re)load of the loaded book should start the native player.
@@ -1172,10 +1193,14 @@ export function reportPosition(position: number): void {
   //
   // Held only until the engine reports a position near the target (or the window
   // lapses), so a genuine post-seek tick is never discarded.
+  // Set when this tick ends a hold. Its distance from the store's position is
+  // then a seek, not listening, and must not count down the sleep timer.
+  let endedHold = false
   if (pendingSeek !== null) {
     const firstTick = !pendingSeek.sawTick
     pendingSeek.sawTick = true
-    if (Math.abs(position - pendingSeek.target) <= SEEK_SETTLE_TOLERANCE_SEC) {
+    endedHold = true
+    if (seekLanded(position, pendingSeek)) {
       pendingSeek = null
     } else if (
       firstTick &&
@@ -1316,7 +1341,10 @@ export function reportPosition(position: number): void {
   if (timer && state.isPlaying) {
     touchSleepTimer()
     if (timer.kind === 'duration' || timer.kind === 'clock') {
-      const elapsed = Math.max(0, position - prev)
+      // A tick that ends a seek hold measures the seek, not listening: credited,
+      // a run of +30s skips burned the timer down 30 seconds at a time and
+      // stopped the book early.
+      const elapsed = endedHold ? 0 : Math.max(0, position - prev)
       const remaining = timer.remainingSec - elapsed
       if (remaining <= 0) {
         fireStop(position)
