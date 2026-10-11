@@ -1020,6 +1020,9 @@ export function PlayerHost() {
           duration: number
           position: number
           chapters: string
+          /** The car player's own play intent for this load (absent on builds
+           *  that predate it). */
+          playWhenReady?: boolean
         }) => {
           let chapters: { title: string; start: number; end: number }[] = []
           try {
@@ -1030,21 +1033,35 @@ export function PlayerHost() {
           // The car's own answer to "what are you holding", so the pushes below
           // stop once it has the book.
           const isRepublish = carBook.current === e.itemId
-          // A first load FORCES isPlaying true (below). That is right when the
-          // car is genuinely starting a book and wrong for anything else - and
-          // `carBook` is cleared on disconnect, stale-absent, needs-book and
-          // load-failed, so a re-announce that arrives after any of those is
-          // misread as a first load and restarts audio the user had paused.
-          // Traced because that is indistinguishable from a real first load in
-          // the trail otherwise, and it is a prime suspect for "I paused in the
-          // car and it started again".
+          // What the store should say about transport after this mirror.
+          //
+          // The car tells us its own intent for the load (`playWhenReady`). Older
+          // builds did not, and a first load was then ASSUMED to be playing -
+          // which is wrong whenever `carBook` had been cleared (disconnect,
+          // stale-absent, needs-book, load-failed) and the car re-announced a book
+          // the listener had paused: "car announced X as a FIRST load while the
+          // store is paused; forcing play", followed by the car starting again.
+          const playing =
+            typeof e.playWhenReady === 'boolean'
+              ? e.playWhenReady
+              : isRepublish
+                ? getState().isPlaying
+                : true
           if (!isRepublish && !getState().isPlaying && getState().carActive) {
             breadcrumb(
               'car',
-              `car announced ${e.itemId.slice(0, 8)} @${Math.round(e.position)}s as a FIRST load while the store is paused; forcing play`,
+              `car announced ${e.itemId.slice(0, 8)} @${Math.round(e.position)}s as a first load while the store is paused; car says ${playing ? 'playing' : 'paused'}`,
             )
           }
           carBook.current = e.itemId
+          // A mirror reports what the car is doing; it must never become a
+          // command. sync() forwards play/pause whenever the store's isPlaying
+          // differs from what it last sent, so without this the mirror's own
+          // isPlaying was sent straight back to the car as Native.play() - a
+          // paused car told to play by its own announcement, and the rapid
+          // playWhenReady flips seen in the trail. Align the marker first; the
+          // car's real state then arrives through onState, which also aligns it.
+          lastPlaying.current = playing
           mirrorCarTrack(
             {
               itemId: e.itemId,
@@ -1059,15 +1076,7 @@ export function PlayerHost() {
               startPosition: e.position,
               chapters,
             },
-            // A FIRST load of this book means the car is starting it - assume
-            // playing, as before. A RE-announce of the book we already mirrored
-            // (republishLoaded, fired on every foreground via syncCarState) says
-            // nothing about transport, and the car may be paused. Keep whatever
-            // the store already believes there; native emits the car's true
-            // isPlaying immediately after this, which corrects it either way.
-            // Without this, foregrounding while paused in the car forced the
-            // store to playing and sync() forwarded play() (HS-MOBILEAPP-2K/2M).
-            isRepublish ? getState().isPlaying : true,
+            playing,
           )
         },
       ),

@@ -213,6 +213,7 @@ class HearthShelfAutoService : MediaLibraryService() {
         absDurationSec,
         absolutePositionMs(player) / 1000.0,
         chaptersJson,
+        player.playWhenReady,
       )
       HearthShelfAutoModule.emitState(player.isPlaying)
     }
@@ -1699,7 +1700,7 @@ class HearthShelfAutoService : MediaLibraryService() {
       }
     }.toString()
     HearthShelfAutoModule.emitCarLoaded(
-      itemId, title, author, art, absDurationSec, startSec, chaptersJson,
+      itemId, title, author, art, absDurationSec, startSec, chaptersJson, carWantsPlayback,
     )
 
     // Resume at the saved absolute position; the caller hands it to the player as
@@ -3012,7 +3013,7 @@ class HearthShelfAutoService : MediaLibraryService() {
       }
     }.toString()
     HearthShelfAutoModule.emitCarLoaded(
-      itemId, b.title, b.author, b.cover, absDurationSec, b.position, chaptersJson,
+      itemId, b.title, b.author, b.cover, absDurationSec, b.position, chaptersJson, carWantsPlayback,
     )
 
     val meta = chapterMeta(shownChapterIdx)

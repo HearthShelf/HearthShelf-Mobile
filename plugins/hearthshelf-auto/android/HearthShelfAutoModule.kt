@@ -681,6 +681,7 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
       durationSec: Double,
       positionSec: Double,
       chaptersJson: String,
+      playWhenReady: Boolean,
     ) {
       val map = Arguments.createMap().apply {
         putString("itemId", itemId)
@@ -690,6 +691,10 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
         putDouble("duration", durationSec)
         putDouble("position", positionSec)
         putString("chapters", chaptersJson)
+        // The car's own play intent for this load. JS mirrors it instead of
+        // assuming a load means "playing", which restarted books the driver had
+        // paused whenever the car re-announced one.
+        putBoolean("playWhenReady", playWhenReady)
       }
       emitter?.invoke("onCarLoaded", map)
     }
