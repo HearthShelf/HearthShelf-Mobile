@@ -24,6 +24,7 @@ import {
   createPlaylist,
   getLibraryCollections,
   getLibraryPlaylists,
+  ABSRequestError,
 } from '@/api/abs'
 import { enqueueClubBook, getClubs, type ClubSummary } from '@/api/clubs'
 import { getMeId } from '@/api/me'
@@ -125,13 +126,25 @@ export const AddToListSheet = forwardRef<
     )
   }
 
+  // Every list action below is fired with `void`, so a failure that escaped
+  // became an unhandled promise rejection - a 403 from a server where this
+  // account may not edit collections reached Sentry that way, and the sheet just
+  // sat there. Say what went wrong instead.
+  const failMessage = (e: unknown, what: string): string =>
+    e instanceof ABSRequestError && e.status === 403
+      ? `Your account on this server is not allowed to change ${what}s.`
+      : `Could not update that ${what}. Check your connection and try again.`
+
   const addToCollection = async (id: string, name: string) => {
     if (!ids.length) return
     setBusy(true)
+    setErrorMessage('')
     try {
       if (ids.length === 1) await addBookToCollection(id, ids[0])
       else await addBooksToCollection(id, ids)
       finish(`Added to ${name}${suffix}`)
+    } catch (e) {
+      setErrorMessage(failMessage(e, 'collection'))
     } finally {
       setBusy(false)
     }
@@ -139,10 +152,13 @@ export const AddToListSheet = forwardRef<
   const addToPlaylist = async (id: string, name: string) => {
     if (!ids.length) return
     setBusy(true)
+    setErrorMessage('')
     try {
       if (ids.length === 1) await addItemToPlaylist(id, ids[0])
       else await addItemsToPlaylist(id, ids)
       finish(`Added to ${name}${suffix}`)
+    } catch (e) {
+      setErrorMessage(failMessage(e, 'playlist'))
     } finally {
       setBusy(false)
     }
@@ -175,6 +191,7 @@ export const AddToListSheet = forwardRef<
     const name = newName.trim()
     if (!name || !ids.length) return
     setBusy(true)
+    setErrorMessage('')
     try {
       if (tab === 'collection') await createCollection(libraryId, name, ids)
       else
@@ -185,6 +202,8 @@ export const AddToListSheet = forwardRef<
         )
       setNewName('')
       finish(`Created ${name}${suffix}`)
+    } catch (e) {
+      setErrorMessage(failMessage(e, tab === 'collection' ? 'collection' : 'playlist'))
     } finally {
       setBusy(false)
     }
@@ -208,7 +227,10 @@ export const AddToListSheet = forwardRef<
           <Pressable
             key={t}
             style={[styles.seg, tab === t && styles.segOn]}
-            onPress={() => setTab(t)}
+            onPress={() => {
+              setTab(t)
+              setErrorMessage('')
+            }}
           >
             <AppText
               variant="label"
@@ -294,6 +316,12 @@ export const AddToListSheet = forwardRef<
               </AppText>
             </Pressable>
           </View>
+
+          {errorMessage ? (
+            <AppText variant="meta" color={colors.destructive} style={styles.errorMessage}>
+              {errorMessage}
+            </AppText>
+          ) : null}
 
           {loading ? (
             <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.xl }} />
