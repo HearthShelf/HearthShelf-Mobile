@@ -91,6 +91,14 @@ const serverUpdatedAt = new Map<string, number>()
 // server anyway.
 const serverConfirmedSec = new Map<string, number>()
 
+// When each watermark above was confirmed (ms epoch). Without it a watermark
+// could never age: a book later reset, restarted or marked unfinished elsewhere
+// came back as a server row far behind our last push, and with no local row to
+// weigh it against, every refresh reported it as a lost position (29 such
+// reports from one install, all reading localUpdatedAt as 1970). A server row
+// stamped after our confirmation is a newer write from somewhere else.
+const serverConfirmedAt = new Map<string, number>()
+
 /**
  * Record that ABS confirmed this position. Called from the sync path on a
  * successful push (see pushListened).
@@ -102,6 +110,7 @@ export function noteServerConfirmedPosition(itemId: string, currentTime: number)
   // rather than stale - pinning the watermark to the high-water mark would make
   // us reject the very row we just caused.
   const prev = serverConfirmedSec.get(itemId)
+  serverConfirmedAt.set(itemId, Date.now())
   if (prev === currentTime) return
   serverConfirmedSec.set(itemId, currentTime)
   // Write through rather than waiting for the next row change to carry it: the
@@ -234,11 +243,16 @@ function persist(): void {
   // this position before the crash. Persisting keeps the guard armed across the
   // restart. Only rows we still hold are written, so this cannot grow unbounded.
   const confirmed: Record<string, number> = {}
+  const confirmedAt: Record<string, number> = {}
   for (const item of items) {
     const sec = serverConfirmedSec.get(item.libraryItemId)
     if (sec !== undefined) confirmed[item.libraryItemId] = sec
+    const at = serverConfirmedAt.get(item.libraryItemId)
+    if (at !== undefined) confirmedAt[item.libraryItemId] = at
   }
-  void AsyncStorage.setItem(STORE_KEY, JSON.stringify({ items, confirmed })).catch(() => {})
+  void AsyncStorage.setItem(STORE_KEY, JSON.stringify({ items, confirmed, confirmedAt })).catch(
+    () => {},
+  )
 }
 
 function emit(next: Map<string, ABSMediaProgress>): void {
@@ -291,11 +305,17 @@ async function runHydrate(): Promise<void> {
     const parsed = JSON.parse(raw) as {
       items?: ABSMediaProgress[]
       confirmed?: Record<string, number>
+      confirmedAt?: Record<string, number>
     }
     const merged = new Map(state.byId)
     for (const p of parsed.items ?? []) {
       if (p && typeof p.libraryItemId === 'string' && !merged.has(p.libraryItemId)) {
         merged.set(p.libraryItemId, p)
+      }
+    }
+    for (const [id, at] of Object.entries(parsed.confirmedAt ?? {})) {
+      if (typeof at === 'number' && Number.isFinite(at) && !serverConfirmedAt.has(id)) {
+        serverConfirmedAt.set(id, at)
       }
     }
     // Restore the confirmed-position watermarks (absent on payloads written
@@ -553,21 +573,57 @@ function keepFresherLocalPositions(
       // also sits materially behind that acknowledgement, this refresh is about
       // to move the listener backwards with every guard skipped, which is the
       // failure mode that produced no telemetry at all before.
+      //
+      // But nothing LOCAL is lost here - there is no local position at all, only
+      // the memory of a push. If the server row was written after that push was
+      // confirmed (or we never knew when it was), someone else wrote it since: a
+      // reset, a restart from the beginning, "mark as not finished" elsewhere.
+      // That is not a drop, and keeping the watermark only re-files the same
+      // false report on every launch (29 of 34 recent ones: no local row, a
+      // zeroed server row, and a "local" stamp of 1970). Forget the push.
       const confirmed = serverConfirmedSec.get(id)
       if (confirmed !== undefined && confirmed - server.currentTime > CONCURRENT_MIN_DROP_SEC) {
-        reportProgressDrop({
-          itemId: id,
-          localSec: confirmed,
-          serverSec: server.currentTime,
-          localUpdatedAt: 0,
-          serverUpdatedAt: typeof server.lastUpdate === 'number' ? server.lastUpdate : 0,
-          branch: 'no_local_row',
-        })
+        const confirmedAt = serverConfirmedAt.get(id)
+        const serverAt = typeof server.lastUpdate === 'number' ? server.lastUpdate : 0
+        if (confirmedAt === undefined || serverAt > confirmedAt) {
+          breadcrumbOnce(
+            `wm:${id}`,
+            `${Math.round(server.currentTime)}|${Math.round(confirmed)}`,
+            `server row for ${id.slice(0, 8)} (${Math.round(server.currentTime)}s) was written after our last confirmed push (${Math.round(confirmed)}s) and no local row holds a position; forgetting the push`,
+          )
+          serverConfirmedSec.delete(id)
+          serverConfirmedAt.delete(id)
+        } else {
+          // The server went back past a push it acknowledged, with no newer
+          // write to explain it. That one is worth an event.
+          reportProgressDrop({
+            itemId: id,
+            localSec: confirmed,
+            serverSec: server.currentTime,
+            localUpdatedAt: confirmedAt,
+            serverUpdatedAt: serverAt,
+            branch: 'no_local_row',
+          })
+        }
       }
       continue
     }
     const localAt = typeof local.lastUpdate === 'number' ? local.lastUpdate : 0
     const serverAt = typeof server.lastUpdate === 'number' ? server.lastUpdate : 0
+    // A local position with no stamp against a ZEROED server row. With no stamp
+    // the 0 fallback made every comparison below say "the server is newer" (and
+    // "the local row is ancient"), so a real position lost to a row that carries
+    // none. A zeroed, unfinished row says nothing about where the listener is;
+    // keep the position we have.
+    if (localAt === 0 && !(server.currentTime > 0) && !server.isFinished) {
+      breadcrumbOnce(
+        `zero:${id}`,
+        `${Math.round(local.currentTime)}`,
+        `server row for ${id.slice(0, 8)} is at 0s; keeping the unstamped local ${Math.round(local.currentTime)}s`,
+      )
+      carryLocalPosition(next, id, server, local, localAt)
+      continue
+    }
     // A server stamp that is only MARGINALLY newer while its position is
     // materially BEHIND is a race, not a newer observation: our local write and
     // an in-flight sync landed within the same moment, and the sync's response
@@ -721,20 +777,33 @@ function keepFresherLocalPositions(
         `local position for ${id.slice(0, 8)} is ${Math.round((now - localAt) / 1000)}s old but server row (${Math.round(server.currentTime)}s) ${why} - keeping local ${Math.round(local.currentTime)}s`,
       )
     }
-    const duration = server.duration || local.duration || 0
-    next.set(id, {
-      ...server,
-      currentTime: local.currentTime,
-      lastUpdate: localAt,
-      // Finished books read as 100% regardless of where a re-listen sits, exactly
-      // as recordLocalProgress keeps them.
-      progress: server.isFinished
-        ? 1
-        : duration > 0
-          ? Math.min(local.currentTime / duration, 1)
-          : server.progress,
-    })
+    carryLocalPosition(next, id, server, local, localAt)
   }
+}
+
+/** Keep the local position on the server's row (finished state stays the
+ *  server's). */
+function carryLocalPosition(
+  next: Map<string, ABSMediaProgress>,
+  id: string,
+  server: ABSMediaProgress,
+  local: ABSMediaProgress,
+  localAt: number,
+): void {
+  const duration = server.duration || local.duration || 0
+  next.set(id, {
+    ...server,
+    duration,
+    currentTime: local.currentTime,
+    lastUpdate: localAt,
+    // Finished books read as 100% regardless of where a re-listen sits, exactly
+    // as recordLocalProgress keeps them.
+    progress: server.isFinished
+      ? 1
+      : duration > 0
+        ? Math.min(local.currentTime / duration, 1)
+        : server.progress,
+  })
 }
 
 /** Free the device for books that just became finished server-side (the common
@@ -853,6 +922,7 @@ export async function resetItemProgress(itemId: string): Promise<void> {
     throw e instanceof Error ? e : new Error('reset_progress_failed')
   }
   serverUpdatedAt.delete(itemId)
+  serverConfirmedAt.delete(itemId)
   // The row is gone from ABS, so nothing about it is confirmed any more. Leaving
   // the old watermark would make the re-created row (starting at 0) look stale
   // against a position that no longer exists.
@@ -886,6 +956,7 @@ export async function clearAllProgress(): Promise<void> {
   overrides.clear()
   serverUpdatedAt.clear()
   serverConfirmedSec.clear()
+  serverConfirmedAt.clear()
   hydration = null
   emit(new Map())
   await AsyncStorage.removeItem(STORE_KEY).catch(() => {})

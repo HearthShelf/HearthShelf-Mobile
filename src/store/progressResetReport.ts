@@ -50,7 +50,12 @@ export interface ProgressDropDetail {
    *  compare against, keepFresherLocalPositions() skipped the book before any
    *  guard ran, so a reset from a lost hydration race produced no event at all.
    *  refreshProgress() now awaits hydration, which should make it unreachable -
-   *  it is reported so that "should" is checkable rather than assumed. */
+   *  it is reported so that "should" is checkable rather than assumed.
+   *
+   *  On this branch `localSec` is our last CONFIRMED push and `localUpdatedAt`
+   *  when it was confirmed - there is no local row. It is only reported when the
+   *  server row is not newer than that confirmation; a later server write is
+   *  someone else's (a reset, a restart) and is not a loss. */
   branch: 'server_newer' | 'local_too_old' | 'no_local_row'
 }
 
@@ -81,8 +86,11 @@ export function reportProgressDrop(d: ProgressDropDetail): void {
         // The stamp gap is the crux: the guard keys on it, so its sign and size
         // say whether a sync landed after the last local tick (the suspected
         // path) or the local row simply aged out.
-        stampGapMs: d.serverUpdatedAt - d.localUpdatedAt,
-        localUpdatedAt: new Date(d.localUpdatedAt).toISOString(),
+        stampGapMs:
+          d.serverUpdatedAt && d.localUpdatedAt ? d.serverUpdatedAt - d.localUpdatedAt : 'unknown',
+        // 0 means "not known", never a real 1970 write; printing it as a date
+        // made unstamped rows look like a 56-year-old local position.
+        localUpdatedAt: d.localUpdatedAt ? new Date(d.localUpdatedAt).toISOString() : 'none',
         serverUpdatedAt: d.serverUpdatedAt ? new Date(d.serverUpdatedAt).toISOString() : 'none',
         // Which server these rows came from. Positions are stored under one
         // global key with no account in it, so a row can outlive the account
