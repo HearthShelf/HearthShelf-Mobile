@@ -648,12 +648,22 @@ function keepFresherLocalPositions(
     // which is the case stamps cannot see at all (see staleAgainstConfirmed). The
     // minimum-drop floor gates all three, so ordinary tick/sync rounding
     // converges normally and only a felt loss is ever overridden.
-    const concurrentRace =
-      raceByStamps || (feltDrop && staleAgainstConfirmed(id, server.currentTime))
+    //
+    // The watermark half applies only to the book that is LOADED and unfinished.
+    // The watermark never ages, so for any other book it kept a local row over a
+    // later server write on every refresh - and logged "server row 1241s behind
+    // local ... keeping local 30187s" again and again for a finished book nobody
+    // was playing.
+    const watermarkRace =
+      feltDrop &&
+      id === getPlayerState().nowPlaying?.itemId &&
+      !server.isFinished &&
+      staleAgainstConfirmed(id, server.currentTime)
+    const concurrentRace = raceByStamps || watermarkRace
     if (concurrentRace) {
       breadcrumbOnce(
         `race:${id}`,
-        `${server.currentTime}|${serverAt}|${local.currentTime}`,
+        `${Math.round(server.currentTime)}|${Math.round(local.currentTime)}`,
         // Say "older" when the gap is negative. It read as "only -454ms newer",
         // which is not a thing, and cost real time during a triage that was
         // reading these lines as evidence of something anomalous.
@@ -773,7 +783,7 @@ function keepFresherLocalPositions(
         : 'dropped more than the stamp gap can explain'
       breadcrumbOnce(
         `old:${id}`,
-        `${server.currentTime}|${serverAt}|${local.currentTime}`,
+        `${Math.round(server.currentTime)}|${Math.round(local.currentTime)}`,
         `local position for ${id.slice(0, 8)} is ${Math.round((now - localAt) / 1000)}s old but server row (${Math.round(server.currentTime)}s) ${why} - keeping local ${Math.round(local.currentTime)}s`,
       )
     }
