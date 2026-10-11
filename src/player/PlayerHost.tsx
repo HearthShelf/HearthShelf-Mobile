@@ -38,6 +38,7 @@ import {
   msSincePaused,
   reloadPosition,
   requestSeek,
+  adoptEnginePlaying,
 } from './store'
 import { syncStateCarOwned } from './syncState'
 import { breadcrumb } from '@/lib/crashLog'
@@ -299,6 +300,9 @@ export function PlayerHost() {
   /** The book we stood down on, and when. Keyed by item so switching books is
    *  never punished for a previous book's failure. */
   const reclaimGaveUpOn = useRef<{ itemId: string; at: number } | null>(null)
+  /** The book whose download was already tried as the last resort after the
+   *  stream kept failing (see recoverLostPlayback). */
+  const triedLocalFor = useRef<string | null>(null)
   /** The root exception native gave with the last loss, if any. */
   const lastNativeCause = useRef<string | null>(null)
   /** The book the "getting this part ready" toast was last shown for, so a
@@ -412,6 +416,30 @@ export function PlayerHost() {
       reclaimAttempts.current = 0
     }
     reclaimAttempts.current += 1
+    // Out of stream retries, with the book on this phone: try the download
+    // before giving up. A copy too big to open comfortably is skipped while a
+    // stream exists, so a downloaded book could fail four times on the stream
+    // ("localSource:false ... 4x; giving up on reload") with the file right
+    // there. Once per book per run; if the file cannot open either, the
+    // too-large / local-file handling explains why.
+    const capNp = getState().nowPlaying
+    if (
+      reclaimAttempts.current > RECLAIM_MAX_ATTEMPTS &&
+      capNp &&
+      !getState().carActive &&
+      triedLocalFor.current !== capNp.itemId &&
+      !capNp.url.startsWith('file://') &&
+      localSourceFor(capNp.itemId)
+    ) {
+      triedLocalFor.current = capNp.itemId
+      breadcrumb('player', `${what}; the stream keeps failing, trying the download on this phone`)
+      const s = getState()
+      void playItemById(capNp.itemId, s.isPlaying, {
+        resumeAt: s.position,
+        preferLocal: true,
+      }).catch(() => {})
+      return
+    }
     if (reclaimAttempts.current > RECLAIM_MAX_ATTEMPTS) {
       // Stand down rather than re-arm into the same bounce. Drop the playing
       // intent so the UI stops claiming it is playing over silence, and so
@@ -1268,25 +1296,20 @@ export function PlayerHost() {
 
         breadcrumb(
           'player',
-          `store says paused but ticks arrived ${Math.round((Date.now() - last) / 1000)}s ago (paused ${sincePause === null ? '?' : Math.round(sincePause / 1000)}s ago); treating as a stall`,
+          `store says paused but ticks arrived ${Math.round((Date.now() - last) / 1000)}s ago (paused ${sincePause === null ? '?' : Math.round(sincePause / 1000)}s ago); the engine is still playing`,
         )
-        // Recovery stands down on a book it already gave up on, and the
-        // condition that tripped this branch - paused, with a tick moments ago -
-        // does not change when it does. So the watchdog re-detected it every
-        // STALL_CHECK_MS and logged the same pair of lines indefinitely: 17
-        // rounds in 85 seconds in one report (HS-MOBILEAPP-3T), noise that
-        // buries whatever else the trail was about to say. Skip the detection
-        // entirely while that stand-down is in force; a play edge clears it.
-        const gaveUp = reclaimGaveUpOn.current
-        if (
-          gaveUp &&
-          gaveUp.itemId === s.nowPlaying?.itemId &&
-          Date.now() - gaveUp.at < RECLAIM_GIVE_UP_COOLDOWN_MS
-        ) {
-          return
-        }
         pausedStallTickAt.current = last
-        recoverLostPlayback('stall', 'paused-but-ticking')
+        // The engine is demonstrably playing (it only ticks while decoding), so
+        // the store's pause is the stale side - typically a play from the lock
+        // screen or a headset whose state event was swallowed by the seek window.
+        // Adopt it. This used to RELOAD the book instead, which interrupted audio
+        // that was fine, reloaded it paused (the store's intent), and on the next
+        // play edge could trip the same branch again: the reload loops in the
+        // reports. Believing the engine costs nothing and the UI stops lying.
+        breadcrumb('player', 'engine is playing behind a paused store; adopting playing')
+        lastPlaying.current = true
+        adoptEnginePlaying()
+        void ensureSessionForPlayback().catch(() => {})
         return
       }
       // The car runs its own player, but it mirrors a progress tick to JS every

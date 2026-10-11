@@ -439,7 +439,13 @@ function prepareStartPart(itemId: string, parts: HSPart[], position: number): vo
 export async function playItemById(
   itemId: string,
   autoPlay = true,
-  opts: { armRecompute?: boolean; resumeAt?: number } = {},
+  opts: {
+    armRecompute?: boolean
+    resumeAt?: number
+    /** Play the downloaded copy even when it is too big to open comfortably -
+     *  the last resort after every streamed source has failed. */
+    preferLocal?: boolean
+  } = {},
 ): Promise<void> {
   // Every resume path below reads the progress store to decide where to land, and
   // that store is hydrated from disk by an unawaited read started at mount. After
@@ -468,7 +474,7 @@ export async function playItemById(
   // sample table outgrows the heap, HS-MOBILEAPP-44). While a server can offer
   // the book as parts, those win over the file; the file is kept for offline,
   // where it is still the only copy (and the too-large handling is the floor).
-  const localOversized = !!local && isOversizedDownload(local)
+  const localOversized = !!local && isOversizedDownload(local) && !opts.preferLocal
   const resumeAt =
     typeof opts.resumeAt === 'number' && Number.isFinite(opts.resumeAt)
       ? Math.max(0, opts.resumeAt)

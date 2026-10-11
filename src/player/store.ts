@@ -519,6 +519,17 @@ export function setPlaying(isPlaying: boolean): void {
 }
 
 /**
+ * The engine is playing while the store believes it is paused: record that,
+ * WITHOUT the resume side effects setPlaying(true) carries. Those belong to a
+ * listener pressing play; here audio has been running for a while, and an
+ * auto-rewind or a cross-device jump would move the playhead under them.
+ */
+export function adoptEnginePlaying(): void {
+  if (!state.nowPlaying || state.isPlaying) return
+  set({ isPlaying: true })
+}
+
+/**
  * Step back a few seconds on resume, scaled to how long we were paused. No-op
  * when the pause was too short to matter, the setting is off, or something else
  * already moved the position for this resume (see autoRewind.ts).
