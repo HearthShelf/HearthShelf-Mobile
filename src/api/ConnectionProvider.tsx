@@ -20,7 +20,15 @@ import { fetchLinkedServers, acceptInvite, ApiError, type LinkedServer } from '.
 import { connectServer } from './connect'
 import { currentNetworkScope } from './candidates'
 import { ConnectionError } from './connectionError'
-import { setSession, setLastServerId, getLastServerId, takePendingInviteToken } from './session'
+import {
+  setSession,
+  setLastServerId,
+  getLastServerId,
+  takePendingInviteToken,
+  hydrateSession,
+  setLastServerName,
+  getLastServerName,
+} from './session'
 import { tracePhase } from '@/lib/startupTrace'
 import {
   clearAutoSession,
@@ -202,6 +210,20 @@ const CONNECT_RETRIES = 1
  *  reported stalls this floor had already fixed. Raising this above ~55s
  *  reintroduces that false-alarm class. */
 const CONNECTING_FLOOR_MS = 44000
+
+/**
+ * How long a launch waits on the control plane before opening the app on what
+ * this device already has.
+ *
+ * The handshake (token mint, the server list, the server exchange) is three
+ * network hops before anything renders, and a slow one - stalled at
+ * connect:fetch-servers - held a returning listener on the splash for the full
+ * connect timeout with nothing to do. A device that connected before keeps the
+ * ABS session it was given; open on that (or, without one, on the downloads),
+ * and let the handshake finish behind the app. It still upgrades the session
+ * when it lands, and it never covers the app again.
+ */
+const LAUNCH_RELEASE_MS = 5000
 
 /** Headline for the offline banner when the user chose offline mode themselves,
  *  or when we grounded the launch before a handshake was even worth trying. */
@@ -418,6 +440,12 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   // candidate survives a refresh.
   const connectedServer = useRef<LinkedServer | SplashServer | null>(null)
 
+  // The launch opened the app on the saved ABS session before the handshake
+  // finished (see LAUNCH_RELEASE_MS). While set, a handshake that fails or comes
+  // back with no servers must not cover the app with an error or the invite-code
+  // screen: the listener is already using the library the saved session reaches.
+  const releasedOnSavedSession = useRef(false)
+
   // A connect SUCCEEDED while the user was holding the offline screen. The banner
   // stays (their choice), but the server is genuinely reachable, so the non-React
   // modules must not be told we're offline. Kept as state, not a ref, because the
@@ -432,7 +460,13 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
       // CURRENT phase too, so a connect still running after the user tapped "Enter
       // offline mode" (or after we dropped them there) can't re-cover the app.
       if (!opts?.quiet) {
-        setStatus((cur) => (cur.phase === 'offline' ? cur : { phase: 'connecting' }))
+        // Never re-cover an app that already opened on the saved session.
+        const keepOpen = releasedOnSavedSession.current
+        setStatus((cur) =>
+          cur.phase === 'offline' || (keepOpen && cur.phase === 'ready')
+            ? cur
+            : { phase: 'connecting' },
+        )
       }
       try {
         // Pass the FULL linked-server record when we have one, so connectServer can
@@ -463,6 +497,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         )
         connectedServer.current = server
         await setLastServerId(server.id)
+        void setLastServerName(server.name)
         // Ensure the per-install deviceId AND the persisted settings are loaded
         // before sync starts: the deviceId so device-scoped settings round-trip
         // on the first pull, the stored per-key timestamps so that pull merges
@@ -533,12 +568,20 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
           return
         }
         setConnectedOffline(false)
+        releasedOnSavedSession.current = false
         setStatus({ phase: 'ready', serverName: server.name })
       } catch (e) {
         // The server is not reachable after all (or stopped being): drop any
         // "connected behind the offline banner" claim so playback goes back to the
         // local path instead of trying a dead server on every action.
         setConnectedOffline(false)
+        if (releasedOnSavedSession.current && statusRef.current.phase === 'ready') {
+          // Already open on the saved session; keep it rather than covering the
+          // app. Requests that genuinely cannot reach the server fail on their
+          // own screens, and the reconnect watchers retry the handshake.
+          breadcrumb('connect', 'handshake failed after opening on the saved session; staying open')
+          return
+        }
         // A failed connect to a specific server drops to offline mode whenever
         // there's downloaded content - whether it was a quiet (offline-origin)
         // retry or the user picking a server that turns out unreachable (e.g.
@@ -598,7 +641,9 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
       const remembered = lastId ? servers.find((s) => s.id === lastId) : undefined
       const preferred = remembered ?? servers.find((s) => s.isDefault)
       if (preferred) await connectTo(preferred, opts)
-      else setStatus({ phase: 'select-server', servers })
+      else if (!(releasedOnSavedSession.current && statusRef.current.phase === 'ready')) {
+        setStatus({ phase: 'select-server', servers })
+      }
     },
     [connectTo, tokenFn],
   )
@@ -639,6 +684,39 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     return null
   }, [])
 
+  /**
+   * The launch handshake is still running after LAUNCH_RELEASE_MS: open the app
+   * on what this device already has instead of holding the splash.
+   *
+   * A saved ABS session (cleared on sign-out, so it is this account's) reaches
+   * the same library the handshake is about to reach - open `ready` on it.
+   * Without one, open on the downloads (`offline`, which the handshake still
+   * upgrades when it lands). Nothing to open on: keep waiting.
+   */
+  const releaseOnSavedData = useCallback(async () => {
+    if (statusRef.current.phase !== 'connecting') return
+    const scope = await currentNetworkScope().catch(() => undefined)
+    const saved = await hydrateSession(scope ?? undefined).catch(() => null)
+    const name = saved ? await getLastServerName() : null
+    if (statusRef.current.phase !== 'connecting') return
+    if (saved) {
+      breadcrumb(
+        'connect',
+        `still connecting after ${LAUNCH_RELEASE_MS / 1000}s; opening on the saved session`,
+      )
+      releasedOnSavedSession.current = true
+      setStatus({ phase: 'ready', serverName: name ?? '' })
+      return
+    }
+    if (hasOfflineContent()) {
+      breadcrumb(
+        'connect',
+        `still connecting after ${LAUNCH_RELEASE_MS / 1000}s; opening on the downloads`,
+      )
+      dropToOffline('retrying', 'Still connecting to your server')
+    }
+  }, [dropToOffline])
+
   const connectingRef = useRef(false)
   const connect = useCallback(async () => {
     // One attempt at a time: Retry, the NetInfo watcher, and the foreground probe
@@ -658,6 +736,12 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
       setStatus((cur) => (cur.phase === 'connecting' ? { phase: 'connecting', ...patch } : cur))
     }
     if (!quiet) setStatus({ phase: 'connecting' })
+    // Open on what the device already has if the handshake is slow (see
+    // LAUNCH_RELEASE_MS). Only from a covered launch: a quiet retry is already
+    // behind the app.
+    const releaseTimer = quiet
+      ? undefined
+      : setTimeout(() => void releaseOnSavedData(), LAUNCH_RELEASE_MS)
     try {
       // Grounded (airplane mode / no network): resolve the SCREEN now rather than
       // making the user watch a retry window that can't succeed. A failed
@@ -714,6 +798,17 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
           return
         } catch (e) {
           if (e instanceof NoLinkedServersError) {
+            // An account that was just using a server through the saved session
+            // has not lost it in the last few seconds; an empty list now is the
+            // control plane answering early, not the account having no server.
+            // Do not swap the open app for the invite-code screen over it.
+            if (releasedOnSavedSession.current && statusRef.current.phase === 'ready') {
+              breadcrumb(
+                'connect',
+                'server list came back empty after opening on the saved session; staying open',
+              )
+              return
+            }
             setStatus({ phase: 'no-servers' })
             return
           }
@@ -747,15 +842,23 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
           }
           // Truly unreachable (or out of retries): play downloads offline rather
           // than stranding the user on an error.
+          if (releasedOnSavedSession.current && statusRef.current.phase === 'ready') {
+            breadcrumb(
+              'connect',
+              'handshake gave up after opening on the saved session; staying open',
+            )
+            return
+          }
           if (hasOfflineContent()) setStatus({ phase: 'offline', reason: await explainOutage(e) })
           else setStatus(await explainedErrorStatus(e))
           return
         }
       }
     } finally {
+      if (releaseTimer) clearTimeout(releaseTimer)
       connectingRef.current = false
     }
-  }, [runConnect, groundedReason, dropToOffline])
+  }, [runConnect, groundedReason, dropToOffline, releaseOnSavedData])
 
   // Load downloaded books once at mount, before any connect attempt - offline
   // launch depends on the manifest being in memory to detect downloaded content
@@ -846,6 +949,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
       // A fresh sign-out/sign-in is a clean slate; a previous session's offline
       // choice must not follow the next user into their launch.
       userChoseOffline.current = false
+      releasedOnSavedSession.current = false
       setConnectedOffline(false)
       setStatus({ phase: 'connecting' })
       return

@@ -91,6 +91,27 @@ export async function getLastServerId(): Promise<string | null> {
   }
 }
 
+const LAST_SERVER_NAME_KEY = 'hs.lastServerName'
+
+/** Remember the display name of the server last connected to, so a launch that
+ *  opens on the saved session (before the server list loads) can still name it. */
+export async function setLastServerName(name: string): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(LAST_SERVER_NAME_KEY, name)
+  } catch {
+    // non-fatal; the name only labels the server in the UI
+  }
+}
+
+/** The display name saved by setLastServerName, or null. */
+export async function getLastServerName(): Promise<string | null> {
+  try {
+    return await SecureStore.getItemAsync(LAST_SERVER_NAME_KEY)
+  } catch {
+    return null
+  }
+}
+
 /** Forget the remembered server so the next connect shows the picker. */
 export async function clearLastServerId(): Promise<void> {
   try {
