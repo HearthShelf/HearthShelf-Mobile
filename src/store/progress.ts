@@ -310,7 +310,7 @@ async function runHydrate(): Promise<void> {
     const merged = new Map(state.byId)
     for (const p of parsed.items ?? []) {
       if (p && typeof p.libraryItemId === 'string' && !merged.has(p.libraryItemId)) {
-        merged.set(p.libraryItemId, p)
+        merged.set(p.libraryItemId, withTrueProgress(p))
       }
     }
     for (const [id, at] of Object.entries(parsed.confirmedAt ?? {})) {
@@ -401,6 +401,24 @@ export function isFinished(itemId: string): boolean {
   return state.byId.get(itemId)?.isFinished === true
 }
 
+/**
+ * The row with `progress` recomputed from its position.
+ *
+ * ABS keeps the fraction in its own field and only rewrites it when a writer
+ * sends one (MediaProgress.applyProgressUpdate), so a client that saved
+ * currentTime alone leaves `progress` describing some older spot - an omnibus
+ * read as 3.8 hours in when it was 18. Every screen here reads `progress` for
+ * bars, sorting and "in progress" checks, so derive it once, on the way in, from
+ * the two numbers that ARE kept current. Finished stays 1; a row with no usable
+ * duration keeps what the server said.
+ */
+export function withTrueProgress(p: ABSMediaProgress): ABSMediaProgress {
+  if (p.isFinished) return p.progress === 1 ? p : { ...p, progress: 1 }
+  if (!(p.duration > 0) || !Number.isFinite(p.currentTime)) return p
+  const frac = Math.min(Math.max(p.currentTime / p.duration, 0), 1)
+  return Math.abs(frac - (p.progress ?? 0)) < 0.0005 ? p : { ...p, progress: frac }
+}
+
 function stub(itemId: string, finished: boolean, duration = 0): ABSMediaProgress {
   return {
     libraryItemId: itemId,
@@ -443,7 +461,7 @@ export async function refreshProgress(): Promise<ABSMeResponse> {
   // capturing earlier would compare the server's answer against a state that
   // predates it.
   const prev = state.byId
-  const next = new Map(me.mediaProgress.map((p) => [p.libraryItemId, p] as const))
+  const next = new Map(me.mediaProgress.map((p) => [p.libraryItemId, withTrueProgress(p)] as const))
   // Snapshot the server's stamps before any local write can restamp these rows.
   for (const p of me.mediaProgress) {
     if (typeof p.lastUpdate === 'number') serverUpdatedAt.set(p.libraryItemId, p.lastUpdate)
