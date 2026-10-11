@@ -41,6 +41,7 @@ import {
   getState,
   attachSessionId,
   updateChapters,
+  getSeekGeneration,
   type NowPlaying,
   type ChapterMark,
   type PlayTrack,
@@ -560,7 +561,7 @@ export async function playItemById(
   // An offline session being replaced by a real one has its accrued time on disk
   // already (every tick banks it), but bank once more so the row carries the true
   // position at handoff rather than the position at the last tick.
-  if (offline) bankOffline(offline, getState().position)
+  if (offline) bankOffline(offline, protectFromRegression(offline.itemId, getState().position))
   offline = null
   lastTickTime = null
 
@@ -681,7 +682,7 @@ async function loadPreview(
   // Close whatever was live: loading a different book into the player ends the
   // previous listen, exactly as the session-opening path does.
   if (active) await safeClose(true)
-  if (offline) bankOffline(offline, getState().position)
+  if (offline) bankOffline(offline, protectFromRegression(offline.itemId, getState().position))
   offline = null
   lastTickTime = null
 
@@ -1018,8 +1019,10 @@ function tickListened(currentTime: number): number {
  * server once enough real listened-time has accrued, and on `force` (pause/stop)
  * so the server reflects the true stop point and recent listens stays fresh.
  */
-export async function syncProgress(currentTime: number, force = false): Promise<void> {
-  const listened = tickListened(currentTime)
+export async function syncProgress(rawTime: number, force = false): Promise<void> {
+  const listened = tickListened(rawTime)
+  const itemId = offline?.itemId ?? active?.itemId ?? getState().nowPlaying?.itemId
+  const currentTime = itemId ? protectFromRegression(itemId, rawTime) : rawTime
 
   if (offline) {
     // Offline downloaded book: accrue locally; the record is flushed as a proper
@@ -1093,6 +1096,58 @@ export async function syncProgress(currentTime: number, force = false): Promise<
   }
   seekDirty = false
   await pushListened(active, currentTime)
+}
+
+/**
+ * How far behind the freshest position of this listen a position may sit before
+ * it is refused, absent a deliberate move. Wider than tick jitter and rounding,
+ * far narrower than the chapters-long rollbacks this exists to stop.
+ */
+const REGRESSION_GUARD_SEC = 30
+
+/** The furthest position this listen has reached since the last deliberate move
+ *  (see store.getSeekGeneration). */
+let freshest: { itemId: string; sec: number; generation: number } | null = null
+
+/**
+ * The position that may be recorded and pushed for `itemId`: `sec` itself,
+ * unless it sits materially behind the freshest position this listen reached
+ * with no deliberate move (seek, skip, scrub, load) in between - then the
+ * freshest one.
+ *
+ * Every way a listener moves backwards bumps the store's seek generation, so a
+ * backwards position WITHOUT one is the engine having lost its place: a reload at
+ * the session's start position, a service rebuilt from an older load. That is
+ * the rollback the testers hit: a reload snapped the playhead back to where the
+ * session opened, and the clock backstop ("no sync for 632s - forcing push")
+ * then wrote that older spot over the server's newer one. The local row and the
+ * server now keep the freshest position until the listener moves deliberately.
+ */
+function protectFromRegression(itemId: string, sec: number): number {
+  const generation = getSeekGeneration()
+  if (!freshest || freshest.itemId !== itemId || freshest.generation !== generation) {
+    freshest = { itemId, sec, generation }
+    return sec
+  }
+  if (sec >= freshest.sec) {
+    freshest.sec = sec
+    return sec
+  }
+  if (freshest.sec - sec <= REGRESSION_GUARD_SEC) return sec
+  breadcrumbRegression(itemId, sec, freshest.sec)
+  return freshest.sec
+}
+
+/** One crumb per regressed spot, not one per tick. */
+let lastRegressionCrumb = ''
+function breadcrumbRegression(itemId: string, sec: number, kept: number): void {
+  const key = `${itemId}|${Math.round(kept)}`
+  if (key === lastRegressionCrumb) return
+  lastRegressionCrumb = key
+  breadcrumb(
+    'sync',
+    `refusing to save ${Math.round(sec)}s for ${itemId.slice(0, 8)}: ${Math.round(kept - sec)}s behind the freshest position with no seek; keeping ${Math.round(kept)}s`,
+  )
 }
 
 /** Position moved by a seek/skip that the server hasn't been told about yet. */
@@ -1264,7 +1319,7 @@ export async function forceSyncNow(): Promise<boolean> {
   if (!active) return false
   // Always send, even with zero new listened-time, so a seek-while-paused lands
   // the new position on the server.
-  return pushListened(active, getState().position)
+  return pushListened(active, protectFromRegression(active.itemId, getState().position))
 }
 
 /**
@@ -1323,7 +1378,9 @@ async function completeIfDone(
 async function safeClose(judgeFinish = false): Promise<void> {
   if (!active) return
   const { sessionId, itemId, duration, pendingListened } = active
-  const pos = getState().position
+  // Same guard as every tick: a close must not be the write that lands an older
+  // spot the engine fell back to.
+  const pos = protectFromRegression(itemId, getState().position)
   // Read chapters before setActiveSession(null) - the verdict wants the live
   // book's marks, and a later caller may have already loaded the next book.
   const chapters =
@@ -1358,7 +1415,7 @@ export async function stopPlayback(): Promise<void> {
   if (offline) {
     // Persist the final offline position + listened-time before forgetting which
     // book was playing, so stopping lands the true end point for later replay.
-    bankOffline(offline, getState().position)
+    bankOffline(offline, protectFromRegression(offline.itemId, getState().position))
     offline = null
     lastTickTime = null
   }

@@ -873,7 +873,14 @@ class HearthShelfPlayerService : MediaSessionService() {
       // The scrubber (and the widget's skip buttons) speak chapter-relative
       // time; map to book time and land in whichever file holds it.
       val c = ch()
-      seekToAbsolute(wrappedPlayer, if (c != null) (c.start * 1000).toLong() + positionMs else positionMs)
+      val absMs = if (c != null) (c.start * 1000).toLong() + positionMs else positionMs
+      seekToAbsolute(wrappedPlayer, absMs)
+      // Tell JS the listener moved the playhead here. Without it the store only
+      // ever saw the ticks from the new spot, so a scrub backwards looked like
+      // the engine losing its place and was never synced as a choice.
+      if (HearthShelfAutoModule.carPlayer == null) {
+        HearthShelfAutoModule.emitSeeked(absMs.coerceAtLeast(0) / 1000.0)
+      }
     }
 
     // Bluetooth headsets and car stereos send SEEK_FORWARD / SEEK_BACK (and

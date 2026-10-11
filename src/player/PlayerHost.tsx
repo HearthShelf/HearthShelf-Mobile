@@ -36,6 +36,8 @@ import {
   setDeadTransportReporter,
   setRemoteResumeChecker,
   msSincePaused,
+  reloadPosition,
+  requestSeek,
 } from './store'
 import { syncStateCarOwned } from './syncState'
 import { breadcrumb } from '@/lib/crashLog'
@@ -253,15 +255,15 @@ function handBookToCar(
 }
 
 /**
- * What the native player was last loaded with, and which book that was.
+ * What the native player was last loaded with.
  *
- * Module scope, not refs: they describe the player service, which outlives this
+ * Module scope, not a ref: it describes the player service, which outlives this
  * component. Android destroys and recreates the activity while the service plays
  * on (opening the app after it was closed, or the OS reclaiming the activity),
  * and the JS runtime survives that, so PlayerHost unmounts and remounts against
  * a store and a player that never stopped. As refs they came back null, so the
- * first sync after every remount reloaded the book, and because loadedItem no
- * longer matched it reloaded at nowPlaying.startPosition - wherever the book was
+ * first sync after every remount reloaded the book, and (back when the reload
+ * position depended on a remembered book) it reloaded at nowPlaying.startPosition - wherever the book was
  * first opened this run, however long ago. Every open of the app threw the
  * listener back to that spot and re-read the whole file (HS-MOBILEAPP-47).
  *
@@ -269,12 +271,10 @@ function handBookToCar(
  * against it reports lost and recoverLostPlayback reloads at the live position.
  *
  * `loadedKey` tracks what we last pushed, so store ticks don't re-issue
- * identical commands. `loadedItem` distinguishes "reloading the book that is
- * already playing" (resume at the live playhead) from "switching books" (resume
- * at the new track's own start position).
+ * identical commands. Where a (re)load starts is the store's live position (see
+ * reloadPosition), which is the new track's own start on a book switch.
  */
 const loadedKey: { current: string | null } = { current: null }
-const loadedItem: { current: string | null } = { current: null }
 
 export function PlayerHost() {
   const lastPlaying = useRef<boolean | null>(null)
@@ -650,6 +650,18 @@ export function PlayerHost() {
       // stays the source of truth.
       emitter.addListener('onTogglePlay', () => togglePlay()),
       emitter.addListener('onJump', (e: { delta: number }) => jumpBy(e.delta)),
+      // A seek the engine already made on its own: the lock-screen / notification
+      // scrubber or the widget. Record it as the listener's move, so the store
+      // holds ticks against it, the new spot is synced, and the regression guard
+      // in reportPosition does not mistake a deliberate scrub backwards for the
+      // engine losing its place. The engine is already there, so the seek this
+      // re-issues lands immediately.
+      emitter.addListener('onSeeked', (raw) => {
+        const position = (raw as { position?: unknown } | null)?.position
+        if (getState().carActive || typeof position !== 'number') return
+        breadcrumb('player', `scrubbed outside the app to ${Math.round(position)}s`)
+        requestSeek(position)
+      }),
       // Book ended: advance to the head of the (server-owned) up-next queue.
       emitter.addListener('onEnded', () => {
         void advanceQueueOnEnd().catch(() => {})
@@ -1345,7 +1357,6 @@ export function PlayerHost() {
           // and would pause the car we are handing over TO.
           Native.stopPhonePlayer()
           loadedKey.current = null
-          loadedItem.current = null
         }
         // A book the car isn't holding can't be played by forwarding transport at
         // it - the commands land on an empty player and nothing happens. Hand it
@@ -1379,7 +1390,6 @@ export function PlayerHost() {
         if (loadedKey.current !== null) {
           Native.stop()
           loadedKey.current = null
-          loadedItem.current = null
         }
         return
       }
@@ -1418,18 +1428,24 @@ export function PlayerHost() {
         //
         // np.startPosition is where this track was first resolved to; s.position is
         // where the listener actually is (progress ticks keep it current). For a
-        // genuinely new track the two are equal, so this is a no-op there. They
-        // diverge only when we are REloading a book that has been playing - the
-        // reclaim recovery above - and there, using startPosition would throw away
-        // everything listened since load and rewind the audio, which is the same
-        // class of bug as HS-MOBILEAPP-Q. Guarded on itemId so a book switch (where
-        // s.position still holds the OUTGOING book's time until the store settles)
-        // always uses the incoming track's own start.
-        const resumeAt =
-          s.position > np.startPosition && loadedItem.current === np.itemId
-            ? s.position
-            : np.startPosition
-        loadedItem.current = np.itemId
+        // genuinely new track the two are equal (loadTrack writes both at once), so
+        // this is a no-op there. They diverge only when we are REloading a book
+        // that has been playing - the reclaim recovery, a car handback, a stale car
+        // flag clearing - and there startPosition throws away everything listened
+        // since the book was opened.
+        //
+        // This used to also require a remembered "last loaded book" to match, but
+        // every car stand-down cleared it, so the very next reload of the same book fell back
+        // to startPosition: "native lost the track; reloading from store" and the
+        // position snapped to the session's start, which the next forced push then
+        // sent to the server (see reloadPosition).
+        const resumeAt = reloadPosition()
+        if (Math.abs(resumeAt - np.startPosition) > 1) {
+          breadcrumb(
+            'player',
+            `reloading ${np.itemId.slice(0, 8)} at the live ${Math.round(resumeAt)}s (opened at ${Math.round(np.startPosition)}s)`,
+          )
+        }
         if (Native.loadTracks) {
           // Every file, not just the first: the player keeps them on one book
           // timeline, so positions, seeks and the end of the book all work in

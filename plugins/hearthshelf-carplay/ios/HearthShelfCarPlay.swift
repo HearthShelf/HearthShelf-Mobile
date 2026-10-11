@@ -195,7 +195,7 @@ final class HearthShelfAuto: RCTEventEmitter {
     // onCarChapter / onCarBookmark are the CPNowPlayingTemplate custom buttons,
     // routed through the same store commands the phone uses.
     [
-      "onProgress", "onState", "onBuffering", "onTogglePlay", "onJump", "onEnded", "onError",
+      "onProgress", "onState", "onBuffering", "onTogglePlay", "onJump", "onSeeked", "onEnded", "onError",
       "onCarActive", "onCarLoaded", "onShakeExtend", "onCarPlayRequest", "onCarRateCycle",
       "onCarChapter", "onCarBookmark",
     ]
@@ -630,6 +630,9 @@ final class HearthShelfAuto: RCTEventEmitter {
         target += self.chapters[self.shownChapterIndex].start
       }
       self.seekTo(NSNumber(value: target))
+      // Tell JS the listener moved the playhead, so the spot is synced and a
+      // scrub backwards is not mistaken for the player losing its place.
+      self.emitSeeked(target)
       return .success
     }
   }
@@ -1127,6 +1130,13 @@ final class HearthShelfAuto: RCTEventEmitter {
       return
     }
     sendEvent(withName: "onJump", body: ["delta": delta])
+  }
+
+  private func emitSeeked(_ position: Double) {
+    guard hasListeners else {
+      return
+    }
+    sendEvent(withName: "onSeeked", body: ["position": position])
   }
 
   private func emitEnded() {

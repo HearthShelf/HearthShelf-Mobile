@@ -253,7 +253,61 @@ let pendingSeek: {
   armedWhilePaused: boolean
   /** Whether any tick has reached the hold since it was armed. */
   sawTick: boolean
+  /** Where the playhead was when the seek was asked for, or null when unknown
+   *  (a fresh load). Kept with the hold so a re-issued or restored seek still
+   *  knows where it started. */
+  from: number | null
 } | null = null
+
+/**
+ * Counts every DELIBERATE move of the playhead: a seek, a skip, a chapter jump,
+ * a scrub on the lock screen, a sleep-timer rewind, a fresh load. Engine-driven
+ * movement (ticks, and the regression restore below) never bumps it.
+ *
+ * Two consumers need to tell "the listener moved it" from "the engine wandered":
+ * the cross-device resume (whose answer is stale only if the LISTENER moved
+ * meanwhile) and playback's push guard (a position behind the freshest one is
+ * only pushable when a deliberate move put it there).
+ */
+let seekGeneration = 0
+
+/** See seekGeneration. */
+export function getSeekGeneration(): number {
+  return seekGeneration
+}
+
+/**
+ * How far behind the store's position an engine tick must land, with no seek of
+ * ours in flight, before it is treated as the engine having lost its place rather
+ * than as playback. Ticks only ever move forward on their own (about a second
+ * apart), and every backwards move a listener makes reaches the store as a seek
+ * first, so a jump this large is the engine reloading somewhere older.
+ */
+const ENGINE_REGRESSION_SEC = 30
+
+/** How many times one regression is answered by putting the engine back before
+ *  its position is accepted. Reset by every deliberate move. */
+const REGRESSION_RESTORE_LIMIT = 2
+let regressionRestores = 0
+
+/**
+ * Where a (re)load of the loaded book should start the native player.
+ *
+ * The store position always belongs to `nowPlaying` (loadTrack and
+ * mirrorCarTrack set both in one write), so it is the live playhead - and it is
+ * the only right answer for a RELOAD of the same book. This used to be gated on
+ * PlayerHost remembering which book it had last loaded, and every car stand-down
+ * cleared that memory: the next reload (a reclaim recovery, a handback, a stale
+ * car flag clearing) then started the book at `startPosition`, wherever it was
+ * first opened this run. That is the "chapter 40 to 7" snap: `native lost the
+ * track; reloading from store` followed by the position reading the session's
+ * start, and the stale spot then pushed to the server.
+ */
+export function reloadPosition(): number {
+  const np = state.nowPlaying
+  if (!np) return 0
+  return state.position > 0 ? state.position : np.startPosition
+}
 
 /** Tick telemetry for the frozen-progress-bar reports (HS-MOBILEAPP-3D).
  *
@@ -331,8 +385,11 @@ export function loadTrack(track: NowPlaying, autoPlay = true): void {
           armedAt: Date.now(),
           armedWhilePaused: !autoPlay,
           sawTick: false,
+          from: null,
         }
       : null
+  seekGeneration += 1
+  regressionRestores = 0
   set({
     nowPlaying: track,
     isPlaying: autoPlay,
@@ -513,6 +570,8 @@ export function mirrorCarTrack(track: NowPlaying, isPlaying = true): void {
   // The car owns the playhead now; its mirrored positions must not be held
   // against a phone-side seek target.
   pendingSeek = null
+  seekGeneration += 1
+  regressionRestores = 0
   // The car is about to drive position ticks with isPlaying set, which is what
   // counts a duration timer down - so a leftover timer from a previous listening
   // session would fire minutes into the drive. Judge it before the ticks start.
@@ -612,7 +671,9 @@ function checkRemoteResume(): void {
   loadedPausedAt = null
   const pausedForMs = Math.max(lastPausedDuration(), sincePausedLoadMs)
   const rewoundSec = lastRewindAmount()
-  const positionBefore = state.position
+  // Captured after this resume's own auto-rewind, so only a move made WHILE the
+  // check is in flight counts against it.
+  const generationBefore = seekGeneration
   void check(pausedForMs, rewoundSec)
     .then((target) => {
       if (target === null) return
@@ -621,7 +682,20 @@ function checkRemoteResume(): void {
       if (!state.isPlaying || state.carActive) return
       // The listener moved the playhead themselves while we were asking. Their
       // choice wins over the server's.
-      if (Math.abs(state.position - positionBefore) > REMOTE_RESUME_DRIFT_SEC) return
+      //
+      // Judged on deliberate moves, NOT on how far the position drifted. A drift
+      // test also fired when the ENGINE moved it: a hold that surrendered onto an
+      // engine still parked at an older spot looked exactly like the listener
+      // scrubbing, so the newer position from the other device was thrown away
+      // and the book played on from the older one (feedback 41: "resume elsewhere
+      // 66210s over local 64637s", then the engine adopted at 59365s).
+      if (seekGeneration !== generationBefore) {
+        breadcrumb(
+          'resume',
+          `not jumping to ${Math.round(target)}s from another device; the playhead was moved meanwhile`,
+        )
+        return
+      }
       breadcrumb('resume', `jumping to ${Math.round(target)}s from another device`)
       requestSeek(target)
     })
@@ -629,11 +703,6 @@ function checkRemoteResume(): void {
       /* best-effort: resuming where we are is the correct fallback */
     })
 }
-
-/** How far the playhead may drift while the remote check is in flight before the
- *  answer is treated as stale. Comfortably above the couple of seconds of audio
- *  that play during the request, below any deliberate skip. */
-const REMOTE_RESUME_DRIFT_SEC = 15
 
 /** Reporter for transport commands that can't be acted on. Injected (rather than
  *  imported) to keep this leaf store free of a dependency back into the player
@@ -675,6 +744,9 @@ export function requestSeek(seconds: number): void {
   // Optimistically move `position` so the UI (scrubber, time labels, chapter)
   // updates instantly - even while paused, where the native progress callback
   // won't fire to confirm the seek for a while. The host still applies seekTo.
+  const from = state.position
+  seekGeneration += 1
+  regressionRestores = 0
   set({ seekTo: target, position: target, returnPosition })
   // Hold native progress ticks until the engine reports back near this target,
   // so an in-flight seek can't be rolled back by a tick describing the old spot
@@ -686,6 +758,9 @@ export function requestSeek(seconds: number): void {
     armedAt: Date.now(),
     armedWhilePaused: !state.isPlaying,
     sawTick: false,
+    // A seek arriving while an earlier one is still held measures from that
+    // earlier target, which is what the engine is heading for.
+    from,
   }
   // A seek (esp. while paused) makes the server's position stale with no new
   // listened-time: mark sync dirty so the header icon goes orange and a tap can
@@ -1133,6 +1208,7 @@ export function reportPosition(position: number): void {
         armedAt: Date.now(),
         armedWhilePaused: false,
         sawTick: true,
+        from: pendingSeek.from,
       }
       tickDropsPendingSeek += 1
       set({ seekTo: target })
@@ -1174,6 +1250,7 @@ export function reportPosition(position: number): void {
         armedAt,
         armedWhilePaused: pendingSeek.armedWhilePaused,
         sawTick: true,
+        from: pendingSeek.from,
       }
       set({ seekTo: target })
       return
@@ -1199,6 +1276,39 @@ export function reportPosition(position: number): void {
 
   const prev = state.position
   if (prev === position) return
+
+  // The engine went backwards on its own, with no seek of ours in flight. Every
+  // backwards move a listener makes (skip, scrub, chapter, lock screen, sleep
+  // rewind) reaches the store as a seek first, so this is the engine having lost
+  // its place - a reload at an older spot, a service rebuilt from a stale load.
+  // Adopting it silently is how a book "went from chapter 40 to 7" and then had
+  // that older spot pushed to the server. Put the engine back where the listener
+  // was instead, a bounded number of times; if it still will not go, its
+  // position is accepted (playback's push guard then refuses to send it).
+  if (
+    prev - position > ENGINE_REGRESSION_SEC &&
+    !state.carActive &&
+    !!state.nowPlaying?.url &&
+    regressionRestores < REGRESSION_RESTORE_LIMIT
+  ) {
+    regressionRestores += 1
+    breadcrumb(
+      'player',
+      `engine reported ${Math.round(position)}s, ${Math.round(prev - position)}s behind the playhead with no seek; putting it back to ${Math.round(prev)}s (${regressionRestores}/${REGRESSION_RESTORE_LIMIT})`,
+    )
+    pendingSeek = {
+      target: prev,
+      until: Date.now() + SEEK_SETTLE_TIMEOUT_MS,
+      retries: 0,
+      armedAt: Date.now(),
+      armedWhilePaused: !state.isPlaying,
+      sawTick: true,
+      from: position,
+    }
+    tickDropsPendingSeek += 1
+    set({ seekTo: prev })
+    return
+  }
 
   // Drive the sleep timer off the playback clock so it only counts while audio
   // is actually advancing (pausing the book pauses the timer for free).
@@ -1255,6 +1365,8 @@ export function clearSeek(): void {
 export function clearTrack(): void {
   resetAutoRewind()
   pendingSeek = null
+  seekGeneration += 1
+  regressionRestores = 0
   set({
     nowPlaying: null,
     isPlaying: false,

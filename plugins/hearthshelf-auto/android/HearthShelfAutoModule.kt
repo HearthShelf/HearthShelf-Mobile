@@ -716,6 +716,14 @@ class HearthShelfAutoModule(private val ctx: ReactApplicationContext) :
       val map = Arguments.createMap().apply { putDouble("delta", deltaSec) }
       emitter?.invoke("onJump", map)
     }
+    /** The phone player was seeked from outside the app (the notification or
+     *  lock-screen scrubber, the widget) to this absolute book position. JS
+     *  records it as the listener's move so it is synced and is not mistaken for
+     *  the engine losing its place. */
+    fun emitSeeked(positionSec: Double) {
+      val map = Arguments.createMap().apply { putDouble("position", positionSec) }
+      emitter?.invoke("onSeeked", map)
+    }
     /** Chapter skip requested from a Bluetooth headset / car stereo's
      *  next-or-previous-track button on the PHONE session. JS owns chapter
      *  navigation (it holds the marks and decides that "next" from the last
