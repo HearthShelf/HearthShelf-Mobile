@@ -439,11 +439,7 @@ export default function SeriesDetailScreen() {
               {upcomingCount > 0 ? ` · ${upcomingCount} coming soon` : ''}
             </AppText>
           </View>
-          <SegmentTrack
-            books={books}
-            progressById={progressById}
-            missingCount={missingReleased.length}
-          />
+          <SegmentTrack books={books} progressById={progressById} missing={missingReleased} />
           {/* Micro-legend so the segmented track is readable at a glance. */}
           <View style={styles.legend}>
             <View style={styles.legendItem}>
@@ -512,26 +508,25 @@ export default function SeriesDetailScreen() {
                 onLongPress={() => openNotOwned(row.book)}
               />
             ) : (
-            <BookRow
-              key={row.book.id}
-              book={row.book}
-              num={seriesSeqLabel(row.book) || String(i + 1)}
-              progress={progressById.get(row.book.id) ?? null}
-              selecting={selection.selecting}
-              selected={selection.isSelected(row.book.id)}
-              onPress={() =>
-                selection.selecting
-                  ? selection.toggle(row.book.id)
-                  : router.push(`/item/${row.book.id}?from=${active}`)
-              }
-              onLongPress={() => selection.begin(row.book.id)}
-              onToggle={() => selection.toggle(row.book.id)}
-              onPlay={() => play(row.book.id)}
-            />
+              <BookRow
+                key={row.book.id}
+                book={row.book}
+                num={seriesSeqLabel(row.book) || String(i + 1)}
+                progress={progressById.get(row.book.id) ?? null}
+                selecting={selection.selecting}
+                selected={selection.isSelected(row.book.id)}
+                onPress={() =>
+                  selection.selecting
+                    ? selection.toggle(row.book.id)
+                    : router.push(`/item/${row.book.id}?from=${active}`)
+                }
+                onLongPress={() => selection.begin(row.book.id)}
+                onToggle={() => selection.toggle(row.book.id)}
+                onPlay={() => play(row.book.id)}
+              />
             ),
           )}
         </View>
-
       </ScrollView>
       <NotOwnedSheet
         ref={notOwnedRef}
@@ -593,19 +588,27 @@ function HeroCovers({ books }: { books: ABSLibraryItem[] }) {
 function SegmentTrack({
   books,
   progressById,
-  missingCount = 0,
+  missing,
 }: {
   books: ABSLibraryItem[]
   progressById: ReadonlyMap<string, ABSMediaProgress>
-  // Trailing empty segments for unowned books, so the track matches the % that
-  // now measures against the full series.
-  missingCount?: number
+  // Unowned books, hatched at their place in the series so the track matches the
+  // % that measures against the full series.
+  missing: HSAudibleSeriesBook[]
 }) {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   return (
     <View style={styles.segTrack}>
-      {books.map((b) => {
+      {interleaveMissing(books, missing).map((row) => {
+        if (row.kind === 'missing') {
+          return (
+            <View key={row.book.asin} style={[styles.seg, styles.segMissing]}>
+              <View style={styles.segMissingSlash} />
+            </View>
+          )
+        }
+        const b = row.book
         const p = progressById.get(b.id)
         const fin = p?.isFinished
         const frac = fin ? 1 : (p?.progress ?? 0)
@@ -617,11 +620,6 @@ function SegmentTrack({
           </View>
         )
       })}
-      {Array.from({ length: missingCount }, (_, i) => (
-        <View key={`missing-${i}`} style={[styles.seg, styles.segMissing]}>
-          <View style={styles.segMissingSlash} />
-        </View>
-      ))}
     </View>
   )
 }
