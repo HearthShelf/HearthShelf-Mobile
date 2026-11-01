@@ -383,6 +383,120 @@ class HearthShelfPlayerService : MediaSessionService() {
   private fun stopProgressTick() {
     progressHandler.removeCallbacks(progressTick)
     progressTicking = false
+    stopStallWatch()
+  }
+
+  // ---- silent-stall watchdog ----
+  //
+  // The engine going quiet while it still intends to play is the one failure
+  // nothing could see. The 1s progressTick above is the only heartbeat, and it
+  // stops rescheduling the moment `isPlaying` goes false - so the failure kills
+  // its own detector at the source, and the position simply stops advancing with
+  // no error, no state edge, and nothing reported.
+  //
+  // JS has a watchdog for this, but it is a setInterval, and Android suspends JS
+  // TIMERS for a backgrounded app (the same reason the sleep-timer beeps had to
+  // move into this service). Backgrounded is exactly when a listener hits this,
+  // so the JS watchdog was blind in the case it existed for: HS-MOBILEAPP-M saw
+  // 1017 seconds backgrounded with playing=true while the position advanced 11.
+  // Event-driven JS does still run while backgrounded, which is why this reports
+  // through an EVENT rather than relying on a timer to notice.
+  //
+  // Deliberately OBSERVE-ONLY: it never touches the player. It emits
+  // onPlaybackLost and lets JS decide, so recovery keeps going through the one
+  // attempt cap, the car-ownership guard and the give-up cooldown that already
+  // live in PlayerHost. A native watchdog that reloaded or resumed by itself
+  // could restart a book the listener had deliberately paused, which is a worse
+  // bug than the one it fixes - and it would bypass every guard those reports
+  // were won with.
+  private val stallHandler = android.os.Handler(android.os.Looper.getMainLooper())
+  /** How long the playhead may stand still while the engine says it is playing.
+   *  Comfortably longer than any rebuffer this would otherwise mistake for a
+   *  stall; STATE_BUFFERING is excluded below as well. */
+  private val STALL_AFTER_MS = 25_000L
+  private val STALL_CHECK_MS = 5_000L
+  private var stallWatching = false
+  /** Whether the engine is currently holding playback back (audio focus lost,
+   *  output became noisy). Mirrored from onPlaybackSuppressionReasonChanged so
+   *  the watchdog does not mistake correct silence for a stall. */
+  @Volatile private var suppressed = false
+  private var stallLastPositionMs = -1L
+  private var stallSinceMs = 0L
+  /** One report per episode, cleared the moment the playhead moves again, so a
+   *  single stall cannot file an event every five seconds. */
+  private var stallReported = false
+  private val stallCheck = object : Runnable {
+    override fun run() {
+      val p = exo
+      if (p == null) {
+        stallWatching = false
+        return
+      }
+      // The listener paused, or the book ended, or nothing is loaded. Legitimate
+      // silence: stand down and let the next play edge re-arm. The failure this
+      // watches for keeps playWhenReady TRUE, so it is not lost by stopping here.
+      if (!p.playWhenReady || p.playbackState != Player.STATE_READY) {
+        stallWatching = false
+        resetStallState()
+        return
+      }
+      // Audio focus lost, or output became noisy. Silence is correct and the
+      // engine resumes on its own, so there is nothing to report.
+      //
+      // Read from the listener callback rather than Player.playbackSuppressionReason:
+      // the callback shape is already used elsewhere in this plugin, the getter
+      // is not, and this file cannot be compiled on the dev machine (its
+      // node_modules is incomplete, so the Expo config plugin fails before
+      // Kotlin compilation is reached). Preferring the proven shape costs one
+      // field and removes the only unverified symbol.
+      if (suppressed) {
+        resetStallState()
+        stallHandler.postDelayed(this, STALL_CHECK_MS)
+        return
+      }
+      // The car drives its own player and JS ignores phone recovery while the
+      // car owns playback, so an emit here would only be noise. Same reason the
+      // progress tick stays quiet.
+      if (HearthShelfAutoModule.carPlayer != null || waitingForPart) {
+        resetStallState()
+        stallHandler.postDelayed(this, STALL_CHECK_MS)
+        return
+      }
+      val now = android.os.SystemClock.elapsedRealtime()
+      val pos = absolutePositionMs(p)
+      if (pos != stallLastPositionMs) {
+        stallLastPositionMs = pos
+        stallSinceMs = now
+        stallReported = false
+      } else if (!stallReported && now - stallSinceMs >= STALL_AFTER_MS) {
+        stallReported = true
+        // Reuses the channel a reclaimed service already reports through, so
+        // this lands in the handler that knows how to rebuild the player and
+        // how many times it is allowed to try.
+        HearthShelfAutoModule.emitPlaybackLost("stalled", null, "native-watchdog")
+      }
+      stallHandler.postDelayed(this, STALL_CHECK_MS)
+    }
+  }
+
+  private fun resetStallState() {
+    stallLastPositionMs = -1L
+    stallSinceMs = 0L
+    stallReported = false
+  }
+
+  /** Begin watching for a frozen playhead. Idempotent, like the progress tick. */
+  private fun startStallWatch() {
+    if (stallWatching) return
+    stallWatching = true
+    resetStallState()
+    stallHandler.postDelayed(stallCheck, STALL_CHECK_MS)
+  }
+
+  private fun stopStallWatch() {
+    stallHandler.removeCallbacks(stallCheck)
+    stallWatching = false
+    resetStallState()
   }
 
   // ---- waiting for a server part ----
@@ -438,6 +552,11 @@ class HearthShelfPlayerService : MediaSessionService() {
     exo = player
 
     player.addListener(object : Player.Listener {
+      // Mirrored for the stall watchdog: while playback is suppressed the
+      // playhead is meant to stand still, so it must not be read as a stall.
+      override fun onPlaybackSuppressionReasonChanged(reason: Int) {
+        suppressed = reason != Player.PLAYBACK_SUPPRESSION_REASON_NONE
+      }
       override fun onIsPlayingChanged(isPlaying: Boolean) {
         // Suppressed while the car owns playback (its service mirrors state); the
         // phone player is stopped in that mode, and its stop emit would otherwise
@@ -454,6 +573,10 @@ class HearthShelfPlayerService : MediaSessionService() {
         // so pausing still lands the exact spot before the tick goes quiet.
         if (isPlaying) {
           startProgressTick()
+          // Armed on the same edge, but it does NOT stand down with the tick:
+          // the tick stops itself when isPlaying goes false, which is the very
+          // thing the watchdog has to outlive.
+          startStallWatch()
         } else if (HearthShelfAutoModule.carPlayer == null) {
           exo?.let { HearthShelfAutoModule.emitProgress(absolutePositionMs(it) / 1000.0) }
         }
@@ -601,7 +724,10 @@ class HearthShelfPlayerService : MediaSessionService() {
 
     // Only tick if the pending load actually started playing; otherwise the
     // play edge (onIsPlayingChanged) starts it.
-    if (exo?.isPlaying == true) startProgressTick()
+    if (exo?.isPlaying == true) {
+      startProgressTick()
+      startStallWatch()
+    }
   }
 
   override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
