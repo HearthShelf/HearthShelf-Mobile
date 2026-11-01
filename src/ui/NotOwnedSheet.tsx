@@ -19,6 +19,8 @@ import type { HSAudibleSearchResult } from '@hearthshelf/core'
 import { coverHue } from '@hearthshelf/core'
 import { isUpcoming } from '@hearthshelf/core'
 import { audibleStoreUrl } from '@/api/absAudible'
+import * as Sentry from '@sentry/react-native'
+import { isRmabRetryable, rmabRejectionMessage } from '@hearthshelf/core'
 import { submitRequest, type RmabRequestResult } from '@/api/absRmab'
 import {
   findSubscription,
@@ -122,8 +124,32 @@ export const NotOwnedSheet = forwardRef<
       coverArtUrl: book.coverArtUrl,
     })
     setPending(false)
-    if (res.success && res.request) setResult(res)
-    else setError('Request failed. Please try again.')
+    if (res.success && res.request) {
+      setResult(res)
+      return
+    }
+    // Say what the server actually answered. This was a flat "Request failed.
+    // Please try again." for every outcome, which for an already-owned title or
+    // a permission refusal is both uninformative and wrong advice: retrying a
+    // settled refusal fails identically forever. The reason was on the wire the
+    // whole time -- the proxy logs it (server/routes/rmab.js) -- and only this
+    // line threw it away.
+    const rejection = { code: res.error, detail: res.detail, status: res.status }
+    setError(rmabRejectionMessage(rejection))
+    // An outcome nobody has copy for is the shape that kept this bug invisible:
+    // nothing useful on screen AND no Sentry event, so it could only ever reach
+    // us as someone mentioning it. File those once; stay quiet for the refusals
+    // we already explain, and for a plain offline attempt (no status at all),
+    // which is the network's problem rather than a defect.
+    if (res.status != null && isRmabRetryable(rejection)) {
+      Sentry.captureException(
+        new Error(`rmab request refused: ${res.error ?? `http_${res.status}`}`),
+        {
+          tags: { area: 'rmab_request', rmab_code: res.error ?? 'none' },
+          extra: { ...rejection, asin: book.asin, title: book.title },
+        },
+      )
+    }
   }
 
   const approved = result?.request?.status !== 'awaiting_approval'

@@ -10,10 +10,39 @@ import { getSession } from './session'
 export interface RmabRequestResult {
   success: boolean
   request?: { id: string; status: string }
+  /** Upstream rejection code (`AlreadyAvailable`, `DuplicateRequest`, ...) when
+   *  the upstream sent one. Pair with `rmabRejectionMessage` from core rather
+   *  than showing it raw. */
   error?: string
+  /** Free text from the upstream or the proxy, when there was any. */
+  detail?: string
+  /** The HTTP status the proxy forwarded. Absent when the call never reached
+   *  the server at all. */
+  status?: number
 }
 
-async function rmabFetch<T>(path: string, init?: RequestInit): Promise<T> {
+/** A request the server answered with a non-2xx, carrying what it said.
+ *
+ *  The old code threw `new Error(\`rmab ${status}\`)` and dropped the body, so
+ *  the upstream's reason -- the one thing that says whether retrying is even
+ *  worth it -- never left this file. */
+export class RmabRequestError extends Error {
+  readonly status: number
+  readonly code?: string
+  readonly detail?: string
+  constructor(status: number, code?: string, detail?: string) {
+    super(code ? `rmab ${status}: ${code}` : `rmab ${status}`)
+    this.name = 'RmabRequestError'
+    this.status = status
+    this.code = code
+    this.detail = detail
+  }
+}
+
+async function rmabFetch<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<{ status: number; data: T }> {
   const s = getSession()
   if (!s) throw new Error('not_connected')
   const headers = new Headers(init?.headers)
@@ -21,8 +50,21 @@ async function rmabFetch<T>(path: string, init?: RequestInit): Promise<T> {
   headers.set('Accept', 'application/json')
   if (init?.body) headers.set('Content-Type', 'application/json')
   const res = await fetch(`${s.serverUrl}/hs/rmab${path}`, { ...init, headers })
-  if (!res.ok) throw new Error(`rmab ${res.status}`)
-  return (await res.json()) as T
+  // Parse before checking `ok`: the reason for a refusal is in the body, and the
+  // proxy forwards the upstream's body verbatim. `{}` is a real shape -- it is
+  // what arrives when the upstream sent HTML or nothing.
+  const body = (await res.json().catch(() => null)) as Record<string, unknown> | null
+  if (!res.ok) {
+    const code = typeof body?.error === 'string' ? body.error : undefined
+    const detail =
+      typeof body?.detail === 'string'
+        ? body.detail
+        : typeof body?.message === 'string'
+          ? body.message
+          : undefined
+    throw new RmabRequestError(res.status, code, detail)
+  }
+  return { status: res.status, data: (body ?? {}) as T }
 }
 
 /**
@@ -32,7 +74,7 @@ async function rmabFetch<T>(path: string, init?: RequestInit): Promise<T> {
  */
 export async function getRmabEnabled(): Promise<boolean> {
   try {
-    const data = await rmabFetch<{ enabled?: boolean; configured?: boolean }>('/config')
+    const { data } = await rmabFetch<{ enabled?: boolean; configured?: boolean }>('/config')
     return data.enabled === true || data.configured === true
   } catch {
     return false
@@ -48,11 +90,21 @@ export async function submitRequest(audiobook: {
   coverArtUrl?: string
 }): Promise<RmabRequestResult> {
   try {
-    return await rmabFetch<RmabRequestResult>('/requests', {
+    const { status, data } = await rmabFetch<RmabRequestResult>('/requests', {
       method: 'POST',
       body: JSON.stringify({ audiobook }),
     })
-  } catch {
-    return { success: false, error: 'Request failed' }
+    // A 2xx can still be a rejection. The proxy treats `success: false` as one
+    // and logs the reason, but forwards the upstream's 2xx status
+    // (HearthShelf server/routes/rmab.js), so this is the COMMON refusal shape
+    // -- and the one the old code dropped on the floor, because it only looked
+    // at non-2xx responses. Carry the status through so the caller can word it.
+    return { ...data, status }
+  } catch (e) {
+    if (e instanceof RmabRequestError) {
+      return { success: false, error: e.code, detail: e.detail, status: e.status }
+    }
+    // Never reached the server: offline, not connected, DNS. No status to give.
+    return { success: false }
   }
 }

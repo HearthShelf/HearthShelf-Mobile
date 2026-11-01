@@ -25,6 +25,7 @@ import {
   qgResolvePicks,
   ignoredItemIds,
   qgRunLabel,
+  rmabRejectionMessage,
   type QgAnswers,
   type QgCandidate,
   type QgExternalHit,
@@ -55,6 +56,7 @@ import { Loading } from '@/ui/primitives'
 import { Chip } from '@/ui/primitives'
 import { EmptyState } from '@/ui/states'
 import { Icon } from '@/ui/icons'
+import { showToast } from '@/ui/Toast'
 import { QgChoice, QgSteps, QgWeightRow } from '@/ui/questgiver/QuestGiverParts'
 import { QuestGiverPicker } from '@/ui/questgiver/QuestGiverPicker'
 import { QuestGiverResultCard, type QgRequestState } from '@/ui/questgiver/QuestGiverResultCard'
@@ -237,6 +239,13 @@ export default function QuestGiverScreen() {
       delete next[pick.key]
       return next
     })
+    // A failure used to just revert the button to idle with nothing said
+    // anywhere -- worse than the request sheet's old generic line, because at
+    // least that one appeared. This is the second request affordance in the app
+    // and it needs to answer the same question: why not?
+    if (!res.success) {
+      showToast(rmabRejectionMessage({ code: res.error, detail: res.detail, status: res.status }))
+    }
   }
 
   /**
