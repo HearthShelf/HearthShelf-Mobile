@@ -13,8 +13,21 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { BottomSheetModal } from '@gorhom/bottom-sheet'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type { ABSLibraryItem, ABSSearchResponse, HSAudibleSearchResult } from '@hearthshelf/core'
-import { coverHue } from '@hearthshelf/core'
-import { getLibraries, searchLibraryAll, itemAuthor, itemTitle, coverUrl } from '@/api/abs'
+import {
+  coverHue,
+  EMPTY_OWNED_INDEX,
+  isOwnedExternalResult,
+  ownedIndexFromLibraryItems,
+  type OwnedIndex,
+} from '@hearthshelf/core'
+import {
+  getAllLibraryItems,
+  getLibraries,
+  searchLibraryAll,
+  itemAuthor,
+  itemTitle,
+  coverUrl,
+} from '@/api/abs'
 import { searchAudible } from '@/api/absAudible'
 import { getRmabEnabled } from '@/api/absRmab'
 import { getSettingsState, subscribeSettings, setSetting } from '@/store/settings'
@@ -150,6 +163,29 @@ export default function SearchScreen() {
     return libraryIdRef.current
   }, [offline])
 
+  // ---- owned-book index ----
+  //
+  // Ownership is answered against the WHOLE library, not against the current
+  // query's ABS hits. See core's lib/ownedMatch.ts for why: a typo'd query that
+  // Audible corrects and ABS does not left the owned set empty, so an owned book
+  // was offered with a Request button that could only fail.
+  //
+  // Loaded lazily - only a search that actually reaches the external lane needs
+  // it - and served from the whole-library cache in @/api/abs, so a burst of
+  // keystrokes costs one fetch.
+  const [ownedIndex, setOwnedIndex] = useState<OwnedIndex>(EMPTY_OWNED_INDEX)
+  const ensureOwnedIndex = useCallback(async (): Promise<void> => {
+    const libraryId = libraryIdRef.current
+    if (!libraryId) return
+    try {
+      setOwnedIndex(ownedIndexFromLibraryItems(await getAllLibraryItems(libraryId)))
+    } catch {
+      // Best-effort. An empty index matches nothing, so the per-query exact
+      // check below still applies and behaviour degrades to the old one rather
+      // than hiding books the listener could request.
+    }
+  }, [])
+
   // ---- search ----
   const runSearch = useCallback(
     async (q: string) => {
@@ -199,6 +235,11 @@ export default function SearchScreen() {
         rememberQuery(trimmed)
       } catch {
         setResults(null)
+        // Clear the external lane too. This branch used to return without
+        // touching it, so the PREVIOUS query's "Beyond your library" rows stayed
+        // mounted while the owned set was emptied underneath them - stale
+        // suggestions, every one of them showing a Request button.
+        setExternal([])
         setSearchError(true)
         setSearched(true)
         setLoading(false)
@@ -209,20 +250,28 @@ export default function SearchScreen() {
 
       // External (Audible) discovery. Best-effort and gated by the synced
       // setting; read live so it reflects a mid-session toggle. Deduped against
-      // owned results so a book you already have never shows twice.
+      // the whole library so a book you already have never shows twice - and
+      // never shows a Request button that cannot succeed.
       if (!getSettingsState().searchExternalSources) {
         setExternal([])
         return
       }
       try {
-        const [res, rmab] = await Promise.all([searchAudible(trimmed), getRmabEnabled()])
+        // The owned index is awaited rather than raced: showing a Request button
+        // and then yanking it away is worse than the external lane arriving a
+        // beat later. Cached per library, so only the first search pays for it.
+        const [res, rmab] = await Promise.all([
+          searchAudible(trimmed),
+          getRmabEnabled(),
+          ensureOwnedIndex(),
+        ])
         setRmabEnabled(rmab)
         setExternal(res.results)
       } catch {
         setExternal([])
       }
     },
-    [offline, resolveLibraryId, rememberQuery],
+    [offline, ensureOwnedIndex, resolveLibraryId, rememberQuery],
   )
 
   useEffect(() => {
@@ -236,9 +285,19 @@ export default function SearchScreen() {
     () => new Set(ownedBooks.map((it) => (itemTitle(it) + '|' + itemAuthor(it)).toLowerCase())),
     [ownedBooks],
   )
+  // Two checks, deliberately. isOwnedExternalResult decides against the whole
+  // library (ASIN first, then normalized title+author) and is what fixes both
+  // reported cases; ownedKeys is the original exact match against THIS query's
+  // hits, kept because it still holds when the library read failed and the index
+  // is empty.
   const externalDeduped = useMemo(
-    () => external.filter((r) => !ownedKeys.has((r.title + '|' + r.author).toLowerCase())),
-    [external, ownedKeys],
+    () =>
+      external.filter(
+        (r) =>
+          !ownedKeys.has((r.title + '|' + r.author).toLowerCase()) &&
+          !isOwnedExternalResult(ownedIndex, r),
+      ),
+    [external, ownedKeys, ownedIndex],
   )
   const series = results?.series ?? []
   const authors = results?.authors ?? []

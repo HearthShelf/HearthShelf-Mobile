@@ -291,12 +291,57 @@ export async function getPersonalized(libraryId: string): Promise<ABSShelf[]> {
 
 // The entire library in one request (limit=0), NOT minified - so items carry the
 // full metadata (genres, narrator, series) the taste engine needs. Feeds the
-// Home discovery shelves and the car's Discover snapshot.
-export async function getAllLibraryItems(libraryId: string): Promise<ABSLibraryItem[]> {
+// Home discovery shelves, the car's Discover snapshot, and search's owned-book
+// check.
+async function fetchAllLibraryItems(libraryId: string): Promise<ABSLibraryItem[]> {
   const data = await absRequest<ABSLibraryItemsResponse>(
     `/api/libraries/${libraryId}/items?limit=0`,
   )
   return data.results
+}
+
+/**
+ * Short-lived cache for the whole-library read, same shape and reasoning as the
+ * series catalog above.
+ *
+ * This is megabytes of JSON on a large library, and it now has three callers per
+ * session rather than one: Home's taste shelves, the QuestGiver assessment, and
+ * search (which needs it to answer "do I already own this?" against the LIBRARY
+ * rather than against one query's hits - see src/lib/ownedMatch.ts). Without a
+ * shared cache, opening search right after Home refetched the lot.
+ *
+ * Longer than SERIES_CACHE_MS because a search session is a burst of keystrokes
+ * over tens of seconds and the staleness costs little: a book added in the last
+ * half minute reads as not-owned, which shows one Request button it shouldn't.
+ * Library membership otherwise changes rarely. The in-flight promise is shared
+ * so concurrent callers await one request.
+ */
+const ALL_ITEMS_CACHE_MS = 30_000
+const allItemsCache = new Map<string, { at: number; items: ABSLibraryItem[] }>()
+const allItemsInFlight = new Map<string, Promise<ABSLibraryItem[]>>()
+
+/** Drop the cached whole-library read (all libraries). Call after anything that
+ *  adds or removes library items so the next read is fresh. */
+export function invalidateAllLibraryItemsCache(): void {
+  allItemsCache.clear()
+  allItemsInFlight.clear()
+}
+
+export async function getAllLibraryItems(libraryId: string): Promise<ABSLibraryItem[]> {
+  const hit = allItemsCache.get(libraryId)
+  if (hit && Date.now() - hit.at < ALL_ITEMS_CACHE_MS) return hit.items
+  const flight = allItemsInFlight.get(libraryId)
+  if (flight) return flight
+  const p = fetchAllLibraryItems(libraryId)
+    .then((items) => {
+      allItemsCache.set(libraryId, { at: Date.now(), items })
+      return items
+    })
+    .finally(() => {
+      allItemsInFlight.delete(libraryId)
+    })
+  allItemsInFlight.set(libraryId, p)
+  return p
 }
 
 // ---- Series / Authors / Narrators (Library view selector) ----
