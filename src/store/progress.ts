@@ -194,9 +194,26 @@ function impossibleBackwardsJump(dropSec: number, stampGapMs: number): boolean {
  * A genuine listen elsewhere always lands the row AHEAD of our confirmation
  * (that device pushed a later position), so this never swallows one.
  */
-function staleAgainstConfirmed(itemId: string, serverSec: number): boolean {
+function staleAgainstConfirmed(itemId: string, serverSec: number, serverAt: number): boolean {
   const confirmed = serverConfirmedSec.get(itemId)
-  return confirmed !== undefined && serverSec <= confirmed
+  if (confirmed === undefined || !(serverSec <= confirmed)) return false
+  // The watermark NEVER AGES, so "at or below what ABS confirmed from us" stays
+  // true forever once it is true - including for a row some other device wrote
+  // days later. Without a recency bound this predicate claimed "concurrent
+  // write" about a three-day-old acknowledgement: HS-MOBILEAPP-15 on 0.10.1
+  // logged "keeping local position (concurrent write)" and then dropped the
+  // position one line later, because the age check (correctly) refused to hold a
+  // row that stale. The breadcrumb contradicted the decision, and reading the
+  // trail back cost real triage time.
+  //
+  // So require that the server row is not NEWER than our confirmation - exactly
+  // the test the no-local-row branch already applies before it trusts the
+  // watermark (see the `forgetting the push` breadcrumb). An unknown
+  // confirmation time is treated the same way it is there: not evidence, so
+  // someone else may well have written since.
+  const confirmedAt = serverConfirmedAt.get(itemId)
+  if (confirmedAt === undefined) return false
+  return serverAt <= confirmedAt
 }
 
 /**
@@ -676,7 +693,7 @@ function keepFresherLocalPositions(
       feltDrop &&
       id === getPlayerState().nowPlaying?.itemId &&
       !server.isFinished &&
-      staleAgainstConfirmed(id, server.currentTime)
+      staleAgainstConfirmed(id, server.currentTime, serverAt)
     const concurrentRace = raceByStamps || watermarkRace
     if (concurrentRace) {
       breadcrumbOnce(
@@ -716,6 +733,8 @@ function keepFresherLocalPositions(
           localUpdatedAt: localAt,
           serverUpdatedAt: serverAt,
           branch: 'server_newer',
+          confirmedSec: serverConfirmedSec.get(id),
+          confirmedAt: serverConfirmedAt.get(id),
         })
       }
       continue
@@ -788,6 +807,8 @@ function keepFresherLocalPositions(
         localUpdatedAt: localAt,
         serverUpdatedAt: serverAt,
         branch: 'local_too_old',
+        confirmedSec: serverConfirmedSec.get(id),
+        confirmedAt: serverConfirmedAt.get(id),
       })
       continue
     }

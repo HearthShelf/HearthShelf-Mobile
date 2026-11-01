@@ -57,6 +57,10 @@ export interface ProgressDropDetail {
    *  server row is not newer than that confirmation; a later server write is
    *  someone else's (a reset, a restart) and is not a loss. */
   branch: 'server_newer' | 'local_too_old' | 'no_local_row'
+  /** Our last ABS-confirmed push for this book, and when ABS confirmed it.
+   *  Undefined when no watermark is held. */
+  confirmedSec?: number
+  confirmedAt?: number
 }
 
 /**
@@ -99,6 +103,14 @@ export function reportProgressDrop(d: ProgressDropDetail): void {
         // the event said so. A drop whose server id is not this run's is
         // contamination, not a lost listen.
         serverId: currentServerId() ?? 'unknown',
+        // The watermark is the one input that the stamps cannot show, and it
+        // decides whether the concurrent-write guards could fire at all. Without
+        // it an event cannot distinguish "the server handed us our own push
+        // back" from "another device wrote later" - which is precisely the
+        // question the first triage of this issue could not answer, and it cost
+        // a wrong fix that would have overwritten a live playhead.
+        confirmedSec: d.confirmedSec != null ? Math.round(d.confirmedSec) : 'none',
+        confirmedAt: d.confirmedAt ? new Date(d.confirmedAt).toISOString() : 'none',
       },
     })
   } catch {
