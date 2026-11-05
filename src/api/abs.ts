@@ -69,6 +69,8 @@ export class ABSRequestError extends Error {
   constructor(
     readonly status: number,
     readonly path: string,
+    /** The response body, when the server explained itself. */
+    readonly detail: string = '',
   ) {
     super(`abs_request_failed ${status} ${path}`)
     this.name = 'ABSRequestError'
@@ -167,7 +169,7 @@ async function absRequest<T>(
       const refreshed = await refreshSession()
       if (refreshed) return absRequest<T>(path, init, true, options)
     }
-    throw new ABSRequestError(res.status, path)
+    throw new ABSRequestError(res.status, path, await res.text().catch(() => ''))
   }
   // Some endpoints (sync/close, progress PATCH) return empty or plain-text
   // bodies on success; a 2xx must never surface as a failure just because the

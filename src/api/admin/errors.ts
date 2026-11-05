@@ -18,6 +18,23 @@ export function adminErrorKind(error: unknown): AdminErrorKind {
   return 'unreachable'
 }
 
+/** A refusal the server worded for people ("Username already taken"). ABS sends
+ *  plain text, /hs sends JSON. Machine codes and HTML pages are not shown. */
+function serverReason(error: unknown): string | null {
+  if (!(error instanceof ABSRequestError)) return null
+  if (error.status < 400 || error.status >= 500) return null
+  let text = error.detail.trim()
+  try {
+    const body = JSON.parse(text) as { detail?: unknown; message?: unknown; error?: unknown }
+    const worded = [body.detail, body.message, body.error].find((v) => typeof v === 'string')
+    text = typeof worded === 'string' ? worded.trim() : ''
+  } catch {
+    // Plain text, which is what ABS sends.
+  }
+  if (!text || text.length > 200 || !text.includes(' ') || text.includes('<')) return null
+  return text
+}
+
 /** The message for a failed write. An unreachable server does not mean the write
  *  failed, only that no answer came back, so it must not read as a failure. */
 export function adminWriteMessage(error: unknown, failed: string): string {
@@ -29,6 +46,6 @@ export function adminWriteMessage(error: unknown, failed: string): string {
     case 'missing':
       return "This server doesn't have that feature, or the item is gone."
     case 'failed':
-      return failed
+      return serverReason(error) ?? failed
   }
 }
