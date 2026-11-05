@@ -2,14 +2,14 @@
  * Server Admin home: what this server is, then every section. This is the one
  * door to server management, so the everyday settings menu stays short.
  *
- * `href`-less sections are not built yet and show a "Soon" pill instead of
- * pushing. Sections kept on the web open the web panel, so nothing goes missing.
+ * Sections kept on the web open the web panel, so nothing goes missing.
  */
 import { View } from 'react-native'
+import { useRouter } from 'expo-router'
 import * as WebBrowser from 'expo-web-browser'
+import { ActivityHomeTiles } from '@/admin/ActivityHomeTiles'
 import { AdminGate } from '@/admin/AdminGate'
 import { AdminUnavailable } from '@/admin/AdminUnavailable'
-import { StatusPill } from '@/admin/StatusPill'
 import { useAdminResource } from '@/admin/useAdminResource'
 import { getServerRuntime } from '@/api/admin/server'
 import { useConnection } from '@/api/ConnectionProvider'
@@ -24,6 +24,7 @@ import { spacing } from '@/ui/theme'
 interface AdminSection {
   icon: IconName
   title: string
+  href: string
   desc: string
 }
 
@@ -31,38 +32,103 @@ const SECTIONS: { label: string; items: AdminSection[] }[] = [
   {
     label: 'Activity',
     items: [
-      { icon: 'insights', title: 'Stats', desc: 'Server and library totals, and activity.' },
-      { icon: 'graphic-eq', title: 'Listening sessions', desc: 'What everyone has played.' },
-      { icon: 'schedule', title: 'Tasks', desc: 'Run background jobs and read their logs.' },
-      { icon: 'rss-feed', title: 'RSS feeds', desc: 'See open feeds and close them.' },
+      {
+        icon: 'insights',
+        title: 'Stats',
+        href: 'stats',
+        desc: 'Server and library totals, and activity.',
+      },
+      {
+        icon: 'graphic-eq',
+        title: 'Listening sessions',
+        href: 'sessions',
+        desc: 'What everyone has played.',
+      },
+      {
+        icon: 'schedule',
+        title: 'Tasks',
+        href: 'tasks',
+        desc: 'Run background jobs and read their logs.',
+      },
+      { icon: 'rss-feed', title: 'RSS feeds', href: 'rss', desc: 'See open feeds and close them.' },
     ],
   },
   {
     label: 'People',
     items: [
-      { icon: 'group', title: 'Users', desc: 'Accounts, permissions, and invites.' },
-      { icon: 'smart-toy', title: 'Service accounts', desc: 'Accounts for other apps.' },
-      { icon: 'key', title: 'API keys', desc: 'Create and revoke keys.' },
+      { icon: 'group', title: 'Users', href: 'users', desc: 'Accounts, permissions, and invites.' },
+      {
+        icon: 'smart-toy',
+        title: 'Service accounts',
+        href: 'service-accounts',
+        desc: 'Accounts for other apps.',
+      },
+      { icon: 'key', title: 'API keys', href: 'apikeys', desc: 'Create and revoke keys.' },
     ],
   },
   {
     label: 'Library',
     items: [
-      { icon: 'video-library', title: 'Libraries', desc: 'Folders, scans, and settings.' },
-      { icon: 'sell', title: 'Tags and genres', desc: 'Rename or remove them everywhere.' },
+      {
+        icon: 'video-library',
+        title: 'Libraries',
+        href: 'libraries',
+        desc: 'Folders, scans, and settings.',
+      },
+      {
+        icon: 'sell',
+        title: 'Tags and genres',
+        href: 'metadata',
+        desc: 'Rename or remove them everywhere.',
+      },
     ],
   },
   {
     label: 'Server',
     items: [
-      { icon: 'tune', title: 'General', desc: 'Server name, scanner, and date format.' },
-      { icon: 'cloud-sync', title: 'Backups', desc: 'Run, download, and restore.' },
-      { icon: 'groups', title: 'Community', desc: 'Sharing defaults, notes, and clubs.' },
-      { icon: 'notifications', title: 'Notifications', desc: 'What the server alerts on.' },
-      { icon: 'mail', title: 'Email', desc: 'E-reader devices and a test send.' },
-      { icon: 'hub', title: 'HearthShelf Connect', desc: 'Connection health and invites.' },
-      { icon: 'extension', title: 'Integrations', desc: 'Requests and catalog services.' },
-      { icon: 'explore', title: 'QuestGiver', desc: 'Turn recommendations on or off.' },
+      {
+        icon: 'tune',
+        title: 'General',
+        href: 'general',
+        desc: 'Server name, scanner, and date format.',
+      },
+      {
+        icon: 'cloud-sync',
+        title: 'Backups',
+        href: 'backups',
+        desc: 'Run, download, and restore.',
+      },
+      {
+        icon: 'groups',
+        title: 'Community',
+        href: 'community',
+        desc: 'Sharing defaults, notes, and clubs.',
+      },
+      {
+        icon: 'notifications',
+        title: 'Notifications',
+        href: 'notifications',
+        desc: 'What the server alerts on.',
+      },
+      { icon: 'mail', title: 'Email', href: 'email', desc: 'E-reader devices and a test send.' },
+      {
+        icon: 'hub',
+        title: 'HearthShelf Connect',
+        href: 'connect',
+        desc: 'Connection health and invites.',
+      },
+      {
+        icon: 'extension',
+        title: 'Integrations',
+        href: 'integrations',
+        desc: 'Requests and catalog services.',
+      },
+      {
+        icon: 'explore',
+        title: 'QuestGiver',
+        href: 'questgiver',
+        desc: 'Turn recommendations on or off.',
+      },
     ],
   },
 ]
@@ -92,6 +158,7 @@ export default function AdminScreen() {
 }
 
 function AdminHome() {
+  const router = useRouter()
   const { serverName } = useConnection()
   const colors = useColors()
   const runtime = useAdminResource(getServerRuntime)
@@ -124,6 +191,9 @@ function AdminHome() {
         </SettingsGroup>
       )}
 
+      <SettingsLabel>Right now</SettingsLabel>
+      <ActivityHomeTiles />
+
       {SECTIONS.map((section) => (
         <View key={section.label}>
           <SettingsLabel>{section.label}</SettingsLabel>
@@ -134,7 +204,7 @@ function AdminHome() {
                 icon={item.icon}
                 title={item.title}
                 desc={item.desc}
-                control={<StatusPill label="Soon" />}
+                onPress={() => router.push(`/settings/admin/${item.href}`)}
                 last={i === section.items.length - 1}
               />
             ))}
