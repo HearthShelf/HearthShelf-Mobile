@@ -136,14 +136,19 @@ export type ServerAnswer = 'up' | 'up-unconfirmed' | 'restoring' | 'token-lost' 
  *  getMe also refreshes the token and the account's role, which the restore may change. */
 export async function askServerAfterRestore(kind: RestoreKind): Promise<ServerAnswer> {
   try {
-    await getMe()
     const options = { timeoutMs: PROBE_TIMEOUT_MS }
+    // First: mid-archive the accounts are already replaced, so anything else would
+    // answer 401 and read as a lost sign-in while the restore is still running.
+    if (kind !== 'abs') {
+      const status = await adminRequest<{ restoring?: boolean }>(RESTORE_STATUS, undefined, options)
+      if (status?.restoring) return 'restoring'
+    }
+    await getMe()
     if (kind !== 'hs') await adminRequest(ABS_ENDPOINTS.users, undefined, options)
-    if (kind === 'abs') return 'up-unconfirmed'
-    const status = await adminRequest<{ restoring?: boolean }>(RESTORE_STATUS, undefined, options)
-    return status?.restoring ? 'restoring' : 'up'
+    return kind === 'abs' ? 'up-unconfirmed' : 'up'
   } catch (e) {
     if (!(e instanceof ABSRequestError)) return 'down'
+    if (e.status === 503 && e.path === RESTORE_STATUS) return 'restoring'
     if (e.status === 401) return 'token-lost'
     // The server answered. A 403 means the restored data has this account as a
     // regular user, which AdminGate handles from the role getMe just read.
@@ -157,12 +162,19 @@ export async function askServerAfterRestore(kind: RestoreKind): Promise<ServerAn
 export class BackupUserError extends Error {}
 
 /** The server failed after it had already changed live data. */
-export class PartialRestoreError extends Error {}
+export class PartialRestoreError extends Error {
+  /** The server can't say whether the data changed, only that it may have. */
+  constructor(readonly uncertain: boolean) {
+    super('partial_restore')
+  }
+}
+
+/** Until the Core pointer moves past the commit that adds these two fields. */
 
 function failedResponse(status: number, body: string, path: string): Error {
   try {
-    const { error } = JSON.parse(body) as { error?: string }
-    if (error === 'partial_restore') return new PartialRestoreError()
+    const { error, uncertain } = JSON.parse(body) as { error?: string; uncertain?: boolean }
+    if (error === 'partial_restore') return new PartialRestoreError(uncertain === true)
   } catch {
     // Not JSON, so not that answer.
   }

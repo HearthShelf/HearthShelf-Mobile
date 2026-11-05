@@ -12,10 +12,10 @@
  * can't, so its restore never settles while the request is open, and a lost answer ends
  * in "we can't tell", never in "it worked".
  */
+import type { HsRestoreResult } from '@hearthshelf/core'
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { AppState } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import type { HsRestoreResult } from '@hearthshelf/core'
 import { ABSRequestError } from '@/api/abs'
 import {
   askServerAfterRestore,
@@ -47,6 +47,9 @@ export interface RestoreState {
   /** The server's answer to the restore never reached us, so we can't say it worked. */
   lostContact: boolean
   crossServer: boolean
+  /** Archive restores: which halves the server says it put back. */
+  absRestored: boolean | null
+  hsRestored: boolean | null
   /** Waiting longer than a restore should take. */
   slow: boolean
   failure: string | null
@@ -59,6 +62,8 @@ const IDLE: RestoreState = {
   uploaded: 0,
   lostContact: false,
   crossServer: false,
+  absRestored: null,
+  hsRestored: null,
   slow: false,
   failure: null,
 }
@@ -142,7 +147,10 @@ export function clearIdleBackupFiles(): void {
   if (requestsInFlight === 0) clearBackupFiles()
 }
 
-function partialFailure(kind: RestoreKind): string {
+function partialFailure(kind: RestoreKind, uncertain: boolean): string {
+  if (uncertain) {
+    return "We lost touch with Audiobookshelf during the restore, so your library data may have been replaced. Your HearthShelf data wasn't changed. Check your server before you use it."
+  }
   return kind === 'hs'
     ? 'The restore stopped partway, so your HearthShelf data may be mixed up. Your old data is in a pre-restore folder on the server.'
     : 'The restore stopped partway, so part of your data was replaced. Check your server before you use it. If HearthShelf data was moved, the old copy is in a pre-restore folder on the server.'
@@ -196,16 +204,21 @@ export async function startRestore(kind: RestoreKind, request: RestoreRequest): 
     if (thisRun !== run) return
     requestOpen = false
     abortUpload = null
-    const crossServer = Boolean((result as HsRestoreResult | undefined)?.crossServer)
+    const answer = result as HsRestoreResult | undefined
     const { phase } = getRestoreState()
-    update({ phase: phase === 'uploading' ? 'restarting' : phase, crossServer })
+    update({
+      phase: phase === 'uploading' ? 'restarting' : phase,
+      crossServer: Boolean(answer?.crossServer),
+      absRestored: answer?.absRestored ?? null,
+      hsRestored: answer?.hsRestored ?? null,
+    })
   } catch (e) {
     if (thisRun !== run) return
     requestOpen = false
     abortUpload = null
     if (controller.signal.aborted) return dismissRestore()
     if (e instanceof PartialRestoreError) {
-      settle({ phase: 'failed', failure: partialFailure(kind) }, 'The restore failed.')
+      settle({ phase: 'failed', failure: partialFailure(kind, e.uncertain) }, 'The restore failed.')
       return
     }
     const failure = serverRefused(e)
@@ -274,9 +287,10 @@ async function checkServer(): Promise<void> {
   }
   goodAnswers = 0
   if (answer === 'restoring') uploadDied = false
-  if (answer === 'token-lost') {
-    // adminRequest's refresh already failed. The restore replaced the accounts, so
-    // this needs the full connect flow, which also owns the error screen if it fails.
+  // While the request is out, a 401 is the restore passing through the accounts.
+  if (answer === 'token-lost' && !requestOpen) {
+    // adminRequest's refresh already failed, so this needs the full connect flow,
+    // which also owns the error screen if it fails.
     update({ phase: 'reconnecting' })
     if (!reconnectAsked) {
       reconnectAsked = true

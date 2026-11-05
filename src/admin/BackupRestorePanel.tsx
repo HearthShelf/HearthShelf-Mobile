@@ -18,16 +18,26 @@ const SAFE_TO_LEAVE = 'You can leave the app. We will check on the server when y
 const SAVED_COPY =
   'If something looks wrong, your old HearthShelf data is in a pre-restore folder on the server.'
 
+function outcome(state: RestoreState): string {
+  if (state.lostContact) {
+    return "We lost touch with the server during the restore, so we can't tell if it worked. The server is answering now. Check that your data looks right, and give it a few minutes if it looks old."
+  }
+  if (state.kind === 'archive' && state.hsRestored === false) {
+    return "Your library data is back. This archive had no HearthShelf data, so that wasn't changed."
+  }
+  if (state.kind === 'archive' && state.absRestored === false) {
+    return "Your HearthShelf data is back. This archive had no library data, so that wasn't changed."
+  }
+  return 'Your server is back with the data from the backup.'
+}
+
 function finishedMessage(state: RestoreState): string {
-  const lines = [
-    state.lostContact
-      ? "We lost touch with the server during the restore, so we can't tell if it worked. The server is answering now. Check that your data looks right, and give it a few minutes if it looks old."
-      : 'Your server is back with the data from the backup.',
-  ]
+  const lines = [outcome(state)]
   if (state.crossServer) {
     lines.push('This backup came from a different server, so some links may need attention.')
   }
-  if (state.kind !== 'abs') lines.push(SAVED_COPY)
+  const hsReplaced = state.kind === 'hs' || state.hsRestored === true
+  if (hsReplaced && !state.lostContact) lines.push(SAVED_COPY)
   return lines.join('\n\n')
 }
 
@@ -80,7 +90,7 @@ export function BackupRestorePanel({
               <AppText variant="meta" color={colors.textMuted}>
                 {state.phase === 'restarting'
                   ? 'Your server is putting the backup in place. This can take a few minutes.'
-                  : 'The server is back, but the restore replaced its accounts.'}
+                  : 'Your sign-in stopped working during the restore.'}
               </AppText>
               <AppText variant="meta" color={colors.textMuted}>
                 {waitingHint}
