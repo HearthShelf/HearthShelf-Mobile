@@ -70,6 +70,37 @@ export default function SettingsLayout() {
           <Stack.Screen name="security" options={{ title: 'Sign-in & security' }} />
           <Stack.Screen name="servers" options={{ title: 'My libraries' }} />
           <Stack.Screen name="admin/index" options={{ title: 'Server Admin' }} />
+          <Stack.Screen name="admin/stats" options={{ title: 'Stats' }} />
+          <Stack.Screen name="admin/sessions" options={{ title: 'Listening sessions' }} />
+          <Stack.Screen name="admin/tasks" options={{ title: 'Tasks' }} />
+          <Stack.Screen name="admin/rss" options={{ title: 'RSS feeds' }} />
+          <Stack.Screen name="admin/users/index" options={{ title: 'Users' }} />
+          <Stack.Screen name="admin/users/[id]" options={{ title: 'User' }} />
+          <Stack.Screen name="admin/users/account" options={{ title: 'Edit account' }} />
+          <Stack.Screen name="admin/users/permissions" options={{ title: 'Edit permissions' }} />
+          <Stack.Screen name="admin/users/password" options={{ title: 'Reset password' }} />
+          <Stack.Screen name="admin/users/add" options={{ title: 'Add user' }} />
+          <Stack.Screen name="admin/users/invite" options={{ title: 'Invites' }} />
+          <Stack.Screen name="admin/users/bulk" options={{ title: 'Edit permissions' }} />
+          <Stack.Screen name="admin/libraries/index" options={{ title: 'Libraries' }} />
+          <Stack.Screen name="admin/libraries/new" options={{ title: 'New library' }} />
+          <Stack.Screen name="admin/libraries/[id]" options={{ title: 'Library' }} />
+          <Stack.Screen name="admin/libraries/[id]/details" options={{ title: 'Details' }} />
+          <Stack.Screen name="admin/libraries/[id]/settings" options={{ title: 'Settings' }} />
+          <Stack.Screen name="admin/libraries/[id]/scanner" options={{ title: 'Scanner' }} />
+          <Stack.Screen name="admin/libraries/[id]/schedule" options={{ title: 'Schedule' }} />
+          <Stack.Screen name="admin/libraries/[id]/tools" options={{ title: 'Tools' }} />
+          <Stack.Screen name="admin/general" options={{ title: 'General' }} />
+          <Stack.Screen name="admin/community" options={{ title: 'Community' }} />
+          <Stack.Screen name="admin/notifications" options={{ title: 'Notifications' }} />
+          <Stack.Screen name="admin/metadata" options={{ title: 'Tags and genres' }} />
+          <Stack.Screen name="admin/apikeys" options={{ title: 'API keys' }} />
+          <Stack.Screen name="admin/email" options={{ title: 'Email' }} />
+          <Stack.Screen name="admin/connect" options={{ title: 'HearthShelf Connect' }} />
+          <Stack.Screen name="admin/backups" options={{ title: 'Backups' }} />
+          <Stack.Screen name="admin/service-accounts" options={{ title: 'Service accounts' }} />
+          <Stack.Screen name="admin/integrations" options={{ title: 'Integrations' }} />
+          <Stack.Screen name="admin/questgiver" options={{ title: 'QuestGiver' }} />
           <Stack.Screen name="player-buttons" options={{ title: 'Player buttons' }} />
           <Stack.Screen name="navigation" options={{ title: 'Navigation' }} />
           <Stack.Screen name="queue" options={{ title: 'Queue' }} />
