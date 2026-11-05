@@ -12,7 +12,7 @@
  * from being invalidated every time the token rotates. See coverUrl().
  */
 import { Platform } from 'react-native'
-import { getSession } from './session'
+import { currentServerId, getSession } from './session'
 import type {
   ABSLibrariesResponse,
   ABSLibrary,
@@ -43,7 +43,7 @@ import type {
   ABSPlaylist,
 } from '@hearthshelf/core'
 import { computeListeningStats } from '@hearthshelf/core'
-import { setMeId } from './me'
+import { setMeId, setMeType } from './me'
 
 /** A page of library items plus the total count, for infinite scroll. */
 export interface LibraryItemsPage {
@@ -131,7 +131,7 @@ async function absRequest<T>(
   const { serverUrl, token } = requireSession()
   const headers = new Headers(init?.headers)
   headers.set('Authorization', `Bearer ${token}`)
-  if (init?.body) headers.set('Content-Type', 'application/json')
+  if (typeof init?.body === 'string') headers.set('Content-Type', 'application/json')
 
   // Respect a caller-supplied signal (in-flight cancellation) while still
   // enforcing our own deadline.
@@ -179,6 +179,21 @@ async function absRequest<T>(
   } catch {
     return undefined as T
   }
+}
+
+/** Admin calls do real work on the server, and nothing falls back to local data
+ *  when one is slow, so they get longer than ABS_TIMEOUT_MS. */
+const ADMIN_TIMEOUT_MS = 15000
+
+/** The one transport for every admin call, ABS and /hs/* alike, so they all get
+ *  the 401 refresh. A timed-out write may still have worked: callers must reload
+ *  rather than retry it (see src/api/admin/errors.ts). */
+export function adminRequest<T>(
+  path: string,
+  init?: RequestInit,
+  options?: ABSRequestOptions,
+): Promise<T> {
+  return absRequest<T>(path, init, false, { timeoutMs: ADMIN_TIMEOUT_MS, ...options })
 }
 
 /** Build an absolute, token-bearing media URL (covers, audio files). Returns ''
@@ -614,10 +629,13 @@ export async function getItemsInProgress(): Promise<ABSLibraryItem[]> {
 
 /** The caller's full progress list, for the Library screen's In progress/Finished filters. */
 export async function getMe(): Promise<ABSMeResponse> {
+  const serverId = currentServerId()
   const me = await absRequest<ABSMeResponse>('/api/me')
   // Cache the caller's own ABS id so social surfaces can identify their own
   // notes and gate spoilers against their own position (see src/api/me.ts).
   if (me?.id) setMeId(me.id)
+  // A slow answer from the previous server must not set this server's type.
+  if (me?.type && serverId && serverId === currentServerId()) setMeType(serverId, me.type)
   return me
 }
 

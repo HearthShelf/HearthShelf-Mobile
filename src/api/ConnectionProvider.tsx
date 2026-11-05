@@ -11,7 +11,16 @@
  * The connect logic here was hoisted out of the Home tab so the splash - not a
  * tab already inside the app - covers the connect + first-load moment.
  */
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
+import { isAdminAccountType } from '@hearthshelf/core'
 import { AppState } from 'react-native'
 import { useAuthResolved } from '@/auth/useAuthResolved'
 import { getSessionToken } from '@/auth/token'
@@ -59,7 +68,8 @@ import {
 } from '@/player/downloads'
 import { getQueueState } from '@/player/queue'
 import { hydrateCatalog, backfillCatalog } from '@/player/offlineCatalog'
-import { getItemDetail, getLibrarySeries, setAbsReconnectHandler } from './abs'
+import { getItemDetail, getLibrarySeries, getMe, setAbsReconnectHandler } from './abs'
+import { getMeType, isMeTypeLive, restoreMeType, subscribeMeType } from './me'
 import {
   startConnectivityWatch,
   stopConnectivityWatch,
@@ -253,9 +263,9 @@ interface ConnectionValue {
   status: ConnectionStatus
   /** Server the active session is connected to, once ready. */
   serverName: string | null
-  /** The signed-in user's role on the connected server. Drives admin-only UI
-   *  (e.g. the Server Admin entry on the settings menu). Defaults to 'user'
-   *  until we've connected to a server that reports a role. */
+  /** Whether the signed-in user's ABS account on the connected server is an admin
+   *  or root account. Drives admin-only UI (e.g. the Server Admin entry on the
+   *  settings menu). 'user' until the account type is known. */
   activeRole: 'admin' | 'user'
   /** Re-run the whole connect flow from the top. */
   retry: () => void
@@ -395,7 +405,8 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   // directly makes it flip back to false on every background session refetch.
   const { session, isLoaded, isSignedIn } = useAuthResolved()
   const [status, setStatus] = useState<ConnectionStatus>({ phase: 'connecting' })
-  const [activeRole, setActiveRole] = useState<'admin' | 'user'>('user')
+  const meType = useSyncExternalStore(subscribeMeType, getMeType)
+  const activeRole = isAdminAccountType(meType) ? 'admin' : 'user'
   // Does this device have a cached session (was signed in on a prior run)?
   //
   // Checked UNCONDITIONALLY - not only while `!isLoaded`. An older version
@@ -498,6 +509,8 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         connectedServer.current = server
         await setLastServerId(server.id)
         void setLastServerName(server.name)
+        await restoreMeType(server.id)
+        if (!isMeTypeLive()) void getMe().catch(() => {})
         // Ensure the per-install deviceId AND the persisted settings are loaded
         // before sync starts: the deviceId so device-scoped settings round-trip
         // on the first pull, the stored per-key timestamps so that pull merges
@@ -550,9 +563,6 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         // with the server's parts of it. Delayed and serial; skipped on cellular
         // and when the server has no parts to offer.
         migrateOversizedDownloads()
-        // The picker path (SplashServer) has no role; only linked-server objects
-        // carry it. Fall back to 'user' so admin UI stays hidden when unknown.
-        setActiveRole('role' in server && server.role === 'admin' ? 'admin' : 'user')
         // Everything above still runs when the user chose offline mode - they ARE
         // online now, so their listening should sync and their queue should
         // refresh. Only the SCREEN respects the choice: flipping to `ready` here
@@ -698,6 +708,8 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     const scope = await currentNetworkScope().catch(() => undefined)
     const saved = await hydrateSession(scope ?? undefined).catch(() => null)
     const name = saved ? await getLastServerName() : null
+    const savedServerId = saved ? await getLastServerId() : null
+    if (savedServerId) await restoreMeType(savedServerId)
     if (statusRef.current.phase !== 'connecting') return
     if (saved) {
       breadcrumb(

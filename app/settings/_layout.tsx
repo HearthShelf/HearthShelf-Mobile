@@ -69,7 +69,7 @@ export default function SettingsLayout() {
           <Stack.Screen name="account" options={{ title: 'Account' }} />
           <Stack.Screen name="security" options={{ title: 'Sign-in & security' }} />
           <Stack.Screen name="servers" options={{ title: 'My libraries' }} />
-          <Stack.Screen name="admin" options={{ title: 'Server Admin' }} />
+          <Stack.Screen name="admin/index" options={{ title: 'Server Admin' }} />
           <Stack.Screen name="player-buttons" options={{ title: 'Player buttons' }} />
           <Stack.Screen name="navigation" options={{ title: 'Navigation' }} />
           <Stack.Screen name="queue" options={{ title: 'Queue' }} />

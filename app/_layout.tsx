@@ -26,7 +26,7 @@ import { SplashScreen as HearthSplash, ForcedSplashHost, type SplashPhase } from
 import { OfflineBanner } from '@/ui/OfflineBanner'
 import { ConnectionProvider, useConnection } from '@/api/ConnectionProvider'
 import { clearSession } from '@/api/session'
-import { clearMeId } from '@/api/me'
+import { clearMeId, clearMeType } from '@/api/me'
 import { clearTrack } from '@/player/store'
 import { clearAutoSession } from '@/player/autoBridge'
 import { stopQueueSync } from '@/player/queueSync'
@@ -398,6 +398,7 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
     resetPushRegistration()
     void unregisterBackgroundFlush()
     clearMeId()
+    clearMeType()
     await clearSession()
     await signOut()
     router.replace('/sign-in')
