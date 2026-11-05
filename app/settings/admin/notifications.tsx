@@ -5,6 +5,7 @@ import { AdminButton } from '@/admin/AdminButton'
 import { AdminField } from '@/admin/AdminField'
 import { AdminGate } from '@/admin/AdminGate'
 import { AdminUnavailable } from '@/admin/AdminUnavailable'
+import { HttpWarning } from '@/admin/HttpWarning'
 import { useAdminResource } from '@/admin/useAdminResource'
 import { useAdminWrite } from '@/admin/useAdminWrite'
 import {
@@ -87,6 +88,7 @@ function AppriseForm({
 
   return (
     <>
+      <HttpWarning />
       <AdminField
         label="Apprise API URL"
         hint="The server sends its alerts through your Apprise server."

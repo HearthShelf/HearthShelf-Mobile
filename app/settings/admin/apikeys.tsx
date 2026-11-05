@@ -25,10 +25,11 @@ import {
   deleteApiKey,
   getApiKeys,
   getKeyOwners,
-  getServiceAccountIds,
-  tagServiceAccount,
+  isProtectedKey,
 } from '@/api/admin/apikeys'
 import { getServerRuntime } from '@/api/admin/server'
+import { tagServiceAccount } from '@/api/admin/serviceAccounts'
+import { getServiceAccountIds } from '@/api/admin/users'
 import { getMeId, getMeType } from '@/api/me'
 import { confirm } from '@/ui/confirm'
 import { Icon } from '@/ui/icons'
@@ -39,13 +40,6 @@ import { useColors } from '@/ui/ThemeProvider'
 import { spacing } from '@/ui/theme'
 import { showToast } from '@/ui/Toast'
 import { useContentInset } from '@/ui/useContentInset'
-
-/** The server gives each person one of these, keeps it, and hands the same one
- *  back on every connect without checking it. Revoking one locks that person out
- *  of the apps, with no way back from here, so the phone doesn't offer it. */
-const CONNECTION_KEY_PREFIX = 'hearthshelf-app:'
-/** The key the server uses to set up invited people. */
-const SERVICE_KEY_PREFIX = 'hearthshelf-service:'
 
 export default function ApiKeysScreen() {
   return (
@@ -83,7 +77,7 @@ function ApiKeys() {
   const tagged = useAdminResource(getServiceAccountIds)
   const runtime = useAdminResource(getServerRuntime)
 
-  const serviceUserIds = useMemo(() => new Set(tagged.data ?? []), [tagged.data])
+  const serviceUserIds = useMemo(() => tagged.data ?? new Set<string>(), [tagged.data])
   const serviceUsername = runtime.data?.serviceUsername ?? null
   const users = useMemo(() => {
     const isRoot = getMeType() === 'root'
@@ -165,12 +159,9 @@ function ApiKeys() {
   }
 
   async function revoke(key: ABSApiKey) {
-    const consequence = key.name.startsWith(SERVICE_KEY_PREFIX)
-      ? 'New people you invite may not get accounts until the server replaces it.'
-      : 'Anything using this key stops working right away.'
     const yes = await confirm({
       title: 'Revoke this key?',
-      message: `This revokes "${key.name}". ${consequence} You can't undo this.`,
+      message: `This revokes "${key.name}". Anything using this key stops working right away. You can't undo this.`,
       confirmLabel: 'Revoke key',
     })
     if (!yes) return
@@ -234,7 +225,7 @@ function ApiKeys() {
           }
           renderItem={({ item }) => {
             const status = keyStatus(item)
-            const isConnection = item.name.startsWith(CONNECTION_KEY_PREFIX)
+            const isProtected = isProtectedKey(item)
             return (
               <AdminCard
                 title={item.name}
@@ -251,11 +242,11 @@ function ApiKeys() {
                   }}
                 >
                   <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
-                    {isConnection
-                      ? `${keyDates(item)}. This connects a person's HearthShelf apps, so it can't be revoked here.`
+                    {isProtected
+                      ? `${keyDates(item)}. HearthShelf needs this key to connect people, so it can't be revoked here.`
                       : keyDates(item)}
                   </AppText>
-                  {isConnection ? null : (
+                  {isProtected ? null : (
                     <IconButton
                       name="delete"
                       size={22}

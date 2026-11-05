@@ -17,7 +17,7 @@ import { TypedConfirm } from '@/admin/TypedConfirm'
 import { useAdminResource } from '@/admin/useAdminResource'
 import { useAdminWrite } from '@/admin/useAdminWrite'
 import { UserNotFound } from '@/admin/UserEditLoader'
-import { useSelfAccount, userGuards } from '@/admin/UserGuards'
+import { useMachineCheck, useSelfAccount, userGuards } from '@/admin/UserGuards'
 import { UserFinishedBooks, UserStats } from '@/admin/UserListening'
 import { UserSessionRow } from '@/admin/UserSessionRow'
 import { adminErrorKind } from '@/api/admin/errors'
@@ -26,6 +26,7 @@ import {
   getUserDetail,
   getUserListeningSessions,
   getUserListeningStats,
+  progressKey,
   updateUser,
 } from '@/api/admin/users'
 import { avatarUrl } from '@/api/abs'
@@ -54,6 +55,7 @@ function UserDetail() {
   const self = useSelfAccount()
   const detail = useAdminResource(() => getUserDetail(id))
   const linked = useAdminResource(getLinkedAbsUserIds)
+  const machine = useMachineCheck()
   const rawStats = useAdminResource(() => getUserListeningStats(id))
   const sessions = usePagedList(
     async (offset, limit) => {
@@ -75,7 +77,8 @@ function UserDetail() {
   )
   const progressByItem = useMemo(() => {
     const map = new Map<string, ABSUserMediaProgress>()
-    for (const p of detail.data?.progress ?? []) map.set(p.libraryItemId, p)
+    for (const p of detail.data?.progress ?? [])
+      map.set(progressKey(p.libraryItemId, p.episodeId), p)
     return map
   }, [detail.data])
 
@@ -94,8 +97,13 @@ function UserDetail() {
   }
 
   const { user, permissions, progress } = detail.data
-  const guards = userGuards(user, self)
-  const isLinked = linked.data?.has(user.id) ?? false
+  const machineState = machine.stateOf(user)
+  const guards = userGuards(user, self, machineState)
+  const linkState = linked.data
+    ? linked.data.has(user.id)
+      ? 'Connected'
+      : 'Not connected'
+    : 'Unknown'
   const newest = sessions.rows[0]
   const lastActive = Math.max(
     user.lastSeen ?? 0,
@@ -165,11 +173,7 @@ function UserDetail() {
         <SettingsRow icon="email" title="Email" desc={user.email ?? 'None'} />
         <SettingsRow icon="toggle-on" title="Status" desc={user.isActive ? 'Active' : 'Disabled'} />
         <SettingsRow icon="lock" title="Locked" desc={user.isLocked ? 'Yes' : 'No'} />
-        <SettingsRow
-          icon="link"
-          title="HearthShelf account"
-          desc={isLinked ? 'Connected' : 'Not connected'}
-        />
+        <SettingsRow icon="link" title="HearthShelf account" desc={linkState} />
         <SettingsRow
           icon="schedule"
           title="Last seen"
@@ -183,7 +187,25 @@ function UserDetail() {
         />
       </SettingsGroup>
 
-      {guards.canEdit ? (
+      {machineState === 'machine' ? (
+        <View style={{ gap: spacing.sm }}>
+          <AppText variant="meta" color={colors.textMuted}>
+            This is a machine account. Changes here could break the server.
+          </AppText>
+          <AdminButton
+            label="Service accounts"
+            kind="secondary"
+            onPress={() => router.push('/settings/admin/service-accounts')}
+          />
+        </View>
+      ) : machine.failed ? (
+        <View style={{ gap: spacing.sm }}>
+          <AppText variant="meta" color={colors.textMuted}>
+            We couldn't check if this is a machine account, so changes are off.
+          </AppText>
+          <AdminButton label="Try again" kind="secondary" onPress={machine.reload} />
+        </View>
+      ) : guards.canEdit ? (
         <View>
           <SettingsLabel>Manage</SettingsLabel>
           <SettingsGroup>
@@ -208,11 +230,11 @@ function UserDetail() {
             />
           </SettingsGroup>
         </View>
-      ) : (
+      ) : guards.isRoot && machineState === 'person' ? (
         <AppText variant="meta" color={colors.textMuted}>
           A root account can only be edited while signed in as root.
         </AppText>
-      )}
+      ) : null}
 
       {grants.length > 0 ? (
         <View>
@@ -243,7 +265,7 @@ function UserDetail() {
                 <UserSessionRow
                   key={s.id}
                   session={s}
-                  progress={progressByItem.get(s.libraryItemId)}
+                  progress={progressByItem.get(progressKey(s.libraryItemId, s.episodeId))}
                   last={i === sessions.rows.length - 1}
                 />
               ))}

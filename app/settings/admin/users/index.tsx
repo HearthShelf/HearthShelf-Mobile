@@ -12,15 +12,9 @@ import { AdminUnavailable } from '@/admin/AdminUnavailable'
 import { useAdminResource } from '@/admin/useAdminResource'
 import { useAdminWrite } from '@/admin/useAdminWrite'
 import { UserCard } from '@/admin/UserCard'
-import { takeBulkFinished } from '@/admin/UserGuards'
+import { takeBulkFinished, useMachineCheck } from '@/admin/UserGuards'
 import { getInviteState, recoverAdmins } from '@/api/admin/hosted'
-import { getServerRuntime } from '@/api/admin/server'
-import {
-  getLastSeenByUser,
-  getOnlineUserIds,
-  getServiceAccountIds,
-  getUsers,
-} from '@/api/admin/users'
+import { getLastSeenByUser, getOnlineUserIds, getUsers } from '@/api/admin/users'
 import { useConnection } from '@/api/ConnectionProvider'
 import { confirm } from '@/ui/confirm'
 import { icons } from '@/ui/icons'
@@ -55,8 +49,7 @@ function Users() {
   const accounts = useAdminResource(getUsers)
   const online = useAdminResource(getOnlineUserIds, { pollMs: PRESENCE_POLL_MS })
   const lastSeen = useAdminResource(getLastSeenByUser)
-  const serviceIds = useAdminResource(getServiceAccountIds)
-  const runtime = useAdminResource(getServerRuntime)
+  const machine = useMachineCheck()
   const invites = useAdminResource(getInviteState)
   const selection = useBookSelection()
   const { run, busy } = useAdminWrite()
@@ -78,13 +71,8 @@ function Users() {
 
   const allUsers = useMemo(() => accounts.data?.users ?? [], [accounts.data])
   const users = useMemo(
-    () =>
-      humanUsers(
-        allUsers,
-        serviceIds.data ?? new Set<string>(),
-        runtime.data?.serviceUsername ?? null,
-      ),
-    [allUsers, serviceIds.data, runtime.data],
+    () => humanUsers(allUsers, machine.serviceIds ?? new Set<string>(), machine.serviceUsername),
+    [allUsers, machine.serviceIds, machine.serviceUsername],
   )
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -99,12 +87,15 @@ function Users() {
   }
 
   // Wait for all three, or machine accounts appear as people and then vanish.
-  const settling = accounts.loading || serviceIds.loading || runtime.loading
+  const settling = accounts.loading || machine.settling
+  // Without the machine list, one could be sitting in this list as a person.
+  const selecting = selection.selecting && machine.known
   const serviceCount = allUsers.length - users.length
   const disabledAdmins = users.filter(
     (u) => (u.type === 'admin' || u.type === 'root') && !u.isActive,
   )
   const paired = invites.data?.paired ?? false
+  const invitesFailed = Boolean(invites.error) && !invites.data
   const pendingCount = invites.data?.invites.length ?? 0
   const selectedIds = users.filter((u) => selection.isSelected(u.id)).map((u) => u.id)
 
@@ -155,7 +146,18 @@ function Users() {
         </AdminCard>
       ) : null}
 
-      {selection.selecting ? (
+      {machine.failed ? (
+        <AdminCard
+          title="Some of these may be machine accounts"
+          subtitle="We couldn't check which accounts are machines, so selecting is off, and so is changing any account."
+        >
+          <View style={{ marginTop: spacing.sm }}>
+            <AdminButton label="Try again" kind="secondary" onPress={machine.reload} />
+          </View>
+        </AdminCard>
+      ) : null}
+
+      {selecting ? (
         <View style={{ gap: spacing.sm }}>
           <AppText variant="label">{selectedIds.length} selected</AppText>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
@@ -181,15 +183,18 @@ function Users() {
       ) : (
         <>
           <SettingsGroup>
-            {paired ? (
+            {paired || invitesFailed ? (
               <SettingsRow
                 icon="send"
                 title="Invites"
                 desc={
-                  pendingCount > 0
-                    ? `${pendingCount} waiting. Invite someone by email.`
-                    : 'Invite someone by email.'
+                  invitesFailed
+                    ? "Couldn't load invites. Tap to try again."
+                    : pendingCount > 0
+                      ? `${pendingCount} waiting. Invite someone by email.`
+                      : 'Invite someone by email.'
                 }
+                descColor={invitesFailed ? colors.destructive : undefined}
                 onPress={() => router.push('/settings/admin/users/invite')}
               />
             ) : null}
@@ -237,7 +242,7 @@ function Users() {
             Press and hold a person to select more than one.
           </AppText>
         )}
-        {selection.selecting ? null : (
+        {selecting || !machine.known ? null : (
           <AdminButton label="Select" kind="secondary" onPress={() => selection.begin()} />
         )}
       </View>
@@ -248,16 +253,20 @@ function Users() {
     return (
       <UserCard
         user={item}
-        online={online.data?.has(item.id) ?? false}
-        lastSeen={Math.max(item.lastSeen ?? 0, lastSeen.data?.get(item.id) ?? 0)}
-        selecting={selection.selecting}
+        online={online.data ? online.data.has(item.id) : null}
+        lastSeen={
+          lastSeen.data
+            ? Math.max(item.lastSeen ?? 0, lastSeen.data.get(item.id) ?? 0)
+            : item.lastSeen || null
+        }
+        selecting={selecting}
         selected={selection.isSelected(item.id)}
         onPress={() =>
-          selection.selecting
-            ? selection.toggle(item.id)
-            : router.push(`/settings/admin/users/${item.id}`)
+          selecting ? selection.toggle(item.id) : router.push(`/settings/admin/users/${item.id}`)
         }
-        onLongPress={() => selection.begin(item.id)}
+        onLongPress={() => {
+          if (machine.known) selection.begin(item.id)
+        }}
       />
     )
   }

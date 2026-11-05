@@ -1,14 +1,21 @@
-/** API keys, plus the two lists the keys screen needs to label their owners. */
+/** API keys, plus the user list the keys screen needs to label their owners. */
 import {
   ABS_ENDPOINTS,
-  HS_ENDPOINTS,
   type ABSAdminUser,
   type ABSApiKey,
   type ABSApiKeysResponse,
   type ABSUsersResponse,
-  type ServiceAccountIdsResponse,
 } from '@hearthshelf/core'
 import { ABSRequestError, adminRequest } from '@/api/abs'
+
+/** Keys the server made for itself: one per person for their apps, and one it uses
+ *  to set up invited people. It hands these out from a cache and only re-checks them
+ *  every 12 hours, so revoking one locks that person or the box out until then. */
+const PROTECTED_KEY_PREFIXES = ['hearthshelf-app:', 'hearthshelf-service:']
+
+export function isProtectedKey(key: Pick<ABSApiKey, 'name'>): boolean {
+  return PROTECTED_KEY_PREFIXES.some((prefix) => key.name.startsWith(prefix))
+}
 
 export async function getApiKeys(): Promise<ABSApiKey[]> {
   const res = await adminRequest<Partial<ABSApiKeysResponse>>(ABS_ENDPOINTS.apiKeys)
@@ -38,17 +45,4 @@ export async function getKeyOwners(): Promise<ABSAdminUser[]> {
   const res = await adminRequest<Partial<ABSUsersResponse>>(ABS_ENDPOINTS.users)
   if (!res?.users) throw new ABSRequestError(502, ABS_ENDPOINTS.users)
   return res.users
-}
-
-export async function getServiceAccountIds(): Promise<string[]> {
-  const res = await adminRequest<Partial<ServiceAccountIdsResponse>>(HS_ENDPOINTS.serviceAccounts)
-  if (!res?.ids) throw new ABSRequestError(502, HS_ENDPOINTS.serviceAccounts)
-  return res.ids
-}
-
-export async function tagServiceAccount(userId: string): Promise<void> {
-  await adminRequest(HS_ENDPOINTS.serviceAccounts, {
-    method: 'POST',
-    body: JSON.stringify({ userId }),
-  })
 }

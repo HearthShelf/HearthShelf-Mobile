@@ -8,18 +8,14 @@ import {
   HS_ENDPOINTS,
   isServiceAccount,
   type ABSAdminUser,
-  type ABSApiKey,
-  type ABSApiKeysResponse,
   type ABSUsersResponse,
+  type ServiceAccountIdsResponse,
 } from '@hearthshelf/core'
 import { ABSRequestError, adminRequest } from '@/api/abs'
 import { getServerRuntime } from './server'
+import { getServiceAccountIds } from './users'
 
-interface ServiceAccountIds {
-  ids: string[]
-}
-
-export interface ServiceAccountsData {
+interface ServiceAccountsData {
   accounts: ABSAdminUser[]
   trackedIds: ReadonlySet<string>
   /** The box's auto-created account, which is matched by name and never tagged. */
@@ -27,12 +23,11 @@ export interface ServiceAccountsData {
 }
 
 export async function getServiceAccounts(): Promise<ServiceAccountsData> {
-  const [users, tracked, runtime] = await Promise.all([
+  const [users, trackedIds, runtime] = await Promise.all([
     adminRequest<ABSUsersResponse>(ABS_ENDPOINTS.users),
-    adminRequest<ServiceAccountIds>(HS_ENDPOINTS.serviceAccounts),
+    getServiceAccountIds(),
     getServerRuntime(),
   ])
-  const trackedIds = new Set(tracked.ids)
   const serviceUsername = runtime.serviceUsername ?? null
   return {
     accounts: users.users.filter((u) => isServiceAccount(u, trackedIds, serviceUsername)),
@@ -41,15 +36,17 @@ export async function getServiceAccounts(): Promise<ServiceAccountsData> {
   }
 }
 
-export function tagServiceAccount(userId: string): Promise<ServiceAccountIds> {
-  return adminRequest<ServiceAccountIds>(HS_ENDPOINTS.serviceAccounts, {
+export function tagServiceAccount(userId: string): Promise<ServiceAccountIdsResponse> {
+  return adminRequest<ServiceAccountIdsResponse>(HS_ENDPOINTS.serviceAccounts, {
     method: 'POST',
     body: JSON.stringify({ userId }),
   })
 }
 
-export function untagServiceAccount(userId: string): Promise<ServiceAccountIds> {
-  return adminRequest<ServiceAccountIds>(HS_ENDPOINTS.serviceAccount(userId), { method: 'DELETE' })
+export function untagServiceAccount(userId: string): Promise<ServiceAccountIdsResponse> {
+  return adminRequest<ServiceAccountIdsResponse>(HS_ENDPOINTS.serviceAccount(userId), {
+    method: 'DELETE',
+  })
 }
 
 /** Creates the ABS user, then tags it. `tagged: false` means the user exists but
@@ -100,22 +97,4 @@ export async function deleteServiceAccount(userId: string): Promise<{ tagCleared
   } catch {
     return { tagCleared: false }
   }
-}
-
-export async function getServiceTokens(): Promise<ABSApiKey[]> {
-  const res = await adminRequest<Partial<ABSApiKeysResponse>>(ABS_ENDPOINTS.apiKeys)
-  return res.apiKeys ?? []
-}
-
-/** The raw token is only ever in this response. */
-export async function createServiceToken(name: string, userId: string): Promise<string | null> {
-  const res = await adminRequest<{ apiKey: ABSApiKey }>(ABS_ENDPOINTS.apiKeys, {
-    method: 'POST',
-    body: JSON.stringify({ name, userId, isActive: true }),
-  })
-  return res.apiKey.apiKey ?? null
-}
-
-export function revokeServiceToken(keyId: string): Promise<unknown> {
-  return adminRequest(ABS_ENDPOINTS.apiKey(keyId), { method: 'DELETE' })
 }

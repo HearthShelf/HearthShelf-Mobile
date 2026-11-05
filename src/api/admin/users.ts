@@ -7,6 +7,7 @@ import {
   onlineUserIds,
   type ABSAdminSession,
   type ABSAdminUser,
+  type ABSListeningSession,
   type ABSListeningSessionsResponse,
   type ABSListeningStats,
   type ABSUserMediaProgress,
@@ -35,6 +36,14 @@ export interface AdminUserDetail {
 
 export type UserPatch = Partial<UserFormValues> & { password?: string }
 
+/** ABS sends episodeId on podcast sessions. */
+export type AdminUserSession = ABSListeningSession & { episodeId?: string | null }
+
+/** Matches a session to its progress row. A podcast has one row per episode. */
+export function progressKey(libraryItemId: string, episodeId?: string | null): string {
+  return `${libraryItemId}:${episodeId ?? ''}`
+}
+
 export function getUsers(): Promise<ABSUsersResponse> {
   return adminRequest<ABSUsersResponse>(ABS_ENDPOINTS.users)
 }
@@ -46,7 +55,7 @@ export async function getOnlineUserIds(): Promise<Set<string>> {
 /** Last activity per user, from the newest 200 sessions. */
 export async function getLastSeenByUser(): Promise<Map<string, number>> {
   const res = await adminRequest<{ sessions?: ABSAdminSession[] }>(
-    `${ABS_ENDPOINTS.sessions}?page=0&itemsPerPage=200`,
+    `${ABS_ENDPOINTS.sessions}?page=0&itemsPerPage=200&sort=updatedAt&desc=1`,
   )
   return lastSeenByUser(res.sessions ?? [])
 }
@@ -99,17 +108,11 @@ export async function getUserListeningSessions(
   userId: string,
   page: number,
   itemsPerPage: number,
-): Promise<ABSListeningSessionsResponse> {
+): Promise<{ total: number; sessions: AdminUserSession[] }> {
   const res = await adminRequest<Partial<ABSListeningSessionsResponse>>(
     `${ABS_ENDPOINTS.userListeningSessions(userId)}?page=${page}&itemsPerPage=${itemsPerPage}`,
   )
-  return {
-    total: res.total ?? 0,
-    numPages: res.numPages ?? 0,
-    page: res.page ?? page,
-    itemsPerPage: res.itemsPerPage ?? itemsPerPage,
-    sessions: res.sessions ?? [],
-  }
+  return { total: res.total ?? 0, sessions: res.sessions ?? [] }
 }
 
 export function createUser(
@@ -137,7 +140,7 @@ export function updateUser(userId: string, patch: UserPatch): Promise<{ user: AB
   })
 }
 
-export interface PermissionChoices {
+interface PermissionChoices {
   libraries: { id: string; label: string }[]
   tags: { id: string; label: string }[]
 }

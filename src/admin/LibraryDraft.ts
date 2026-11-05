@@ -175,7 +175,7 @@ export function isValidLibraryCron(expression: string): boolean {
 
 // --- Checks before Save -----------------------------------------------------
 
-export interface LibraryDraftProblems {
+interface LibraryDraftProblems {
   details?: string
   settings?: string
   schedule?: string

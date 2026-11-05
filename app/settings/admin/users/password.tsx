@@ -14,12 +14,14 @@ import { SettingsPanel } from '@/ui/settingsControls'
 export default function ResetPasswordScreen() {
   return (
     <AdminGate>
-      <UserEditLoader>{(detail) => <PasswordForm user={detail.user} />}</UserEditLoader>
+      <UserEditLoader>
+        {(detail, _, reload) => <PasswordForm user={detail.user} reload={reload} />}
+      </UserEditLoader>
     </AdminGate>
   )
 }
 
-function PasswordForm({ user }: { user: AdminUserDetail['user'] }) {
+function PasswordForm({ user, reload }: { user: AdminUserDetail['user']; reload: () => void }) {
   const { run, busy } = useAdminWrite()
   const [password, setPassword] = useState('')
   const [again, setAgain] = useState('')
@@ -35,6 +37,7 @@ function PasswordForm({ user }: { user: AdminUserDetail['user'] }) {
     const saved = await run(() => updateUser(user.id, { password }), {
       done: 'Password changed',
       failed: "Couldn't change the password.",
+      reload,
     })
     if (saved) router.back()
   }

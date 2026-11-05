@@ -8,7 +8,7 @@ import { SettingsRow } from '@/ui/settingsControls'
 import { useColors } from '@/ui/ThemeProvider'
 import { spacing } from '@/ui/theme'
 
-export interface LibraryOption {
+interface LibraryOption {
   value: string
   label: string
 }

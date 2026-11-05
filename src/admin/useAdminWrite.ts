@@ -4,7 +4,8 @@
  * that timed out may have worked, and only the server can say.
  */
 import { useCallback, useRef, useState } from 'react'
-import { adminWriteMessage } from '@/api/admin/errors'
+import { getMe } from '@/api/abs'
+import { adminErrorKind, adminWriteMessage } from '@/api/admin/errors'
 import { showToast } from '@/ui/Toast'
 
 export interface AdminWriteOptions {
@@ -31,6 +32,9 @@ export function useAdminWrite() {
         return true
       } catch (e) {
         showToast(adminWriteMessage(e, options.failed))
+        // This account may have been demoted. Re-reading it sends AdminGate to its
+        // "Admins only" state.
+        if (adminErrorKind(e) === 'forbidden') void getMe().catch(() => {})
         return false
       } finally {
         running.current = false

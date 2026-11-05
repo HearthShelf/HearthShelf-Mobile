@@ -1,29 +1,31 @@
 /**
  * Tracks a restore from the tap until the server is back.
  *
- * It lives outside the screen because a restore outlasts it: the connection can cover
- * the app, AdminGate can remount, and the admin can leave. A saved marker also carries
- * it across the app being killed. What the admin sees always comes from asking the
- * server, never from a timer.
+ * A restore outlasts any screen: the connection can cover the app, the admin can leave
+ * Backups, and the app can be killed. So this runs at module level, mounted once at the
+ * root by BackupRestoreWatcher, and a saved marker resumes it after a relaunch. What the
+ * admin sees always comes from asking the server, never from a timer.
  *
  * Neither server really restarts: each swaps its database and reopens it. The request
  * answers when that is done, so while it is open there is nothing better to ask. Once
- * it settles, or the app has been in the background (which can silently kill it), the
- * server is polled instead.
+ * it settles, or the app has been in the background (which can silently kill it), or it
+ * has run too long, the server is polled instead.
  */
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { AppState } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { HsRestoreResult } from '@hearthshelf/core'
 import { ABSRequestError } from '@/api/abs'
 import {
   askServerAfterRestore,
-  isAbort,
+  clearBackupFiles,
   type RestoreKind,
   type TransferOptions,
 } from '@/api/admin/backups'
 import { useConnection } from '@/api/ConnectionProvider'
-import { currentServerId } from '@/api/session'
+import { currentServerId, getSession } from '@/api/session'
+import { useAuthResolved } from '@/auth/useAuthResolved'
+import { showToast } from '@/ui/Toast'
 
 const POLL_MS = 3000
 const SLOW_AFTER_MS = 3 * 60_000
@@ -36,6 +38,8 @@ const ANSWERS_NEEDED_WITHOUT_RESULT = 3
 export interface RestoreState {
   phase: 'idle' | 'uploading' | 'restarting' | 'reconnecting' | 'finished' | 'failed'
   kind: RestoreKind | null
+  /** The server being restored. Nothing another server says counts for this restore. */
+  serverId: string | null
   /** Upload progress, 0 to 1. */
   uploaded: number
   /** The server's answer to the restore never reached us, so we can't say it worked. */
@@ -49,6 +53,7 @@ export interface RestoreState {
 const IDLE: RestoreState = {
   phase: 'idle',
   kind: null,
+  serverId: null,
   uploaded: 0,
   lostContact: false,
   crossServer: false,
@@ -69,10 +74,30 @@ let reconnectAsked = false
 let reconnect: (() => void) | null = null
 let abortUpload: AbortController | null = null
 let markerRead = false
+let viewers = 0
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+export function getRestoreState(): RestoreState {
+  return state
+}
+
+function isWaiting(): boolean {
+  return state.phase === 'restarting' || state.phase === 'reconnecting'
+}
+
+function syncPolling(): void {
+  if (isWaiting() && AppState.currentState === 'active') {
+    pollTimer ??= setInterval(() => void checkServer(), POLL_MS)
+  } else if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
 
 function update(patch: Partial<RestoreState>): void {
   state = { ...state, ...patch }
   listeners.forEach((listener) => listener())
+  syncPolling()
 }
 
 function subscribe(listener: () => void): () => void {
@@ -80,12 +105,14 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener)
 }
 
-export function getRestoreState(): RestoreState {
-  return state
-}
+AppState.addEventListener('change', (next) => {
+  if (next === 'background') requestMayBeDead = true
+  syncPolling()
+  if (next === 'active') void checkServer()
+})
 
-function saveMarker(kind: RestoreKind): Promise<void> {
-  const marker = { kind, startedAt, serverId: currentServerId() }
+function saveMarker(kind: RestoreKind, serverId: string | null): Promise<void> {
+  const marker = { kind, startedAt, serverId }
   return AsyncStorage.setItem(MARKER_KEY, JSON.stringify(marker)).catch(() => undefined)
 }
 
@@ -93,11 +120,12 @@ function clearMarker(): void {
   void AsyncStorage.removeItem(MARKER_KEY).catch(() => undefined)
 }
 
-function beginWaiting(kind: RestoreKind, patch: Partial<RestoreState>): void {
+function beginWaiting(patch: Partial<RestoreState>): void {
   run += 1
   goodAnswers = 0
   reconnectAsked = false
-  update({ ...IDLE, kind, ...patch })
+  state = IDLE
+  update(patch)
 }
 
 /** The server looked at the request and said no, so nothing was replaced. A proxy's 5xx
@@ -105,6 +133,12 @@ function beginWaiting(kind: RestoreKind, patch: Partial<RestoreState>): void {
 function serverRefused(e: unknown): boolean {
   if (!(e instanceof ABSRequestError)) return false
   return e.status !== 401 && e.status !== 408 && e.status < 502
+}
+
+function settle(patch: Partial<RestoreState>, toast: string): void {
+  clearMarker()
+  update(patch)
+  if (viewers === 0) showToast(toast)
 }
 
 type RestoreRequest = (transfer: TransferOptions) => Promise<HsRestoreResult | unknown>
@@ -115,11 +149,12 @@ export async function startRestore(kind: RestoreKind, request: RestoreRequest): 
   requestOpen = true
   requestMayBeDead = false
   const uploads = kind === 'archive'
-  beginWaiting(kind, { phase: uploads ? 'uploading' : 'restarting' })
+  const serverId = currentServerId()
+  beginWaiting({ kind, serverId, phase: uploads ? 'uploading' : 'restarting' })
   const thisRun = run
   const controller = new AbortController()
   abortUpload = uploads ? controller : null
-  await saveMarker(kind)
+  await saveMarker(kind, serverId)
 
   try {
     const result = await request({
@@ -129,7 +164,7 @@ export async function startRestore(kind: RestoreKind, request: RestoreRequest): 
         if (fraction >= 1) {
           abortUpload = null
           update({ phase: 'restarting', uploaded: 1 })
-        } else if (fraction - state.uploaded >= 0.01) {
+        } else if (fraction - getRestoreState().uploaded >= 0.01) {
           update({ uploaded: fraction })
         }
       },
@@ -138,23 +173,20 @@ export async function startRestore(kind: RestoreKind, request: RestoreRequest): 
     requestOpen = false
     abortUpload = null
     const crossServer = Boolean((result as HsRestoreResult | undefined)?.crossServer)
-    update({
-      phase: getRestoreState().phase === 'uploading' ? 'restarting' : getRestoreState().phase,
-      crossServer,
-    })
+    const { phase } = getRestoreState()
+    update({ phase: phase === 'uploading' ? 'restarting' : phase, crossServer })
   } catch (e) {
     if (thisRun !== run) return
     requestOpen = false
     abortUpload = null
-    if (isAbort(e)) return dismissRestore()
+    if (controller.signal.aborted) return dismissRestore()
     const failure = serverRefused(e)
       ? 'The server turned that restore down, so your data was not replaced.'
       : getRestoreState().phase === 'uploading'
         ? "The upload stopped before it finished, so your data wasn't replaced."
         : null
     if (failure) {
-      clearMarker()
-      update({ phase: 'failed', failure })
+      settle({ phase: 'failed', failure }, 'The restore failed.')
       return
     }
     update({ lostContact: true })
@@ -170,31 +202,37 @@ export function cancelRestoreUpload(): void {
 export function dismissRestore(): void {
   run += 1
   requestOpen = false
+  abortUpload?.abort()
   abortUpload = null
   clearMarker()
-  update(IDLE)
+  state = IDLE
+  update({})
 }
 
 async function checkServer(): Promise<void> {
-  const waiting = state.phase === 'restarting' || state.phase === 'reconnecting'
-  if (checking || !waiting || !state.kind) return
-  if (requestOpen && !requestMayBeDead) return
+  const { kind, serverId } = state
+  if (!isWaiting() || !kind) return
+
+  const slow = Date.now() - startedAt > SLOW_AFTER_MS
+  if (slow !== state.slow) update({ slow })
+  if (currentServerId() !== serverId) return
+  if (requestOpen && !requestMayBeDead && !slow) return
+  if (checking) return
 
   checking = true
   const thisRun = run
-  const answer = await askServerAfterRestore(state.kind).catch(() => 'down' as const)
+  const answer = await askServerAfterRestore(kind).catch(() => 'down' as const)
   checking = false
-  if (thisRun !== run) return
+  // The admin may have switched away while that was in flight, so it may not be ours.
+  if (thisRun !== run || currentServerId() !== serverId) return
 
-  const slow = Date.now() - startedAt > SLOW_AFTER_MS
   if (answer === 'up') {
     goodAnswers += 1
     const noResult = state.lostContact || requestOpen
     if (goodAnswers >= (noResult ? ANSWERS_NEEDED_WITHOUT_RESULT : 1)) {
-      clearMarker()
-      update({ phase: 'finished', lostContact: noResult, slow: false })
+      settle({ phase: 'finished', lostContact: noResult, slow: false }, 'Your server is back.')
     } else {
-      update({ phase: 'restarting', slow })
+      update({ phase: 'restarting' })
     }
     return
   }
@@ -202,14 +240,14 @@ async function checkServer(): Promise<void> {
   if (answer === 'token-lost') {
     // adminRequest's refresh already failed. The restore replaced the accounts, so
     // this needs the full connect flow, which also owns the error screen if it fails.
-    update({ phase: 'reconnecting', slow })
+    update({ phase: 'reconnecting' })
     if (!reconnectAsked) {
       reconnectAsked = true
       reconnect?.()
     }
     return
   }
-  update({ phase: 'restarting', slow })
+  update({ phase: 'restarting' })
 }
 
 /** Asks again now, and lets a token problem try the connect flow once more. */
@@ -230,20 +268,26 @@ async function resumeFromMarker(): Promise<void> {
     clearMarker()
     return
   }
-  if (Date.now() - marker.startedAt > MARKER_MAX_AGE_MS || marker.serverId !== currentServerId()) {
+  if (Date.now() - marker.startedAt > MARKER_MAX_AGE_MS) {
     clearMarker()
     return
   }
   startedAt = marker.startedAt
   requestOpen = false
-  beginWaiting(marker.kind, { phase: 'restarting', lostContact: true })
+  beginWaiting({
+    kind: marker.kind,
+    serverId: marker.serverId,
+    phase: 'restarting',
+    lostContact: true,
+  })
+  void checkServer()
 }
 
-/** The current restore, polling the server for as long as a screen shows it. */
-export function useBackupRestore(): RestoreState {
+/** Mounted once at the app root, so recovery and cleanup run wherever the admin is. */
+export function BackupRestoreWatcher(): null {
   const { retry } = useConnection()
-  const current = useSyncExternalStore(subscribe, getRestoreState)
-  const waiting = current.phase === 'restarting' || current.phase === 'reconnecting'
+  const { isLoaded, isSignedIn } = useAuthResolved()
+  const wasSignedIn = useRef(false)
 
   useEffect(() => {
     reconnect = retry
@@ -253,35 +297,31 @@ export function useBackupRestore(): RestoreState {
   }, [retry])
 
   useEffect(() => {
+    clearBackupFiles()
     void resumeFromMarker()
   }, [])
 
+  // Every sign-out path clears the session first. Checking it means a brief gap in
+  // the auth state can't cancel a restore that is still uploading.
   useEffect(() => {
-    if (!waiting) return
-    let timer: ReturnType<typeof setInterval> | null = null
-    const start = () => {
-      timer ??= setInterval(() => void checkServer(), POLL_MS)
+    if (!isLoaded) return
+    if (wasSignedIn.current && !isSignedIn && !getSession()) {
+      dismissRestore()
+      clearBackupFiles()
     }
-    const stop = () => {
-      if (timer) clearInterval(timer)
-      timer = null
-    }
-    void checkServer()
-    if (AppState.currentState === 'active') start()
-    const subscription = AppState.addEventListener('change', (next) => {
-      if (next === 'background') requestMayBeDead = true
-      if (next === 'active') {
-        void checkServer()
-        start()
-      } else {
-        stop()
-      }
-    })
-    return () => {
-      stop()
-      subscription.remove()
-    }
-  }, [waiting])
+    wasSignedIn.current = isSignedIn
+  }, [isLoaded, isSignedIn])
 
-  return current
+  return null
+}
+
+/** The current restore, for a screen that shows it. */
+export function useBackupRestore(): RestoreState {
+  useEffect(() => {
+    viewers += 1
+    return () => {
+      viewers -= 1
+    }
+  }, [])
+  return useSyncExternalStore(subscribe, getRestoreState)
 }

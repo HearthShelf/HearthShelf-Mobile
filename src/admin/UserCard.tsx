@@ -18,17 +18,25 @@ export function UserCard({
   onLongPress,
 }: {
   user: ABSAdminUser
-  online: boolean
-  /** Newest known activity in epoch ms. 0 when there is none. */
-  lastSeen: number
+  /** null when presence couldn't be read. */
+  online: boolean | null
+  /** Newest known activity in epoch ms. 0 when there is none, null when unknown. */
+  lastSeen: number | null
   selecting: boolean
   selected: boolean
   onPress: () => void
   onLongPress: () => void
 }) {
   const colors = useColors()
-  const seen = online ? 'Now' : lastSeen > 0 ? fmtSessDate(lastSeen).day : 'Never'
-  const status = !user.isActive ? 'Disabled' : online ? 'Online' : 'Offline'
+  const seen = online
+    ? 'Now'
+    : lastSeen === null
+      ? 'Unknown'
+      : lastSeen > 0
+        ? fmtSessDate(lastSeen).day
+        : 'Never'
+  const presence = online === null ? 'Unknown' : online ? 'Online' : 'Offline'
+  const status = user.isActive ? presence : 'Disabled'
   const tone = !user.isActive ? 'bad' : online ? 'good' : 'neutral'
   return (
     <Pressable

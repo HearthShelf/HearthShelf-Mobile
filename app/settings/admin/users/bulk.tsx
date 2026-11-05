@@ -1,16 +1,11 @@
 /**
  * One account type, enabled state and permission set for every selected user,
  * replacing what each had. Sent one user at a time, so a failure names who was
- * missed and the rest still apply.
+ * missed and the rest still apply. Your own account and root are left out entirely.
  */
 import { useMemo, useRef, useState } from 'react'
 import { router, useLocalSearchParams } from 'expo-router'
-import {
-  bulkSkipsSelf,
-  bulkUserPatch,
-  defaultPermissions,
-  type ABSAdminUser,
-} from '@hearthshelf/core'
+import { bulkUserPatch, defaultPermissions } from '@hearthshelf/core'
 import { AdminButton } from '@/admin/AdminButton'
 import { AdminGate } from '@/admin/AdminGate'
 import { AdminUnavailable } from '@/admin/AdminUnavailable'
@@ -18,8 +13,9 @@ import { TypedConfirm } from '@/admin/TypedConfirm'
 import { useAdminResource } from '@/admin/useAdminResource'
 import { useAdminWrite } from '@/admin/useAdminWrite'
 import { UserAccessForm, type UserAccess } from '@/admin/UserAccessForm'
-import { markBulkFinished, useSelfAccount, userGuards, type SelfAccount } from '@/admin/UserGuards'
-import { getUsers, updateUser, type UserPatch } from '@/api/admin/users'
+import { markBulkFinished, useSelfAccount } from '@/admin/UserGuards'
+import { adminWriteMessage } from '@/api/admin/errors'
+import { getUsers, updateUser } from '@/api/admin/users'
 import { icons } from '@/ui/icons'
 import { AppText, Loading, type SheetRef } from '@/ui/primitives'
 import { SettingsPanel } from '@/ui/settingsControls'
@@ -39,16 +35,6 @@ function countLabel(count: number): string {
   return `${count} ${count === 1 ? 'user' : 'users'}`
 }
 
-/** Core's patch, plus the two lockouts it leaves open: root stays as it is, and
- *  your own account keeps its type, the same as on the single-user screen. */
-function safePatch(user: ABSAdminUser, access: UserAccess, self: SelfAccount): UserPatch {
-  const patch: UserPatch = bulkUserPatch(user, access, self.id)
-  const guards = userGuards(user, self)
-  if (guards.isRoot) delete patch.isActive
-  if (guards.isSelf) delete patch.type
-  return patch
-}
-
 function Bulk() {
   const colors = useColors()
   const { ids } = useLocalSearchParams<{ ids?: string }>()
@@ -56,7 +42,7 @@ function Bulk() {
   const accounts = useAdminResource(getUsers)
   const { run, busy } = useAdminWrite()
   const confirmRef = useRef<SheetRef>(null)
-  const [failedNames, setFailedNames] = useState<string[]>([])
+  const [failure, setFailure] = useState<string | null>(null)
   const [access, setAccess] = useState<UserAccess>({
     type: 'user',
     isActive: true,
@@ -73,10 +59,8 @@ function Bulk() {
   }
   if (accounts.loading) return <Loading />
 
-  const targets = selected.filter((u) => userGuards(u, self).canEdit)
-  const skippedRoot = selected.length - targets.length
-  const hasRoot = targets.some((u) => u.type === 'root')
-  const includesSelf = targets.some((u) => u.id === self.id)
+  const targets = selected.filter((u) => u.id !== self.id && u.type !== 'root')
+  const leftOut = selected.length - targets.length
   const names = targets.map((u) => u.username).join(', ')
 
   if (targets.length === 0) {
@@ -84,34 +68,35 @@ function Bulk() {
       <EmptyState
         icon={icons.person}
         title="No one to change"
-        body="Go back and select the people you want to change."
+        body="Your own account and root accounts can't be changed here."
       />
     )
   }
 
   async function apply() {
     const failed: string[] = []
+    let firstError: unknown = null
     await run(
       async () => {
         for (const user of targets) {
           try {
-            await updateUser(user.id, safePatch(user, access, self))
-          } catch {
+            await updateUser(user.id, bulkUserPatch(user, access, self.id))
+          } catch (e) {
             failed.push(user.username)
+            firstError ??= e
           }
         }
       },
       { failed: "Couldn't update those users.", reload: accounts.reload },
     )
-    setFailedNames(failed)
-    if (failed.length > 0) return
+    if (failed.length > 0) {
+      const reason = adminWriteMessage(firstError, "Couldn't update them.")
+      setFailure(`${reason} Check these accounts: ${failed.join(', ')}.`)
+      return
+    }
+    setFailure(null)
     markBulkFinished()
-    showToast(
-      `Updated ${countLabel(targets.length)}` +
-        (bulkSkipsSelf(targets, access.isActive, self.id)
-          ? '. Your own account stays enabled.'
-          : ''),
-    )
+    showToast(`Updated ${countLabel(targets.length)}`)
     router.back()
   }
 
@@ -120,27 +105,17 @@ function Bulk() {
       <AppText variant="meta" color={colors.textMuted}>
         These settings replace the account type, enabled state and all permissions of {names}.
       </AppText>
-      {hasRoot ? (
+      {leftOut > 0 ? (
         <AppText variant="meta" color={colors.textMuted}>
-          Root accounts only get the new permissions. Their type and enabled state stay the same.
-        </AppText>
-      ) : null}
-      {includesSelf ? (
-        <AppText variant="meta" color={colors.textMuted}>
-          Your own account keeps its type and stays enabled.
-        </AppText>
-      ) : null}
-      {skippedRoot > 0 ? (
-        <AppText variant="meta" color={colors.textMuted}>
-          Root accounts are skipped, because only root can change them.
+          Your own account and root accounts are left out, and stay exactly as they are.
         </AppText>
       ) : null}
 
       <UserAccessForm value={access} onChange={setAccess} />
 
-      {failedNames.length > 0 ? (
+      {failure ? (
         <AppText variant="meta" color={colors.destructive}>
-          Couldn't update: {failedNames.join(', ')}. Check them, then try again.
+          {failure}
         </AppText>
       ) : null}
       <AdminButton

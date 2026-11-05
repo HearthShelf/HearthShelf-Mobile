@@ -9,7 +9,7 @@ import { adminRequest } from '@/api/abs'
 
 const COPILOT_AUTH = '/hs/questgiver/admin/copilot'
 
-export interface QgCopilotAuth {
+interface QgCopilotAuth {
   authenticated: boolean
   login: string | null
 }

@@ -19,12 +19,14 @@ import { spacing } from '@/ui/theme'
 export default function EditAccountScreen() {
   return (
     <AdminGate>
-      <UserEditLoader>{(detail) => <AccountForm user={detail.user} />}</UserEditLoader>
+      <UserEditLoader>
+        {(detail, _, reload) => <AccountForm user={detail.user} reload={reload} />}
+      </UserEditLoader>
     </AdminGate>
   )
 }
 
-function AccountForm({ user }: { user: AdminUserDetail['user'] }) {
+function AccountForm({ user, reload }: { user: AdminUserDetail['user']; reload: () => void }) {
   const colors = useColors()
   const linked = useAdminResource(getLinkedAbsUserIds)
   const { run, busy } = useAdminWrite()
@@ -50,7 +52,8 @@ function AccountForm({ user }: { user: AdminUserDetail['user'] }) {
     }
     const ok = await run(() => updateUser(user.id, patch), {
       done: 'Changes saved',
-      failed: "Couldn't save. That username may already be taken.",
+      failed: "Couldn't save your changes.",
+      reload,
     })
     if (ok) router.back()
   }

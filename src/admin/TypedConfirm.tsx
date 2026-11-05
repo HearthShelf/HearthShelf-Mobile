@@ -5,7 +5,7 @@
  *
  * Forward a ref and call `ref.current?.present()` to open it.
  */
-import { forwardRef, useState } from 'react'
+import { forwardRef, useRef, useState } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
 import { BottomSheetTextInput } from '@gorhom/bottom-sheet'
 import { AppText, Sheet, type SheetRef } from '@/ui/primitives'
@@ -23,22 +23,34 @@ export const TypedConfirm = forwardRef<
     confirmText: string
     confirmLabel: string
     onConfirm: () => void
+    /** Runs when the sheet closes without confirming. */
+    onCancel?: () => void
   }
->(function TypedConfirm({ title, message, confirmText, confirmLabel, onConfirm }, ref) {
+>(function TypedConfirm({ title, message, confirmText, confirmLabel, onConfirm, onCancel }, ref) {
   const colors = useColors()
   const [typed, setTyped] = useState('')
+  const confirmed = useRef(false)
   const matches = typed.trim() === confirmText.trim()
 
   function submit() {
     if (!matches) return
     haptics.warn()
+    confirmed.current = true
     setTyped('')
     if (ref && 'current' in ref) ref.current?.dismiss()
     onConfirm()
   }
 
   return (
-    <Sheet ref={ref} title={title} onDismiss={() => setTyped('')}>
+    <Sheet
+      ref={ref}
+      title={title}
+      onDismiss={() => {
+        setTyped('')
+        if (!confirmed.current) onCancel?.()
+        confirmed.current = false
+      }}
+    >
       <View style={{ gap: spacing.md }}>
         <AppText variant="meta" color={colors.textMuted}>
           {message}

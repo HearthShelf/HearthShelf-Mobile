@@ -11,10 +11,10 @@ import {
   formatDuration,
   formatTimestamp,
   sessionFinishDiagnostics,
-  type ABSListeningSession,
   type ABSUserMediaProgress,
 } from '@hearthshelf/core'
 import { AdminButton } from '@/admin/AdminButton'
+import type { AdminUserSession } from '@/api/admin/users'
 import { DeviceKindIcon } from '@/ui/DeviceKindIcon'
 import { Icon, icons } from '@/ui/icons'
 import { AppText } from '@/ui/primitives'
@@ -57,7 +57,7 @@ export function UserSessionRow({
   progress,
   last,
 }: {
-  session: ABSListeningSession
+  session: AdminUserSession
   progress: ABSUserMediaProgress | undefined
   last: boolean
 }) {

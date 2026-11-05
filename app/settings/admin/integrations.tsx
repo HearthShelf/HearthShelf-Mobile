@@ -176,7 +176,7 @@ function IntegrationsForm({
                   busy={busy}
                   disabled={Object.keys(rmabPatch).length === 0}
                   onPress={() =>
-                    save(rmabPatch, "Couldn't save. Check the address and login token.", () => {
+                    save(rmabPatch, "Couldn't save the ReadMeABook settings.", () => {
                       setRmabToken('')
                       setPastedBaseUrl(null)
                       setRmabWarning(null)

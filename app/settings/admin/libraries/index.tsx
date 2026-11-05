@@ -128,6 +128,7 @@ function Libraries() {
       ) : (
         <DraggableFlatList
           data={rows}
+          containerStyle={styles.fill}
           keyExtractor={(library) => library.id}
           contentContainerStyle={[styles.list, { paddingBottom: bottomInset }]}
           onDragEnd={({ data }) => saveOrder(data)}
@@ -261,6 +262,7 @@ function LibraryRow({
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
+  fill: { flex: 1 },
   top: { padding: spacing.lg, paddingBottom: spacing.sm, gap: spacing.sm },
   loading: { padding: spacing.lg, gap: spacing.md },
   list: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },

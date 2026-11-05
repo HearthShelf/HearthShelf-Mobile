@@ -184,9 +184,9 @@ the rest are web only. There is no toggle.
 
 ### 8. Reorder and form shapes
 
-- Web's library and folder reordering uses HTML5 drag, which fails on touch. Use
+- Web's library reordering uses HTML5 drag, which fails on touch. Use
   `react-native-draggable-flatlist`, and add up/down in the row menu for
-  accessibility.
+  accessibility. Folders are not reordered: ABS does not store their order.
 - The five-tab library modal becomes a drill-down: rows for Details, Settings,
   Scanner, Schedule and Tools, each its own screen or sheet, keeping one shared
   draft with one Save.
@@ -198,9 +198,10 @@ the rest are web only. There is no toggle.
 
 Web buffers whole files as Blobs. Mobile must not. Download to a file with
 `expo-file-system` and hand it to the share sheet with `expo-sharing`. Upload from
-`expo-document-picker` with a native file upload. `POST /hs/archive` is a POST
-download, so confirm the downloader supports it during the spike (task 5.1). If it
-does not, add a server route that issues a short-lived GET.
+`expo-document-picker` with a native file upload. Native downloaders are GET only,
+and `POST /hs/archive` sends nothing until the build ends, which nginx cuts at 60s
+and iOS drops. So the phone asks the server to build the archive to a temp file,
+polls for it, then downloads it with a normal GET.
 
 Restore replaces the database and restarts the server, which may invalidate the
 app's own token. After a restore the screen shows "Server restarting", waits, then

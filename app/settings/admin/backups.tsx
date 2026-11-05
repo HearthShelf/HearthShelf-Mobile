@@ -3,8 +3,9 @@
  * and the full archive holds both. Files download to the cache, then leave through the
  * share sheet. A restore takes over the screen until the server is back.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
+import { useFocusEffect } from 'expo-router'
 import type { File } from 'expo-file-system'
 import {
   fmtBytes,
@@ -20,11 +21,12 @@ import { AdminUnavailable } from '@/admin/AdminUnavailable'
 import { getRestoreState, startRestore, useBackupRestore } from '@/admin/BackupRestore'
 import { BackupRestorePanel } from '@/admin/BackupRestorePanel'
 import { BackupSchedule } from '@/admin/BackupSchedule'
+import { HttpWarning } from '@/admin/HttpWarning'
 import { TypedConfirm } from '@/admin/TypedConfirm'
 import { useAdminResource } from '@/admin/useAdminResource'
 import { useAdminWrite } from '@/admin/useAdminWrite'
 import {
-  BackupFileError,
+  BackupUserError,
   applyAbsBackup,
   clearBackupFiles,
   deleteAbsBackup,
@@ -36,7 +38,6 @@ import {
   getAbsBackupSettings,
   getAbsBackups,
   getHsBackups,
-  isAbort,
   pickBackupFile,
   restoreArchive,
   restoreHsBackup,
@@ -62,7 +63,6 @@ import { showToast } from '@/ui/Toast'
 import { spacing } from '@/ui/theme'
 
 const REJECTED_FILE = 'The server turned that file down. It may be damaged, or not a backup.'
-const TYPE_TO_RESTORE = 'restore'
 const TYPE_TO_RESTORE_ALL = 'restore everything'
 
 interface Transfer {
@@ -76,14 +76,20 @@ interface PendingRestore {
   confirmText: string
   confirmLabel: string
   run: () => void
+  cancel?: () => void
 }
 
 function formatDate(ms: number): string {
   if (!ms) return '-'
-  return new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+  // Plain spaces: some locales put a narrow space before AM/PM, which the admin
+  // can't type when this date is the word that confirms a restore.
+  return new Date(ms)
+    .toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+    .replace(/\s/g, ' ')
 }
 
 function downloadFailure(e: unknown): string {
+  if (e instanceof BackupUserError) return e.message
   switch (adminErrorKind(e)) {
     case 'unreachable':
       return 'The download stopped. Check your connection and try again.'
@@ -172,10 +178,15 @@ function Backups() {
   const confirmSheet = useRef<SheetRef>(null)
   const transferAbort = useRef<AbortController | null>(null)
 
-  useEffect(() => {
-    if (getRestoreState().phase !== 'uploading') clearBackupFiles()
-    return () => transferAbort.current?.abort()
-  }, [])
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        transferAbort.current?.abort()
+        if (getRestoreState().phase !== 'uploading') clearBackupFiles()
+      },
+      [],
+    ),
+  )
 
   useEffect(() => {
     if (pendingRestore) confirmSheet.current?.present()
@@ -212,14 +223,15 @@ function Backups() {
 
   const saveToPhone = async (label: string, download: (t: TransferOptions) => Promise<File>) => {
     if (locked) return
+    const options = startTransfer(label)
     try {
-      const file = await download(startTransfer(label))
+      const file = await download(options)
       endTransfer()
       await shareBackupFile(file)
     } catch (e) {
       endTransfer()
       clearBackupFiles()
-      if (!isAbort(e)) showToast(downloadFailure(e))
+      if (!options.signal?.aborted) showToast(downloadFailure(e))
     }
   }
 
@@ -227,7 +239,7 @@ function Backups() {
     try {
       return await pickBackupFile(type)
     } catch (e) {
-      showToast(e instanceof BackupFileError ? e.message : "We couldn't open that file.")
+      showToast(e instanceof BackupUserError ? e.message : "We couldn't open that file.")
       return null
     }
   }
@@ -247,7 +259,7 @@ function Backups() {
           await send(file, options)
           showToast('Backup uploaded')
         } catch (e) {
-          if (!isAbort(e)) throw e
+          if (!options.signal?.aborted) throw e
         }
       },
       { failed: REJECTED_FILE, reload },
@@ -319,7 +331,7 @@ function Backups() {
     setPendingRestore({
       title: 'Restore Audiobookshelf backup',
       message: `This replaces all library data, users, and listening progress with the backup from ${backup.datePretty}. Anything newer is lost, and no copy is kept. The server restarts, and you may need to sign in again. HearthShelf data is not touched.`,
-      confirmText: TYPE_TO_RESTORE,
+      confirmText: backup.datePretty,
       confirmLabel: 'Restore',
       run: () => void startRestore('abs', () => applyAbsBackup(backup.id)),
     })
@@ -328,13 +340,14 @@ function Backups() {
     setPendingRestore({
       title: 'Restore HearthShelf backup',
       message: `This replaces HearthShelf's data with the backup from ${formatDate(backup.createdAt)}. Your current data is saved to a pre-restore folder on the server first. Audiobookshelf is not touched.`,
-      confirmText: TYPE_TO_RESTORE,
+      confirmText: formatDate(backup.createdAt),
       confirmLabel: 'Restore',
       run: () => void startRestore('hs', () => restoreHsBackup(backup.id)),
     })
 
   const restoreFromArchive = async () => {
     if (locked) return
+    clearBackupFiles()
     const file = await pick('archive')
     if (!file) return
     setPendingRestore({
@@ -346,6 +359,7 @@ function Backups() {
         void startRestore('archive', (options) => restoreArchive(file, options)).finally(() =>
           deleteLocalFile(file),
         ),
+      cancel: () => deleteLocalFile(file),
     })
   }
 
@@ -373,6 +387,7 @@ function Backups() {
 
   return (
     <SettingsPanel>
+      <HttpWarning />
       {transfer ? (
         <Card>
           <View style={{ gap: spacing.sm }}>
@@ -412,6 +427,14 @@ function Backups() {
           onSchedule={(backupSchedule) => saveAbs({ backupSchedule }, 'Schedule saved')}
           onKeep={(backupsToKeep) => saveAbs({ backupsToKeep }, 'Saved')}
         />
+      ) : null}
+      {settings.error && !settings.data ? (
+        <>
+          <Note icon={icons.error}>
+            We couldn't load the backup schedule, so you can't change it right now.
+          </Note>
+          <AdminButton label="Try again" kind="secondary" onPress={settings.reload} />
+        </>
       ) : null}
       <View style={{ flexDirection: 'row', gap: spacing.sm }}>
         <View style={{ flex: 1 }}>
@@ -561,10 +584,14 @@ function Backups() {
         ref={confirmSheet}
         title={pendingRestore?.title ?? ''}
         message={pendingRestore?.message ?? ''}
-        confirmText={pendingRestore?.confirmText ?? TYPE_TO_RESTORE}
+        confirmText={pendingRestore?.confirmText ?? ''}
         confirmLabel={pendingRestore?.confirmLabel ?? 'Restore'}
         onConfirm={() => {
           pendingRestore?.run()
+          setPendingRestore(null)
+        }}
+        onCancel={() => {
+          pendingRestore?.cancel?.()
           setPendingRestore(null)
         }}
       />

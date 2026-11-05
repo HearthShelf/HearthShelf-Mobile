@@ -6,8 +6,14 @@ import { AdminField } from '@/admin/AdminField'
 import { AdminGate } from '@/admin/AdminGate'
 import { normalizeLibraryPath } from '@/admin/LibraryDraft'
 import { LibraryPathField, useLibraryPathCheck } from '@/admin/LibraryPathField'
+import { useAdminResource } from '@/admin/useAdminResource'
 import { useAdminWrite } from '@/admin/useAdminWrite'
-import { createLibrary, scanLibrary, type LibraryMediaType } from '@/api/admin/libraries'
+import {
+  createLibrary,
+  getLibraries,
+  scanLibrary,
+  type LibraryMediaType,
+} from '@/api/admin/libraries'
 import { Seg, SettingsGroup, SettingsPanel, SettingsRow } from '@/ui/settingsControls'
 import { showToast } from '@/ui/Toast'
 
@@ -26,34 +32,36 @@ function NewLibrary() {
   const [name, setName] = useState('')
   const [mediaType, setMediaType] = useState<LibraryMediaType>('book')
   const [fullPath, setFullPath] = useState('')
+  // A create that timed out may have worked. This reloads after one, so trying again
+  // is stopped here rather than making a second library on the same folder.
+  const libraries = useAdminResource(getLibraries)
+  const folder = normalizeLibraryPath(fullPath)
+  const folderInUse = libraries.data?.some((l) => l.folders.some((f) => f.fullPath === folder))
 
   function checkPath() {
-    const trimmed = normalizeLibraryPath(fullPath)
-    if (trimmed) void path.check(trimmed)
+    if (folder) void path.check(folder)
   }
 
   async function create() {
-    let id = ''
-    const created = await run(
+    // Everything stays inside run so a second tap can't create the library twice.
+    await run(
       async () => {
         const library = await createLibrary({
           name: name.trim(),
           mediaType,
-          fullPath: normalizeLibraryPath(fullPath),
+          fullPath: folder,
         })
-        id = library.id
+        // The server doesn't scan a new library by itself, and it stays empty until one runs.
+        try {
+          await scanLibrary(library.id)
+          showToast('Library created. Scanning it now.')
+        } catch {
+          showToast('Library created, but the scan did not start. Start it from your libraries.')
+        }
+        router.back()
       },
-      { failed: "Couldn't create the library." },
+      { failed: "Couldn't create the library.", reload: libraries.reload },
     )
-    if (!created) return
-    // The server doesn't scan a new library by itself, and it stays empty until one runs.
-    try {
-      await scanLibrary(id)
-      showToast('Library created. Scanning it now.')
-    } catch {
-      showToast('Library created, but the scan did not start. Start it from your libraries.')
-    }
-    router.back()
   }
 
   return (
@@ -88,6 +96,7 @@ function NewLibrary() {
           path.reset()
         }}
         state={path.state}
+        problem={folderInUse ? 'A library already uses this folder.' : undefined}
         onSubmit={checkPath}
         onBlur={checkPath}
       />
@@ -95,7 +104,7 @@ function NewLibrary() {
         label="Create library"
         icon="add"
         onPress={() => void create()}
-        disabled={!name.trim() || path.state !== 'exists'}
+        disabled={!name.trim() || path.state !== 'exists' || folderInUse}
         busy={busy}
       />
     </SettingsPanel>

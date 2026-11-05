@@ -8,7 +8,7 @@ import { spacing } from '@/ui/theme'
 import { AdminButton } from './AdminButton'
 import { AdminField } from './AdminField'
 
-export type LibraryPathState = 'idle' | 'checking' | LibraryFolderCheck
+type LibraryPathState = 'idle' | 'checking' | LibraryFolderCheck
 
 export function useLibraryPathCheck() {
   const [state, setState] = useState<LibraryPathState>('idle')

@@ -4,8 +4,10 @@
  * control) rather than the WebApp's dense two-column layout - mobile rows
  * stack label+description on the left, control on the right, full-width.
  */
-import { cloneElement, isValidElement, useCallback, useMemo, useState } from 'react'
+import { cloneElement, isValidElement, useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  Keyboard,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -35,11 +37,38 @@ import { haptics } from './haptics'
  *  run under the dock. */
 export function SettingsPanel({ children }: { children: React.ReactNode }) {
   const bottomInset = useContentInset()
+  const keyboardHeight = useAndroidKeyboardHeight()
   return (
-    <ScrollView contentContainerStyle={[panelStyles.content, { paddingBottom: bottomInset }]}>
+    <ScrollView
+      keyboardShouldPersistTaps="handled"
+      automaticallyAdjustKeyboardInsets
+      contentContainerStyle={[
+        panelStyles.content,
+        { paddingBottom: Math.max(bottomInset, keyboardHeight) },
+      ]}
+    >
       {children}
     </ScrollView>
   )
+}
+
+/** Edge-to-edge Android does not shrink the window for the keyboard, and
+ *  automaticallyAdjustKeyboardInsets is iOS only, so lower fields need the room
+ *  added or they can't be scrolled into view. */
+function useAndroidKeyboardHeight(): number {
+  const [height, setHeight] = useState(0)
+  useEffect(() => {
+    if (Platform.OS !== 'android') return
+    const show = Keyboard.addListener('keyboardDidShow', (e) => {
+      setHeight(e.endCoordinates.height)
+    })
+    const hide = Keyboard.addListener('keyboardDidHide', () => setHeight(0))
+    return () => {
+      show.remove()
+      hide.remove()
+    }
+  }, [])
+  return height
 }
 
 const panelStyles = StyleSheet.create({

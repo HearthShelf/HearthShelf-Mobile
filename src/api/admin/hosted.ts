@@ -34,7 +34,7 @@ export function inviteFromServer(email: string, role: 'admin' | 'user'): Promise
   )
 }
 
-export async function getPendingInvites(): Promise<PendingInvite[]> {
+async function getPendingInvites(): Promise<PendingInvite[]> {
   const res = await adminRequest<{ invites?: PendingInvite[] }>(
     HS_ENDPOINTS.hostedInvites,
     undefined,
@@ -43,7 +43,7 @@ export async function getPendingInvites(): Promise<PendingInvite[]> {
   return res.invites ?? []
 }
 
-export interface InviteState {
+interface InviteState {
   paired: boolean
   invites: PendingInvite[]
 }

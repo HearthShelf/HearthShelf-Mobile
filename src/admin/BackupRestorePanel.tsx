@@ -7,6 +7,7 @@ import {
   type RestoreState,
 } from '@/admin/BackupRestore'
 import { AdminButton } from '@/admin/AdminButton'
+import { currentServerId } from '@/api/session'
 import { Icon, icons } from '@/ui/icons'
 import { AppText, Card, ProgressBar } from '@/ui/primitives'
 import { SettingsPanel } from '@/ui/settingsControls'
@@ -45,9 +46,12 @@ export function BackupRestorePanel({
     onClosed()
   }
 
-  const waitingHint = state.slow
-    ? 'This is taking longer than usual. The server may still be working.'
-    : SAFE_TO_LEAVE
+  const elsewhere = state.serverId !== currentServerId()
+  const waitingHint = elsewhere
+    ? 'This restore is on another server. We will check on it when you switch back.'
+    : state.slow
+      ? 'This is taking longer than usual. The server may still be working.'
+      : SAFE_TO_LEAVE
 
   return (
     <SettingsPanel>
@@ -81,7 +85,7 @@ export function BackupRestorePanel({
               <AppText variant="meta" color={colors.textMuted}>
                 {waitingHint}
               </AppText>
-              {state.slow ? (
+              {state.slow || elsewhere ? (
                 <>
                   <AdminButton label="Check now" kind="secondary" onPress={checkRestoreNow} />
                   <AdminButton label="Stop waiting" kind="secondary" onPress={close} />

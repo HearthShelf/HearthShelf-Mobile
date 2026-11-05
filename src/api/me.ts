@@ -86,6 +86,9 @@ export function setMeType(serverId: string, type: string): void {
  *  Calling it again for the same server changes nothing. */
 export async function restoreMeType(serverId: string): Promise<void> {
   if (serverId === accountTypeServerId) return
+  // The id is per server too. A stale one makes "is this me?" guards answer no on
+  // the admin's own account, which would offer to disable it.
+  clearMeId()
   accountType = ''
   accountTypeServerId = serverId
   accountTypeIsLive = false

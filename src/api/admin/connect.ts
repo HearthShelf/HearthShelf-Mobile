@@ -2,16 +2,11 @@
 import {
   HostedError,
   HS_ENDPOINTS,
-  type HSHostedConfigStatus,
   type HSHostedHsDirectState,
   type HSHostedPortCheckResult,
   type HSServiceHealth,
 } from '@hearthshelf/core'
 import { ABSRequestError, adminRequest } from '@/api/abs'
-
-export function getHostedStatus(): Promise<HSHostedConfigStatus> {
-  return adminRequest<HSHostedConfigStatus>(HS_ENDPOINTS.hostedConfig)
-}
 
 export function getServiceHealth(): Promise<HSServiceHealth> {
   return adminRequest<HSServiceHealth>(HS_ENDPOINTS.hostedServiceHealth)

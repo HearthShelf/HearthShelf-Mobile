@@ -56,7 +56,7 @@ function Schedule({ state }: { state: LibraryDraftState }) {
       </SettingsGroup>
       {custom ? (
         <AdminField
-          label="Cron schedule"
+          label="Custom schedule"
           hint="Five parts: minute, hour, day, month, weekday. 0 0 * * 1 runs every Monday at midnight."
           error={libraryDraftProblems(state).schedule}
           placeholder={LIBRARY_DEFAULT_CRON}

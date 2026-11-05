@@ -20,13 +20,11 @@ import {
 import { TypedConfirm } from '@/admin/TypedConfirm'
 import { useAdminResource } from '@/admin/useAdminResource'
 import { useAdminWrite } from '@/admin/useAdminWrite'
+import { createApiKey, deleteApiKey, getApiKeys } from '@/api/admin/apikeys'
 import {
   createServiceAccount,
-  createServiceToken,
   deleteServiceAccount,
   getServiceAccounts,
-  getServiceTokens,
-  revokeServiceToken,
   tagServiceAccount,
   untagServiceAccount,
   updateServiceAccount,
@@ -53,7 +51,7 @@ function ServiceAccounts() {
   const meId = useSyncExternalStore(subscribeMeId, getMeId)
   const callerIsRoot = useSyncExternalStore(subscribeMeType, getMeType) === 'root'
   const { data, loading, error, reload } = useAdminResource(getServiceAccounts)
-  const tokens = useAdminResource(getServiceTokens)
+  const tokens = useAdminResource(getApiKeys)
   const { run, busy } = useAdminWrite()
 
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -94,7 +92,7 @@ function ServiceAccounts() {
           secret: input.password,
         })
       },
-      { failed: "Couldn't create the account. That username may be taken.", reload },
+      { failed: "Couldn't create the account.", reload },
     )
   }
 
@@ -130,7 +128,7 @@ function ServiceAccounts() {
     }
     const ok = await run(() => updateServiceAccount(account.id, patch), {
       done: 'Saved',
-      failed: "Couldn't save. That username may be taken.",
+      failed: "Couldn't save those changes.",
       reload,
     })
     if (ok) editSheet.current?.dismiss()
@@ -174,7 +172,7 @@ function ServiceAccounts() {
   function createToken(account: ABSAdminUser, name: string) {
     void run(
       async () => {
-        const token = await createServiceToken(name, account.id)
+        const { apiKey: token } = await createApiKey(name, account.id, null)
         tokenSheet.current?.dismiss()
         if (token) {
           showReveal({
@@ -200,7 +198,7 @@ function ServiceAccounts() {
       confirmLabel: 'Revoke',
     })
     if (!ok) return
-    void run(() => revokeServiceToken(key.id), {
+    void run(() => deleteApiKey(key.id), {
       done: `Revoked ${key.name}`,
       failed: `Couldn't revoke ${key.name}.`,
       reload: tokens.reload,
@@ -270,7 +268,7 @@ function ServiceAccounts() {
               account={item}
               owned={owned}
               open={expanded === item.id}
-              canEdit={!isRoot || callerIsRoot}
+              canEdit={!owned && (!isRoot || callerIsRoot)}
               canCreateTokens={!isRoot || callerIsRoot}
               canDelete={!isRoot && !owned && item.id !== meId}
               tokens={{ keys: tokens.data, loading: tokens.loading, onRetry: tokens.reload }}

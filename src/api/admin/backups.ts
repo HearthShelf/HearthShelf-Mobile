@@ -6,17 +6,15 @@
  * and uploads run in the native file system module, which needs the token passed by
  * hand and so gets none of adminRequest's 401 refresh: withTokenRetry stands in.
  *
- * The native downloaders are GET only, and POST /hs/archive answers with the file.
- * That one call streams through expo/fetch and is written to disk chunk by chunk.
+ * The native downloaders are GET only, and a proxy cuts a request that stays quiet
+ * while the server builds an archive. So the archive is built first, then fetched
+ * like any other file.
  */
 import { Directory, File, Paths, UploadType, type UploadOptions } from 'expo-file-system'
-import { fetch as streamingFetch } from 'expo/fetch'
 import * as DocumentPicker from 'expo-document-picker'
-import * as Sharing from 'expo-sharing'
 import {
   ABS_ENDPOINTS,
   HS_ENDPOINTS,
-  archiveFilename,
   type ABSBackupsResponse,
   type ABSServerSettings,
   type HsBackupConfig,
@@ -32,7 +30,10 @@ const SLOW_CALL_MS = 10 * 60_000
 const HS_UPLOAD_LIMIT_BYTES = 512 * 1024 * 1024
 const HS_RUN_POLL_MS = 2000
 const HS_RUN_WAIT_MS = 90_000
-const PROGRESS_INTERVAL_MS = 200
+const ARCHIVE_POLL_MS = 2000
+const ARCHIVE_WAIT_MS = 20 * 60_000
+/** Not in HS_ENDPOINTS yet. */
+const ARCHIVE_BUILDS = '/hs/archive/builds'
 const PROBE_TIMEOUT_MS = 8000
 const ZIP_MIME = 'application/zip'
 
@@ -70,9 +71,7 @@ export function deleteAbsBackup(id: string): Promise<unknown> {
 
 /** Audiobookshelf's apply route really is a GET. It answers once the restore is done. */
 export function applyAbsBackup(id: string): Promise<unknown> {
-  return adminRequest(ABS_ENDPOINTS.backupApply(encodeURIComponent(id)), undefined, {
-    timeoutMs: SLOW_CALL_MS,
-  })
+  return restoreRequest(ABS_ENDPOINTS.backupApply(encodeURIComponent(id)), 'GET')
 }
 
 // --- HearthShelf backups ------------------------------------------------------
@@ -121,11 +120,7 @@ export function deleteHsBackup(id: string): Promise<unknown> {
 }
 
 export function restoreHsBackup(id: string): Promise<HsRestoreResult> {
-  return adminRequest<HsRestoreResult>(
-    HS_ENDPOINTS.backupRestore(encodeURIComponent(id)),
-    { method: 'POST' },
-    { timeoutMs: SLOW_CALL_MS },
-  )
+  return restoreRequest<HsRestoreResult>(HS_ENDPOINTS.backupRestore(encodeURIComponent(id)), 'POST')
 }
 
 // --- After a restore ----------------------------------------------------------
@@ -154,14 +149,13 @@ export async function askServerAfterRestore(kind: RestoreKind): Promise<ServerAn
 
 // --- Files --------------------------------------------------------------------
 
+/** A failure whose message is written for the admin. */
+export class BackupUserError extends Error {}
+
 export interface TransferOptions {
   /** 0 to 1, or null when the server didn't say how big the file is. */
   onProgress?: (fraction: number | null) => void
   signal?: AbortSignal
-}
-
-export function isAbort(e: unknown): boolean {
-  return e instanceof Error && e.name === 'AbortError'
 }
 
 const TRANSFER_FOLDER = 'backup-transfers'
@@ -200,23 +194,58 @@ function statusInMessage(e: unknown): number | null {
   return match ? Number(match[1]) : null
 }
 
-/** A 401 means the server refused the call, so it is safe to send again. */
-async function withTokenRetry<T>(attempt: () => Promise<T>): Promise<T> {
-  const before = getSession()?.token
+interface PinnedSession {
+  serverUrl: string
+  token: string
+}
+
+/** A 401 means the server refused the call, so it is safe to send again, but only to
+ *  the same server: the refresh can land after the admin switched to another one. */
+async function withTokenRetry<T>(attempt: (pinned: PinnedSession) => Promise<T>): Promise<T> {
+  const first = session()
   try {
-    return await attempt()
+    return await attempt(first)
   } catch (e) {
     if (!(e instanceof ABSRequestError) || e.status !== 401) throw e
     // absRequest owns the token refresh, and getMe is the cheapest way to run it.
     await getMe().catch(() => undefined)
-    if (getSession()?.token === before) throw e
-    return attempt()
+    const next = getSession()
+    if (!next || next.serverUrl !== first.serverUrl || next.token === first.token) throw e
+    return attempt(next)
   }
 }
 
+/** adminRequest replays a 401 against whatever server is active by then, which must
+ *  never happen to a restore. */
+function restoreRequest<T>(path: string, method: 'GET' | 'POST'): Promise<T> {
+  return withTokenRetry(async ({ serverUrl, token }) => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), SLOW_CALL_MS)
+    let res: Response
+    try {
+      res = await fetch(`${serverUrl}${path}`, {
+        method,
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      })
+    } catch {
+      throw new Error(`restore_unreachable ${path}`)
+    } finally {
+      clearTimeout(timer)
+    }
+    if (!res.ok) throw new ABSRequestError(res.status, path)
+    const text = await res.text()
+    try {
+      return JSON.parse(text) as T
+    } catch {
+      // Audiobookshelf answers its apply route with plain "OK".
+      return undefined as T
+    }
+  })
+}
+
 function downloadToFile(path: string, filename: string, options: TransferOptions): Promise<File> {
-  return withTokenRetry(async () => {
-    const { serverUrl, token } = session()
+  return withTokenRetry(async ({ serverUrl, token }) => {
     const destination = new File(transferFolder(), safeFilename(filename))
     if (destination.exists) destination.delete()
     const task = File.createDownloadTask(`${serverUrl}${path}`, destination, {
@@ -252,51 +281,53 @@ export function downloadHsBackup(
   return downloadToFile(path, backup.filename, options)
 }
 
-/** The server builds the whole archive before its first byte, so this can sit quiet for
- *  a long time. Android never gives up on it. iOS drops a request after 60 quiet seconds,
- *  and expo/fetch has no setting for that. */
-export function downloadArchive(options: TransferOptions): Promise<File> {
-  return withTokenRetry(async () => {
-    const { serverUrl, token } = session()
-    const res = await streamingFetch(`${serverUrl}${HS_ENDPOINTS.archive}`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      credentials: 'omit',
-      signal: options.signal,
-    })
-    if (!res.ok) throw new ABSRequestError(res.status, HS_ENDPOINTS.archive)
-    const reader = res.body?.getReader()
-    if (!reader) throw new Error('archive_empty')
-
-    const total = Number(res.headers.get('content-length')) || 0
-    const name = archiveFilename(res.headers.get('content-disposition'))
-    const destination = new File(transferFolder(), safeFilename(name))
-    destination.create({ overwrite: true })
-    const handle = destination.open()
-    let written = 0
-    let lastReport = 0
-    try {
-      for (;;) {
-        const { done, value } = await reader.read()
-        if (done) break
-        handle.writeBytes(value)
-        written += value.byteLength
-        if (Date.now() - lastReport >= PROGRESS_INTERVAL_MS) {
-          lastReport = Date.now()
-          options.onProgress?.(total ? written / total : null)
-        }
-      }
-    } finally {
-      handle.close()
-    }
-    if (total && written !== total) throw new Error('archive_cut_short')
-    return destination
-  })
+interface ArchiveBuild {
+  id: string
+  status: 'building' | 'ready' | 'error'
+  filename: string | null
 }
 
-/** Hands the file to the system share sheet, which is how it leaves the app. */
+/** Starting again while a build runs joins that build, so nothing here can pile up. */
+export async function downloadArchive(options: TransferOptions): Promise<File> {
+  let build: ArchiveBuild
+  try {
+    build = await adminRequest<ArchiveBuild>(ARCHIVE_BUILDS, { method: 'POST' })
+  } catch (e) {
+    if (e instanceof ABSRequestError && e.status === 404) {
+      throw new BackupUserError('Update your server to download a full archive here.')
+    }
+    throw e
+  }
+
+  const id = encodeURIComponent(build.id)
+  const deadline = Date.now() + ARCHIVE_WAIT_MS
+  while (build.status === 'building') {
+    await new Promise((resolve) => setTimeout(resolve, ARCHIVE_POLL_MS))
+    if (options.signal?.aborted) throw new Error('archive_cancelled')
+    if (Date.now() > deadline) throw new BackupUserError('The server took too long to build this.')
+    const last: ArchiveBuild = build
+    build = await adminRequest<ArchiveBuild>(`${ARCHIVE_BUILDS}/${id}`).catch((e: unknown) => {
+      if (!(e instanceof ABSRequestError)) return last
+      if (e.status === 404) throw new BackupUserError('The server lost that archive. Try again.')
+      throw e
+    })
+  }
+  if (build.status === 'error') {
+    throw new BackupUserError("The server couldn't build the archive.")
+  }
+  const filename = build.filename ?? 'hearthshelf.hsarchive'
+  return downloadToFile(`${ARCHIVE_BUILDS}/${id}/download`, filename, options)
+}
+
+/** Hands the file to the system share sheet, which is how it leaves the app. Imported
+ *  here, not at the top, because this module loads at app start and expo-sharing throws
+ *  on a binary built without it. */
 export async function shareBackupFile(file: File): Promise<void> {
-  if (!(await Sharing.isAvailableAsync())) throw new Error('sharing_unavailable')
+  const missing = new BackupUserError('Saving files needs the latest version of the app.')
+  const Sharing = await import('expo-sharing').catch(() => {
+    throw missing
+  })
+  if (!(await Sharing.isAvailableAsync())) throw missing
   await Sharing.shareAsync(file.uri, {
     mimeType: ZIP_MIME,
     UTI: 'public.zip-archive',
@@ -321,9 +352,6 @@ const FILE_TYPES: Record<BackupFileType, { extensions: string[]; wrongFile: stri
   },
 }
 
-/** Why a picked file can't be sent. The message is for the admin. */
-export class BackupFileError extends Error {}
-
 /** Opens the file picker. Null when the admin backs out. The picker's copy is moved to a
  *  file with its real name, since Audiobookshelf turns away anything else and Android's
  *  copy gets a random one. The caller deletes it when the upload is done. */
@@ -333,15 +361,17 @@ export async function pickBackupFile(type: BackupFileType): Promise<File | null>
   const asset = picked.canceled ? null : picked.assets[0]
   if (!asset) return null
 
+  const file = new File(asset.uri)
   const { extensions, wrongFile } = FILE_TYPES[type]
   const name = asset.name.toLowerCase()
   if (!extensions.some((extension) => name.endsWith(extension))) {
-    throw new BackupFileError(wrongFile)
+    deleteLocalFile(file)
+    throw new BackupUserError(wrongFile)
   }
   if (type !== 'abs' && (asset.size ?? 0) > HS_UPLOAD_LIMIT_BYTES) {
-    throw new BackupFileError('That file is too big. The server takes up to 512 MB.')
+    deleteLocalFile(file)
+    throw new BackupUserError('That file is too big. The server takes up to 512 MB.')
   }
-  const file = new File(asset.uri)
   await file.move(new File(transferFolder(), safeFilename(asset.name)), { overwrite: true })
   return file
 }
@@ -352,8 +382,7 @@ function uploadFile(
   upload: Pick<UploadOptions, 'uploadType' | 'fieldName' | 'mimeType'>,
   options: TransferOptions,
 ): Promise<string> {
-  return withTokenRetry(async () => {
-    const { serverUrl, token } = session()
+  return withTokenRetry(async ({ serverUrl, token }) => {
     const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
     if (upload.uploadType === UploadType.BINARY_CONTENT) headers['Content-Type'] = ZIP_MIME
     const result = await file.upload(`${serverUrl}${path}`, {

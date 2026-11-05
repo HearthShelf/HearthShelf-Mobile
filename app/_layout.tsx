@@ -24,6 +24,7 @@ import { FinishDateHost } from '@/ui/FinishDatePrompt'
 import { checkGoalCelebration } from '@/lib/goalCelebration'
 import { SplashScreen as HearthSplash, ForcedSplashHost, type SplashPhase } from '@/ui/SplashScreen'
 import { OfflineBanner } from '@/ui/OfflineBanner'
+import { BackupRestoreWatcher } from '@/admin/BackupRestore'
 import { ConnectionProvider, useConnection } from '@/api/ConnectionProvider'
 import { clearSession } from '@/api/session'
 import { clearMeId, clearMeType } from '@/api/me'
@@ -342,6 +343,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   // isn't covered by a connect overlay.
   return (
     <ConnectionProvider>
+      <BackupRestoreWatcher />
       {gatedSignedIn ? <ConnectionGate>{children}</ConnectionGate> : children}
     </ConnectionProvider>
   )

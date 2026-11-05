@@ -1,6 +1,7 @@
 /** One service account, with its actions and, when open, its API tokens. */
 import { Pressable, View } from 'react-native'
 import { fmtSessDate, type ABSAdminUser, type ABSApiKey } from '@hearthshelf/core'
+import { isProtectedKey } from '@/api/admin/apikeys'
 import { Icon } from '@/ui/icons'
 import { AppText } from '@/ui/primitives'
 import { SkeletonRow } from '@/ui/states'
@@ -14,7 +15,7 @@ function dayLabel(when: string | number | null): string {
   return when ? fmtSessDate(new Date(when).getTime()).day : 'never'
 }
 
-export interface ServiceTokensState {
+interface ServiceTokensState {
   keys: ABSApiKey[] | null
   loading: boolean
   onRetry: () => void
@@ -69,20 +70,25 @@ function TokenList({
             </AppText>
             <AppText variant="meta" color={colors.textMuted}>
               Made {dayLabel(key.createdAt)}. Last used {dayLabel(key.lastUsedAt)}.
+              {isProtectedKey(key)
+                ? " HearthShelf needs this key, so it can't be revoked here."
+                : ''}
             </AppText>
           </View>
           <StatusPill
             label={key.isActive ? 'Active' : 'Inactive'}
             tone={key.isActive ? 'good' : 'neutral'}
           />
-          <Pressable
-            onPress={() => onRevoke(key)}
-            hitSlop={12}
-            accessibilityRole="button"
-            accessibilityLabel={`Revoke ${key.name}`}
-          >
-            <Icon name="delete" size={22} color={colors.destructive} />
-          </Pressable>
+          {isProtectedKey(key) ? null : (
+            <Pressable
+              onPress={() => onRevoke(key)}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel={`Revoke ${key.name}`}
+            >
+              <Icon name="delete" size={22} color={colors.destructive} />
+            </Pressable>
+          )}
         </View>
       ))}
     </View>
@@ -119,6 +125,7 @@ export function ServiceAccountCard({
   onNewToken: () => void
   onRevokeToken: (key: ABSApiKey) => void
 }) {
+  const colors = useColors()
   return (
     <AdminCard
       title={account.username}
@@ -150,6 +157,11 @@ export function ServiceAccountCard({
           <AdminButton label="Delete" icon="delete" kind="danger" onPress={onDelete} />
         ) : null}
       </View>
+      {owned ? (
+        <AppText variant="meta" color={colors.textMuted} style={{ marginTop: spacing.sm }}>
+          HearthShelf runs on this account, so it can't be changed here.
+        </AppText>
+      ) : null}
       {open ? (
         <TokenList
           account={account}

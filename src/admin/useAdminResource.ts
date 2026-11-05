@@ -30,6 +30,7 @@ export function useAdminResource<T>(
   const loadRef = useRef(load)
   const latest = useRef(0)
   const stopped = useRef(false)
+  const inFlight = useRef(false)
 
   useEffect(() => {
     loadRef.current = load
@@ -38,6 +39,7 @@ export function useAdminResource<T>(
   const reload = useCallback(() => {
     const id = ++latest.current
     stopped.current = false
+    inFlight.current = true
     loadRef
       .current()
       .then((value) => {
@@ -55,7 +57,9 @@ export function useAdminResource<T>(
         if (kind === 'forbidden') void getMe().catch(() => {})
       })
       .finally(() => {
-        if (id === latest.current) setLoading(false)
+        if (id !== latest.current) return
+        inFlight.current = false
+        setLoading(false)
       })
   }, [])
 
@@ -67,8 +71,10 @@ export function useAdminResource<T>(
           latest.current++
         }
       }
+      // A new load discards the one before it, so ticking over a slow load would
+      // mean no answer ever lands.
       const tick = () => {
-        if (!stopped.current) reload()
+        if (!stopped.current && !inFlight.current) reload()
       }
       let timer: ReturnType<typeof setInterval> | null = null
       const start = () => {

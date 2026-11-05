@@ -6,9 +6,10 @@ import { AdminButton } from '@/admin/AdminButton'
 import { AdminField } from '@/admin/AdminField'
 import { AdminGate } from '@/admin/AdminGate'
 import { HttpWarning } from '@/admin/HttpWarning'
+import { useAdminResource } from '@/admin/useAdminResource'
 import { useAdminWrite } from '@/admin/useAdminWrite'
 import { UserAccessForm, type UserAccess } from '@/admin/UserAccessForm'
-import { createUser } from '@/api/admin/users'
+import { createUser, getUsers } from '@/api/admin/users'
 import { SettingsPanel } from '@/ui/settingsControls'
 
 export default function AddUserScreen() {
@@ -20,6 +21,9 @@ export default function AddUserScreen() {
 }
 
 function AddUser() {
+  // A create that timed out may have worked. Reloading this shows the name as taken,
+  // so the admin isn't left retrying blind.
+  const accounts = useAdminResource(getUsers)
   const { run, busy } = useAdminWrite()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -32,13 +36,15 @@ function AddUser() {
   })
   const name = username.trim()
   const mismatch = again.length > 0 && password !== again
+  const taken = accounts.data?.users.some((u) => u.username === name) ?? false
 
   async function create() {
     const ok = await run(
       () => createUser({ ...access, username: name, password, email: email.trim() || null }),
       {
         done: `Created ${name}`,
-        failed: "Couldn't create the user. That username may already be taken.",
+        failed: "Couldn't create the user.",
+        reload: accounts.reload,
       },
     )
     if (ok) router.back()
@@ -52,6 +58,7 @@ function AddUser() {
         value={username}
         onChangeText={setUsername}
         placeholder="e.g. listener"
+        error={taken ? 'That username is taken.' : undefined}
       />
       <AdminField
         label="Password"
@@ -80,7 +87,7 @@ function AddUser() {
         label="Create user"
         icon="person-add"
         busy={busy}
-        disabled={!name || !password || password !== again}
+        disabled={!name || !password || password !== again || taken}
         onPress={() => void create()}
       />
     </SettingsPanel>

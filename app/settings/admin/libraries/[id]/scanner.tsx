@@ -48,6 +48,7 @@ function Scanner({ state }: { state: LibraryDraftState }) {
       </View>
       <DraggableFlatList
         data={order}
+        containerStyle={styles.fill}
         keyExtractor={(id) => id}
         contentContainerStyle={[styles.list, { paddingBottom: bottomInset }]}
         onDragEnd={({ data }) => commit(data)}
@@ -105,6 +106,7 @@ function SourceRow({
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
+  fill: { flex: 1 },
   top: { padding: spacing.lg, paddingBottom: spacing.sm, gap: spacing.xs },
   list: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   row: {

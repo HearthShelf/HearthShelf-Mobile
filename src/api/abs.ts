@@ -635,9 +635,10 @@ export async function getMe(): Promise<ABSMeResponse> {
   const me = await absRequest<ABSMeResponse>('/api/me')
   // Cache the caller's own ABS id so social surfaces can identify their own
   // notes and gate spoilers against their own position (see src/api/me.ts).
+  // A slow answer from the previous server must not describe this one.
+  if (serverId !== currentServerId()) return me
   if (me?.id) setMeId(me.id)
-  // A slow answer from the previous server must not set this server's type.
-  if (me?.type && serverId && serverId === currentServerId()) setMeType(serverId, me.type)
+  if (me?.type && serverId) setMeType(serverId, me.type)
   return me
 }
 

@@ -5,6 +5,7 @@ import { View } from 'react-native'
 import { BACKUP_SCHEDULE_PRESETS } from '@hearthshelf/core'
 import { AdminButton } from '@/admin/AdminButton'
 import { AdminField } from '@/admin/AdminField'
+import { isValidLibraryCron } from '@/admin/LibraryDraft'
 import { icons } from '@/ui/icons'
 import { AppText, IconButton, Sheet, type SheetRef } from '@/ui/primitives'
 import { SettingsGroup, SettingsRow } from '@/ui/settingsControls'
@@ -14,10 +15,6 @@ import { spacing } from '@/ui/theme'
 const KEEP_MIN = 1
 const KEEP_MAX = 99
 const LOCKED_HINT = "Set by your server's environment. Change it there."
-
-function isValidCron(value: string): boolean {
-  return value.trim().split(/\s+/).length === 5
-}
 
 function scheduleLabel(cron: string): string {
   const preset = BACKUP_SCHEDULE_PRESETS.find((p) => p.value === cron)
@@ -53,7 +50,7 @@ export function BackupSchedule({
   const keepNumber = Number(keepText)
   const keepValid = Number.isInteger(keepNumber) && keepNumber >= KEEP_MIN && keepNumber <= KEEP_MAX
   const showCustom = !scheduleLocked && (customOpen || !isPreset)
-  const customValid = isValidCron(custom)
+  const customValid = isValidLibraryCron(custom)
 
   const pick = (cron: string) => {
     sheet.current?.dismiss()
@@ -84,9 +81,7 @@ export function BackupSchedule({
             hint="Minute, hour, day, month, weekday. For example: 0 1 * * *"
             value={custom}
             onChangeText={setCustom}
-            error={
-              custom && !customValid ? 'That needs five parts, with spaces between.' : undefined
-            }
+            error={custom && !customValid ? "That isn't a valid schedule." : undefined}
           />
           <AdminButton
             label="Save schedule"

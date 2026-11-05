@@ -223,7 +223,7 @@ function Devices({ devices, onSaved }: { devices: EreaderDevice[]; onSaved: () =
       ) : null}
       <AdminField
         label="Device name"
-        placeholder="My Kindle"
+        placeholder="My e-reader"
         autoCapitalize="words"
         value={name}
         onChangeText={setName}
@@ -231,7 +231,7 @@ function Devices({ devices, onSaved }: { devices: EreaderDevice[]; onSaved: () =
       />
       <AdminField
         label="Device email"
-        placeholder="device@kindle.com"
+        placeholder="device@example.com"
         keyboardType="email-address"
         value={email}
         onChangeText={setEmail}
