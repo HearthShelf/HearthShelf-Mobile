@@ -9,6 +9,7 @@ import { useRouter } from 'expo-router'
 import * as WebBrowser from 'expo-web-browser'
 import { ActivityHomeTiles } from '@/admin/ActivityHomeTiles'
 import { AdminGate } from '@/admin/AdminGate'
+import { ADMIN_SECTIONS } from '@/admin/sections'
 import { AdminUnavailable } from '@/admin/AdminUnavailable'
 import { useAdminResource } from '@/admin/useAdminResource'
 import { getServerRuntime } from '@/api/admin/server'
@@ -20,118 +21,6 @@ import { SettingsGroup, SettingsLabel, SettingsPanel, SettingsRow } from '@/ui/s
 import { SkeletonRow } from '@/ui/states'
 import { useColors } from '@/ui/ThemeProvider'
 import { spacing } from '@/ui/theme'
-
-interface AdminSection {
-  icon: IconName
-  title: string
-  href: string
-  desc: string
-}
-
-const SECTIONS: { label: string; items: AdminSection[] }[] = [
-  {
-    label: 'Activity',
-    items: [
-      {
-        icon: 'insights',
-        title: 'Stats',
-        href: 'stats',
-        desc: 'Server and library totals, and activity.',
-      },
-      {
-        icon: 'graphic-eq',
-        title: 'Listening sessions',
-        href: 'sessions',
-        desc: 'What everyone has played.',
-      },
-      {
-        icon: 'schedule',
-        title: 'Tasks',
-        href: 'tasks',
-        desc: 'Run background jobs and read their logs.',
-      },
-      { icon: 'rss-feed', title: 'RSS feeds', href: 'rss', desc: 'See open feeds and close them.' },
-    ],
-  },
-  {
-    label: 'People',
-    items: [
-      { icon: 'group', title: 'Users', href: 'users', desc: 'Accounts, permissions, and invites.' },
-      {
-        icon: 'smart-toy',
-        title: 'Service accounts',
-        href: 'service-accounts',
-        desc: 'Accounts for other apps.',
-      },
-      { icon: 'key', title: 'API keys', href: 'apikeys', desc: 'Create and revoke keys.' },
-    ],
-  },
-  {
-    label: 'Library',
-    items: [
-      {
-        icon: 'video-library',
-        title: 'Libraries',
-        href: 'libraries',
-        desc: 'Folders, scans, and settings.',
-      },
-      {
-        icon: 'sell',
-        title: 'Tags and genres',
-        href: 'metadata',
-        desc: 'Rename or remove them everywhere.',
-      },
-    ],
-  },
-  {
-    label: 'Server',
-    items: [
-      {
-        icon: 'tune',
-        title: 'General',
-        href: 'general',
-        desc: 'Server name, scanner, and date format.',
-      },
-      {
-        icon: 'cloud-sync',
-        title: 'Backups',
-        href: 'backups',
-        desc: 'Run, download, and restore.',
-      },
-      {
-        icon: 'groups',
-        title: 'Community',
-        href: 'community',
-        desc: 'Sharing defaults, notes, and clubs.',
-      },
-      {
-        icon: 'notifications',
-        title: 'Notifications',
-        href: 'notifications',
-        desc: 'What the server alerts on.',
-      },
-      { icon: 'mail', title: 'Email', href: 'email', desc: 'E-reader devices and a test send.' },
-      {
-        icon: 'hub',
-        title: 'HearthShelf Connect',
-        href: 'connect',
-        desc: 'Connection health and invites.',
-      },
-      {
-        icon: 'extension',
-        title: 'Integrations',
-        href: 'integrations',
-        desc: 'Requests and catalog services.',
-      },
-      {
-        icon: 'explore',
-        title: 'QuestGiver',
-        href: 'questgiver',
-        desc: 'Turn recommendations on or off.',
-      },
-    ],
-  },
-]
 
 const WEB_SECTIONS: { icon: IconName; title: string; desc: string; path: string }[] = [
   { icon: 'lock', title: 'Authentication', desc: 'Sign-in methods.', path: 'auth' },
@@ -194,7 +83,7 @@ function AdminHome() {
       <SettingsLabel>Right now</SettingsLabel>
       <ActivityHomeTiles />
 
-      {SECTIONS.map((section) => (
+      {ADMIN_SECTIONS.map((section) => (
         <View key={section.label}>
           <SettingsLabel>{section.label}</SettingsLabel>
           <SettingsGroup>
@@ -204,7 +93,7 @@ function AdminHome() {
                 icon={item.icon}
                 title={item.title}
                 desc={item.desc}
-                onPress={() => router.push(`/settings/admin/${item.href}`)}
+                onPress={() => router.push(item.href)}
                 last={i === section.items.length - 1}
               />
             ))}

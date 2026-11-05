@@ -13,6 +13,7 @@ import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native'
 import { useFocusEffect, useRouter, type Href } from 'expo-router'
 import { useConnection } from '@/api/ConnectionProvider'
+import { ADMIN_SECTIONS } from '@/admin/sections'
 import { getClubs } from '@/api/clubs'
 import { FULL_VERSION } from '@/lib/config'
 import { WhatsNewModal } from '@/ui/WhatsNew'
@@ -180,6 +181,11 @@ const GROUPS: { label: string; items: MenuItemEx[] }[] = [
   },
 ]
 
+const ADMIN_SEARCH_GROUP = {
+  label: 'Server Admin',
+  items: ADMIN_SECTIONS.flatMap((section) => section.items) as MenuItemEx[],
+}
+
 export default function MoreScreen() {
   const router = useRouter()
   const { user } = useAuth()
@@ -218,16 +224,18 @@ export default function MoreScreen() {
   // enough list to warrant this.
   const [query, setQuery] = useState('')
   const needle = query.trim().toLowerCase()
+  const isAdmin = activeRole === 'admin'
   const filteredGroups = useMemo(() => {
     if (!needle) return GROUPS
     const hit = (it: MenuItemEx) =>
       it.title.toLowerCase().includes(needle) ||
       it.desc.toLowerCase().includes(needle) ||
       (it.keywords ?? []).some((k) => k.includes(needle))
-    return GROUPS.map((g) => ({ ...g, items: g.items.filter(hit) })).filter(
-      (g) => g.items.length > 0,
-    )
-  }, [needle])
+    const searched = isAdmin ? [...GROUPS, ADMIN_SEARCH_GROUP] : GROUPS
+    return searched
+      .map((g) => ({ ...g, items: g.items.filter(hit) }))
+      .filter((g) => g.items.length > 0)
+  }, [needle, isAdmin])
 
   return (
     // No top edge: this screen sits under the settings stack's native header,
