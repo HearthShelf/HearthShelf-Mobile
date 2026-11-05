@@ -11,7 +11,9 @@ export type AdminErrorKind = 'forbidden' | 'missing' | 'unreachable' | 'failed'
 
 export function adminErrorKind(error: unknown): AdminErrorKind {
   if (error instanceof ABSRequestError) {
-    if (error.status === 403) return 'forbidden'
+    // The /hs admin routes answer 401 to a non-admin. absRequest has already tried a
+    // fresh token by the time a 401 gets here, so it means no, not "sign in again".
+    if (error.status === 401 || error.status === 403) return 'forbidden'
     if (error.status === 404) return 'missing'
     return 'failed'
   }
