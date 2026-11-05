@@ -1,7 +1,7 @@
 /** One service account, with its actions and, when open, its API tokens. */
 import { Pressable, View } from 'react-native'
 import { fmtSessDate, type ABSAdminUser, type ABSApiKey } from '@hearthshelf/core'
-import { isProtectedKey } from '@/api/admin/apikeys'
+import { canRevokeKey, isProtectedKey } from '@/api/admin/apikeys'
 import { Icon } from '@/ui/icons'
 import { AppText } from '@/ui/primitives'
 import { SkeletonRow } from '@/ui/states'
@@ -25,12 +25,14 @@ function TokenList({
   account,
   tokens,
   canCreate,
+  callerType,
   onNew,
   onRevoke,
 }: {
   account: ABSAdminUser
   tokens: ServiceTokensState
   canCreate: boolean
+  callerType: string
   onNew: () => void
   onRevoke: (key: ABSApiKey) => void
 }) {
@@ -72,14 +74,16 @@ function TokenList({
               Made {dayLabel(key.createdAt)}. Last used {dayLabel(key.lastUsedAt)}.
               {isProtectedKey(key)
                 ? " HearthShelf needs this key, so it can't be revoked here."
-                : ''}
+                : canRevokeKey(key, account.type, callerType)
+                  ? ''
+                  : ' Only a root user can revoke this key.'}
             </AppText>
           </View>
           <StatusPill
             label={key.isActive ? 'Active' : 'Inactive'}
             tone={key.isActive ? 'good' : 'neutral'}
           />
-          {isProtectedKey(key) ? null : (
+          {canRevokeKey(key, account.type, callerType) ? (
             <Pressable
               onPress={() => onRevoke(key)}
               hitSlop={12}
@@ -88,7 +92,7 @@ function TokenList({
             >
               <Icon name="delete" size={22} color={colors.destructive} />
             </Pressable>
-          )}
+          ) : null}
         </View>
       ))}
     </View>
@@ -101,6 +105,7 @@ export function ServiceAccountCard({
   open,
   canEdit,
   canCreateTokens,
+  callerType,
   canDelete,
   tokens,
   onToggleTokens,
@@ -116,6 +121,7 @@ export function ServiceAccountCard({
   open: boolean
   canEdit: boolean
   canCreateTokens: boolean
+  callerType: string
   canDelete: boolean
   tokens: ServiceTokensState
   onToggleTokens: () => void
@@ -167,6 +173,7 @@ export function ServiceAccountCard({
           account={account}
           tokens={tokens}
           canCreate={canCreateTokens}
+          callerType={callerType}
           onNew={onNewToken}
           onRevoke={onRevokeToken}
         />

@@ -34,6 +34,7 @@ const ARCHIVE_POLL_MS = 2000
 const ARCHIVE_WAIT_MS = 20 * 60_000
 /** Not in HS_ENDPOINTS yet. */
 const ARCHIVE_BUILDS = '/hs/archive/builds'
+const RESTORE_STATUS = '/hs/backups/restore-status'
 const PROBE_TIMEOUT_MS = 8000
 const ZIP_MIME = 'application/zip'
 
@@ -126,7 +127,9 @@ export function restoreHsBackup(id: string): Promise<HsRestoreResult> {
 // --- After a restore ----------------------------------------------------------
 
 export type RestoreKind = 'abs' | 'hs' | 'archive'
-export type ServerAnswer = 'up' | 'token-lost' | 'down'
+/** `up` means the server says no restore is running. `up-unconfirmed` means it answers
+ *  but has no way to say: Audiobookshelf has no such flag, nor has an older server. */
+export type ServerAnswer = 'up' | 'up-unconfirmed' | 'restoring' | 'token-lost' | 'down'
 
 /** Is the server really back? /api/me alone can't say: it can answer from memory while
  *  a restore still has the database closed, so each half also gets a read that needs it.
@@ -136,14 +139,15 @@ export async function askServerAfterRestore(kind: RestoreKind): Promise<ServerAn
     await getMe()
     const options = { timeoutMs: PROBE_TIMEOUT_MS }
     if (kind !== 'hs') await adminRequest(ABS_ENDPOINTS.users, undefined, options)
-    if (kind !== 'abs') await adminRequest(HS_ENDPOINTS.backups, undefined, options)
-    return 'up'
+    if (kind === 'abs') return 'up-unconfirmed'
+    const status = await adminRequest<{ restoring?: boolean }>(RESTORE_STATUS, undefined, options)
+    return status?.restoring ? 'restoring' : 'up'
   } catch (e) {
     if (!(e instanceof ABSRequestError)) return 'down'
     if (e.status === 401) return 'token-lost'
     // The server answered. A 403 means the restored data has this account as a
     // regular user, which AdminGate handles from the role getMe just read.
-    return e.status === 403 || e.status === 404 ? 'up' : 'down'
+    return e.status === 403 || e.status === 404 ? 'up-unconfirmed' : 'down'
   }
 }
 
@@ -151,6 +155,19 @@ export async function askServerAfterRestore(kind: RestoreKind): Promise<ServerAn
 
 /** A failure whose message is written for the admin. */
 export class BackupUserError extends Error {}
+
+/** The server failed after it had already changed live data. */
+export class PartialRestoreError extends Error {}
+
+function failedResponse(status: number, body: string, path: string): Error {
+  try {
+    const { error } = JSON.parse(body) as { error?: string }
+    if (error === 'partial_restore') return new PartialRestoreError()
+  } catch {
+    // Not JSON, so not that answer.
+  }
+  return new ABSRequestError(status, path)
+}
 
 export interface TransferOptions {
   /** 0 to 1, or null when the server didn't say how big the file is. */
@@ -233,8 +250,8 @@ function restoreRequest<T>(path: string, method: 'GET' | 'POST'): Promise<T> {
     } finally {
       clearTimeout(timer)
     }
-    if (!res.ok) throw new ABSRequestError(res.status, path)
-    const text = await res.text()
+    const text = await res.text().catch(() => '')
+    if (!res.ok) throw failedResponse(res.status, text, path)
     try {
       return JSON.parse(text) as T
     } catch {
@@ -285,10 +302,29 @@ interface ArchiveBuild {
   id: string
   status: 'building' | 'ready' | 'error'
   filename: string | null
+  size: number | null
+  /** False when the Audiobookshelf step failed. Absent on an older server. */
+  absPresent?: boolean | null
+}
+
+function archiveWarnings(build: ArchiveBuild): string[] {
+  const warnings: string[] = []
+  if (build.absPresent === false) {
+    warnings.push('This archive has HearthShelf data only. The Audiobookshelf backup failed.')
+  }
+  if ((build.size ?? 0) > HS_UPLOAD_LIMIT_BYTES) {
+    warnings.push(
+      "This archive is over 512 MB, so it can't be sent back to the server to restore it. Keep your separate backups too.",
+    )
+  }
+  return warnings
 }
 
 /** Starting again while a build runs joins that build, so nothing here can pile up. */
-export async function downloadArchive(options: TransferOptions): Promise<File> {
+export async function downloadArchive(
+  options: TransferOptions,
+  onBuilt: (warnings: string[]) => void,
+): Promise<File> {
   let build: ArchiveBuild
   try {
     build = await adminRequest<ArchiveBuild>(ARCHIVE_BUILDS, { method: 'POST' })
@@ -315,6 +351,7 @@ export async function downloadArchive(options: TransferOptions): Promise<File> {
   if (build.status === 'error') {
     throw new BackupUserError("The server couldn't build the archive.")
   }
+  onBuilt(archiveWarnings(build))
   const filename = build.filename ?? 'hearthshelf.hsarchive'
   return downloadToFile(`${ARCHIVE_BUILDS}/${id}/download`, filename, options)
 }
@@ -379,7 +416,7 @@ export async function pickBackupFile(type: BackupFileType): Promise<File | null>
 function uploadFile(
   path: string,
   file: File,
-  upload: Pick<UploadOptions, 'uploadType' | 'fieldName' | 'mimeType'>,
+  upload: Pick<UploadOptions, 'uploadType' | 'fieldName' | 'mimeType' | 'sessionType'>,
   options: TransferOptions,
 ): Promise<string> {
   return withTokenRetry(async ({ serverUrl, token }) => {
@@ -393,7 +430,9 @@ function uploadFile(
       onProgress: ({ bytesSent, totalBytes }) =>
         options.onProgress?.(totalBytes > 0 ? bytesSent / totalBytes : null),
     })
-    if (result.status < 200 || result.status >= 300) throw new ABSRequestError(result.status, path)
+    if (result.status < 200 || result.status >= 300) {
+      throw failedResponse(result.status, result.body, path)
+    }
     return result.body
   })
 }
@@ -413,7 +452,9 @@ export async function restoreArchive(
   options: TransferOptions,
 ): Promise<HsRestoreResult> {
   const path = `${HS_ENDPOINTS.archiveRestore}?mode=replace`
-  const body = await uploadFile(path, file, { uploadType: UploadType.BINARY_CONTENT }, options)
+  // Foreground, so a killed app really stops the upload and "nothing changed" is true.
+  const upload = { uploadType: UploadType.BINARY_CONTENT, sessionType: 'foreground' as const }
+  const body = await uploadFile(path, file, upload, options)
   return JSON.parse(body) as HsRestoreResult
 }
 

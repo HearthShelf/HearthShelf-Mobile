@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { View } from 'react-native'
 import { getRandomBytes } from 'expo-crypto'
 import { generatePassword, type ABSAdminUser } from '@hearthshelf/core'
+import { reservedKeyNameError } from '@/api/admin/apikeys'
 import type { ServiceAccountPatch } from '@/api/admin/serviceAccounts'
 import { AppText } from '@/ui/primitives'
 import { SettingsRow, SettingsToggle } from '@/ui/settingsControls'
@@ -161,6 +162,7 @@ export function NewServiceTokenForm({
 }) {
   const colors = useColors()
   const [name, setName] = useState('')
+  const nameError = reservedKeyNameError(name)
   return (
     <View style={{ gap: spacing.md }}>
       <HttpWarning />
@@ -171,6 +173,7 @@ export function NewServiceTokenForm({
         inSheet
         label="Token name"
         placeholder="Backup script"
+        error={nameError}
         autoCapitalize="sentences"
         value={name}
         onChangeText={setName}
@@ -179,7 +182,7 @@ export function NewServiceTokenForm({
         label="Create token"
         icon="key"
         busy={busy}
-        disabled={!name.trim()}
+        disabled={!name.trim() || Boolean(nameError)}
         onPress={() => onSubmit(name.trim())}
       />
     </View>

@@ -18,7 +18,7 @@ import { AdminButton } from '@/admin/AdminButton'
 import { AdminCard } from '@/admin/AdminCard'
 import { AdminGate } from '@/admin/AdminGate'
 import { AdminUnavailable } from '@/admin/AdminUnavailable'
-import { getRestoreState, startRestore, useBackupRestore } from '@/admin/BackupRestore'
+import { clearIdleBackupFiles, startRestore, useBackupRestore } from '@/admin/BackupRestore'
 import { BackupRestorePanel } from '@/admin/BackupRestorePanel'
 import { BackupSchedule } from '@/admin/BackupSchedule'
 import { HttpWarning } from '@/admin/HttpWarning'
@@ -28,7 +28,6 @@ import { useAdminWrite } from '@/admin/useAdminWrite'
 import {
   BackupUserError,
   applyAbsBackup,
-  clearBackupFiles,
   deleteAbsBackup,
   deleteHsBackup,
   deleteLocalFile,
@@ -175,6 +174,7 @@ function Backups() {
   const [runningFor, setRunningFor] = useState<'abs' | 'hs' | null>(null)
   const [transfer, setTransfer] = useState<Transfer | null>(null)
   const [pendingRestore, setPendingRestore] = useState<PendingRestore | null>(null)
+  const [archiveWarnings, setArchiveWarnings] = useState<string[]>([])
   const confirmSheet = useRef<SheetRef>(null)
   const transferAbort = useRef<AbortController | null>(null)
 
@@ -182,7 +182,7 @@ function Backups() {
     useCallback(
       () => () => {
         transferAbort.current?.abort()
-        if (getRestoreState().phase !== 'uploading') clearBackupFiles()
+        clearIdleBackupFiles()
       },
       [],
     ),
@@ -230,7 +230,7 @@ function Backups() {
       await shareBackupFile(file)
     } catch (e) {
       endTransfer()
-      clearBackupFiles()
+      clearIdleBackupFiles()
       if (!options.signal?.aborted) showToast(downloadFailure(e))
     }
   }
@@ -347,7 +347,7 @@ function Backups() {
 
   const restoreFromArchive = async () => {
     if (locked) return
-    clearBackupFiles()
+    clearIdleBackupFiles()
     const file = await pick('archive')
     if (!file) return
     setPendingRestore({
@@ -559,12 +559,25 @@ function Backups() {
             One file with both backups from the same moment. It is the easiest way to move your
             whole server, or to come back from a crash.
           </Note>
+          <Note icon={icons.info}>
+            An archive over 512 MB can't be restored from here, so keep your separate backups too.
+          </Note>
           <AdminButton
             label="Download full archive"
             icon={icons.archive}
             disabled={locked}
-            onPress={() => void saveToPhone('Building your archive', downloadArchive)}
+            onPress={() => {
+              setArchiveWarnings([])
+              void saveToPhone('Building your archive', (options) =>
+                downloadArchive(options, setArchiveWarnings),
+              )
+            }}
           />
+          {archiveWarnings.map((warning) => (
+            <Note key={warning} icon={icons.error}>
+              {warning}
+            </Note>
+          ))}
           <AdminButton
             label="Restore archive"
             icon="restore"

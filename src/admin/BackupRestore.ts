@@ -7,9 +7,10 @@
  * admin sees always comes from asking the server, never from a timer.
  *
  * Neither server really restarts: each swaps its database and reopens it. The request
- * answers when that is done, so while it is open there is nothing better to ask. Once
- * it settles, or the app has been in the background (which can silently kill it), or it
- * has run too long, the server is polled instead.
+ * answers when that is done, so that answer is the only proof a restore worked. Without
+ * it, HearthShelf can at least say whether a restore is still running. Audiobookshelf
+ * can't, so its restore never settles while the request is open, and a lost answer ends
+ * in "we can't tell", never in "it worked".
  */
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { AppState } from 'react-native'
@@ -19,6 +20,7 @@ import { ABSRequestError } from '@/api/abs'
 import {
   askServerAfterRestore,
   clearBackupFiles,
+  PartialRestoreError,
   type RestoreKind,
   type TransferOptions,
 } from '@/api/admin/backups'
@@ -66,7 +68,13 @@ const listeners = new Set<() => void>()
 
 let run = 0
 let startedAt = 0
+/** When the server got the whole request, so a slow upload doesn't count as a slow restore. */
+let waitingSince = 0
 let requestOpen = false
+/** Still true after the admin stops waiting: a 401 can make the upload go out again. */
+let requestsInFlight = 0
+/** The app died mid-upload, so unless the server says otherwise it never got the file. */
+let uploadDied = false
 let requestMayBeDead = false
 let goodAnswers = 0
 let checking = false
@@ -111,8 +119,8 @@ AppState.addEventListener('change', (next) => {
   if (next === 'active') void checkServer()
 })
 
-function saveMarker(kind: RestoreKind, serverId: string | null): Promise<void> {
-  const marker = { kind, startedAt, serverId }
+function saveMarker(kind: RestoreKind, serverId: string | null, uploaded: boolean): Promise<void> {
+  const marker = { kind, startedAt, serverId, uploaded }
   return AsyncStorage.setItem(MARKER_KEY, JSON.stringify(marker)).catch(() => undefined)
 }
 
@@ -124,8 +132,20 @@ function beginWaiting(patch: Partial<RestoreState>): void {
   run += 1
   goodAnswers = 0
   reconnectAsked = false
+  waitingSince = Date.now()
   state = IDLE
   update(patch)
+}
+
+/** Leaves the file alone while a request might still need it. */
+export function clearIdleBackupFiles(): void {
+  if (requestsInFlight === 0) clearBackupFiles()
+}
+
+function partialFailure(kind: RestoreKind): string {
+  return kind === 'hs'
+    ? 'The restore stopped partway, so your HearthShelf data may be mixed up. Your old data is in a pre-restore folder on the server.'
+    : 'The restore stopped partway, so part of your data was replaced. Check your server before you use it. If HearthShelf data was moved, the old copy is in a pre-restore folder on the server.'
 }
 
 /** The server looked at the request and said no, so nothing was replaced. A proxy's 5xx
@@ -148,13 +168,15 @@ export async function startRestore(kind: RestoreKind, request: RestoreRequest): 
   startedAt = Date.now()
   requestOpen = true
   requestMayBeDead = false
+  uploadDied = false
+  requestsInFlight += 1
   const uploads = kind === 'archive'
   const serverId = currentServerId()
   beginWaiting({ kind, serverId, phase: uploads ? 'uploading' : 'restarting' })
   const thisRun = run
   const controller = new AbortController()
   abortUpload = uploads ? controller : null
-  await saveMarker(kind, serverId)
+  await saveMarker(kind, serverId, !uploads)
 
   try {
     const result = await request({
@@ -163,6 +185,8 @@ export async function startRestore(kind: RestoreKind, request: RestoreRequest): 
         if (thisRun !== run || getRestoreState().phase !== 'uploading' || fraction === null) return
         if (fraction >= 1) {
           abortUpload = null
+          waitingSince = Date.now()
+          void saveMarker(kind, serverId, true)
           update({ phase: 'restarting', uploaded: 1 })
         } else if (fraction - getRestoreState().uploaded >= 0.01) {
           update({ uploaded: fraction })
@@ -180,6 +204,10 @@ export async function startRestore(kind: RestoreKind, request: RestoreRequest): 
     requestOpen = false
     abortUpload = null
     if (controller.signal.aborted) return dismissRestore()
+    if (e instanceof PartialRestoreError) {
+      settle({ phase: 'failed', failure: partialFailure(kind) }, 'The restore failed.')
+      return
+    }
     const failure = serverRefused(e)
       ? 'The server turned that restore down, so your data was not replaced.'
       : getRestoreState().phase === 'uploading'
@@ -190,6 +218,8 @@ export async function startRestore(kind: RestoreKind, request: RestoreRequest): 
       return
     }
     update({ lostContact: true })
+  } finally {
+    requestsInFlight -= 1
   }
   void checkServer()
 }
@@ -213,7 +243,7 @@ async function checkServer(): Promise<void> {
   const { kind, serverId } = state
   if (!isWaiting() || !kind) return
 
-  const slow = Date.now() - startedAt > SLOW_AFTER_MS
+  const slow = Date.now() - waitingSince > SLOW_AFTER_MS
   if (slow !== state.slow) update({ slow })
   if (currentServerId() !== serverId) return
   if (requestOpen && !requestMayBeDead && !slow) return
@@ -226,17 +256,24 @@ async function checkServer(): Promise<void> {
   // The admin may have switched away while that was in flight, so it may not be ours.
   if (thisRun !== run || currentServerId() !== serverId) return
 
-  if (answer === 'up') {
+  const answering = answer === 'up' || answer === 'up-unconfirmed'
+  if (answering && !(answer === 'up-unconfirmed' && requestOpen)) {
     goodAnswers += 1
     const noResult = state.lostContact || requestOpen
-    if (goodAnswers >= (noResult ? ANSWERS_NEEDED_WITHOUT_RESULT : 1)) {
-      settle({ phase: 'finished', lostContact: noResult, slow: false }, 'Your server is back.')
-    } else {
+    if (goodAnswers < (noResult ? ANSWERS_NEEDED_WITHOUT_RESULT : 1)) {
       update({ phase: 'restarting' })
+    } else if (uploadDied && answer === 'up') {
+      settle(
+        { phase: 'failed', failure: "The restore didn't finish sending, so nothing changed." },
+        'The restore failed.',
+      )
+    } else {
+      settle({ phase: 'finished', lostContact: noResult, slow: false }, 'Your server is back.')
     }
     return
   }
   goodAnswers = 0
+  if (answer === 'restoring') uploadDied = false
   if (answer === 'token-lost') {
     // adminRequest's refresh already failed. The restore replaced the accounts, so
     // this needs the full connect flow, which also owns the error screen if it fails.
@@ -261,7 +298,12 @@ async function resumeFromMarker(): Promise<void> {
   markerRead = true
   const saved = await AsyncStorage.getItem(MARKER_KEY).catch(() => null)
   if (!saved || state.phase !== 'idle') return
-  let marker: { kind: RestoreKind; startedAt: number; serverId: string | null }
+  let marker: {
+    kind: RestoreKind
+    startedAt: number
+    serverId: string | null
+    uploaded?: boolean
+  }
   try {
     marker = JSON.parse(saved) as typeof marker
   } catch {
@@ -274,6 +316,7 @@ async function resumeFromMarker(): Promise<void> {
   }
   startedAt = marker.startedAt
   requestOpen = false
+  uploadDied = marker.uploaded === false
   beginWaiting({
     kind: marker.kind,
     serverId: marker.serverId,

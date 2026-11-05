@@ -17,6 +17,24 @@ export function isProtectedKey(key: Pick<ABSApiKey, 'name'>): boolean {
   return PROTECTED_KEY_PREFIXES.some((prefix) => key.name.startsWith(prefix))
 }
 
+/** ABS lets any admin revoke root's keys, so the app holds that line itself. An
+ *  owner we can't identify counts as root. */
+export function canRevokeKey(
+  key: Pick<ABSApiKey, 'name'>,
+  ownerType: string | undefined,
+  callerType: string,
+): boolean {
+  if (isProtectedKey(key)) return false
+  return callerType === 'root' || (ownerType !== undefined && ownerType !== 'root')
+}
+
+/** A key with a reserved name could never be revoked in the app. */
+export function reservedKeyNameError(name: string): string | undefined {
+  return isProtectedKey({ name: name.trim() })
+    ? 'HearthShelf saves names that start this way. Pick another name.'
+    : undefined
+}
+
 export async function getApiKeys(): Promise<ABSApiKey[]> {
   const res = await adminRequest<Partial<ABSApiKeysResponse>>(ABS_ENDPOINTS.apiKeys)
   if (!res?.apiKeys) throw new ABSRequestError(502, ABS_ENDPOINTS.apiKeys)

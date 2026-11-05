@@ -20,12 +20,15 @@ import { SecretReveal } from '@/admin/SecretReveal'
 import { StatusPill } from '@/admin/StatusPill'
 import { useAdminResource } from '@/admin/useAdminResource'
 import { useAdminWrite } from '@/admin/useAdminWrite'
+import { useSelfAccount } from '@/admin/UserGuards'
 import {
+  canRevokeKey,
   createApiKey,
   deleteApiKey,
   getApiKeys,
   getKeyOwners,
   isProtectedKey,
+  reservedKeyNameError,
 } from '@/api/admin/apikeys'
 import { getServerRuntime } from '@/api/admin/server'
 import { tagServiceAccount } from '@/api/admin/serviceAccounts'
@@ -71,6 +74,7 @@ function ApiKeys() {
   const colors = useColors()
   const bottomInset = useContentInset()
   const { run, busy } = useAdminWrite()
+  const self = useSelfAccount()
 
   const keys = useAdminResource(getApiKeys)
   const owners = useAdminResource(getKeyOwners)
@@ -109,6 +113,7 @@ function ApiKeys() {
   const [token, setToken] = useState<string | null>(null)
 
   const owner = users.find((u) => u.id === ownerId)
+  const nameError = reservedKeyNameError(name)
   const ownerIsService = owner ? isServiceAccount(owner, serviceUserIds, serviceUsername) : false
 
   function ownerLabel(user: ABSAdminUser): string {
@@ -225,7 +230,11 @@ function ApiKeys() {
           }
           renderItem={({ item }) => {
             const status = keyStatus(item)
-            const isProtected = isProtectedKey(item)
+            const ownerType = item.user?.type ?? userById.get(item.userId)?.type
+            const canRevoke = canRevokeKey(item, ownerType, self.type)
+            const note = isProtectedKey(item)
+              ? "HearthShelf needs this key to connect people, so it can't be revoked here."
+              : 'Only a root user can revoke this key.'
             return (
               <AdminCard
                 title={item.name}
@@ -242,11 +251,9 @@ function ApiKeys() {
                   }}
                 >
                   <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
-                    {isProtected
-                      ? `${keyDates(item)}. HearthShelf needs this key to connect people, so it can't be revoked here.`
-                      : keyDates(item)}
+                    {canRevoke ? keyDates(item) : `${keyDates(item)}. ${note}`}
                   </AppText>
-                  {isProtected ? null : (
+                  {canRevoke ? (
                     <IconButton
                       name="delete"
                       size={22}
@@ -254,7 +261,7 @@ function ApiKeys() {
                       accessibilityLabel={`Revoke ${item.name}`}
                       onPress={() => void revoke(item)}
                     />
-                  )}
+                  ) : null}
                 </View>
               </AdminCard>
             )
@@ -279,6 +286,7 @@ function ApiKeys() {
               inSheet
               label="Key name"
               placeholder="My script"
+              error={nameError}
               autoCapitalize="sentences"
               value={name}
               onChangeText={setName}
@@ -318,7 +326,7 @@ function ApiKeys() {
               label="Create key"
               icon="key"
               busy={busy}
-              disabled={!name.trim() || !owner}
+              disabled={!name.trim() || !owner || Boolean(nameError)}
               onPress={() => void create()}
             />
           </View>

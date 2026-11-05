@@ -3,7 +3,7 @@
  * HearthShelf keeps. A create or delete can finish on ABS and fail on the tag, so
  * each flow says what actually happened and reloads.
  */
-import { useRef, useState, useSyncExternalStore } from 'react'
+import { useRef, useState } from 'react'
 import { FlatList, View } from 'react-native'
 import type { ABSAdminUser, ABSApiKey } from '@hearthshelf/core'
 import { AdminButton } from '@/admin/AdminButton'
@@ -20,6 +20,7 @@ import {
 import { TypedConfirm } from '@/admin/TypedConfirm'
 import { useAdminResource } from '@/admin/useAdminResource'
 import { useAdminWrite } from '@/admin/useAdminWrite'
+import { useSelfAccount } from '@/admin/UserGuards'
 import { createApiKey, deleteApiKey, getApiKeys } from '@/api/admin/apikeys'
 import {
   createServiceAccount,
@@ -30,7 +31,6 @@ import {
   updateServiceAccount,
   type ServiceAccountPatch,
 } from '@/api/admin/serviceAccounts'
-import { getMeId, getMeType, subscribeMeId, subscribeMeType } from '@/api/me'
 import { confirm } from '@/ui/confirm'
 import { AppText, Sheet, type SheetRef } from '@/ui/primitives'
 import { EmptyState, SkeletonRow } from '@/ui/states'
@@ -48,8 +48,11 @@ interface Reveal {
 function ServiceAccounts() {
   const colors = useColors()
   const bottomInset = useContentInset()
-  const meId = useSyncExternalStore(subscribeMeId, getMeId)
-  const callerIsRoot = useSyncExternalStore(subscribeMeType, getMeType) === 'root'
+  const self = useSelfAccount()
+  const meId = self.id
+  const callerIsRoot = self.type === 'root'
+  // Until the admin's own id is known, any account could be theirs.
+  const mightBeSelf = (id: string) => !meId || id === meId
   const { data, loading, error, reload } = useAdminResource(getServiceAccounts)
   const tokens = useAdminResource(getApiKeys)
   const { run, busy } = useAdminWrite()
@@ -270,7 +273,8 @@ function ServiceAccounts() {
               open={expanded === item.id}
               canEdit={!owned && (!isRoot || callerIsRoot)}
               canCreateTokens={!isRoot || callerIsRoot}
-              canDelete={!isRoot && !owned && item.id !== meId}
+              callerType={self.type}
+              canDelete={!isRoot && !owned && !mightBeSelf(item.id)}
               tokens={{ keys: tokens.data, loading: tokens.loading, onRetry: tokens.reload }}
               onToggleTokens={() => setExpanded(expanded === item.id ? null : item.id)}
               onEdit={() => {
@@ -301,7 +305,7 @@ function ServiceAccounts() {
           <EditServiceAccountForm
             key={editing.id}
             account={editing}
-            isSelf={editing.id === meId}
+            isSelf={mightBeSelf(editing.id)}
             busy={busy}
             onSubmit={(patch) => void saveEdit(editing, patch)}
           />

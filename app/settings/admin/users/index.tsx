@@ -13,6 +13,7 @@ import { useAdminResource } from '@/admin/useAdminResource'
 import { useAdminWrite } from '@/admin/useAdminWrite'
 import { UserCard } from '@/admin/UserCard'
 import { takeBulkFinished, useMachineCheck } from '@/admin/UserGuards'
+import { adminErrorKind } from '@/api/admin/errors'
 import { getInviteState, recoverAdmins } from '@/api/admin/hosted'
 import { getLastSeenByUser, getOnlineUserIds, getUsers } from '@/api/admin/users'
 import { useConnection } from '@/api/ConnectionProvider'
@@ -83,7 +84,26 @@ function Users() {
   }, [users, query])
 
   if (accounts.error && !accounts.data) {
-    return <AdminUnavailable error={accounts.error} onRetry={accounts.reload} />
+    // A disabled admin's own login is refused here, and this is their way back: it
+    // runs on a HearthShelf grant, not on that login.
+    return (
+      <View style={{ flex: 1 }}>
+        <AdminUnavailable error={accounts.error} onRetry={accounts.reload} />
+        {adminErrorKind(accounts.error) === 'forbidden' ? (
+          <View style={{ padding: spacing.lg, paddingBottom: bottomInset, gap: spacing.sm }}>
+            <AppText variant="meta" color={colors.textMuted}>
+              If your admin account was disabled, this can turn it back on.
+            </AppText>
+            <AdminButton
+              label="Recover admins"
+              icon="lock-reset"
+              busy={busy}
+              onPress={() => void recover()}
+            />
+          </View>
+        ) : null}
+      </View>
+    )
   }
 
   // Wait for all three, or machine accounts appear as people and then vanish.
@@ -104,7 +124,7 @@ function Users() {
       title: 'Recover admin access',
       message: `Turn every disabled admin account on "${
         serverName ?? 'this server'
-      }" back on? This uses the server's HearthShelf connection.`,
+      }" back on? That includes any accounts used by apps or services, not just people. This uses the server's HearthShelf connection.`,
       confirmLabel: 'Recover admins',
       destructive: false,
     })
@@ -133,7 +153,7 @@ function Users() {
             disabledAdmins.length,
             'account is',
             'accounts are',
-          )} disabled. This turns all of them back on.`}
+          )} disabled. This turns every disabled admin account back on, including any for apps or services.`}
         >
           <View style={{ marginTop: spacing.sm }}>
             <AdminButton

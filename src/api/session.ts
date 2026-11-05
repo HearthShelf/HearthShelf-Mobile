@@ -8,6 +8,7 @@
  * up cold (e.g. the user opens Android Auto before the phone app).
  */
 import * as SecureStore from 'expo-secure-store'
+import { clearMeId, clearMeType } from './me'
 
 interface AbsSession {
   serverUrl: string
@@ -136,6 +137,10 @@ export async function setSession(session: AbsSession): Promise<void> {
 
 export async function clearSession(): Promise<void> {
   current = null
+  // Who you are goes with the session. A stale id would stop "is this me?" guards
+  // from recognising the next account signed in on this device.
+  clearMeId()
+  clearMeType()
   try {
     await SecureStore.deleteItemAsync(KEY)
   } catch {
