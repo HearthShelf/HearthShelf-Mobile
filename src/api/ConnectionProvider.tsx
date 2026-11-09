@@ -687,11 +687,15 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
    * launch used to spend its full 20s connect timeout (and a retry, and the 44s
    * floor) discovering what the OS could have told us instantly. Both checks are
    * local, so this costs nothing.
+   *
+   * The network check comes first: the airplane-mode setting only says the
+   * cellular radio is off. Wi-Fi can be switched back on under it (planes,
+   * cruise ships), and grounding on the setting alone refused every connect -
+   * and every reconnect - on a phone that had working internet.
    */
   const groundedReason = useCallback(async (): Promise<ConnectIssue | null> => {
-    if (await isAirplaneMode()) return 'airplane'
-    if (!(await isCurrentlyReachable())) return 'no-network'
-    return null
+    if (await isCurrentlyReachable()) return null
+    return (await isAirplaneMode()) ? 'airplane' : 'no-network'
   }, [])
 
   /**

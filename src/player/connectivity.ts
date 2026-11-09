@@ -191,8 +191,9 @@ async function probeUrl(url: string): Promise<boolean> {
  * the one that is not.
  */
 export async function diagnoseOutage(airplane: boolean): Promise<Outage> {
-  if (airplane) return 'airplane'
-  if (!(await isCurrentlyReachable())) return 'no-network'
+  // Airplane mode with Wi-Fi back on is a working network, so the setting only
+  // explains an outage when there is no network at all.
+  if (!(await isCurrentlyReachable())) return airplane ? 'airplane' : 'no-network'
   const [controlPlane, neutral] = await Promise.all([
     probeUrl(`${CONTROL_PLANE_URL}/`),
     probeUrl(NEUTRAL_PROBE_URL),
