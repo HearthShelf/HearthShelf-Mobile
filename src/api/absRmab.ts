@@ -5,6 +5,7 @@
  * bearer token. Every call degrades to a safe value on any failure so a slim
  * deploy (no /hs/rmab) or an unreachable server never breaks the series screen.
  */
+import * as Sentry from '@sentry/react-native'
 import { getSession } from './session'
 
 export interface RmabRequestResult {
@@ -99,12 +100,42 @@ export async function submitRequest(audiobook: {
     // (HearthShelf server/routes/rmab.js), so this is the COMMON refusal shape
     // -- and the one the old code dropped on the floor, because it only looked
     // at non-2xx responses. Carry the status through so the caller can word it.
-    return { ...data, status }
+    const result = { ...data, status }
+    if (!result.success) reportRefusal(audiobook.asin, result)
+    return result
   } catch (e) {
     if (e instanceof RmabRequestError) {
-      return { success: false, error: e.code, detail: e.detail, status: e.status }
+      const result = { success: false, error: e.code, detail: e.detail, status: e.status }
+      reportRefusal(audiobook.asin, result)
+      return result
     }
     // Never reached the server: offline, not connected, DNS. No status to give.
     return { success: false }
   }
+}
+
+/** Refusals that are an honest answer about the book, not a break. */
+const ORDINARY_REFUSALS = new Set([
+  'AlreadyAvailable',
+  'BeingProcessed',
+  'DuplicateRequest',
+  'Ignored',
+])
+
+/**
+ * A refused request only ever became on-screen text, so a request that "keeps
+ * failing" (HS-MOBILEAPP-4H) left nothing to diagnose. Report the server's
+ * reason, grouped by its code so one broken upstream is one issue.
+ */
+function reportRefusal(asin: string, result: RmabRequestResult): void {
+  if (result.error && ORDINARY_REFUSALS.has(result.error)) return
+  const code = result.error ?? `http-${result.status ?? 'none'}`
+  const err = new Error(`book request refused: ${code}`)
+  err.name = 'BookRequestRefused'
+  Sentry.captureException(err, {
+    level: 'warning',
+    tags: { feature: 'rmab-request', code },
+    extra: { asin, status: result.status ?? null, detail: result.detail ?? null },
+    fingerprint: ['rmab-request', code],
+  })
 }
