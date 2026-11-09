@@ -314,6 +314,14 @@ function describe(e: unknown, verb: string): PasskeyResult {
     return { status: 'cancelled' }
   }
 
+  // Android's Credential Manager says "Interrupted" when the sheet loses focus
+  // mid-ceremony (the app went to the background, another window took over).
+  // Nothing is broken and a second try works, so tell the user that instead of
+  // filing an issue (HS-MOBILEAPP-4N).
+  if (/interrupted/i.test(message)) {
+    return { status: 'error', message: `That was interrupted before it finished. Try again.` }
+  }
+
   // Everything else is a genuine break, and this is where a thrown OS error
   // lands - the domain refusing to validate arrives here as a DomError. It is
   // the single most likely real-device failure, so it reports with the raw
