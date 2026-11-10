@@ -40,6 +40,9 @@ import { CoverGlow } from '@/ui/CoverGlow'
 import { haptics } from '@/ui/haptics'
 import { Icon } from '@/ui/icons'
 import { showToast } from '@/ui/Toast'
+import { useIsOffline } from '@/api/useIsOffline'
+import { isOfflineMode } from '@/player/syncState'
+import { EmptyState } from '@/ui/states'
 import { useColors, useTheme } from '@/ui/ThemeProvider'
 import { fonts, radius, spacing, withAlpha, type Palette } from '@/ui/theme'
 import { upcomingBookPath } from '@/lib/upcomingBookRoute'
@@ -337,8 +340,12 @@ function SeriesFollowCard({ resolved }: { resolved: ResolvedSeries }) {
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const { sub, roster, next } = resolved
-  let nextLine =
-    roster === undefined ? 'Checking for the next book…' : 'Next book not announced yet'
+  const offline = useIsOffline()
+  let nextLine = offline
+    ? 'Go online to check for the next book'
+    : roster === undefined
+      ? 'Checking for the next book…'
+      : 'Next book not announced yet'
   if (next) {
     const upcoming = next.upcoming ?? isUpcoming(next, Date.now())
     const countdown = upcoming ? countdownLabel(next, Date.now()) : null
@@ -349,7 +356,13 @@ function SeriesFollowCard({ resolved }: { resolved: ResolvedSeries }) {
 
   const onUnfollow = () => {
     haptics.warn()
-    void unsubscribe(sub.id).catch(() => showToast('Could not unfollow that series'))
+    void unsubscribe(sub.id).catch(() =>
+      showToast(
+        isOfflineMode()
+          ? "You're offline. Unfollow again when you're back online."
+          : 'Could not unfollow that series',
+      ),
+    )
   }
 
   return (
@@ -416,14 +429,15 @@ export default function FollowingScreen() {
   const router = useRouter()
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
-  const { subscriptions, loaded } = useSyncExternalStore(
+  const { subscriptions, loaded, failed } = useSyncExternalStore(
     subscribeSubscriptions,
     getSubscriptionsState,
   )
+  const offline = useIsOffline()
 
   useEffect(() => {
-    void refreshSubscriptions()
-  }, [])
+    if (!offline) void refreshSubscriptions()
+  }, [offline])
 
   // Ignored books (an ebook-only side story, a print edition) never surface as
   // something you're waiting on.
@@ -571,6 +585,27 @@ export default function FollowingScreen() {
     if (sub.asin) router.push(`/upcoming/${encodeURIComponent(sub.asin)}?from=more`)
   }
 
+  // The list lives on the server and is not saved on the phone, so offline
+  // with nothing loaded there is nothing honest to show but this.
+  if (offline && subscriptions.length === 0) {
+    return (
+      <Screen tabBar={<AppTabBar activeName={active} onPressTab={goToTab} />}>
+        <View style={styles.header}>
+          <IconButton name={icons.back} onPress={() => router.back()} accessibilityLabel="Back" />
+          <AppText variant="hero" numberOfLines={1} style={{ flex: 1 }}>
+            Following
+          </AppText>
+        </View>
+        <EmptyState
+          icon={icons.cloudOff}
+          iconColor={colors.textMuted}
+          title="You're offline"
+          body="Reconnect to see the books and series you follow."
+        />
+      </Screen>
+    )
+  }
+
   if (!loaded) return <Loading label="Loading what you follow" />
 
   return (
@@ -588,7 +623,16 @@ export default function FollowingScreen() {
         </View>
       </View>
 
-      {subscriptions.length === 0 ? (
+      {subscriptions.length === 0 && failed ? (
+        <EmptyState
+          icon={icons.cloudOff}
+          iconColor={colors.textMuted}
+          title="Couldn't reach your server"
+          body="We could not check what you follow."
+          cta="Try again"
+          onCta={() => void refreshSubscriptions()}
+        />
+      ) : subscriptions.length === 0 ? (
         <View style={styles.empty}>
           <AppText variant="title">Nothing followed yet</AppText>
           <AppText variant="meta" color={colors.textMuted} style={{ textAlign: 'center' }}>

@@ -20,6 +20,10 @@ import { Icon, icons } from '@/ui/icons'
 import { Toast, useToast } from '@/ui/Toast'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
+import { ErrorState } from '@/ui/states'
+import { isOfflineMode } from '@/player/syncState'
+
+const OFFLINE_MESSAGE = "You're offline. Try again when you're back online."
 
 /** How long the "Rated 4 stars" confirmation stays before the row clears. Long
  *  enough to read, short enough that it never feels stuck. */
@@ -52,9 +56,13 @@ export default function NotificationsScreen() {
   const [unread, setUnread] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
 
   const load = useCallback(async () => {
     const response = await getNotifications()
+    setFailed(!!response.failed)
+    // An unanswered request is not an empty inbox: keep what is on screen.
+    if (response.failed) return
     setNotifications(response.notifications)
     setUnread(response.unreadCount)
   }, [])
@@ -72,7 +80,8 @@ export default function NotificationsScreen() {
   }
 
   const open = async (notification: HSNotification) => {
-    if (!notification.readAt) await markNotificationRead(notification.id)
+    // Not awaited: on slow Wi-Fi the read mark could hold the tap for seconds.
+    if (!notification.readAt) void markNotificationRead(notification.id)
     const clubId = dataString(notification, 'clubId')
     const asin = dataString(notification, 'asin')
     if (notification.kind === 'release' && asin) {
@@ -102,10 +111,16 @@ export default function NotificationsScreen() {
   // feels broken on a list you are clearing. On failure we reload, which puts
   // the row back rather than leaving the UI claiming something is gone.
   const dismiss = async (notification: HSNotification) => {
+    const previous = notifications
+    const previousUnread = unread
     setNotifications((current) => (current ?? []).filter((n) => n.id !== notification.id))
     if (!notification.readAt) setUnread((n) => Math.max(0, n - 1))
     if (!(await deleteNotification(notification.id))) {
-      show("Couldn't dismiss that notification")
+      // Put the row back ourselves: a reload offline would fail too and leave
+      // the screen claiming it is gone.
+      setNotifications(previous)
+      setUnread(previousUnread)
+      show(isOfflineMode() ? OFFLINE_MESSAGE : "Couldn't dismiss that notification")
       await load()
     }
   }
@@ -116,7 +131,8 @@ export default function NotificationsScreen() {
     setUnread(0)
     if (!(await deleteAllNotifications())) {
       setNotifications(previous)
-      show("Couldn't clear your notifications")
+      setUnread(unread)
+      show(isOfflineMode() ? OFFLINE_MESSAGE : "Couldn't clear your notifications")
       await load()
     }
   }
@@ -129,7 +145,7 @@ export default function NotificationsScreen() {
     const ok = await respondToClubInvite(clubId, inviteId, accept)
     setBusyId(null)
     if (!ok) {
-      show('That invitation is no longer available')
+      show(isOfflineMode() ? OFFLINE_MESSAGE : 'That invitation is no longer available')
       await load()
       return
     }
@@ -149,7 +165,7 @@ export default function NotificationsScreen() {
     } catch {
       // setRating throws rather than swallowing, precisely so the row can stay
       // put instead of claiming a score the server never stored.
-      show("Couldn't save that rating")
+      show(isOfflineMode() ? OFFLINE_MESSAGE : "Couldn't save that rating")
       return false
     }
     show(ratingSavedMessage(value))
@@ -183,14 +199,21 @@ export default function NotificationsScreen() {
         <View style={styles.headerTitle}>
           <AppText variant="title">Notifications</AppText>
           <AppText variant="caption" color={colors.textMuted}>
-            {unread > 0 ? `${unread} unread` : 'You’re all caught up'}
+            {unread > 0
+              ? `${unread} unread`
+              : failed
+                ? "Can't check for new ones right now"
+                : 'You’re all caught up'}
           </AppText>
         </View>
         {unread > 0 ? (
           <Touchable
             style={styles.markAll}
             onPress={async () => {
-              await markAllNotificationsRead()
+              if (!(await markAllNotificationsRead())) {
+                show(isOfflineMode() ? OFFLINE_MESSAGE : "Couldn't mark them read")
+                return
+              }
               await load()
             }}
             accessibilityRole="button"
@@ -214,7 +237,9 @@ export default function NotificationsScreen() {
         ) : null}
       </View>
 
-      {notifications === null ? (
+      {failed && (notifications === null || notifications.length === 0) ? (
+        <ErrorState message="We could not load your notifications." onRetry={() => void load()} />
+      ) : notifications === null ? (
         <Loading />
       ) : notifications.length === 0 ? (
         <Centered>

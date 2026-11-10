@@ -72,6 +72,8 @@ export const NotesSheet = forwardRef<SheetHandle, NotesSheetProps>(function Note
   const [hiddenAhead, setHiddenAhead] = useState(0)
   const [lockedStubs, setLockedStubs] = useState<HSNoteStub[]>([])
   const [enabled, setEnabled] = useState(true)
+  // The last load never got an answer, so "turned off" would be a lie.
+  const [unreachable, setUnreachable] = useState(false)
   const [body, setBody] = useState('')
   const [replyTo, setReplyTo] = useState<HSNote | null>(null)
   const [busy, setBusy] = useState(false)
@@ -92,6 +94,13 @@ export const NotesSheet = forwardRef<SheetHandle, NotesSheetProps>(function Note
   const load = useCallback(async () => {
     if (!libraryItemId) return
     const res = await getNotes({ libraryItemId, position, finished })
+    setUnreachable(!!res.failed)
+    // Keep what is already on screen when a refresh fails, rather than
+    // replacing real notes with an empty list.
+    if (res.failed) {
+      setNotes((list) => list ?? [])
+      return
+    }
     setEnabled(res.enabled)
     setNotes(res.notes)
     setHiddenAhead(res.hiddenAhead)
@@ -115,7 +124,6 @@ export const NotesSheet = forwardRef<SheetHandle, NotesSheetProps>(function Note
     const text = body.trim()
     if (!text || !libraryItemId || busy) return
     setBusy(true)
-    haptics.success()
     // A reply inherits its parent's gate + visibility; a top-level composer posts
     // a general (ungated) note - timestamped notes come from the player composer.
     const isReply = !!replyTo
@@ -129,6 +137,7 @@ export const NotesSheet = forwardRef<SheetHandle, NotesSheetProps>(function Note
     })
     setBusy(false)
     if (created) {
+      haptics.success()
       // Remember the Public/Personal choice for next time (top-level only).
       if (!isReply) setSetting('noteDefaultVisibility', visibility)
       setBody('')
@@ -136,7 +145,7 @@ export const NotesSheet = forwardRef<SheetHandle, NotesSheetProps>(function Note
       setSafe(false)
       await load()
     } else {
-      onToast?.('Could not post note')
+      onToast?.('Could not post your note. Check your connection and try again.')
     }
   }
 
@@ -158,6 +167,10 @@ export const NotesSheet = forwardRef<SheetHandle, NotesSheetProps>(function Note
       {!enabled ? (
         <AppText variant="meta" color={colors.textMuted} style={styles.empty}>
           Notes are turned off on this server.
+        </AppText>
+      ) : unreachable && notes !== null && notes.length === 0 ? (
+        <AppText variant="meta" color={colors.textMuted} style={styles.empty}>
+          Can't reach your server right now. Notes will show up when you reconnect.
         </AppText>
       ) : notes === null ? (
         <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.xl }} />

@@ -92,10 +92,10 @@ export function ClubCard({
     const trimmed = name.trim()
     if (!trimmed || busy) return
     setBusy(true)
-    haptics.success()
     const club = await createClub(trimmed, libraryItemId, visibility)
     setBusy(false)
     if (club) {
+      haptics.success()
       setName('')
       setVisibility('closed')
       setCreating(false)
@@ -109,10 +109,10 @@ export function ClubCard({
   const setCurrent = async (club: HSClub) => {
     if (busy) return
     setBusy(true)
-    haptics.success()
     const ok = await setClubCurrentBook(club.id, libraryItemId)
     setBusy(false)
     if (ok) {
+      haptics.success()
       onToast?.(`Now reading in ${club.name}`)
       void load()
     } else {

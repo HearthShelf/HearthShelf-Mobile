@@ -72,6 +72,8 @@ export const PlayerNotesSheet = forwardRef<
   const [hiddenAhead, setHiddenAhead] = useState(0)
   const [lockedStubs, setLockedStubs] = useState<HSNoteStub[]>([])
   const [enabled, setEnabled] = useState(true)
+  // The last load never got an answer, so "turned off" would be a lie.
+  const [unreachable, setUnreachable] = useState(false)
   const [club, setClub] = useState<HSClub | null>(null)
   const [body, setBody] = useState('')
   const [replyTo, setReplyTo] = useState<HSNote | null>(null)
@@ -112,6 +114,13 @@ export const PlayerNotesSheet = forwardRef<
     if (!itemId) return
     const clubId = tab === 'club' ? club?.id : ''
     const res = await getNotes({ libraryItemId: itemId, clubId, position })
+    setUnreachable(!!res.failed)
+    // Keep what is already on screen when a refresh fails, rather than
+    // replacing real notes with an empty list.
+    if (res.failed) {
+      setNotes((list) => list ?? [])
+      return
+    }
     setEnabled(res.enabled)
     setNotes(res.notes)
     setHiddenAhead(res.hiddenAhead)
@@ -149,7 +158,6 @@ export const PlayerNotesSheet = forwardRef<
     const text = body.trim()
     if (!text || !itemId || busy) return
     setBusy(true)
-    haptics.success()
     const isReply = !!replyTo
     const isClub = tab === 'club'
     const created = await postNote({
@@ -166,13 +174,14 @@ export const PlayerNotesSheet = forwardRef<
     })
     setBusy(false)
     if (created) {
+      haptics.success()
       if (!isClub && !isReply) setSetting('noteDefaultVisibility', visibility)
       setBody('')
       setReplyTo(null)
       setSafe(false)
       await load()
     } else {
-      onToast?.('Could not post note')
+      onToast?.('Could not post your note. Check your connection and try again.')
     }
   }
 
@@ -219,6 +228,10 @@ export const PlayerNotesSheet = forwardRef<
       {!enabled ? (
         <AppText variant="meta" color={colors.textMuted} style={styles.empty}>
           Notes are turned off on this server.
+        </AppText>
+      ) : unreachable && notes !== null && notes.length === 0 ? (
+        <AppText variant="meta" color={colors.textMuted} style={styles.empty}>
+          Can't reach your server right now. Notes will show up when you reconnect.
         </AppText>
       ) : notes === null ? (
         <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.xl }} />

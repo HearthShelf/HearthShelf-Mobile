@@ -7,6 +7,7 @@
  */
 import * as Sentry from '@sentry/react-native'
 import { getSession } from './session'
+import { fetchWithTimeout } from './fetchWithTimeout'
 
 export interface RmabRequestResult {
   success: boolean
@@ -50,7 +51,7 @@ async function rmabFetch<T>(
   headers.set('Authorization', `Bearer ${s.token}`)
   headers.set('Accept', 'application/json')
   if (init?.body) headers.set('Content-Type', 'application/json')
-  const res = await fetch(`${s.serverUrl}/hs/rmab${path}`, { ...init, headers })
+  const res = await fetchWithTimeout(`${s.serverUrl}/hs/rmab${path}`, { ...init, headers })
   // Parse before checking `ok`: the reason for a refusal is in the body, and the
   // proxy forwards the upstream's body verbatim. `{}` is a real shape -- it is
   // what arrives when the upstream sent HTML or nothing.

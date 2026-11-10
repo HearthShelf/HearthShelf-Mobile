@@ -65,6 +65,8 @@ import { useContentInset } from '@/ui/useContentInset'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { haptics } from '@/ui/haptics'
+import { useIsOffline } from '@/api/useIsOffline'
+import { isOfflineMode } from '@/player/syncState'
 
 type Direction = 'more' | 'switch' | 'new'
 type Length = 'any' | 'short' | 'standard' | 'epic'
@@ -94,6 +96,7 @@ export default function QuestGiverScreen() {
   const tabBar = <AppTabBar activeName={active} onPressTab={goToTab} />
 
   const [items, setItems] = useState<ABSLibraryItem[] | null>(null)
+  const offline = useIsOffline()
   const [ignoredIds, setIgnoredIds] = useState<ReadonlySet<string>>(() => new Set())
   const [config, setConfig] = useState<QgConfig | null>(null)
   const [rmabEnabled, setRmabEnabled] = useState(false)
@@ -139,7 +142,7 @@ export default function QuestGiverScreen() {
       const [libs, cfg, rmab] = await Promise.all([
         getLibraries().catch(() => []),
         getQgConfig(),
-        getRmabEnabled(),
+        isOfflineMode() ? Promise.resolve(false) : getRmabEnabled(),
       ])
       if (cancelled) return
       setConfig(cfg)
@@ -312,8 +315,9 @@ export default function QuestGiverScreen() {
     // from and land on a blank result with no explanation.
     if (candidates.length === 0) {
       setResult({
-        intro:
-          "I couldn't find anything outside your library to suggest right now. Try a different mood, or search your library too.",
+        intro: isOfflineMode()
+          ? "You're offline, so I can't look outside your library. Search your own library instead, or try again when you're back online."
+          : "I couldn't find anything outside your library to suggest right now. Try a different mood, or search your library too.",
         engine: 'heuristic',
         picks: [],
       })
@@ -377,6 +381,22 @@ export default function QuestGiverScreen() {
         <Centered>
           <Loading label="Reading your library" />
         </Centered>
+      </Screen>
+    )
+  }
+
+  // Picks come from the library list. With none loaded and no server, there is
+  // nothing to pick from, so say that instead of an empty wizard.
+  if (items.length === 0 && offline) {
+    return (
+      <Screen tabBar={tabBar}>
+        <EmptyState
+          icon="cloud-off"
+          title="QuestGiver needs a connection"
+          body="Reconnect to your server so QuestGiver can read your library."
+          cta="Go back"
+          onCta={() => router.back()}
+        />
       </Screen>
     )
   }

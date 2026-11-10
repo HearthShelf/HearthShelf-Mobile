@@ -7,6 +7,7 @@
  */
 import type { HSClub, HSClubsResponse, HSClubDetail } from '@hearthshelf/core'
 import { getSession } from './session'
+import { fetchWithTimeout } from './fetchWithTimeout'
 
 const DISABLED_CLUBS: HSClubsResponse = { enabled: false, mine: [], joinable: [] }
 
@@ -18,6 +19,9 @@ export type ClubSummary = HSClub & {
 export type ClubsDirectoryResponse = Omit<HSClubsResponse, 'mine' | 'joinable'> & {
   mine: ClubSummary[]
   joinable: ClubSummary[]
+  /** The request never got an answer (offline, timed out). Lets a screen say
+   *  "couldn't reach the server" instead of "no clubs yet". */
+  failed?: boolean
 }
 
 export interface ClubInvitee {
@@ -75,13 +79,13 @@ export async function getClubs(
   if (includeDirectory) qs.set('directory', '1')
   const q = qs.toString() ? `?${qs.toString()}` : ''
   try {
-    const res = await fetch(`${serverUrl}/hs/clubs${q}`, {
+    const res = await fetchWithTimeout(`${serverUrl}/hs/clubs${q}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!res.ok) return DISABLED_CLUBS
     return visibleClubs((await res.json()) as ClubsDirectoryResponse)
   } catch {
-    return DISABLED_CLUBS
+    return { ...DISABLED_CLUBS, failed: true }
   }
 }
 
@@ -107,7 +111,7 @@ export async function getClub(
   if (params.position != null) q.set('position', String(Math.round(params.position)))
   const qs = q.toString()
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${serverUrl}/hs/clubs/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}`,
       {
         headers: { Authorization: `Bearer ${token}` },
@@ -136,7 +140,7 @@ export async function createClub(
   if (!session) return null
   const { serverUrl, token } = session
   try {
-    const res = await fetch(`${serverUrl}/hs/clubs`, {
+    const res = await fetchWithTimeout(`${serverUrl}/hs/clubs`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, libraryItemId: libraryItemId ?? '', visibility }),
@@ -154,11 +158,14 @@ export async function renameClub(id: string, name: string): Promise<string | nul
   const session = getSession()
   if (!session) return null
   try {
-    const res = await fetch(`${session.serverUrl}/hs/clubs/${encodeURIComponent(id)}/name`, {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
-    })
+    const res = await fetchWithTimeout(
+      `${session.serverUrl}/hs/clubs/${encodeURIComponent(id)}/name`,
+      {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      },
+    )
     if (!res.ok) return null
     const value = (await res.json()) as { name?: string }
     return typeof value.name === 'string' ? value.name : null
@@ -172,11 +179,14 @@ export async function setClubVisibility(id: string, visibility: ClubVisibility):
   const session = getSession()
   if (!session) return false
   try {
-    const res = await fetch(`${session.serverUrl}/hs/clubs/${encodeURIComponent(id)}/visibility`, {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ visibility }),
-    })
+    const res = await fetchWithTimeout(
+      `${session.serverUrl}/hs/clubs/${encodeURIComponent(id)}/visibility`,
+      {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visibility }),
+      },
+    )
     return res.ok
   } catch {
     return false
@@ -187,9 +197,12 @@ export async function getClubInvitees(id: string): Promise<ClubInvitee[]> {
   const session = getSession()
   if (!session) return []
   try {
-    const res = await fetch(`${session.serverUrl}/hs/clubs/${encodeURIComponent(id)}/invitees`, {
-      headers: { Authorization: `Bearer ${session.token}` },
-    })
+    const res = await fetchWithTimeout(
+      `${session.serverUrl}/hs/clubs/${encodeURIComponent(id)}/invitees`,
+      {
+        headers: { Authorization: `Bearer ${session.token}` },
+      },
+    )
     if (!res.ok) return []
     const value = (await res.json()) as { users?: ClubInvitee[] }
     return Array.isArray(value.users) ? value.users : []
@@ -202,11 +215,14 @@ export async function inviteClubUsers(id: string, userIds: string[]): Promise<Cl
   const session = getSession()
   if (!session) return []
   try {
-    const res = await fetch(`${session.serverUrl}/hs/clubs/${encodeURIComponent(id)}/invites`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userIds }),
-    })
+    const res = await fetchWithTimeout(
+      `${session.serverUrl}/hs/clubs/${encodeURIComponent(id)}/invites`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userIds }),
+      },
+    )
     if (!res.ok) return []
     const value = (await res.json()) as { results?: ClubInviteResult[] }
     return Array.isArray(value.results) ? value.results : []
@@ -224,7 +240,7 @@ export async function respondToClubInvite(
   if (!session) return false
   try {
     const action = accept ? 'accept' : 'decline'
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${session.serverUrl}/hs/clubs/${encodeURIComponent(clubId)}/invites/${encodeURIComponent(inviteId)}/${action}`,
       { method: 'POST', headers: { Authorization: `Bearer ${session.token}` } },
     )
@@ -238,7 +254,7 @@ export async function revokeClubInvite(clubId: string, inviteId: string): Promis
   const session = getSession()
   if (!session) return false
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${session.serverUrl}/hs/clubs/${encodeURIComponent(clubId)}/invites/${encodeURIComponent(inviteId)}`,
       { method: 'DELETE', headers: { Authorization: `Bearer ${session.token}` } },
     )
@@ -254,7 +270,7 @@ export async function setClubMembership(id: string, join: boolean): Promise<bool
   if (!session) return false
   const { serverUrl, token } = session
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${serverUrl}/hs/clubs/${encodeURIComponent(id)}/${join ? 'join' : 'leave'}`,
       { method: 'POST', headers: { Authorization: `Bearer ${token}` } },
     )
@@ -279,7 +295,7 @@ export async function setClubCurrentBook(
   if (!session) return false
   const { serverUrl, token } = session
   try {
-    const res = await fetch(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}/books`, {
+    const res = await fetchWithTimeout(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}/books`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ libraryItemId, finishPrevious }),
@@ -297,7 +313,7 @@ export async function requeueClubBook(id: string, libraryItemId: string): Promis
   if (!session) return false
   const { serverUrl, token } = session
   try {
-    const res = await fetch(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}/requeue`, {
+    const res = await fetchWithTimeout(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}/requeue`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ libraryItemId }),
@@ -315,11 +331,14 @@ export async function reorderClubQueue(id: string, libraryItemIds: string[]): Pr
   if (!session) return false
   const { serverUrl, token } = session
   try {
-    const res = await fetch(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}/queue-order`, {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ libraryItemIds }),
-    })
+    const res = await fetchWithTimeout(
+      `${serverUrl}/hs/clubs/${encodeURIComponent(id)}/queue-order`,
+      {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ libraryItemIds }),
+      },
+    )
     return res.ok
   } catch {
     return false
@@ -333,7 +352,7 @@ export async function enqueueClubBook(id: string, libraryItemId: string): Promis
   if (!session) return false
   const { serverUrl, token } = session
   try {
-    const res = await fetch(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}/queue`, {
+    const res = await fetchWithTimeout(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}/queue`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ libraryItemId }),
@@ -350,7 +369,7 @@ export async function removeClubQueued(id: string, libraryItemId: string): Promi
   if (!session) return false
   const { serverUrl, token } = session
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${serverUrl}/hs/clubs/${encodeURIComponent(id)}/queue/${encodeURIComponent(libraryItemId)}`,
       { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
     )
@@ -366,7 +385,7 @@ export async function kickClubMember(id: string, userId: string): Promise<boolea
   if (!session) return false
   const { serverUrl, token } = session
   try {
-    const res = await fetch(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}/kick`, {
+    const res = await fetchWithTimeout(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}/kick`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId }),
@@ -383,7 +402,7 @@ export async function markClubRead(id: string, lastReadAt: number): Promise<bool
   if (!session) return false
   const { serverUrl, token } = session
   try {
-    const res = await fetch(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}/read`, {
+    const res = await fetchWithTimeout(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}/read`, {
       method: 'PUT',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ lastReadAt }),
@@ -402,11 +421,14 @@ export async function updateClubPolicySettings(
   const session = getSession()
   if (!session) return null
   try {
-    const res = await fetch(`${session.serverUrl}/hs/clubs/${encodeURIComponent(id)}/settings`, {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(settings),
-    })
+    const res = await fetchWithTimeout(
+      `${session.serverUrl}/hs/clubs/${encodeURIComponent(id)}/settings`,
+      {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      },
+    )
     return res.ok ? ((await res.json()) as ClubPolicySettings) : null
   } catch {
     return null
@@ -419,7 +441,7 @@ export async function archiveClub(id: string): Promise<boolean> {
   if (!session) return false
   const { serverUrl, token } = session
   try {
-    const res = await fetch(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}`, {
+    const res = await fetchWithTimeout(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -435,7 +457,7 @@ export async function deleteClub(id: string): Promise<boolean> {
   if (!session) return false
   const { serverUrl, token } = session
   try {
-    const res = await fetch(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}/hard`, {
+    const res = await fetchWithTimeout(`${serverUrl}/hs/clubs/${encodeURIComponent(id)}/hard`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     })

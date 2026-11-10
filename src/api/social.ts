@@ -16,6 +16,7 @@ import type {
   LeaderboardWindow,
 } from '@hearthshelf/core'
 import { getSession } from './session'
+import { fetchWithTimeout } from './fetchWithTimeout'
 
 const UNAVAILABLE_LEADERBOARD: HSLeaderboardResponse = { available: false, me: null, entries: [] }
 const UNAVAILABLE_FINISHED_BY: HSFinishedByResponse = { available: false, users: [] }
@@ -55,7 +56,7 @@ export async function getLeaderboard(window?: LeaderboardWindow): Promise<HSLead
   const { serverUrl, token } = session
   const q = window ? `?window=${encodeURIComponent(window)}` : ''
   try {
-    const res = await fetch(`${serverUrl}/hs/social/leaderboard${q}`, {
+    const res = await fetchWithTimeout(`${serverUrl}/hs/social/leaderboard${q}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!res.ok) return UNAVAILABLE_LEADERBOARD
@@ -84,7 +85,7 @@ export async function getCompare(opts: { userId?: string } = {}): Promise<HSComp
   params.set('tz', String(new Date().getTimezoneOffset()))
   if (opts.userId) params.set('userId', opts.userId)
   try {
-    const res = await fetch(`${serverUrl}/hs/social/compare?${params.toString()}`, {
+    const res = await fetchWithTimeout(`${serverUrl}/hs/social/compare?${params.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!res.ok) return UNAVAILABLE_COMPARE
@@ -111,6 +112,8 @@ export type ProfileResult =
   | { status: 'ok'; profile: HSProfileResponse }
   | { status: 'not-shared' }
   | { status: 'unavailable' }
+  /** No answer at all (offline or timed out), as opposed to the server saying no. */
+  | { status: 'unreachable' }
 
 export async function getProfile(userId: string): Promise<ProfileResult> {
   const session = getSession()
@@ -123,7 +126,7 @@ export async function getProfile(userId: string): Promise<ProfileResult> {
   params.set('tz', String(-new Date().getTimezoneOffset()))
   params.set('userId', userId)
   try {
-    const res = await fetch(`${serverUrl}/hs/social/profile?${params.toString()}`, {
+    const res = await fetchWithTimeout(`${serverUrl}/hs/social/profile?${params.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (res.status === 403) return { status: 'not-shared' }
@@ -132,7 +135,7 @@ export async function getProfile(userId: string): Promise<ProfileResult> {
     if (!data || data.available !== true) return { status: 'unavailable' }
     return { status: 'ok', profile: data }
   } catch {
-    return { status: 'unavailable' }
+    return { status: 'unreachable' }
   }
 }
 
@@ -142,7 +145,7 @@ export async function getFinishedBy(libraryItemId: string): Promise<HSFinishedBy
   const { serverUrl, token } = session
   const q = `?libraryItemId=${encodeURIComponent(libraryItemId)}`
   try {
-    const res = await fetch(`${serverUrl}/hs/social/finished-by${q}`, {
+    const res = await fetchWithTimeout(`${serverUrl}/hs/social/finished-by${q}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!res.ok) return UNAVAILABLE_FINISHED_BY
@@ -163,7 +166,7 @@ export async function getListeningNow(libraryItemId: string): Promise<HSListenin
   const { serverUrl, token } = session
   const q = `?libraryItemId=${encodeURIComponent(libraryItemId)}`
   try {
-    const res = await fetch(`${serverUrl}/hs/social/listening-now${q}`, {
+    const res = await fetchWithTimeout(`${serverUrl}/hs/social/listening-now${q}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!res.ok) return UNAVAILABLE_LISTENING_NOW
@@ -184,7 +187,7 @@ export async function getListeningNowBulk(
   if (!session || libraryItemIds.length === 0) return UNAVAILABLE_LISTENING_NOW_BULK
   const { serverUrl, token } = session
   try {
-    const res = await fetch(`${serverUrl}/hs/social/listening-now`, {
+    const res = await fetchWithTimeout(`${serverUrl}/hs/social/listening-now`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ libraryItemIds: libraryItemIds.slice(0, 100) }),
@@ -206,7 +209,7 @@ export async function getCommunityConfig(): Promise<CommunityConfig> {
   if (!session) return DEFAULT_COMMUNITY_CONFIG
   const { serverUrl, token } = session
   try {
-    const res = await fetch(`${serverUrl}/hs/social/community-config`, {
+    const res = await fetchWithTimeout(`${serverUrl}/hs/social/community-config`, {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!res.ok) return DEFAULT_COMMUNITY_CONFIG

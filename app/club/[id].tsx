@@ -108,6 +108,9 @@ import { Icon } from '@/ui/icons'
 import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { Toast, useToast } from '@/ui/Toast'
 import { haptics } from '@/ui/haptics'
+import { useIsOffline } from '@/api/useIsOffline'
+import { OfflineSplash } from '@/ui/OfflineSplash'
+import { ErrorState } from '@/ui/states'
 import { choose, confirm } from '@/ui/confirm'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
@@ -137,6 +140,10 @@ export default function ClubRoomScreen() {
   }>()
   const active = tabFromParam(from, 'home')
   const { message, show } = useToast()
+  const offline = useIsOffline()
+  // A failed write offline is not a mystery; say why instead of a bare "could not".
+  const fail = (msg: string) =>
+    show(offline ? "You're offline. Try again when you're back online." : msg)
   const meId = getMeId()
 
   const player = useSyncExternalStore(subscribePlayer, getPlayerState)
@@ -149,6 +156,8 @@ export default function ClubRoomScreen() {
   }, [])
   const miniPlayerInset = useMiniPlayerInset()
   const [detail, setDetail] = useState<HSClubDetail | null>(null)
+  const detailRef = useRef(detail)
+  detailRef.current = detail
   // The library the add-books search runs against. Best-effort: a failure just
   // leaves the sheet saying no library is available, rather than blocking the room.
   const [libraryId, setLibraryId] = useState<string | null>(null)
@@ -294,9 +303,12 @@ export default function ClubRoomScreen() {
       if (!id) return
       const res = await getClub(id, { bookId: viewBookId, position })
       if (!res) {
-        setLoadError(true)
+        // A missed poll on bad Wi-Fi must not throw away a room that already
+        // loaded; only a first load with nothing to show is an error.
+        if (!detailRef.current) setLoadError(true)
         return
       }
+      setLoadError(false)
       setDetail(res)
       // Freeze the "new since last visit" boundary once, on the first load of
       // this visit, BEFORE marking read moves the cursor. The unreadCount newest
@@ -341,9 +353,10 @@ export default function ClubRoomScreen() {
   useEffect(() => {
     // New book view = recompute the divider boundary from its own unread count.
     setNewSinceTs(undefined)
+    if (offline) return
     void load({ markRead: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, viewBookId])
+  }, [id, viewBookId, offline])
 
   // Keep the room fresh on the house 15s cadence while it's open. `load` closes
   // over the live position (changes every second), so hold it in a ref and run a
@@ -352,9 +365,10 @@ export default function ClubRoomScreen() {
   const loadRef = useRef(load)
   loadRef.current = load
   useEffect(() => {
+    if (offline) return
     const t = setInterval(() => void loadRef.current(), ROOM_POLL_MS)
     return () => clearInterval(t)
-  }, [])
+  }, [offline])
 
   // Coming back from Club admin, the club may have been renamed or its
   // visibility changed. Waiting up to a poll interval for that to appear reads
@@ -430,7 +444,6 @@ export default function ClubRoomScreen() {
     const text = body.trim()
     if (!text || !detail || !viewedBook || busy) return
     setBusy(true)
-    haptics.success()
     const created = await postNote({
       libraryItemId: viewedBook.libraryItemId,
       clubId: detail.club.id,
@@ -449,6 +462,7 @@ export default function ClubRoomScreen() {
     })
     setBusy(false)
     if (created) {
+      haptics.success()
       setBody('')
       setMentionPicks([])
       setReplyTo(null)
@@ -458,7 +472,7 @@ export default function ClubRoomScreen() {
       setComposingNew(false)
       await load({ markRead: true })
     } else {
-      show('Could not post')
+      fail('Could not post')
     }
   }
 
@@ -469,7 +483,7 @@ export default function ClubRoomScreen() {
     haptics.select()
     const reactions = await reactToNote(note.id, kind, on)
     if (!reactions) {
-      show('Could not save that reaction')
+      fail('Could not save that reaction')
       return
     }
     // Only a reaction that actually landed earns a place in the quick row, so a
@@ -508,7 +522,7 @@ export default function ClubRoomScreen() {
       timeSec: stampEnabled ? editingNote.timeSec : null,
     })
     setBusy(false)
-    if (!updated) return show('Could not edit that comment')
+    if (!updated) return fail('Could not edit that comment')
     setDetail((prev) =>
       prev
         ? {
@@ -563,7 +577,7 @@ export default function ClubRoomScreen() {
       return
     const ok = await deleteNote(note.id)
     if (ok) await load()
-    else show('Could not delete')
+    else fail('Could not delete')
   }
 
   const leave = async () => {
@@ -582,7 +596,7 @@ export default function ClubRoomScreen() {
       show('Left the club')
       router.back()
     } else {
-      show('Could not leave')
+      fail('Could not leave')
     }
   }
 
@@ -602,7 +616,7 @@ export default function ClubRoomScreen() {
       show('Club archived')
       router.back()
     } else {
-      show('Could not archive')
+      fail('Could not archive')
     }
   }
 
@@ -622,7 +636,7 @@ export default function ClubRoomScreen() {
       show('Club deleted')
       router.back()
     } else {
-      show('Could not delete')
+      fail('Could not delete')
     }
   }
 
@@ -638,7 +652,7 @@ export default function ClubRoomScreen() {
       return
     const ok = await kickClubMember(detail.club.id, member.userId)
     if (ok) await load()
-    else show('Could not remove')
+    else fail('Could not remove')
   }
 
   // Owner: promote a queued book to be the current book now, or drop it from the
@@ -663,14 +677,14 @@ export default function ClubRoomScreen() {
       finishPrevious = answer === 'finished'
     }
     setBusy(true)
-    haptics.success()
     const ok = await setClubCurrentBook(detail.club.id, book.libraryItemId, finishPrevious)
     setBusy(false)
     if (ok) {
+      haptics.success()
       show(`Now reading ${book.title || 'the next book'}`)
       setViewBookId(undefined)
       await load({ markRead: true })
-    } else show('Could not start the book')
+    } else fail('Could not start the book')
   }
 
   // Owner: put a past read or a set aside book back into the up-next queue.
@@ -684,7 +698,7 @@ export default function ClubRoomScreen() {
       show(`"${book.title || 'Book'}" moved back to up next`)
       setViewBookId(undefined)
       await load()
-    } else show('Could not move that book. Start a different book first.')
+    } else fail('Could not move that book. Start a different book first.')
   }
 
   // Owner: nudge a queued book one slot up or down. The whole order is sent, so
@@ -701,7 +715,7 @@ export default function ClubRoomScreen() {
     const ok = await reorderClubQueue(detail.club.id, ids)
     setBusy(false)
     if (ok) await load()
-    else show('Could not reorder the queue')
+    else fail('Could not reorder the queue')
   }
 
   const dropQueued = async (book: HSClubBook) => {
@@ -718,7 +732,7 @@ export default function ClubRoomScreen() {
     const ok = await removeClubQueued(detail.club.id, book.libraryItemId)
     setBusy(false)
     if (ok) await load()
-    else show('Could not remove')
+    else fail('Could not remove')
   }
 
   const openInvites = async () => {
@@ -736,7 +750,7 @@ export default function ClubRoomScreen() {
     setBusy(false)
     const sent = results.filter((result) => result.invited).length
     if (sent === 0) {
-      show('Could not send those invitations')
+      fail('Could not send those invitations')
       return
     }
     const withoutEmail = results.filter(
@@ -756,19 +770,32 @@ export default function ClubRoomScreen() {
     setBusy(true)
     const ok = await revokeClubInvite(detail.club.id, invitee.pendingInviteId)
     setBusy(false)
-    if (!ok) show('Could not cancel that invitation')
+    if (!ok) fail('Could not cancel that invitation')
     setInvitees(await getClubInvitees(detail.club.id))
   }
 
-  if (loadError) {
+  if (offline && !detail) {
+    return (
+      <OfflineSplash
+        title="This club needs a connection"
+        body="Reconnect to your server to open the club. Your downloaded books still play."
+        onBack={() => router.back()}
+      />
+    )
+  }
+
+  if (loadError && !detail) {
     return (
       <Screen tabBar={<AppTabBar activeName={active} onPressTab={goToTab} />}>
         <Header title="Book Club" onBack={() => router.back()} />
-        <Centered>
-          <AppText variant="meta" color={colors.textMuted}>
-            This club isn't available.
-          </AppText>
-        </Centered>
+        <ErrorState
+          title="Couldn't open this club"
+          message="It may have been removed, or the connection dropped."
+          onRetry={() => {
+            setLoadError(false)
+            void load({ markRead: true })
+          }}
+        />
       </Screen>
     )
   }
@@ -1439,7 +1466,7 @@ export default function ClubRoomScreen() {
               const ok = await setClubMembership(detail.club.id, true)
               setBusy(false)
               if (ok) await load({ markRead: true })
-              else show('Could not join')
+              else fail('Could not join')
             }}
           >
             <AppText variant="label" color={colors.onAccent}>

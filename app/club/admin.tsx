@@ -8,6 +8,9 @@ import { Toast, useToast } from '@/ui/Toast'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { haptics } from '@/ui/haptics'
+import { useIsOffline } from '@/api/useIsOffline'
+import { OfflineSplash } from '@/ui/OfflineSplash'
+import { ErrorState } from '@/ui/states'
 
 export default function ClubAdminScreen() {
   const router = useRouter()
@@ -24,11 +27,21 @@ export default function ClubAdminScreen() {
   const [autoAdvance, setAutoAdvance] = useState(false)
   const [isPublic, setIsPublic] = useState(true)
   const [loaded, setLoaded] = useState(false)
+  // A failed load must not fall through to the form: it would show made-up
+  // defaults as if they were this club's real settings.
+  const [loadFailed, setLoadFailed] = useState(false)
   const [busy, setBusy] = useState(false)
+  const offline = useIsOffline()
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
-    if (!id) return
+    if (!id || offline) return
+    let cancelled = false
+    setLoaded(false)
+    setLoadFailed(false)
     void getClub(id).then((detail) => {
+      if (cancelled) return
+      setLoadFailed(!detail)
       if (detail) {
         setName(detail.club.name)
         setDraftName(detail.club.name)
@@ -39,7 +52,10 @@ export default function ClubAdminScreen() {
       }
       setLoaded(true)
     })
-  }, [id])
+    return () => {
+      cancelled = true
+    }
+  }, [id, offline, attempt])
 
   // Rename has its own endpoint too, and unlike the switches it needs an
   // explicit confirm - you do not want a club renamed on every keystroke.
@@ -87,6 +103,16 @@ export default function ClubAdminScreen() {
     show('Club settings saved')
   }
 
+  if (offline) {
+    return (
+      <OfflineSplash
+        title="Club admin needs a connection"
+        body="Reconnect to your server to change this club. Your downloaded books still play."
+        onBack={() => router.back()}
+      />
+    )
+  }
+
   return (
     <Screen tabBar={<AppTabBar activeName={active} onPressTab={goToTab} />}>
       <View style={styles.header}>
@@ -107,6 +133,11 @@ export default function ClubAdminScreen() {
       </View>
       {!loaded ? (
         <Loading />
+      ) : loadFailed ? (
+        <ErrorState
+          message="We could not load this club's settings."
+          onRetry={() => setAttempt((n) => n + 1)}
+        />
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
           <AppText variant="eyebrow" color={colors.textMuted}>

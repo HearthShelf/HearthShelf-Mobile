@@ -15,6 +15,7 @@ import type {
   NoteVisibility,
 } from '@hearthshelf/core'
 import { getSession } from './session'
+import { fetchWithTimeout } from './fetchWithTimeout'
 
 const DISABLED_NOTES: HSNotesResponse = {
   enabled: false,
@@ -23,6 +24,10 @@ const DISABLED_NOTES: HSNotesResponse = {
   hiddenAhead: 0,
   now: Date.now(),
 }
+
+/** A notes answer, plus `failed` when the server never answered (offline or
+ *  timed out), so the UI can say so instead of "notes are turned off". */
+export type NotesResult = HSNotesResponse & { failed?: boolean }
 
 export interface GetNotesParams {
   libraryItemId: string
@@ -40,10 +45,10 @@ export interface GetNotesParams {
 // useTimelineMarkers and fetch on the same position tick. Identical requests
 // that overlap share one network call; nothing is cached once it settles, so
 // a refetch after posting or deleting a note is always fresh.
-const inFlightNotes = new Map<string, Promise<HSNotesResponse>>()
+const inFlightNotes = new Map<string, Promise<NotesResult>>()
 
 /** Fetch the gated notes + locked stubs for a book (public or club scope). */
-export function getNotes(params: GetNotesParams): Promise<HSNotesResponse> {
+export function getNotes(params: GetNotesParams): Promise<NotesResult> {
   const session = getSession()
   if (!session) return Promise.resolve(DISABLED_NOTES)
   const { serverUrl, token } = session
@@ -56,13 +61,13 @@ export function getNotes(params: GetNotesParams): Promise<HSNotesResponse> {
   const key = `${token}|${url}`
   const existing = inFlightNotes.get(key)
   if (existing) return existing
-  const request = (async (): Promise<HSNotesResponse> => {
+  const request = (async (): Promise<NotesResult> => {
     try {
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      const res = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${token}` } })
       if (!res.ok) return DISABLED_NOTES
       return (await res.json()) as HSNotesResponse
     } catch {
-      return DISABLED_NOTES
+      return { ...DISABLED_NOTES, failed: true }
     }
   })().finally(() => {
     inFlightNotes.delete(key)
@@ -108,11 +113,14 @@ export async function reactToNote(
   if (!session) return null
   const { serverUrl, token } = session
   try {
-    const res = await fetch(`${serverUrl}/hs/notes/${encodeURIComponent(noteId)}/reactions`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind, on }),
-    })
+    const res = await fetchWithTimeout(
+      `${serverUrl}/hs/notes/${encodeURIComponent(noteId)}/reactions`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, on }),
+      },
+    )
     if (!res.ok) return null
     const data = (await res.json()) as { reactions?: HSNoteReaction[] }
     return Array.isArray(data.reactions) ? data.reactions : []
@@ -126,7 +134,7 @@ export async function getNoteReactionDetails(noteId: string): Promise<HSNoteReac
   const session = getSession()
   if (!session) return []
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${session.serverUrl}/hs/notes/${encodeURIComponent(noteId)}/reactions`,
       {
         headers: { Authorization: `Bearer ${session.token}` },
@@ -151,7 +159,7 @@ export async function editNote(id: string, params: EditNoteParams): Promise<HSNo
   const session = getSession()
   if (!session) return null
   try {
-    const res = await fetch(`${session.serverUrl}/hs/notes/${encodeURIComponent(id)}`, {
+    const res = await fetchWithTimeout(`${session.serverUrl}/hs/notes/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -169,7 +177,7 @@ export async function postNote(params: PostNoteParams): Promise<HSNote | null> {
   if (!session) return null
   const { serverUrl, token } = session
   try {
-    const res = await fetch(`${serverUrl}/hs/notes`, {
+    const res = await fetchWithTimeout(`${serverUrl}/hs/notes`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -199,7 +207,7 @@ export async function deleteNote(id: string): Promise<boolean> {
   if (!session) return false
   const { serverUrl, token } = session
   try {
-    const res = await fetch(`${serverUrl}/hs/notes/${encodeURIComponent(id)}`, {
+    const res = await fetchWithTimeout(`${serverUrl}/hs/notes/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     })

@@ -56,6 +56,12 @@ export function useTimelineMarkers(
     getNotes({ libraryItemId: itemId, position })
       .then((res) => {
         if (cancelled) return
+        // Offline or timed out: keep the markers we have and let the next
+        // position bucket ask again.
+        if (res.failed) {
+          lastFetchKey.current = ''
+          return
+        }
         setNotes(res.enabled ? res.notes : [])
         setLocked(res.enabled ? res.locked : [])
       })

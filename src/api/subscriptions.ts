@@ -6,6 +6,7 @@
  * GET without any Audible round-trip.
  */
 import { getSession } from './session'
+import { fetchWithTimeout } from './fetchWithTimeout'
 import type {
   HSSubscription,
   HSSubscriptionCreate,
@@ -20,7 +21,7 @@ function requireSession() {
 
 export async function getSubscriptions(): Promise<HSSubscription[]> {
   const { serverUrl, token } = requireSession()
-  const res = await fetch(`${serverUrl}/hs/subscriptions`, {
+  const res = await fetchWithTimeout(`${serverUrl}/hs/subscriptions`, {
     headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
   })
   if (!res.ok) throw new Error(`subscriptions ${res.status}`)
@@ -32,7 +33,7 @@ export async function createSubscription(
   sub: HSSubscriptionCreate & { id?: string },
 ): Promise<HSSubscription> {
   const { serverUrl, token } = requireSession()
-  const res = await fetch(`${serverUrl}/hs/subscriptions`, {
+  const res = await fetchWithTimeout(`${serverUrl}/hs/subscriptions`, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
@@ -48,7 +49,7 @@ export async function createSubscription(
 
 export async function deleteSubscription(id: string): Promise<void> {
   const { serverUrl, token } = requireSession()
-  const res = await fetch(`${serverUrl}/hs/subscriptions/${encodeURIComponent(id)}`, {
+  const res = await fetchWithTimeout(`${serverUrl}/hs/subscriptions/${encodeURIComponent(id)}`, {
     method: 'DELETE',
     headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
   })
@@ -61,7 +62,7 @@ export async function registerPushToken(
   platform: 'ios' | 'android',
 ): Promise<void> {
   const { serverUrl, token } = requireSession()
-  const res = await fetch(`${serverUrl}/hs/push/register`, {
+  const res = await fetchWithTimeout(`${serverUrl}/hs/push/register`, {
     method: 'POST',
     headers: {
       Accept: 'application/json',

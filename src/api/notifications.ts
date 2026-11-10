@@ -1,4 +1,5 @@
 import { getSession } from './session'
+import { fetchWithTimeout } from './fetchWithTimeout'
 
 export interface HSNotification {
   id: string
@@ -15,6 +16,9 @@ export interface HSNotification {
 export interface NotificationsResponse {
   notifications: HSNotification[]
   unreadCount: number
+  /** No answer from the server (offline or timed out), so the empty list is
+   *  not the real one. */
+  failed?: boolean
 }
 
 const EMPTY: NotificationsResponse = { notifications: [], unreadCount: 0 }
@@ -23,7 +27,7 @@ export async function getNotifications(): Promise<NotificationsResponse> {
   const session = getSession()
   if (!session) return EMPTY
   try {
-    const res = await fetch(`${session.serverUrl}/hs/notifications`, {
+    const res = await fetchWithTimeout(`${session.serverUrl}/hs/notifications`, {
       headers: { Authorization: `Bearer ${session.token}` },
     })
     if (!res.ok) return EMPTY
@@ -33,7 +37,7 @@ export async function getNotifications(): Promise<NotificationsResponse> {
       unreadCount: typeof value.unreadCount === 'number' ? value.unreadCount : 0,
     }
   } catch {
-    return EMPTY
+    return { ...EMPTY, failed: true }
   }
 }
 
@@ -41,7 +45,7 @@ async function mark(path: string): Promise<boolean> {
   const session = getSession()
   if (!session) return false
   try {
-    const res = await fetch(`${session.serverUrl}${path}`, {
+    const res = await fetchWithTimeout(`${session.serverUrl}${path}`, {
       method: 'PUT',
       headers: { Authorization: `Bearer ${session.token}` },
     })
@@ -56,7 +60,7 @@ async function remove(path: string): Promise<boolean> {
   const session = getSession()
   if (!session) return false
   try {
-    const res = await fetch(`${session.serverUrl}${path}`, {
+    const res = await fetchWithTimeout(`${session.serverUrl}${path}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${session.token}` },
     })

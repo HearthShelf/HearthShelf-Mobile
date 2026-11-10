@@ -7,6 +7,7 @@
  * any failure so the series screen quietly omits the "missing books" surface.
  */
 import { getSession } from './session'
+import { fetchWithTimeout } from './fetchWithTimeout'
 import type {
   HSAudibleSearchResponse,
   HSAudibleSearchResult,
@@ -64,7 +65,7 @@ export async function fetchAudibleSeries(
   try {
     const params = new URLSearchParams({ q: name })
     if (seriesId) params.set('seriesId', seriesId)
-    const res = await fetch(`${s.serverUrl}/hs/audible/series?${params.toString()}`, {
+    const res = await fetchWithTimeout(`${s.serverUrl}/hs/audible/series?${params.toString()}`, {
       headers: { Accept: 'application/json', Authorization: `Bearer ${s.token}` },
     })
     if (!res.ok) return empty
@@ -95,7 +96,7 @@ export async function fetchAudibleSeriesByAsin(
   const hit = cache.get(key)
   if (hit && Date.now() - hit.at < TTL_MS) return hit.value
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${s.serverUrl}/hs/audible/series?seriesAsin=${encodeURIComponent(seriesAsin)}`,
       { headers: { Accept: 'application/json', Authorization: `Bearer ${s.token}` } },
     )
@@ -126,7 +127,7 @@ export async function searchAudible(query: string, page = 1): Promise<HSAudibleS
   const s = getSession()
   if (!s || query.trim().length < 2) return empty
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${s.serverUrl}/hs/audible/search?q=${encodeURIComponent(query)}&page=${page}`,
       { headers: { Accept: 'application/json', Authorization: `Bearer ${s.token}` } },
     )
@@ -143,9 +144,12 @@ export async function fetchAudibleProduct(asin: string): Promise<HSAudibleSearch
   const s = getSession()
   if (!s || !asin) return null
   try {
-    const res = await fetch(`${s.serverUrl}/hs/audible/product?asin=${encodeURIComponent(asin)}`, {
-      headers: { Accept: 'application/json', Authorization: `Bearer ${s.token}` },
-    })
+    const res = await fetchWithTimeout(
+      `${s.serverUrl}/hs/audible/product?asin=${encodeURIComponent(asin)}`,
+      {
+        headers: { Accept: 'application/json', Authorization: `Bearer ${s.token}` },
+      },
+    )
     if (!res.ok) return null
     return (await res.json()) as HSAudibleSearchResult
   } catch {
@@ -192,7 +196,7 @@ export async function fetchSeriesGapSummaries(): Promise<SeriesGapSummary[]> {
   const s = getSession()
   if (!s) return []
   try {
-    const res = await fetch(`${s.serverUrl}/hs/audible/series-summary`, {
+    const res = await fetchWithTimeout(`${s.serverUrl}/hs/audible/series-summary`, {
       headers: { Accept: 'application/json', Authorization: `Bearer ${s.token}` },
     })
     if (!res.ok) return []

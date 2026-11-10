@@ -34,6 +34,8 @@ import {
   type HSQuestGiverConfig,
 } from '@hearthshelf/core'
 import { getSession } from './session'
+import { isOfflineMode } from '@/player/syncState'
+import { fetchWithTimeout } from './fetchWithTimeout'
 
 export type QgConfig = HSQuestGiverConfig
 
@@ -67,14 +69,26 @@ const CONFIG_FALLBACK: QgConfig = {
   period: null,
 }
 
-async function qgFetch<T>(path: string, init?: RequestInit): Promise<T> {
+// AI answers can legitimately take a while, so they get a longer budget than
+// plain reads. Without any timeout a hung request on bad Wi-Fi left the run
+// stuck instead of falling back to the local heuristic.
+const QG_AI_TIMEOUT_MS = 45000
+
+async function qgFetch<T>(path: string, init?: RequestInit, timeoutMs?: number): Promise<T> {
   const s = getSession()
   if (!s) throw new Error('not_connected')
+  // Offline, go straight to the local fallbacks instead of making the listener
+  // wait out a timeout first.
+  if (isOfflineMode()) throw new Error('offline')
   const headers = new Headers(init?.headers)
   headers.set('Authorization', `Bearer ${s.token}`)
   headers.set('Accept', 'application/json')
   if (init?.body) headers.set('Content-Type', 'application/json')
-  const res = await fetch(`${s.serverUrl}/hs/questgiver${path}`, { ...init, headers })
+  const res = await fetchWithTimeout(
+    `${s.serverUrl}/hs/questgiver${path}`,
+    { ...init, headers },
+    timeoutMs,
+  )
   if (!res.ok) throw new Error(`qg ${res.status}`)
   return (await res.json()) as T
 }
@@ -120,7 +134,7 @@ export async function qgRecommend(
       picks: { id: string; reason: string }[]
       newPicks: { title: string; author: string; genre: string; hours: number; reason: string }[]
       remaining?: number | null
-    }>('/recommend', { method: 'POST', body: JSON.stringify({ prompt }) })
+    }>('/recommend', { method: 'POST', body: JSON.stringify({ prompt }) }, QG_AI_TIMEOUT_MS)
     return {
       intro: data.intro,
       picks: data.picks,
@@ -150,10 +164,14 @@ export async function qgAssess(context: QgAssessmentContext): Promise<QgAssessme
   const fallback = qgAssessHeuristic(context)
   if (fallback.verdict === 'unknown') return fallback
   try {
-    const data = await qgFetch<Omit<QgAssessment, 'engine'>>('/assess', {
-      method: 'POST',
-      body: JSON.stringify({ prompt: qgCraftAssessmentPrompt(context) }),
-    })
+    const data = await qgFetch<Omit<QgAssessment, 'engine'>>(
+      '/assess',
+      {
+        method: 'POST',
+        body: JSON.stringify({ prompt: qgCraftAssessmentPrompt(context) }),
+      },
+      QG_AI_TIMEOUT_MS,
+    )
     const historyCount = context.finishedBooks + context.startedBooks
     const confidence =
       historyCount < 4

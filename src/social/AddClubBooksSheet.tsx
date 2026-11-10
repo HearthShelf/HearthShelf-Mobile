@@ -180,13 +180,25 @@ export const AddClubBooksSheet = forwardRef<SheetRef, AddClubBooksSheetProps>(
         }
         setBusy(true)
         let added = 0
+        let stopped = false
         for (const id of fresh) {
           const ok = await enqueueClubBook(clubId, id)
-          if (ok) added++
+          if (!ok) {
+            // Most likely the connection dropped. Stop here rather than make
+            // the listener wait out a timeout for every remaining book.
+            stopped = true
+            break
+          }
+          added++
         }
         setBusy(false)
         if (added === 0) {
-          onMessage('Could not add to the queue')
+          onMessage('Could not add to the queue. Check your connection and try again.')
+          return
+        }
+        if (stopped) {
+          onMessage(`Added ${added} of ${fresh.length}. Check your connection and add the rest.`)
+          onAdded()
           return
         }
         haptics.mode()

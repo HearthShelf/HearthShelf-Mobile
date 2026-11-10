@@ -29,6 +29,7 @@ type Status =
   | { phase: 'loading' }
   | { phase: 'not-shared' }
   | { phase: 'unavailable' }
+  | { phase: 'unreachable' }
   | { phase: 'ready'; profile: HSProfileResponse }
 
 // Coarse "2 days ago" for the last-listened line. Presence, not an audit trail.
@@ -86,6 +87,7 @@ export default function UserProfileScreen() {
       if (isStale()) return
       if (res.status === 'ok') setStatus({ phase: 'ready', profile: res.profile })
       else if (res.status === 'not-shared') setStatus({ phase: 'not-shared' })
+      else if (res.status === 'unreachable') setStatus({ phase: 'unreachable' })
       else setStatus({ phase: 'unavailable' })
     },
     [id],
@@ -139,6 +141,23 @@ export default function UserProfileScreen() {
             icon={icons.lock}
             title="This listener keeps their activity private"
             body="They haven't opted into sharing, so there's no profile to show."
+          />
+        </Centered>
+      </Screen>
+    )
+  }
+
+  if (status.phase === 'unreachable') {
+    return (
+      <Screen tabBar={<AppTabBar activeName={active} onPressTab={goToTab} />}>
+        {header}
+        <Centered>
+          <ErrorState
+            message="Profiles need a connection to your server."
+            onRetry={() => {
+              setStatus({ phase: 'loading' })
+              void load()
+            }}
           />
         </Centered>
       </Screen>

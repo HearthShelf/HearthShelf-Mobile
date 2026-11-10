@@ -18,9 +18,12 @@ import {
 interface SubscriptionsState {
   subscriptions: HSSubscription[]
   loaded: boolean
+  /** The last refresh never got an answer, so an empty list may not be the
+   *  real one. */
+  failed: boolean
 }
 
-let state: SubscriptionsState = { subscriptions: [], loaded: false }
+let state: SubscriptionsState = { subscriptions: [], loaded: false, failed: false }
 const listeners = new Set<() => void>()
 
 export function getSubscriptionsState(): SubscriptionsState {
@@ -41,15 +44,15 @@ function set(patch: Partial<SubscriptionsState>): void {
 export async function refreshSubscriptions(): Promise<void> {
   try {
     const subscriptions = await getSubscriptions()
-    set({ subscriptions, loaded: true })
+    set({ subscriptions, loaded: true, failed: false })
   } catch {
     // Keep whatever we have; mark loaded so the UI stops showing a spinner.
-    set({ loaded: true })
+    set({ loaded: true, failed: true })
   }
 }
 
 export function clearSubscriptions(): void {
-  state = { subscriptions: [], loaded: false }
+  state = { subscriptions: [], loaded: false, failed: false }
   listeners.forEach((l) => l())
 }
 

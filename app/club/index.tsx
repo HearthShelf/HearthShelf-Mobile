@@ -47,7 +47,9 @@ import {
 import { BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet'
 import { Icon, icons } from '@/ui/icons'
 import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
-import { EmptyState, Skeleton, SkeletonRow } from '@/ui/states'
+import { EmptyState, ErrorState, Skeleton, SkeletonRow } from '@/ui/states'
+import { OfflineSplash } from '@/ui/OfflineSplash'
+import { useIsOffline } from '@/api/useIsOffline'
 import { showToast } from '@/ui/Toast'
 import { haptics } from '@/ui/haptics'
 import { useContentInset } from '@/ui/useContentInset'
@@ -70,11 +72,19 @@ export default function MyClubsScreen() {
   const [joinable, setJoinable] = useState<ClubSummary[]>([])
   // Per-club unread counts, filled in after the list loads (best-effort).
   const [unread, setUnread] = useState<Record<string, number>>({})
+  const [loadFailed, setLoadFailed] = useState(false)
+  const offline = useIsOffline()
 
   const load = useCallback(() => {
+    if (offline) return
     let cancelled = false
+    setLoadFailed(false)
     void getClubs(undefined, true).then((res) => {
       if (cancelled) return
+      if (res.failed) {
+        setLoadFailed(true)
+        return
+      }
       const mine = res.enabled ? res.mine : []
       setClubs(mine)
       setJoinable(res.enabled ? res.joinable : [])
@@ -94,30 +104,31 @@ export default function MyClubsScreen() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [offline])
 
   useFocusEffect(useCallback(() => load(), [load]))
 
   const goToTab = useGoToTab()
 
-  const createNewClub = async (name: string, visibility: ClubVisibility) => {
+  const createNewClub = async (name: string, visibility: ClubVisibility): Promise<boolean> => {
     const trimmed = name.trim()
-    if (!trimmed) return
-    haptics.success()
+    if (!trimmed) return false
     const club = await createClub(trimmed, undefined, visibility)
-    newClubRef.current?.dismiss()
     if (club) {
+      haptics.success()
+      newClubRef.current?.dismiss()
       showToast(`Created ${club.name}`)
       router.push(`/club/${encodeURIComponent(club.id)}?from=${active}`)
-    } else {
-      showToast('Could not create club')
+      return true
     }
+    showToast('Could not create the club. Check your connection and try again.')
+    return false
   }
 
   const joinPublicClub = async (club: ClubSummary) => {
     const joined = await setClubMembership(club.id, true)
     if (!joined) {
-      showToast('Could not join club')
+      showToast('Could not join the club. Check your connection and try again.')
       return
     }
     haptics.success()
@@ -138,6 +149,16 @@ export default function MyClubsScreen() {
   const quiet = clubs?.filter((club) => (club.lastActivityAt ?? club.createdAt) < quietCutoff) ?? []
   const quietIds = new Set(quiet.map((club) => club.id))
   const activeClubs = clubs?.filter((club) => !quietIds.has(club.id)) ?? []
+
+  if (offline && clubsEnabled) {
+    return (
+      <OfflineSplash
+        title="Book clubs need a connection"
+        body="Reconnect to your server to see your clubs. Your downloaded books still play."
+        onBack={() => router.back()}
+      />
+    )
+  }
 
   return (
     <Screen tabBar={<AppTabBar activeName={active} onPressTab={goToTab} />}>
@@ -173,6 +194,8 @@ export default function MyClubsScreen() {
           title="Book clubs are off"
           body="Turn book clubs on in Settings to read along with others."
         />
+      ) : loadFailed && clubs === null ? (
+        <ErrorState message="We could not load your clubs." onRetry={() => load()} />
       ) : clubs === null ? (
         <ClubsSkeleton styles={styles} />
       ) : clubs.length === 0 ? (
@@ -348,13 +371,16 @@ const NewClubSheet = forwardRef<
     joinable: ClubSummary[]
     onJoin: (club: ClubSummary) => void
     onPreview: (club: ClubSummary) => void
-    onCreate: (name: string, visibility: ClubVisibility) => void
+    onCreate: (name: string, visibility: ClubVisibility) => Promise<boolean>
     styles: Styles
     colors: Palette
   }
 >(function NewClubSheet({ joinable, onJoin, onPreview, onCreate, styles, colors }, ref) {
   const [name, setName] = useState('')
   const [visibility, setVisibility] = useState<ClubVisibility>('closed')
+  // A slow connection can take seconds to answer; block a second tap so it
+  // cannot make the same club twice, and keep the name if it fails.
+  const [creating, setCreating] = useState(false)
   return (
     <Sheet ref={ref} title="Join or create" snapPoints={['85%']}>
       <BottomSheetScrollView contentContainerStyle={styles.sheetScroll}>
@@ -443,12 +469,18 @@ const NewClubSheet = forwardRef<
           })}
         </View>
         <PrimaryButton
-          label="Create club"
+          label={creating ? 'Creating...' : 'Create club'}
           icon={icons.add}
           onPress={() => {
-            onCreate(name, visibility)
-            setName('')
-            setVisibility('closed')
+            if (creating) return
+            setCreating(true)
+            void onCreate(name, visibility).then((created) => {
+              setCreating(false)
+              if (created) {
+                setName('')
+                setVisibility('closed')
+              }
+            })
           }}
           style={{ marginTop: spacing.md }}
         />
