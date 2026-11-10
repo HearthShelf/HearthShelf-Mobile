@@ -41,7 +41,7 @@ import { haptics } from '@/ui/haptics'
 import { Icon } from '@/ui/icons'
 import { showToast } from '@/ui/Toast'
 import { useIsOffline } from '@/api/useIsOffline'
-import { isOfflineMode } from '@/player/syncState'
+import { QUEUED_MESSAGE } from '@/player/pendingActions'
 import { EmptyState } from '@/ui/states'
 import { useColors, useTheme } from '@/ui/ThemeProvider'
 import { fonts, radius, spacing, withAlpha, type Palette } from '@/ui/theme'
@@ -356,12 +356,12 @@ function SeriesFollowCard({ resolved }: { resolved: ResolvedSeries }) {
 
   const onUnfollow = () => {
     haptics.warn()
-    void unsubscribe(sub.id).catch(() =>
-      showToast(
-        isOfflineMode()
-          ? "You're offline. Unfollow again when you're back online."
-          : 'Could not unfollow that series',
-      ),
+    // Offline the unfollow is saved on the phone and sent once back online.
+    void unsubscribe(sub.id).then(
+      (outcome) => {
+        if (outcome === 'queued') showToast(QUEUED_MESSAGE)
+      },
+      () => showToast('Could not unfollow that series'),
     )
   }
 

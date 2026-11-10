@@ -50,6 +50,7 @@ import { radius, spacing, type Palette } from '@/ui/theme'
 import { useTheme } from '@/ui/ThemeProvider'
 import { parseUpcomingBookFallback } from '@/lib/upcomingBookRoute'
 import { isOfflineMode } from '@/player/syncState'
+import { QUEUED_MESSAGE } from '@/player/pendingActions'
 import { useIsOffline } from '@/api/useIsOffline'
 import { useConnection } from '@/api/ConnectionProvider'
 import { ErrorState } from '@/ui/states'
@@ -252,15 +253,14 @@ export default function UpcomingBookScreen() {
   // keeps it out of Upcoming and the Home countdown.
   const toggleIgnore = async () => {
     if (busy) return
-    if (isOfflineMode()) {
-      showToast("You're offline - try again when you're back online")
-      return
-    }
     setBusy(true)
     haptics.select()
     try {
-      if (ignored) await restoreEntity('roster', book.asin)
-      else await dismissEntity('roster', book.asin, book.title)
+      // Offline this is saved on the phone and sent once back online.
+      const outcome = ignored
+        ? await restoreEntity('roster', book.asin)
+        : await dismissEntity('roster', book.asin, book.title)
+      if (outcome === 'queued') showToast(QUEUED_MESSAGE)
     } catch {
       // The store rolled the change back; say so instead of looking like a no-op.
       showToast("Couldn't save that. Check your connection and try again.")
@@ -271,18 +271,15 @@ export default function UpcomingBookScreen() {
 
   const toggleFollow = async () => {
     if (busy) return
-    if (isOfflineMode()) {
-      showToast("You're offline - follow it when you're back online")
-      return
-    }
     setBusy(true)
     haptics.select()
     try {
+      let outcome: 'synced' | 'queued' = 'synced'
       if (followed) {
         const sub = findSubscription({ kind: 'book', asin: book.asin })
-        if (sub) await unsubscribe(sub.id)
+        if (sub) outcome = await unsubscribe(sub.id)
       } else {
-        await subscribe({
+        outcome = await subscribe({
           kind: 'book',
           asin: book.asin,
           seriesAsin: book.seriesAsin,
@@ -297,6 +294,7 @@ export default function UpcomingBookScreen() {
           publicationDatetime: book.publicationDatetime,
         })
       }
+      if (outcome === 'queued') showToast(QUEUED_MESSAGE)
     } catch {
       showToast("Couldn't save that. Check your connection and try again.")
     } finally {

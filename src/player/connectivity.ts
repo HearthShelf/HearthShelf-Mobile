@@ -23,6 +23,7 @@ import * as TaskManager from 'expo-task-manager'
 import { CONTROL_PLANE_URL } from '@/lib/config'
 import { flushPendingProgress, BACKGROUND_FLUSH_TASK } from './pendingProgress'
 import { flushPendingBookmarks } from './pendingBookmarks'
+import { flushPendingActions } from './pendingActions'
 
 let unsub: (() => void) | null = null
 let lastOnline: boolean | null = null
@@ -234,7 +235,7 @@ export function startConnectivityWatch(onOnline: () => void): void {
       reconnectDebounce = setTimeout(() => {
         reconnectDebounce = null
         onOnline()
-        void flushPendingProgress()
+        void flushPendingProgress().finally(() => void flushPendingActions())
         void flushPendingBookmarks()
       }, RECONNECT_DEBOUNCE_MS)
     }
@@ -255,7 +256,7 @@ export async function pokeConnectivity(onOnline: () => void): Promise<void> {
       reconnectDebounce = null
     }
     onOnline()
-    void flushPendingProgress()
+    void flushPendingProgress().finally(() => void flushPendingActions())
     void flushPendingBookmarks()
   }
 }

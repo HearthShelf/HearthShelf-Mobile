@@ -23,6 +23,17 @@ import { isDownloaded, deleteDownload } from '@/player/downloads'
 import { getState as getPlayerState } from '@/player/store'
 import { sweepVerdict } from '@/player/completion'
 import { finishDatePrompt } from '@/ui/FinishDatePrompt'
+import {
+  cancelPendingAction,
+  clearPendingActions,
+  enqueueAction,
+  finishKey,
+  isTransportFailure,
+  pendingActions,
+  resetKey,
+  shouldQueueNow,
+  type WriteOutcome,
+} from '@/player/pendingActions'
 
 export interface ProgressState {
   byId: ReadonlyMap<string, ABSMediaProgress>
@@ -508,10 +519,45 @@ export async function refreshProgress(): Promise<ABSMeResponse> {
       next.set(id, stub(id, o.isFinished))
     }
   }
+  applyQueuedIntents(next)
   cleanupFinishedDownloads(prev, next)
   emit(next)
   void sweepAbandonedNearEnd(next)
   return me
+}
+
+/**
+ * Keep choices made offline on screen until they reach the server. The 20s
+ * override above is for a write racing a refresh; a queued finish or reset can
+ * wait days, so the queue itself is the source of truth until it flushes.
+ */
+function applyQueuedIntents(next: Map<string, ABSMediaProgress>): void {
+  for (const a of pendingActions()) {
+    if (a.type === 'reset') {
+      const row = next.get(a.itemId)
+      // Listening after the reset (offline) is newer than the reset; keep it. The
+      // flush drops the reset for the same reason.
+      if (row && typeof row.lastUpdate === 'number' && row.lastUpdate > a.at) continue
+      next.delete(a.itemId)
+    } else if (a.type === 'finish') {
+      const row = next.get(a.itemId)
+      next.set(
+        a.itemId,
+        row
+          ? { ...row, isFinished: a.finished, progress: a.finished ? 1 : row.progress }
+          : stub(a.itemId, a.finished),
+      )
+    }
+  }
+}
+
+/** Ids with a queued finish/reset - the sweep must not act on them. */
+function queuedProgressIds(): Set<string> {
+  const ids = new Set<string>()
+  for (const a of pendingActions()) {
+    if (a.type === 'finish' || a.type === 'reset') ids.add(a.itemId)
+  }
+  return ids
 }
 
 /**
@@ -537,10 +583,11 @@ export async function refreshProgress(): Promise<ABSMeResponse> {
  */
 function sweepAbandonedNearEnd(rows: ReadonlyMap<string, ABSMediaProgress>): void {
   const openItemId = getPlayerState().nowPlaying?.itemId
+  const queued = queuedProgressIds()
   const due: { id: string; duration: number }[] = []
   for (const [id, p] of rows) {
     if (id === openItemId) continue
-    if (overrides.has(id)) continue
+    if (overrides.has(id) || queued.has(id)) continue
     if (sweepVerdict(p)) due.push({ id, duration: p.duration })
   }
   if (due.length === 0) return
@@ -875,16 +922,30 @@ function cleanupFinishedDownloads(
 /**
  * Mark items finished/unfinished: optimistic local flip, then serial PATCHes
  * (parallel writes raced ABS's own persistence), then a quiet refresh.
- * Throws (after rolling back) only if every write failed; partial success
+ * Throws (after rolling back) only if every write was REJECTED; partial success
  * keeps the successful items and refreshes to true state.
+ *
+ * Offline, or when a write can't reach the server, the choice is queued
+ * (pendingActions) instead of rolled back: setting isFinished is safe to send
+ * twice. Resolves 'queued' when any item is waiting to sync.
  */
 export async function markItemsFinished(
   items: { id: string; duration?: number }[],
   finished: boolean,
   finishedAt?: number,
   options: { recomputeQueue?: boolean } = {},
-): Promise<void> {
-  if (!items.length) return
+): Promise<WriteOutcome> {
+  if (!items.length) return 'synced'
+  // The tap is when it was finished, not whenever the queue reaches the server.
+  const queuedFinishedAt = finished ? (finishedAt ?? Date.now()) : undefined
+  const queue = (id: string) =>
+    enqueueAction({
+      type: 'finish',
+      itemId: id,
+      finished,
+      finishedAt: queuedFinishedAt,
+      at: Date.now(),
+    })
   const prev = items.map((it) => [it.id, state.byId.get(it.id)] as const)
   const next = new Map(state.byId)
   for (const it of items) {
@@ -909,18 +970,32 @@ export async function markItemsFinished(
     }
   }
 
+  if (shouldQueueNow()) {
+    for (const it of items) queue(it.id)
+    return 'queued'
+  }
+
   let okCount = 0
+  let queuedCount = 0
   let lastErr: unknown = null
   for (const it of items) {
     try {
       await setItemFinished(it.id, finished, finishedAt)
+      cancelPendingAction(finishKey(it.id))
       okCount++
     } catch (e) {
+      if (isTransportFailure(e)) {
+        // May or may not have landed; either way resending the same state is
+        // harmless, so keep the optimistic flip and send it again later.
+        queue(it.id)
+        queuedCount++
+        continue
+      }
       lastErr = e
       overrides.delete(it.id)
     }
   }
-  if (okCount === 0) {
+  if (okCount === 0 && queuedCount === 0) {
     const rollback = new Map(state.byId)
     for (const [id, p] of prev) {
       if (p) rollback.set(id, p)
@@ -930,8 +1005,11 @@ export async function markItemsFinished(
     emit(rollback)
     throw lastErr instanceof Error ? lastErr : new Error('mark_finished_failed')
   }
-  if (options.recomputeQueue !== false) requestAutoQueueRecompute()
-  void refreshProgress().catch(() => {})
+  if (okCount > 0) {
+    if (options.recomputeQueue !== false) requestAutoQueueRecompute()
+    void refreshProgress().catch(() => {})
+  }
+  return queuedCount > 0 ? 'queued' : 'synced'
 }
 
 /**
@@ -939,7 +1017,7 @@ export async function markItemsFinished(
  * Optimistic with rollback, same shape as markItemsFinished. Used by the
  * Continue-Listening "Reset progress" action (which also dismisses the book).
  */
-export async function resetItemProgress(itemId: string): Promise<void> {
+export async function resetItemProgress(itemId: string): Promise<WriteOutcome> {
   // If this is the loaded book, close its session at the old position first.
   // Otherwise that still-live session can sync after the reset and resurrect
   // the accidental partial playhead. Keep the track loaded, paused at 0, so a
@@ -960,9 +1038,20 @@ export async function resetItemProgress(itemId: string): Promise<void> {
   // a progress record and makes detail surfaces render the abnormal "0%" state.
   overrides.set(itemId, { isFinished: false, atMs: resetAt, removeProgress: true })
   emit(next)
+  // Offline (or the DELETE couldn't reach the server): queue it. The flush
+  // re-checks for progress newer than resetAt before sending, so a reset never
+  // wipes listening that happened after it.
+  const queueReset = (): WriteOutcome => {
+    enqueueAction({ type: 'reset', itemId, at: resetAt })
+    forgetServerEvidence(itemId)
+    if (loaded) playerStore.requestSeek(0)
+    return 'queued'
+  }
+  if (shouldQueueNow()) return queueReset()
   try {
     await resetItemProgressApi(itemId)
   } catch (e) {
+    if (isTransportFailure(e)) return queueReset()
     const rollback = new Map(state.byId)
     if (prev) rollback.set(itemId, prev)
     else rollback.delete(itemId)
@@ -970,15 +1059,22 @@ export async function resetItemProgress(itemId: string): Promise<void> {
     overrides.delete(itemId)
     throw e instanceof Error ? e : new Error('reset_progress_failed')
   }
+  cancelPendingAction(resetKey(itemId))
   serverUpdatedAt.delete(itemId)
-  serverConfirmedAt.delete(itemId)
-  // The row is gone from ABS, so nothing about it is confirmed any more. Leaving
-  // the old watermark would make the re-created row (starting at 0) look stale
-  // against a position that no longer exists.
-  serverConfirmedSec.delete(itemId)
+  forgetServerEvidence(itemId)
   if (loaded) playerStore.requestSeek(0)
   requestAutoQueueRecompute()
   void refreshProgress().catch(() => {})
+  return 'synced'
+}
+
+/** The row is gone (or about to be), so nothing about it is confirmed any more.
+ *  Leaving the old watermark would make the re-created row (starting at 0) look
+ *  stale against a position that no longer exists. The server stamp is left to
+ *  the caller: a queued reset compares against it to spot listening elsewhere. */
+function forgetServerEvidence(itemId: string): void {
+  serverConfirmedAt.delete(itemId)
+  serverConfirmedSec.delete(itemId)
 }
 
 /**
@@ -1003,6 +1099,8 @@ export async function resetItemProgress(itemId: string): Promise<void> {
  */
 export async function clearAllProgress(): Promise<void> {
   overrides.clear()
+  // Queued finishes/resets belong to the old account too.
+  await clearPendingActions()
   serverUpdatedAt.clear()
   serverConfirmedSec.clear()
   serverConfirmedAt.clear()
@@ -1017,21 +1115,22 @@ export async function markFinished(
   duration?: number,
   finishedAt?: number,
   options?: { recomputeQueue?: boolean },
-): Promise<void> {
-  await markItemsFinished([{ id: itemId, duration }], finished, finishedAt, options)
+): Promise<WriteOutcome> {
+  return markItemsFinished([{ id: itemId, duration }], finished, finishedAt, options)
 }
 
 /**
  * Mark items finished, first asking "when did you finish this?" so completion
  * can be backdated for accurate stats. Unfinishing is instant (no prompt).
  * Resolves false when the user dismisses the prompt so callers can skip their
- * success toast / selection-clear. Marking through this keeps the optimistic
+ * success toast / selection-clear; otherwise the write outcome ('queued' when
+ * it is waiting to sync). Marking through this keeps the optimistic
  * flip + protected-override behavior of markItemsFinished.
  */
 export async function promptAndMarkItemsFinished(
   items: { id: string; duration?: number }[],
   finished: boolean,
-): Promise<boolean> {
+): Promise<WriteOutcome | false> {
   if (!items.length) return false
   let finishedAt: number | undefined
   if (finished) {
@@ -1039,6 +1138,5 @@ export async function promptAndMarkItemsFinished(
     if (!choice) return false
     finishedAt = choice.finishedAt ?? undefined
   }
-  await markItemsFinished(items, finished, finishedAt)
-  return true
+  return markItemsFinished(items, finished, finishedAt)
 }

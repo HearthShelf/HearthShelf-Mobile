@@ -13,7 +13,8 @@ import {
 import { releaseNotificationRoute } from '@/notifications/releaseRoute'
 import { RatingPromptActions } from '@/notifications/RatingPromptActions'
 import { RATING_NOTIFICATION_KIND, ratingSavedMessage } from '@hearthshelf/core'
-import { setRating, skipRatingPrompt } from '@/api/ratings'
+import { skipRatingPrompt } from '@/api/ratings'
+import { QUEUED_MESSAGE, saveRating } from '@/player/pendingActions'
 import { getSettingsState, setSetting } from '@/store/settings'
 import { AppText, Centered, IconButton, Loading, Screen, Touchable } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
@@ -160,13 +161,22 @@ export default function NotificationsScreen() {
   const rate = async (notification: HSNotification, value: number): Promise<boolean> => {
     const itemKey = dataString(notification, 'itemKey') || notification.entityId || ''
     if (!itemKey) return false
+    let outcome
     try {
-      await setRating(itemKey, value)
+      // Offline (or no answer) the rating is saved on the phone and sent later;
+      // setting a rating twice is harmless.
+      outcome = await saveRating(itemKey, value)
     } catch {
-      // setRating throws rather than swallowing, precisely so the row can stay
-      // put instead of claiming a score the server never stored.
-      show(isOfflineMode() ? OFFLINE_MESSAGE : "Couldn't save that rating")
+      // A refusal from the server: keep the row instead of claiming a score the
+      // server never stored.
+      show("Couldn't save that rating")
       return false
+    }
+    if (outcome === 'queued') {
+      // Leave the row: dismissing it needs the server too, and an offline
+      // dismissal would only put it back with an error.
+      show(QUEUED_MESSAGE)
+      return true
     }
     show(ratingSavedMessage(value))
     // Let the confirmation land before the row goes.

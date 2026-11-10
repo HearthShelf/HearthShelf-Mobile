@@ -29,6 +29,7 @@ import {
   flushPendingBookmarks,
   getPendingBookmarkState,
 } from './pendingBookmarks'
+import { hydratePendingActions, flushPendingActions, pendingActionCount } from './pendingActions'
 
 TaskManager.defineTask(BACKGROUND_FLUSH_TASK, async () => {
   try {
@@ -41,7 +42,10 @@ TaskManager.defineTask(BACKGROUND_FLUSH_TASK, async () => {
     await hydratePendingBookmarks()
     const bookmarks = getPendingBookmarkState()
     const haveBookmarks = bookmarks.creates.length > 0 || bookmarks.deletes.length > 0
-    if (pendingCount() === 0 && !haveBookmarks) return BackgroundTask.BackgroundTaskResult.Success
+    await hydratePendingActions()
+    if (pendingCount() === 0 && !haveBookmarks && pendingActionCount() === 0) {
+      return BackgroundTask.BackgroundTaskResult.Success
+    }
     // Pass the CURRENT network so a LAN-scoped session is reusable when we really
     // are back on that Wi-Fi (the offline-listening case this task exists for),
     // while hydrateSession still refuses a private origin anywhere else - a
@@ -51,6 +55,8 @@ TaskManager.defineTask(BACKGROUND_FLUSH_TASK, async () => {
     await hydrateSession(scope)
     await flushPendingProgress()
     await flushPendingBookmarks()
+    // After the sessions: a queued reset is judged against listening that landed.
+    await flushPendingActions()
     return BackgroundTask.BackgroundTaskResult.Success
   } catch {
     return BackgroundTask.BackgroundTaskResult.Failed

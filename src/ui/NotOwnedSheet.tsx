@@ -39,6 +39,7 @@ import { AppText, Cover, IconButton, PrimaryButton, Sheet, Touchable, icons } fr
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { showToast } from '@/ui/Toast'
 import { isOfflineMode } from '@/player/syncState'
+import { QUEUED_MESSAGE, type WriteOutcome } from '@/player/pendingActions'
 import { useColors } from '@/ui/ThemeProvider'
 
 export const NotOwnedSheet = forwardRef<
@@ -84,18 +85,17 @@ export const NotOwnedSheet = forwardRef<
     ? (dismissals.rosterAsins ?? []).some((a) => a.toLowerCase() === book.asin.toLowerCase())
     : false
 
-  // Follow and ignore live on the server; without this they failed silently.
-  const offlineStop = (): boolean => {
-    if (!isOfflineMode()) return false
-    showToast("You're offline - try again when you're back online")
-    return true
-  }
+  // Follow and ignore live on the server. Offline they are saved on the phone
+  // and sent once back online; only a refusal from the server is an error.
   const saveFailed = () => showToast("Couldn't save that. Check your connection and try again.")
+  const report = (outcome: WriteOutcome) => {
+    if (outcome === 'queued') showToast(QUEUED_MESSAGE)
+  }
 
   const toggleFollow = () => {
-    if (!book || offlineStop()) return
+    if (!book) return
     if (sub) {
-      void unsubscribe(sub.id).catch(saveFailed)
+      void unsubscribe(sub.id).then(report, saveFailed)
       return
     }
     void subscribe({
@@ -110,15 +110,20 @@ export const NotOwnedSheet = forwardRef<
       durationMinutes: book.durationMinutes,
       releaseDate: book.releaseDate,
       publicationDatetime: book.publicationDatetime,
-    }).catch(saveFailed)
+    }).then(report, saveFailed)
   }
 
   const toggleIgnore = () => {
-    if (!book || offlineStop()) return
+    if (!book) return
     const done = ignored
       ? restoreEntity('roster', book.asin)
       : dismissEntity('roster', book.asin, book.title)
-    void done.then(() => reset()).catch(saveFailed)
+    void done
+      .then((outcome) => {
+        report(outcome)
+        reset()
+      })
+      .catch(saveFailed)
   }
 
   const confirm = async () => {
@@ -140,6 +145,15 @@ export const NotOwnedSheet = forwardRef<
     setPending(false)
     if (res.success && res.request) {
       setResult(res)
+      return
+    }
+    // No answer at all (timeout, dropped link): the request may or may not have
+    // reached the server, and sending it again could make a second one. Say so
+    // rather than "try again".
+    if (res.status == null && !res.error) {
+      setError(
+        "We couldn't tell if your request went through. Check your requests before sending it again.",
+      )
       return
     }
     // Say what the server actually answered. This was a flat "Request failed.

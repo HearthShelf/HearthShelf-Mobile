@@ -65,6 +65,7 @@ import {
 } from '@/player/downloads'
 import { offlineDetailFor } from '@/player/offlineCatalog'
 import { isOfflineMode } from '@/player/syncState'
+import { QUEUED_MESSAGE } from '@/player/pendingActions'
 import {
   getPendingSessionState,
   subscribePendingSessions,
@@ -397,8 +398,12 @@ export default function ItemDetailScreen() {
     const choice = await finishDatePrompt({ count: 1 })
     if (!choice) return
     try {
-      await markItemsFinished([{ id: detail.id, duration }], true, choice.finishedAt ?? undefined)
-      show('Finish date updated')
+      const outcome = await markItemsFinished(
+        [{ id: detail.id, duration }],
+        true,
+        choice.finishedAt ?? undefined,
+      )
+      show(outcome === 'queued' ? QUEUED_MESSAGE : 'Finish date updated')
     } catch {
       show('Could not update the date')
     }
@@ -406,29 +411,23 @@ export default function ItemDetailScreen() {
 
   const toggleFinished = async () => {
     const next = !isFinished
-    if (serverDown) {
-      show(
-        next
-          ? "You're offline - mark it finished when you're back online"
-          : "You're offline - try again when you're back online",
-      )
-      return
-    }
     try {
       // D-FINISH: finishing is ONE tap. Mark it now (server stamps "now"); the
       // date is editable afterward from the toast, not a blocking prompt.
-      await markItemsFinished([{ id: detail.id, duration }], next)
+      // Offline it is saved on the phone and sent once the connection is back.
+      const outcome = await markItemsFinished([{ id: detail.id, duration }], next)
+      const queued = outcome === 'queued'
       if (next) {
         haptics.success()
         setFinishBurst((b) => b + 1)
-        showToast('Finished', {
+        showToast(queued ? `Finished. ${QUEUED_MESSAGE}` : 'Finished', {
           actions: [
             { label: 'Edit date', onPress: () => void editFinishDate() },
             { label: 'Undo', onPress: () => void markItemsFinished([{ id: detail.id }], false) },
           ],
         })
       } else {
-        showToast('Back in progress', {
+        showToast(queued ? `Back in progress. ${QUEUED_MESSAGE}` : 'Back in progress', {
           action: {
             label: 'Undo',
             onPress: () => void markItemsFinished([{ id: detail.id, duration }], true),
@@ -444,10 +443,6 @@ export default function ItemDetailScreen() {
   // confirms first, then reports through a toast.
   const resetProgress = async () => {
     overflowSheetRef.current?.dismiss()
-    if (serverDown) {
-      show("You're offline - reset it when you're back online")
-      return
-    }
     const ok = await confirm({
       title: 'Reset progress',
       message: `Start "${title}" over from the beginning?`,
@@ -455,8 +450,8 @@ export default function ItemDetailScreen() {
     })
     if (!ok) return
     try {
-      await resetItemProgress(detail.id)
-      show('Progress reset')
+      const outcome = await resetItemProgress(detail.id)
+      show(outcome === 'queued' ? `Progress reset. ${QUEUED_MESSAGE}` : 'Progress reset')
     } catch {
       show('Could not reset progress')
     }
@@ -466,18 +461,14 @@ export default function ItemDetailScreen() {
   // via the Undo toast.
   const hideBook = async () => {
     overflowSheetRef.current?.dismiss()
-    if (serverDown) {
-      show("You're offline - hide it when you're back online")
-      return
-    }
     const seriesRef = series
     const useSeries = Boolean(seriesRef)
     const kind: 'series' | 'item' = useSeries ? 'series' : 'item'
     const entityId = useSeries ? seriesRef!.id : detail.id
     const label = useSeries ? seriesRef!.name : title
     try {
-      await dismissEntity(kind, entityId, label)
-      showToast(`Hid "${label}"`, {
+      const outcome = await dismissEntity(kind, entityId, label)
+      showToast(outcome === 'queued' ? `Hid "${label}". ${QUEUED_MESSAGE}` : `Hid "${label}"`, {
         action: {
           label: 'Undo',
           onPress: () => {

@@ -49,6 +49,7 @@ import { confirm } from '@/ui/confirm'
 import { dismiss as dismissEntity, restore as restoreEntity } from '@/store/dismissals'
 import { resetItemProgress } from '@/store/progress'
 import { isOfflineMode } from '@/player/syncState'
+import { QUEUED_MESSAGE } from '@/player/pendingActions'
 
 // Where the long-press originated, so the sheet can offer the right "hide"
 // action: a Continue-Series tile hides the whole SERIES; a Continue-Listening
@@ -164,25 +165,28 @@ export const BookActionsSheet = forwardRef<
 
   const markFinished = async () => {
     if (!item || busy) return
-    if (offlineStop("You're offline - try again when you're back online")) return
     const next = !finished
     setBusy(true)
     close()
     try {
       // D-FINISH: one tap. Mark now; the date is editable from the toast, not a
-      // blocking prompt. Undo reverts.
-      await markItemsFinished([{ id: item.id, duration: item.media.duration ?? 0 }], next)
+      // blocking prompt. Undo reverts. Offline it is queued and synced later.
+      const outcome = await markItemsFinished(
+        [{ id: item.id, duration: item.media.duration ?? 0 }],
+        next,
+      )
+      const queued = outcome === 'queued'
       onMarkedFinished?.(item, next)
       if (next) {
         haptics.success()
-        showToast('Finished', {
+        showToast(queued ? `Finished. ${QUEUED_MESSAGE}` : 'Finished', {
           action: {
             label: 'Undo',
             onPress: () => void markItemsFinished([{ id: item.id }], false),
           },
         })
       } else {
-        showToast('Marked not finished')
+        showToast(queued ? `Marked not finished. ${QUEUED_MESSAGE}` : 'Marked not finished')
       }
     } catch {
       toast('Could not update')
@@ -244,7 +248,6 @@ export const BookActionsSheet = forwardRef<
   // search. Optimistic via the dismissals store; reversible from the Undo toast.
   const dismissTarget = async () => {
     if (!item || busy) return
-    if (offlineStop("You're offline - try again when you're back online")) return
     close()
     const isSeries = source === 'series'
     const kind: 'series' | 'item' = isSeries ? 'series' : 'item'
@@ -253,9 +256,9 @@ export const BookActionsSheet = forwardRef<
     const label = isSeries ? seriesRef?.name || 'series' : itemTitle(item)
     const done = isSeries ? `Ignoring "${label}"` : `Set "${label}" aside`
     try {
-      await dismissEntity(kind, entityId, label)
+      const outcome = await dismissEntity(kind, entityId, label)
       onDismissed?.(done)
-      showToast(done, {
+      showToast(outcome === 'queued' ? `${done}. ${QUEUED_MESSAGE}` : done, {
         action: { label: 'Undo', onPress: () => void restoreEntity(kind, entityId) },
       })
     } catch {
@@ -267,7 +270,6 @@ export const BookActionsSheet = forwardRef<
   // book from the shelf (the product decision); elsewhere it just resets.
   const resetProgress = async () => {
     if (!item || busy) return
-    if (offlineStop("You're offline - reset it when you're back online")) return
     close()
     const hideAfter = source === 'listening'
     const ok = await confirm({
@@ -279,10 +281,14 @@ export const BookActionsSheet = forwardRef<
     })
     if (!ok) return
     try {
-      await resetItemProgress(item.id)
-      if (hideAfter) await dismissEntity('item', item.id, itemTitle(item))
+      const reset = await resetItemProgress(item.id)
+      const hid = hideAfter ? await dismissEntity('item', item.id, itemTitle(item)) : 'synced'
       onDismissed?.(`Reset "${itemTitle(item)}"`)
-      toast('Progress reset')
+      toast(
+        reset === 'queued' || hid === 'queued'
+          ? `Progress reset. ${QUEUED_MESSAGE}`
+          : 'Progress reset',
+      )
     } catch {
       toast('Could not reset progress')
     }

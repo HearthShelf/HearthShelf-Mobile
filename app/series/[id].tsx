@@ -34,6 +34,7 @@ import { fetchAudibleSeries, peekAudibleSeries } from '@/api/absAudible'
 import { getRmabEnabled } from '@/api/absRmab'
 import { catalogSeriesById } from '@/player/offlineCatalog'
 import { isOfflineMode } from '@/player/syncState'
+import { QUEUED_MESSAGE, type WriteOutcome } from '@/player/pendingActions'
 import { isDownloaded } from '@/player/downloads'
 import { useIsOffline } from '@/api/useIsOffline'
 import { useConnection } from '@/api/ConnectionProvider'
@@ -201,14 +202,13 @@ export default function SeriesDetailScreen() {
     : undefined
   const toggleFollowSeries = () => {
     if (!seriesAsin || !seriesName) return
-    if (serverDown) {
-      showToast("You're offline - follow it when you're back online")
-      return
+    // Offline the change is saved on the phone and sent once back online.
+    const report = (outcome: WriteOutcome) => {
+      if (outcome === 'queued') showToast(QUEUED_MESSAGE)
     }
+    const failed = () => showToast("Couldn't save that. Check your connection and try again.")
     if (seriesSub) {
-      void unsubscribe(seriesSub.id).catch(() =>
-        showToast("Couldn't save that. Check your connection and try again."),
-      )
+      void unsubscribe(seriesSub.id).then(report, failed)
       return
     }
     void subscribe({
@@ -223,7 +223,7 @@ export default function SeriesDetailScreen() {
       // on `sub.seriesTitle` - send only the former and the follow is accepted
       // and then silently never fires.
       seriesTitle: seriesName,
-    }).catch(() => showToast("Couldn't save that. Check your connection and try again."))
+    }).then(report, failed)
   }
   // This screen is reachable without passing through Home (deep link, search),
   // which is where the store is otherwise hydrated.
@@ -362,19 +362,16 @@ export default function SeriesDetailScreen() {
   // can't blink back to stale state.
   const markSeries = async () => {
     if (!books.length || marking) return
-    if (serverDown) {
-      showToast("You're offline - try again when you're back online")
-      return
-    }
     const next = !allSeriesFinished
     setMarking(true)
     try {
       // Finishing asks "when did you finish?" once for the whole series;
-      // unfinishing is instant.
-      await promptAndMarkItemsFinished(
+      // unfinishing is instant. Offline it is queued and synced later.
+      const outcome = await promptAndMarkItemsFinished(
         books.map((b) => ({ id: b.id, duration: b.media.duration ?? 0 })),
         next,
       )
+      if (outcome === 'queued') showToast(QUEUED_MESSAGE)
     } catch {
       // Store rolled the optimistic state back.
       showToast("Couldn't update the series. Check your connection and try again.")
@@ -385,13 +382,11 @@ export default function SeriesDetailScreen() {
 
   const toggleIgnoreSeries = async () => {
     if (!id) return
-    if (serverDown) {
-      showToast("You're offline - try again when you're back online")
-      return
-    }
     try {
-      if (seriesIgnored) await restore('series', id)
-      else await dismiss('series', id, series?.name)
+      const outcome = seriesIgnored
+        ? await restore('series', id)
+        : await dismiss('series', id, series?.name)
+      if (outcome === 'queued') showToast(QUEUED_MESSAGE)
     } catch {
       // Store rolled the optimistic write back; say so rather than leave the
       // button looking like it did nothing.

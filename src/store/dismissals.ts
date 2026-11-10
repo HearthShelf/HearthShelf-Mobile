@@ -6,10 +6,24 @@
  * Writes are optimistic (update local first, then the server), and since a
  * dismissal changes the server-computed Auto queue, callers should re-pull the
  * queue after a write - see hydrateAfterDismissChange wiring in the Home screen.
+ *
+ * Offline (or when the write can't reach the server) a dismiss/restore is queued
+ * in player/pendingActions and kept on screen; both are set add/remove, so a
+ * replay is harmless. Every server list adopted here is overlaid with those
+ * queued choices so a refresh can't undo them before they sync.
  */
 import type { Dismissals } from '@hearthshelf/core'
 import * as api from '@/api/dismissals'
 import { requestQueueRecompute } from '@/player/queueSync'
+import {
+  cancelPendingAction,
+  dismissKey,
+  enqueueAction,
+  isTransportFailure,
+  overlayDismissals,
+  shouldQueueNow,
+  type WriteOutcome,
+} from '@/player/pendingActions'
 
 // 'series' and 'item' are ABS ids. 'roster' is an AUDIBLE ASIN: a series-roster
 // book the user never expects to own (an ebook-only side story, a print
@@ -69,7 +83,7 @@ export function isItemDismissed(itemId: string): boolean {
 /** Pull the server's dismissal list and adopt it. Best-effort. */
 export async function hydrateDismissals(): Promise<void> {
   try {
-    set(await api.getDismissals())
+    set(overlayDismissals(await api.getDismissals()))
   } catch {
     // Backend unreachable - keep the current cache.
   }
@@ -80,40 +94,62 @@ export function resetDismissals(): void {
   set({ seriesIds: [], itemIds: [], rosterAsins: [] })
 }
 
-/**
- * Dismiss a series/book: update the cache optimistically, then persist. On
- * failure, roll back. Returns a promise that resolves when the server confirms
- * (so the caller can re-pull the queue afterward).
- */
-export async function dismiss(kind: DismissKind, entityId: string, label?: string): Promise<void> {
-  const key = BUCKET[kind]
-  if (label) labels.set(entityId, label)
-  if ((state[key] ?? []).includes(entityId)) return
-  const prev = state
-  set({ ...state, [key]: [...(state[key] ?? []), entityId] })
+/** Send one dismiss/restore, or queue it. Rolls back only when the server
+ *  answered and refused. */
+async function write(
+  kind: DismissKind,
+  entityId: string,
+  dismissed: boolean,
+  prev: Dismissals,
+): Promise<WriteOutcome> {
+  const queue = (): WriteOutcome => {
+    enqueueAction({ type: 'dismiss', kind, entityId, dismissed, at: Date.now() })
+    return 'queued'
+  }
+  if (shouldQueueNow()) return queue()
   try {
-    set(await api.addDismissal(kind, entityId))
-    // Dismissing hides this series/book from every Auto rule, so rebuild the
-    // queue now instead of waiting for the next play-cooldown / nightly job.
+    const fresh = dismissed
+      ? await api.addDismissal(kind, entityId)
+      : await api.removeDismissal(kind, entityId)
+    cancelPendingAction(dismissKey(kind, entityId))
+    set(overlayDismissals(fresh))
+    // Dismissing hides this series/book from every Auto rule (restoring makes it
+    // eligible again), so rebuild the queue now instead of waiting for the next
+    // play-cooldown / nightly job.
     requestQueueRecompute()
-  } catch {
-    set(prev) // roll back the optimistic add
-    throw new Error('dismiss_failed')
+    return 'synced'
+  } catch (e) {
+    // A timed-out write may already have landed; adding/removing the same entry
+    // again is harmless, so keep it on screen and send it later.
+    if (isTransportFailure(e)) return queue()
+    set(prev) // roll back the optimistic change
+    throw new Error(dismissed ? 'dismiss_failed' : 'restore_failed')
   }
 }
 
-/** Restore a previously dismissed series/book (optimistic, with rollback). */
-export async function restore(kind: DismissKind, entityId: string): Promise<void> {
+/**
+ * Dismiss a series/book: update the cache optimistically, then persist. Resolves
+ * 'queued' when it was saved to sync later; rejects (after rolling back) only
+ * when the server refused it.
+ */
+export async function dismiss(
+  kind: DismissKind,
+  entityId: string,
+  label?: string,
+): Promise<WriteOutcome> {
   const key = BUCKET[kind]
-  if (!(state[key] ?? []).includes(entityId)) return
+  if (label) labels.set(entityId, label)
+  if ((state[key] ?? []).includes(entityId)) return 'synced'
+  const prev = state
+  set({ ...state, [key]: [...(state[key] ?? []), entityId] })
+  return write(kind, entityId, true, prev)
+}
+
+/** Restore a previously dismissed series/book (optimistic; queued offline). */
+export async function restore(kind: DismissKind, entityId: string): Promise<WriteOutcome> {
+  const key = BUCKET[kind]
+  if (!(state[key] ?? []).includes(entityId)) return 'synced'
   const prev = state
   set({ ...state, [key]: (state[key] ?? []).filter((id) => id !== entityId) })
-  try {
-    set(await api.removeDismissal(kind, entityId))
-    // Restoring makes the series/book eligible for Auto rules again - rebuild.
-    requestQueueRecompute()
-  } catch {
-    set(prev)
-    throw new Error('restore_failed')
-  }
+  return write(kind, entityId, false, prev)
 }
