@@ -28,6 +28,8 @@ import {
 import { AppText, Cover, IconButton, Loading, icons } from '@/ui/primitives'
 import type { IconName } from '@/ui/icons'
 import { EAS_PROJECT_ID } from '@/lib/config'
+import { showToast } from '@/ui/Toast'
+import { isOfflineMode } from '@/player/syncState'
 import { getPushStatus, subscribePushStatus } from '@/player/pushRegister'
 import { spacing } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
@@ -41,7 +43,7 @@ const CHANNEL_OPTIONS: { id: NotifyChannel; label: string }[] = [
 
 export default function NotificationsPanel() {
   const s = useSyncExternalStore(subscribeSettings, getSettingsState)
-  const { subscriptions, loaded } = useSyncExternalStore(
+  const { subscriptions, loaded, failed } = useSyncExternalStore(
     subscribeSubscriptions,
     getSubscriptionsState,
   )
@@ -396,6 +398,18 @@ export default function NotificationsPanel() {
       <SettingsLabel>Following</SettingsLabel>
       {!loaded ? (
         <Loading />
+      ) : failed && subscriptions.length === 0 ? (
+        // An empty list from a failed load is not "nothing followed": saying so
+        // would invite the user to re-follow books they already follow.
+        <SettingsGroup>
+          <SettingsRow
+            icon="cloud-off"
+            title="Couldn't load what you follow"
+            desc="Check your connection, then tap to try again."
+            onPress={() => void refreshSubscriptions()}
+            last
+          />
+        </SettingsGroup>
       ) : subscriptions.length === 0 ? (
         <SettingsGroup>
           <SettingsRow
@@ -488,7 +502,15 @@ function SubRow({ sub, last }: { sub: HSSubscription; last?: boolean }) {
         name={icons.close}
         size={20}
         color={colors.textMuted}
-        onPress={() => void unsubscribe(sub.id).catch(() => {})}
+        onPress={() =>
+          void unsubscribe(sub.id).catch(() =>
+            showToast(
+              isOfflineMode()
+                ? "You're offline. Try again when you're back online."
+                : "Couldn't stop following. Try again.",
+            ),
+          )
+        }
       />
     </View>
   )

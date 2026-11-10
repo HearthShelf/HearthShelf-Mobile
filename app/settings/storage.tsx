@@ -35,6 +35,8 @@ import { AppText, IconButton, ProgressBar, icons } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
 import { showToast } from '@/ui/Toast'
 import { haptics } from '@/ui/haptics'
+import { confirm } from '@/ui/confirm'
+import { useIsOffline } from '@/api/useIsOffline'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 
@@ -67,6 +69,7 @@ export default function StorageScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors])
   const { byId, maxBytes, auto } = useSyncExternalStore(subscribeDownloads, getDownloadsState)
   const { removeDownloadOnFinish } = useSyncExternalStore(subscribeSettings, getSettingsState)
+  const offline = useIsOffline()
 
   const entries = [...byId.values()]
   const active = entries.filter((e) => e.status === 'downloading' || e.status === 'queued')
@@ -85,8 +88,23 @@ export default function StorageScreen() {
 
   // Delete immediately with an Undo toast (no blocking Alert - D-FINISH). Undo
   // re-downloads the same book; the file is re-fetched if it was already purged.
-  const removeDownload = (e: DownloadEntry) => {
+  //
+  // Offline there is no Undo: it would start a download that can only fail, and
+  // the book would look restored when it is gone. Since the delete cannot be
+  // taken back until the server is reachable, ask first instead.
+  const removeDownload = async (e: DownloadEntry) => {
     haptics.select()
+    if (offline) {
+      const ok = await confirm({
+        title: `Remove ${e.title}?`,
+        message: "You're offline, so you can't download it again until you're back online.",
+        confirmLabel: 'Remove',
+      })
+      if (!ok) return
+      void deleteDownload(e.itemId)
+      showToast(`Removed ${e.title}`)
+      return
+    }
     void deleteDownload(e.itemId)
     showToast(`Removed ${e.title}`, {
       action: { label: 'Undo', onPress: () => void downloadItem(e.itemId, e.title, e.author) },
@@ -97,6 +115,10 @@ export default function StorageScreen() {
   // tracks already on disk and resumes the one it stopped part-way through.
   const retryDownload = (e: DownloadEntry) => {
     haptics.select()
+    if (offline) {
+      showToast("You're offline. Try again when you're back online.")
+      return
+    }
     void downloadItem(e.itemId, e.title, e.author)
   }
 
@@ -243,7 +265,7 @@ export default function StorageScreen() {
                   name={icons.close}
                   size={20}
                   color={colors.textMuted}
-                  onPress={() => removeDownload(e)}
+                  onPress={() => void removeDownload(e)}
                 />
               </View>
             ))}
@@ -273,7 +295,7 @@ export default function StorageScreen() {
                 name={icons.close}
                 size={20}
                 color={colors.textMuted}
-                onPress={() => removeDownload(e)}
+                onPress={() => void removeDownload(e)}
               />
             </View>
           ))

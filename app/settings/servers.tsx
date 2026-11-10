@@ -19,6 +19,7 @@ import {
   type LinkedServer,
 } from '@/api/controlPlane'
 import { useConnection } from '@/api/ConnectionProvider'
+import { useIsOffline } from '@/api/useIsOffline'
 import { AppText, Centered } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
 import { showToast } from '@/ui/Toast'
@@ -45,6 +46,7 @@ type Status = { phase: 'loading' } | { phase: 'error'; message: string } | { pha
 export default function ServersScreen() {
   const router = useRouter()
   const { connectTo, serverName } = useConnection()
+  const offline = useIsOffline()
   const colors = useColors()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const [status, setStatus] = useState<Status>({ phase: 'loading' })
@@ -107,7 +109,11 @@ export default function ServersScreen() {
       }
       await load({ silent: true })
     } catch {
-      showToast('Could not update the default')
+      showToast(
+        offline
+          ? "Couldn't reach HearthShelf. Try again when you're back online."
+          : 'Could not update the default',
+      )
     }
   }
 
@@ -148,8 +154,10 @@ export default function ServersScreen() {
         </Centered>
       ) : status.phase === 'error' ? (
         <Centered>
-          <AppText variant="body" color={colors.textMuted}>
-            Couldn't load your servers.
+          <AppText variant="body" color={colors.textMuted} style={{ textAlign: 'center' }}>
+            {offline
+              ? "You're offline. Your libraries show here when you're back online."
+              : "Couldn't load your servers."}
           </AppText>
           <Pressable onPress={() => void load()} style={{ marginTop: spacing.md }}>
             <AppText variant="label" color={colors.accent}>

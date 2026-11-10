@@ -25,6 +25,7 @@ import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react
 import { useRouter } from 'expo-router'
 import { authClient } from '@/auth/client'
 import { useAuth } from '@/auth/useAuth'
+import { AUTH_FETCH, authErrorText, reachAuth } from '@/auth/net'
 import { AppText } from '@/ui/primitives'
 import { spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
@@ -92,7 +93,10 @@ export default function ChooseUsernameScreen() {
     let cancelled = false
     const t = setTimeout(async () => {
       try {
-        const res = await authClient.isUsernameAvailable({ username: trimmed })
+        const res = await authClient.isUsernameAvailable({
+          username: trimmed,
+          fetchOptions: AUTH_FETCH,
+        })
         if (cancelled) return
         setState(res?.data?.available ? 'free' : 'taken')
       } catch {
@@ -112,7 +116,13 @@ export default function ChooseUsernameScreen() {
     try {
       // `displayUsername` keeps the capitalisation the person typed; `username`
       // is the normalized (lowercased) key the server matches on.
-      const res = await authClient.updateUser({ username: trimmed, displayUsername: trimmed })
+      const res = await reachAuth(
+        authClient.updateUser({
+          username: trimmed,
+          displayUsername: trimmed,
+          fetchOptions: AUTH_FETCH,
+        }),
+      )
       if (res?.error) {
         showToast(res.error.message || 'That username could not be saved')
         setState('taken')
@@ -120,10 +130,12 @@ export default function ChooseUsernameScreen() {
       }
       // Re-read the session so the rest of the app sees the new handle before
       // anything renders it.
-      await authClient.getSession({ query: { disableCookieCache: true } })
+      await reachAuth(
+        authClient.getSession({ query: { disableCookieCache: true }, fetchOptions: AUTH_FETCH }),
+      )
       router.replace('/(tabs)')
     } catch (e) {
-      showToast((e as Error)?.message || 'That username could not be saved')
+      showToast(authErrorText(e, 'That username could not be saved'))
     } finally {
       setSaving(false)
     }

@@ -4,6 +4,7 @@
  * same origin as ABS and use the same ABS bearer token as the rest of mobile.
  */
 import { getSession } from './session'
+import { fetchWithTimeout } from './fetchWithTimeout'
 import type {
   HSMatchCandidate as MatchCandidate,
   HSFinishedBookMatch as MatchRow,
@@ -20,17 +21,25 @@ function requireSession() {
   return s
 }
 
-async function fbFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+/** Matching, importing and a Hardcover sync do real work on the server (one
+ *  lookup per book), so they get far longer than a plain read before we give up. */
+const SLOW_MS = 90000
+
+async function fbFetch<T>(path: string, options: RequestInit = {}, timeoutMs?: number): Promise<T> {
   const { serverUrl, token } = requireSession()
-  const res = await fetch(`${serverUrl}/hs/finished-books${path}`, {
-    ...options,
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...options.headers,
+  const res = await fetchWithTimeout(
+    `${serverUrl}/hs/finished-books${path}`,
+    {
+      ...options,
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        ...options.headers,
+      },
     },
-  })
+    timeoutMs,
+  )
   if (!res.ok) {
     const body = await res.json().catch(() => null)
     throw new Error((body as { error?: string } | null)?.error ?? `finished_books_${res.status}`)
@@ -43,17 +52,25 @@ export function matchRows(
   libraryId: string,
   rows: { title: string; author: string; isbn: string | null }[],
 ): Promise<{ matches: MatchRow[] }> {
-  return fbFetch('/match', {
-    method: 'POST',
-    body: JSON.stringify({ libraryId, rows }),
-  })
+  return fbFetch(
+    '/match',
+    {
+      method: 'POST',
+      body: JSON.stringify({ libraryId, rows }),
+    },
+    SLOW_MS,
+  )
 }
 
 export function importRows(rows: ImportRow[]): Promise<{ inserted: number; updated: number }> {
-  return fbFetch('/import', {
-    method: 'POST',
-    body: JSON.stringify({ rows }),
-  })
+  return fbFetch(
+    '/import',
+    {
+      method: 'POST',
+      body: JSON.stringify({ rows }),
+    },
+    SLOW_MS,
+  )
 }
 
 export function getHardcoverAccount(): Promise<HardcoverAccountStatus> {
@@ -72,5 +89,5 @@ export function disconnectHardcover(): Promise<void> {
 }
 
 export function triggerHardcoverSync(): Promise<HardcoverSyncResult> {
-  return fbFetch('/hardcover/sync', { method: 'POST' })
+  return fbFetch('/hardcover/sync', { method: 'POST' }, SLOW_MS)
 }

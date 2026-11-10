@@ -23,6 +23,7 @@ import {
   restore,
 } from '@/store/dismissals'
 import { showToast } from '@/ui/Toast'
+import { isOfflineMode } from '@/player/syncState'
 
 export default function QueueEditorScreen() {
   const colors = useColors()
@@ -86,7 +87,11 @@ function HiddenFromShelves() {
       await restore(kind, id)
       showToast('Restored')
     } catch {
-      showToast('Could not restore')
+      showToast(
+        isOfflineMode()
+          ? "You're offline. Try again when you're back online."
+          : 'Could not restore',
+      )
     } finally {
       setBusy(null)
     }

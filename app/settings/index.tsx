@@ -206,7 +206,9 @@ export default function MoreScreen() {
       }
       let cancelled = false
       void getClubs().then((res) => {
-        if (!cancelled) setClubCount(res.enabled ? res.mine.length : 0)
+        // An unreachable server is not "in no clubs": keep the last count so the
+        // shortcut does not vanish and reappear as ship Wi-Fi comes and goes.
+        if (!cancelled && !res.failed) setClubCount(res.enabled ? res.mine.length : 0)
       })
       return () => {
         cancelled = true

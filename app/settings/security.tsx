@@ -20,6 +20,7 @@ import { Linking, Pressable, StyleSheet, TextInput, View } from 'react-native'
 import * as Device from 'expo-device'
 import { authClient } from '@/auth/client'
 import { passkeysSupported, registerPasskey } from '@/auth/passkeys'
+import { AUTH_FETCH, authErrorText, reachAuth } from '@/auth/net'
 import { useAuth } from '@/auth/useAuth'
 import { AppText } from '@/ui/primitives'
 import { SettingsPanel, SettingsGroup, SettingsLabel, SettingsRow } from '@/ui/settingsControls'
@@ -73,6 +74,10 @@ export default function SecurityScreen() {
   const [passkeys, setPasskeys] = useState<PasskeyRow[] | null>(null)
   const [sessions, setSessions] = useState<SessionRow[] | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  // A list that could not load stays null and this flips on. Showing an empty
+  // list instead read as "no passkeys / nothing linked", which is false, and an
+  // empty accounts list also made every provider look disconnected.
+  const [loadFailed, setLoadFailed] = useState(false)
 
   // Password. Setting one when none exists and changing an existing one are the
   // same endpoint; `currentPassword` is what differs.
@@ -88,25 +93,37 @@ export default function SecurityScreen() {
   const twoFactorEnabled = user?.twoFactorEnabled === true
 
   const loadAccounts = useCallback(async () => {
-    const res = await authClient.listAccounts()
+    const res = await reachAuth(authClient.listAccounts({ fetchOptions: AUTH_FETCH }))
+    if (res?.error) throw new Error(res.error.message)
     setAccounts((res?.data as LinkedAccount[] | undefined) ?? [])
   }, [])
 
   const loadPasskeys = useCallback(async () => {
-    const res = await authClient.passkey.listUserPasskeys()
+    const res = await reachAuth(authClient.passkey.listUserPasskeys({ fetchOptions: AUTH_FETCH }))
+    if (res?.error) throw new Error(res.error.message)
     setPasskeys((res?.data as PasskeyRow[] | undefined) ?? [])
   }, [])
 
   const loadSessions = useCallback(async () => {
-    const res = await authClient.listSessions()
+    const res = await reachAuth(authClient.listSessions({ fetchOptions: AUTH_FETCH }))
+    if (res?.error) throw new Error(res.error.message)
     setSessions((res?.data as SessionRow[] | undefined) ?? [])
   }, [])
 
-  useEffect(() => {
-    void loadAccounts().catch(() => setAccounts([]))
-    void loadPasskeys().catch(() => setPasskeys([]))
-    void loadSessions().catch(() => setSessions([]))
+  const loadAll = useCallback(() => {
+    setLoadFailed(false)
+    const failed = () => setLoadFailed(true)
+    void loadAccounts().catch(failed)
+    void loadPasskeys().catch(failed)
+    void loadSessions().catch(failed)
   }, [loadAccounts, loadPasskeys, loadSessions])
+
+  useEffect(() => {
+    loadAll()
+  }, [loadAll])
+
+  // After an action lands, a failed refresh must not undo its success toast.
+  const refresh = (load: () => Promise<void>) => load().catch(() => setLoadFailed(true))
 
   const linked = accounts ?? []
   const hasPassword = linked.some((a) => a.providerId === 'credential')
@@ -117,10 +134,12 @@ export default function SecurityScreen() {
   async function link(provider: string) {
     setBusy(provider)
     try {
-      const res = await authClient.linkSocial({ provider, callbackURL: RETURN_TO_APP })
+      const res = await reachAuth(
+        authClient.linkSocial({ provider, callbackURL: RETURN_TO_APP, fetchOptions: AUTH_FETCH }),
+      )
       if (res?.error) showToast(res.error.message || `Could not connect ${provider}`)
     } catch (e) {
-      showToast((e as Error)?.message || `Could not connect ${provider}`)
+      showToast(authErrorText(e, `Could not connect ${provider}`))
     } finally {
       setBusy(null)
     }
@@ -137,13 +156,17 @@ export default function SecurityScreen() {
       return
     setBusy(account.id)
     try {
-      const res = await authClient.unlinkAccount({ accountId: account.id })
+      const res = await reachAuth(
+        authClient.unlinkAccount({ accountId: account.id, fetchOptions: AUTH_FETCH }),
+      )
       if (res?.error) {
         showToast(res.error.message || 'Could not disconnect that account')
         return
       }
       showToast('Disconnected')
-      await loadAccounts()
+      await refresh(loadAccounts)
+    } catch (e) {
+      showToast(authErrorText(e, 'Could not disconnect that account'))
     } finally {
       setBusy(null)
     }
@@ -153,14 +176,17 @@ export default function SecurityScreen() {
     if (!newPassword) return
     setBusy('password')
     try {
-      const res = await authClient.changePassword({
-        newPassword,
-        currentPassword,
-        // Other devices keep their sessions: changing a password here is routine
-        // account hygiene, not a "someone got in" response. A user who wants
-        // everything signed out can do that below.
-        revokeOtherSessions: false,
-      })
+      const res = await reachAuth(
+        authClient.changePassword({
+          newPassword,
+          currentPassword,
+          // Other devices keep their sessions: changing a password here is routine
+          // account hygiene, not a "someone got in" response. A user who wants
+          // everything signed out can do that below.
+          revokeOtherSessions: false,
+          fetchOptions: AUTH_FETCH,
+        }),
+      )
       if (res?.error) {
         showToast(res.error.message || 'Could not change your password')
         return
@@ -168,7 +194,9 @@ export default function SecurityScreen() {
       setCurrentPassword('')
       setNewPassword('')
       showToast(hasPassword ? 'Password changed' : 'Password set')
-      await loadAccounts()
+      await refresh(loadAccounts)
+    } catch (e) {
+      showToast(authErrorText(e, 'Could not change your password'))
     } finally {
       setBusy(null)
     }
@@ -182,7 +210,7 @@ export default function SecurityScreen() {
       const outcome = await registerPasskey(Device.deviceName || 'This phone')
       if (outcome.status === 'ok') {
         showToast('Passkey added')
-        await loadPasskeys()
+        await refresh(loadPasskeys)
         return
       }
       // A dismissed sheet is not a failure and must not be reported as one.
@@ -204,13 +232,17 @@ export default function SecurityScreen() {
       return
     setBusy(row.id)
     try {
-      const res = await authClient.passkey.deletePasskey({ id: row.id })
+      const res = await reachAuth(
+        authClient.passkey.deletePasskey({ id: row.id, fetchOptions: AUTH_FETCH }),
+      )
       if (res?.error) {
         showToast(res.error.message || 'Could not remove that passkey')
         return
       }
       showToast('Passkey removed')
-      await loadPasskeys()
+      await refresh(loadPasskeys)
+    } catch (e) {
+      showToast(authErrorText(e, 'Could not remove that passkey'))
     } finally {
       setBusy(null)
     }
@@ -219,7 +251,9 @@ export default function SecurityScreen() {
   async function startTwoFactor() {
     setBusy('2fa')
     try {
-      const res = await authClient.twoFactor.enable({ password: twoFactorPassword })
+      const res = await reachAuth(
+        authClient.twoFactor.enable({ password: twoFactorPassword, fetchOptions: AUTH_FETCH }),
+      )
       if (res?.error) {
         showToast(res.error.message || 'Could not turn on two-factor')
         return
@@ -228,6 +262,8 @@ export default function SecurityScreen() {
       setTotpUri(data?.totpURI ?? null)
       setBackupCodes(data?.backupCodes ?? [])
       setTwoFactorPassword('')
+    } catch (e) {
+      showToast(authErrorText(e, 'Could not turn on two-factor'))
     } finally {
       setBusy(null)
     }
@@ -236,7 +272,9 @@ export default function SecurityScreen() {
   async function confirmTwoFactor() {
     setBusy('2fa')
     try {
-      const res = await authClient.twoFactor.verifyTotp({ code: totpCode.trim() })
+      const res = await reachAuth(
+        authClient.twoFactor.verifyTotp({ code: totpCode.trim(), fetchOptions: AUTH_FETCH }),
+      )
       if (res?.error) {
         showToast(res.error.message || 'That code did not match')
         return
@@ -244,6 +282,8 @@ export default function SecurityScreen() {
       setTotpUri(null)
       setTotpCode('')
       showToast('Two-factor is on')
+    } catch (e) {
+      showToast(authErrorText(e, 'Could not check that code'))
     } finally {
       setBusy(null)
     }
@@ -252,13 +292,17 @@ export default function SecurityScreen() {
   async function disableTwoFactor() {
     setBusy('2fa')
     try {
-      const res = await authClient.twoFactor.disable({ password: twoFactorPassword })
+      const res = await reachAuth(
+        authClient.twoFactor.disable({ password: twoFactorPassword, fetchOptions: AUTH_FETCH }),
+      )
       if (res?.error) {
         showToast(res.error.message || 'Could not turn off two-factor')
         return
       }
       setTwoFactorPassword('')
       showToast('Two-factor is off')
+    } catch (e) {
+      showToast(authErrorText(e, 'Could not turn off two-factor'))
     } finally {
       setBusy(null)
     }
@@ -275,12 +319,16 @@ export default function SecurityScreen() {
       return
     setBusy(row.id)
     try {
-      const res = await authClient.revokeSession({ token: row.token })
+      const res = await reachAuth(
+        authClient.revokeSession({ token: row.token, fetchOptions: AUTH_FETCH }),
+      )
       if (res?.error) {
         showToast(res.error.message || 'Could not sign that device out')
         return
       }
-      await loadSessions()
+      await refresh(loadSessions)
+    } catch (e) {
+      showToast(authErrorText(e, 'Could not sign that device out'))
     } finally {
       setBusy(null)
     }
@@ -297,13 +345,15 @@ export default function SecurityScreen() {
       return
     setBusy('others')
     try {
-      const res = await authClient.revokeOtherSessions()
+      const res = await reachAuth(authClient.revokeOtherSessions({ fetchOptions: AUTH_FETCH }))
       if (res?.error) {
         showToast(res.error.message || 'Could not sign the other devices out')
         return
       }
       showToast('Other devices signed out')
-      await loadSessions()
+      await refresh(loadSessions)
+    } catch (e) {
+      showToast(authErrorText(e, 'Could not sign the other devices out'))
     } finally {
       setBusy(null)
     }
@@ -332,14 +382,16 @@ export default function SecurityScreen() {
       return
     setBusy('delete')
     try {
-      const res = await authClient.deleteUser({ callbackURL: RETURN_TO_APP })
+      const res = await reachAuth(
+        authClient.deleteUser({ callbackURL: RETURN_TO_APP, fetchOptions: AUTH_FETCH }),
+      )
       if (res?.error) {
         showToast(res.error.message || 'Could not start deleting your account')
         return
       }
       showToast('Check your email to finish deleting your account')
     } catch (e) {
-      showToast((e as Error)?.message || 'Could not start deleting your account')
+      showToast(authErrorText(e, 'Could not start deleting your account'))
     } finally {
       setBusy(null)
     }
@@ -349,6 +401,18 @@ export default function SecurityScreen() {
 
   return (
     <SettingsPanel>
+      {loadFailed ? (
+        <SettingsGroup>
+          <SettingsRow
+            icon="cloud-off"
+            title="Some of this did not load"
+            desc="Check your connection, then tap to try again."
+            onPress={loadAll}
+            last
+          />
+        </SettingsGroup>
+      ) : null}
+
       <SettingsLabel>Sign-in methods</SettingsLabel>
       <SettingsGroup>
         {PROVIDERS.map((p, i) => {
@@ -359,13 +423,21 @@ export default function SecurityScreen() {
               title={p.label}
               // Muted grey reads identically linked or not - the one thing this
               // row exists to tell you. Green carries it at a glance, as on web.
-              desc={existing ? 'Connected' : 'Not connected'}
+              desc={
+                accounts === null
+                  ? loadFailed
+                    ? 'Could not check'
+                    : 'Checking...'
+                  : existing
+                    ? 'Connected'
+                    : 'Not connected'
+              }
               descColor={existing ? colors.success : undefined}
               last={i === PROVIDERS.length - 1}
               control={
                 <Pressable
                   onPress={() => (existing ? void unlink(existing, p.label) : void link(p.id))}
-                  disabled={busy !== null || (!!existing && onlyOneMethod)}
+                  disabled={busy !== null || accounts === null || (!!existing && onlyOneMethod)}
                   style={styles.action}
                 >
                   <AppText

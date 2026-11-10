@@ -17,6 +17,7 @@ import type {
   SettingsPushResult as PushResult,
 } from '@hearthshelf/core'
 import { getSession } from './session'
+import { fetchWithTimeout } from './fetchWithTimeout'
 
 export type { StoredSetting, SettingChange, ServerSettings, PushResult }
 
@@ -29,7 +30,7 @@ function requireSession() {
 export async function getServerSettings(deviceId: string): Promise<ServerSettings> {
   const { serverUrl, token } = requireSession()
   const q = deviceId ? `?deviceId=${encodeURIComponent(deviceId)}` : ''
-  const res = await fetch(`${serverUrl}/hs/settings${q}`, {
+  const res = await fetchWithTimeout(`${serverUrl}/hs/settings${q}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) throw new Error(`settings ${res.status}`)
@@ -41,7 +42,7 @@ export async function putServerSettings(
   changes: SettingChange[],
 ): Promise<PushResult> {
   const { serverUrl, token } = requireSession()
-  const res = await fetch(`${serverUrl}/hs/settings`, {
+  const res = await fetchWithTimeout(`${serverUrl}/hs/settings`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ deviceId, changes }),

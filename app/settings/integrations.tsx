@@ -26,6 +26,7 @@ import { spacing } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { getSettingsState, subscribeSettings, setSetting } from '@/store/settings'
 import { GoodreadsImportSheet } from '@/settings/GoodreadsImportSheet'
+import { useIsOffline } from '@/api/useIsOffline'
 import {
   connectHardcover,
   disconnectHardcover,
@@ -41,14 +42,22 @@ export default function IntegrationsPanel() {
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  // Without this, a status that never loaded looked exactly like "not
+  // connected" and offered the token box to someone already connected.
+  const [loadFailed, setLoadFailed] = useState(false)
+  const offline = useIsOffline()
 
   const load = () => {
     getHardcoverAccount()
-      .then(setStatus)
-      .catch(() => setStatus(null))
+      .then((s) => {
+        setStatus(s)
+        setLoadFailed(false)
+      })
+      .catch(() => setLoadFailed(true))
   }
 
-  useEffect(load, [])
+  // Reload when the server comes back, so the row stops saying it could not check.
+  useEffect(load, [offline])
 
   async function connect() {
     if (!token.trim()) return
@@ -100,6 +109,7 @@ export default function IntegrationsPanel() {
   }
 
   const connected = status?.connected === true
+  const unknown = status === null && (loadFailed || offline)
   const externalLinkGoodreads = useSyncExternalStore(
     subscribeSettings,
     () => getSettingsState().externalLinkGoodreads,
@@ -121,13 +131,17 @@ export default function IntegrationsPanel() {
           icon="link"
           title="Hardcover"
           desc={
-            connected
-              ? `Connected as ${status?.username ?? 'your Hardcover account'}.`
-              : 'Sync the books you finish here to your Hardcover reading history.'
+            offline
+              ? "You're offline. Hardcover works again once you're back online."
+              : unknown
+                ? "Couldn't check your Hardcover account. Check your connection."
+                : connected
+                  ? `Connected as ${status?.username ?? 'your Hardcover account'}.`
+                  : 'Sync the books you finish here to your Hardcover reading history.'
           }
           last
         />
-        {!connected ? (
+        {offline || unknown ? null : !connected ? (
           <View
             style={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.sm }}
           >

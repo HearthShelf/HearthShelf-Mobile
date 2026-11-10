@@ -41,6 +41,7 @@ import * as Device from 'expo-device'
 import * as passkeys from 'react-native-passkeys'
 import * as Sentry from '@sentry/react-native'
 import { authClient } from './client'
+import { AUTH_FETCH, AuthUnreachableError, reachAuth } from './net'
 
 /**
  * What an attempt did.
@@ -154,9 +155,11 @@ export async function registerPasskey(name: string): Promise<PasskeyResult> {
     // it back on verification (CHALLENGE_NOT_FOUND otherwise). Only the client's
     // own fetch hook stores and replays that cookie - a bare fetch drops it, so
     // the OS creates a perfectly good credential that the server then refuses.
-    const optionsRes = await authClient.$fetch<Parameters<typeof passkeys.create>[0]>(
-      '/passkey/generate-register-options',
-      { method: 'GET', query: { name } },
+    const optionsRes = await reachAuth(
+      authClient.$fetch<Parameters<typeof passkeys.create>[0]>(
+        '/passkey/generate-register-options',
+        { method: 'GET', query: { name }, ...AUTH_FETCH },
+      ),
     )
     if (optionsRes?.error || !optionsRes?.data) {
       report('options-failed', { message: optionsRes?.error?.message ?? null })
@@ -197,10 +200,13 @@ export async function registerPasskey(name: string): Promise<PasskeyResult> {
     // Through the auth client, NOT a bare fetch: the client's own hook is what
     // stores the session cookie the response sets. A raw fetch bypasses it, and
     // the session would be created server-side but never persisted here.
-    const verified = await authClient.$fetch('/passkey/verify-registration', {
-      method: 'POST',
-      body: { response, name },
-    })
+    const verified = await reachAuth(
+      authClient.$fetch('/passkey/verify-registration', {
+        method: 'POST',
+        body: { response, name },
+        ...AUTH_FETCH,
+      }),
+    )
     if (verified?.error) {
       // The server's own words, verbatim - CHALLENGE_NOT_FOUND and an origin
       // mismatch are different problems with different fixes, and a generic
@@ -242,9 +248,11 @@ export async function signInWithPasskey(): Promise<PasskeyResult> {
   try {
     trace('sign-in: requesting options')
     // Through the client for the challenge cookie - see registerPasskey.
-    const optionsRes = await authClient.$fetch<Parameters<typeof passkeys.get>[0]>(
-      '/passkey/generate-authenticate-options',
-      { method: 'GET' },
+    const optionsRes = await reachAuth(
+      authClient.$fetch<Parameters<typeof passkeys.get>[0]>(
+        '/passkey/generate-authenticate-options',
+        { method: 'GET', ...AUTH_FETCH },
+      ),
     )
     if (optionsRes?.error || !optionsRes?.data) {
       report('signin-options-failed', { message: optionsRes?.error?.message ?? null })
@@ -261,10 +269,13 @@ export async function signInWithPasskey(): Promise<PasskeyResult> {
     // Same reason as registration: this response carries the new session, and
     // only the auth client's hook stores it. Going around it would sign the user
     // in on the server and leave the app still signed out.
-    const verified = await authClient.$fetch('/passkey/verify-authentication', {
-      method: 'POST',
-      body: { response },
-    })
+    const verified = await reachAuth(
+      authClient.$fetch('/passkey/verify-authentication', {
+        method: 'POST',
+        body: { response },
+        ...AUTH_FETCH,
+      }),
+    )
     if (verified?.error) {
       report('signin-verify-rejected', {
         message: verified.error.message ?? null,
@@ -295,6 +306,14 @@ export async function signInWithPasskey(): Promise<PasskeyResult> {
  * keeps it.
  */
 function describe(e: unknown, verb: string): PasskeyResult {
+  // Checked first: our timeout aborts with an "Aborted" message, which the
+  // cancellation match below would otherwise read as the user backing out and
+  // turn into a silent no-op. No answer from the service is not a broken
+  // ceremony either, so it is not reported.
+  if (e instanceof AuthUnreachableError) {
+    trace('unreachable', { verb })
+    return { status: 'error', message: e.message }
+  }
   const err = e as { message?: string; code?: string } | undefined
   const message = err?.message ?? ''
   trace('failed', { verb, code: err?.code, message })
