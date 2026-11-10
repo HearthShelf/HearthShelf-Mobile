@@ -75,21 +75,35 @@ class HearthShelfWidgetProvider : AppWidgetProvider() {
    * to opening the app, which is honest and always works.
    */
   private fun transport(ctx: Context, action: (MediaController) -> Unit) {
-    val token = SessionToken(ctx, ComponentName(ctx, HearthShelfPlayerService::class.java))
-    val future = MediaController.Builder(ctx, token).buildAsync()
-    future.addListener({
-      try {
-        val controller = future.get()
-        action(controller)
-        controller.release()
-      } catch (_: Throwable) {
-        // No live session (app cold, nothing loaded). Opening the player is the
-        // honest fallback - resolving a stream url here would need an
-        // authenticated request the launcher process cannot make.
-        openApp(ctx).send()
-      }
-      refresh(ctx)
-    }, MoreExecutors.directExecutor())
+    // The Context onReceive hands us is a ReceiverRestrictedContext, whose
+    // bindService throws ReceiverCallNotAllowedException - and MediaController
+    // connects by binding. Bind through the application context instead, and hold
+    // the broadcast open with goAsync() so the process is not torn down before
+    // the async connect lands.
+    val app = ctx.applicationContext
+    val pending = goAsync()
+    try {
+      val token = SessionToken(app, ComponentName(app, HearthShelfPlayerService::class.java))
+      val future = MediaController.Builder(app, token).buildAsync()
+      future.addListener({
+        try {
+          val controller = future.get()
+          action(controller)
+          controller.release()
+        } catch (_: Throwable) {
+          // No live session (app cold, nothing loaded). Opening the player is the
+          // honest fallback - resolving a stream url here would need an
+          // authenticated request the launcher process cannot make.
+          try { openApp(app).send() } catch (_: Throwable) {}
+        }
+        refresh(app)
+        pending.finish()
+      }, MoreExecutors.directExecutor())
+    } catch (_: Throwable) {
+      // A widget tap must never crash the app.
+      try { openApp(app).send() } catch (_: Throwable) {}
+      pending.finish()
+    }
   }
 
   private fun render(ctx: Context, mgr: AppWidgetManager, id: Int) {
