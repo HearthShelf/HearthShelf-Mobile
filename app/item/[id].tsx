@@ -596,7 +596,9 @@ export default function ItemDetailScreen() {
               ? 'Downloaded'
               : download?.status === 'downloading' || download?.status === 'queued'
                 ? `${Math.round((download.progress ?? 0) * 100)}%`
-                : formatBytes(detail.media.size) || 'Download'
+                : download?.status === 'failed'
+                  ? 'Resume download'
+                  : formatBytes(detail.media.size) || 'Download'
           }
           active={download?.status === 'done'}
           onPress={downloadBook}

@@ -964,7 +964,9 @@ export async function markItemsFinished(
   // local download (any download - manual or auto). Best-effort and fire-and-
   // forget so it never blocks the finished flip; a failed delete just leaves the
   // file until a manual sweep. Only on the finish direction, never on un-finish.
-  if (finished && getSettingsState().removeDownloadOnFinish) {
+  // Not while offline: the download is the only copy of the book until the
+  // connection is back, and the finish itself has not reached the server yet.
+  if (finished && getSettingsState().removeDownloadOnFinish && !shouldQueueNow()) {
     for (const it of items) {
       if (isDownloaded(it.id)) void deleteDownload(it.id)
     }

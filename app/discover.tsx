@@ -62,7 +62,8 @@ import {
 import { BookTile } from '@/ui/BookTile'
 import { DiscoverAiTile } from '@/ui/DiscoverAiTile'
 import { DiscoverFeedbackSheet, type DiscoverFeedbackHandle } from '@/ui/DiscoverFeedbackSheet'
-import { getRatings, setRating, type RatingMap } from '@/api/ratings'
+import { getRatings, type RatingMap } from '@/api/ratings'
+import { saveRating, QUEUED_MESSAGE } from '@/player/pendingActions'
 import {
   BookActionsSheet,
   type BookActionsHandle,
@@ -306,8 +307,11 @@ export default function DiscoverScreen() {
         else next[itemKey] = value
         return next
       })
-      void setRating(itemKey, value)
-        .then((map) => setRatings(map))
+      // Offline or unanswered, the rating is queued and the optimistic value stays.
+      void saveRating(itemKey, value)
+        .then((outcome) => {
+          if (outcome === 'queued') showToast(QUEUED_MESSAGE)
+        })
         .catch(() => {
           setRatings((prev) => {
             const next = { ...prev }

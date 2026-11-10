@@ -352,7 +352,10 @@ export default function FeedbackScreen() {
           ) : null}
 
           <PrimaryButton
-            label={sending ? 'Sending...' : 'Send feedback'}
+            label="Send feedback"
+            busy={sending}
+            busyLabel="Sending..."
+            disabled={!canSend}
             icon={iconFor('send')}
             onPress={send}
             style={canSend ? undefined : styles.disabled}

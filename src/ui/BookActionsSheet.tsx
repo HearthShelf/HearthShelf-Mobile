@@ -35,6 +35,7 @@ import {
   downloadsAllowed,
   cancelDownload,
   deleteDownload,
+  offlinePlayBlockedMessage,
 } from '@/player/downloads'
 import { AddToListSheet } from '@/player/AddToListSheet'
 import type { SheetHandle } from '@/player/sheets'
@@ -130,7 +131,7 @@ export const BookActionsSheet = forwardRef<
 
   const play = async () => {
     if (!item) return
-    if (dl?.status !== 'done' && offlineStop("You're offline - this book isn't downloaded")) return
+    if (dl?.status !== 'done' && offlineStop(offlinePlayBlockedMessage(item.id))) return
     close()
     haptics.transport()
     try {
@@ -313,7 +314,9 @@ export const BookActionsSheet = forwardRef<
       ? 'Remove'
       : dl?.status === 'downloading' || dl?.status === 'queued'
         ? `${Math.round((dl.progress ?? 0) * 100)}%`
-        : 'Download'
+        : dl?.status === 'failed'
+          ? 'Resume'
+          : 'Download'
 
   return (
     <>

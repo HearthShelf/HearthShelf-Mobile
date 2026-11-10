@@ -35,7 +35,7 @@ import { getRmabEnabled } from '@/api/absRmab'
 import { catalogSeriesById } from '@/player/offlineCatalog'
 import { isOfflineMode } from '@/player/syncState'
 import { QUEUED_MESSAGE, type WriteOutcome } from '@/player/pendingActions'
-import { isDownloaded } from '@/player/downloads'
+import { isDownloaded, offlinePlayBlockedMessage } from '@/player/downloads'
 import { useIsOffline } from '@/api/useIsOffline'
 import { useConnection } from '@/api/ConnectionProvider'
 import { ErrorState } from '@/ui/states'
@@ -397,7 +397,7 @@ export default function SeriesDetailScreen() {
   const play = async (bookId: string) => {
     const p = progressById.get(bookId)
     if (serverDown && !isDownloaded(bookId)) {
-      showToast("You're offline - this book isn't downloaded")
+      showToast(offlinePlayBlockedMessage(bookId))
       return
     }
     try {
