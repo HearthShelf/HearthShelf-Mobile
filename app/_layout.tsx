@@ -171,7 +171,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   // refetch, and deriving isLoaded from it directly made this gate redirect to
   // /sign-in, re-splash, and redirect again several times a second - the blinking
   // login screen. See useAuthResolved.
-  const { isLoaded, isSignedIn, session } = useAuthResolved()
+  const { isLoaded, isSignedIn, session, authUnreachable } = useAuthResolved()
   // A social sign-up creates the account with NO username - the provider gives
   // a real name instead. Checked against the raw session rather than useAuth's
   // view, which deliberately falls back to that name and so can never be empty.
@@ -243,7 +243,15 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   // suppressing the redirect to /sign-in below. Repro: sign-in -> "continue with
   // email" -> hardware back popped /sign-in, landing on (tabs) signed-out, and
   // the app stuck on "Warming up the hearth" with no way out.
-  const rehydrating = !isLoaded && hasCachedSession === true && !wasSignedIn.current
+  //
+  // `authUnreachable` keeps that window open after auth has "answered" with a
+  // network error rather than a verdict: offline, the client drops its cached
+  // session once that copy's expiry passes, so a phone that has not reached the
+  // auth service for a week reads signed out with its cookie still stored. That
+  // is not the service saying no, and sending them to /sign-in offline would
+  // strand them away from their downloads with no way to sign back in.
+  const rehydrating =
+    (!isLoaded || authUnreachable) && hasCachedSession === true && !wasSignedIn.current
   // Sticky: once signed in this run, stay "signed in" for gating even if auth
   // momentarily flaps to false on a suspend/resume. Keeps ConnectionGate mounted
   // (no connect-splash flash) and, with the redirect guard below, keeps a
@@ -316,14 +324,23 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     // sign-in sticks you on Warming up the hearth forever" bug. The flap cases
     // this guard exists for all have isLoaded false or wasSignedIn true, so they
     // are still protected.
-    const definitelySignedOut = isLoaded && !isSignedIn && !wasSignedIn.current
+    const definitelySignedOut = isLoaded && !isSignedIn && !authUnreachable && !wasSignedIn.current
     if (!wasSignedIn.current && (hasCachedSession === false || definitelySignedOut)) {
       // Terminal launch outcome: genuinely signed out. The loader gives way to
       // the sign-in screen - a completed launch, not a hang.
       finishStartupTrace('signed-out')
       router.replace('/sign-in')
     }
-  }, [ready, effectiveSignedIn, segments, router, hasCachedSession, isLoaded, isSignedIn])
+  }, [
+    ready,
+    effectiveSignedIn,
+    segments,
+    router,
+    hasCachedSession,
+    isLoaded,
+    isSignedIn,
+    authUnreachable,
+  ])
 
   // Upload a prior crash once genuinely signed in (need a real token; the
   // offline-fallback path can't authenticate an upload, so gate on isSignedIn).

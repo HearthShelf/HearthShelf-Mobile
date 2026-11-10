@@ -31,10 +31,19 @@ export interface ResolvedAuth {
   isSignedIn: boolean
   /** The raw session, for callers that need the user off it. */
   session: ReturnType<typeof useSession>['data']
+  /**
+   * The last session check failed without the service saying "no session" -
+   * a network error, a timeout, or a server error. A signed-out reading in that
+   * state is a guess, not an answer: offline, the Expo client only restores its
+   * cached session while that copy is unexpired, so a phone that went a week
+   * without reaching the auth service (a cruise, say) reads signed out even
+   * though its cookie is still on disk. Only a 401 clears the session for real.
+   */
+  authUnreachable: boolean
 }
 
 export function useAuthResolved(): ResolvedAuth {
-  const { data: session, isPending } = useSession()
+  const { data: session, isPending, error } = useSession()
 
   // Keyed on `isPending` having been false at least once, and deliberately NOT
   // on the store's `isRefetching`: that is set on the very FIRST request too, so
@@ -46,5 +55,8 @@ export function useAuthResolved(): ResolvedAuth {
   const answered = useRef(false)
   if (!isPending) answered.current = true
 
-  return { isLoaded: answered.current, isSignedIn: !!session, session }
+  const status = (error as { status?: number } | null)?.status
+  const authUnreachable = !session && !!error && status !== 401 && status !== 403
+
+  return { isLoaded: answered.current, isSignedIn: !!session, session, authUnreachable }
 }

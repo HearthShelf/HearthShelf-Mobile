@@ -31,6 +31,7 @@ import { APP_SCHEME, APPLE_ENABLED, WEBAPP_URL } from '@/lib/config'
 import { authClient } from '@/auth/client'
 import { signInWithAppleNatively, signInWithGoogleNatively, type NativeResult } from '@/auth/native'
 import { signInWithPasskey } from '@/auth/passkeys'
+import { classifyFetchError } from '@/api/connectionError'
 import { fonts } from '@/ui/theme'
 import { useBackHandler } from '@/ui/useBackHandler'
 import { MaterialIcons } from '@expo/vector-icons'
@@ -49,6 +50,23 @@ import {
 
 // Required so the OAuth browser tab closes and hands control back to the app.
 WebBrowser.maybeCompleteAuthSession()
+
+/**
+ * Sign-in has to reach the auth service, so offline every method fails with the
+ * platform's own text ("Network request failed"), which reads like the app broke.
+ * Say what is actually wrong and what to do about it instead.
+ */
+const NO_CONNECTION = "Can't reach HearthShelf right now. Check your connection and try again."
+
+function signInFailure(e: unknown, fallback: string): string {
+  const message = (e as Error)?.message
+  if (!message) return fallback
+  const kind = classifyFetchError(e).kind
+  if (kind === 'offline' || kind === 'timeout' || kind === 'dns' || kind === 'refused') {
+    return NO_CONNECTION
+  }
+  return message
+}
 
 const INK = {
   bg: '#0e0d0c',
@@ -184,7 +202,7 @@ export default function SignInScreen() {
       if (onDone) onDone()
       else done()
     } catch (e) {
-      setError((e as Error)?.message || label + ' failed')
+      setError(signInFailure(e, label + ' failed'))
     } finally {
       setBusy(false)
     }
@@ -225,7 +243,7 @@ export default function SignInScreen() {
       outcome =
         provider === 'google' ? await signInWithGoogleNatively() : await signInWithAppleNatively()
     } catch (e) {
-      outcome = { status: 'error', message: (e as Error)?.message || label + ' failed' }
+      outcome = { status: 'error', message: signInFailure(e, label + ' failed') }
     } finally {
       setBusy(false)
     }
@@ -236,7 +254,7 @@ export default function SignInScreen() {
     }
     if (outcome.status === 'cancelled') return
     if (outcome.status === 'error') {
-      setError(outcome.message)
+      setError(signInFailure(new Error(outcome.message), outcome.message))
       return
     }
     // unavailable - take the browser flow without saying anything about it.

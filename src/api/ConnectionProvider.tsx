@@ -34,6 +34,7 @@ import {
   setLastServerId,
   getLastServerId,
   takePendingInviteToken,
+  setPendingInviteToken,
   hydrateSession,
   setLastServerName,
   getLastServerName,
@@ -623,8 +624,12 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         try {
           const { serverId } = await acceptInvite(tokenFn, pendingToken)
           invitedServerId = serverId
-        } catch {
+        } catch (e) {
           invitedServerId = null
+          // Only an HTTP answer means the token itself is bad. Anything else is the
+          // network failing (an invite link opened on ship Wi-Fi), so keep the
+          // token for the next connect instead of losing the invite.
+          if (!(e instanceof ApiError)) await setPendingInviteToken(pendingToken).catch(() => {})
         }
       }
 
@@ -835,6 +840,12 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
           // and the foreground probe covers the case where it never does.
           if (e instanceof NoTokenError) {
             showConnecting({})
+            // The token is read from disk, so no token means no unexpired session
+            // cookie, not a slow network. Online, the auth check settles that and
+            // routes to sign-in. Offline it never can, and holding the splash
+            // until the 44s floor kept a listener whose session lapsed at sea
+            // from books already on the phone.
+            dropToOffline('retrying', "Offline - sign in again once you're back online")
             return
           }
           // If the internet is actually reachable, this was slowness, not
