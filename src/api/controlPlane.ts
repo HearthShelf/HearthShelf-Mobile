@@ -37,6 +37,12 @@ export function setSessionExpiredHandler(fn: SessionExpiredHandler | null): void
   onSessionExpired = fn
 }
 
+/** Run the registered sign-out for a session the auth service has confirmed is
+ *  gone, from callers that find out some other way than a 401. */
+export function signalSessionExpired(): void {
+  onSessionExpired?.()
+}
+
 async function requestOnce(
   getToken: GetToken,
   path: string,

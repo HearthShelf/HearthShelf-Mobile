@@ -26,7 +26,13 @@ import NetInfo from '@react-native-community/netinfo'
 import { useAuthResolved } from '@/auth/useAuthResolved'
 import { getSessionToken } from '@/auth/token'
 import { hasCachedSession } from '@/auth/sessionCache'
-import { fetchLinkedServers, acceptInvite, ApiError, type LinkedServer } from './controlPlane'
+import {
+  fetchLinkedServers,
+  acceptInvite,
+  ApiError,
+  signalSessionExpired,
+  type LinkedServer,
+} from './controlPlane'
 import { connectServer } from './connect'
 import { currentNetworkScope } from './candidates'
 import { ConnectionError } from './connectionError'
@@ -440,7 +446,10 @@ async function backfillDownloadedCatalog(): Promise<void> {
 export function ConnectionProvider({ children }: { children: React.ReactNode }) {
   // isLoaded is STICKY - see useAuthResolved. Deriving it from `isPending`
   // directly makes it flip back to false on every background session refetch.
-  const { session, isLoaded, isSignedIn } = useAuthResolved()
+  const { session, isLoaded, isSignedIn, authUnreachable } = useAuthResolved()
+  // Read inside the async connect, which outlives the render it started in.
+  const authAnsweredSignedOutRef = useRef(false)
+  authAnsweredSignedOutRef.current = isLoaded && !isSignedIn && !authUnreachable
   const [status, setStatus] = useState<ConnectionStatus>({ phase: 'connecting' })
   const meType = useSyncExternalStore(subscribeMeType, getMeType)
   const activeRole = isAdminAccountType(meType) ? 'admin' : 'user'
@@ -896,6 +905,14 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
           // isLoaded&&isSignedIn effect re-runs connect the moment auth settles,
           // and the foreground probe covers the case where it never does.
           if (e instanceof NoTokenError) {
+            // The auth service answered and nothing is stored: the session was
+            // revoked or ran out while the app was running. That is a real
+            // sign-out, so route to sign-in rather than parking in offline mode
+            // with no way back.
+            if (authAnsweredSignedOutRef.current && !(await hasCachedSession())) {
+              signalSessionExpired()
+              return
+            }
             showConnecting({})
             // The token is read from disk, so no token means no unexpired session
             // cookie, not a slow network. Online, the auth check settles that and
