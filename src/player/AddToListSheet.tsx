@@ -28,6 +28,7 @@ import {
 } from '@/api/abs'
 import { enqueueClubBook, getClubs, type ClubSummary } from '@/api/clubs'
 import { getMeId } from '@/api/me'
+import { useIsOffline } from '@/api/useIsOffline'
 import { addToQueue, getQueueState, subscribeQueue } from './queue'
 import { AppText, IconButton, Sheet, type SheetRef } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
@@ -76,8 +77,13 @@ export const AddToListSheet = forwardRef<
   const [newName, setNewName] = useState('')
   const [busy, setBusy] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const offline = useIsOffline()
 
   useEffect(() => {
+    // Lists and clubs live on the server. Offline, skip the reads (they could
+    // only time out) and let the tabs say so; the Queue tab is local and still
+    // works. This runs again when the connection comes back.
+    if (offline) return
     // An empty array here would render as "No collections yet. Create one above."
     // - which is a lie when the fetch failed, and the lie is worst on exactly the
     // servers that fail: a big list library, where creating a duplicate is the
@@ -104,7 +110,7 @@ export const AddToListSheet = forwardRef<
         setClubs(response.mine.filter((club) => !meId || club.createdBy === meId))
       })
       .catch(() => setClubs([]))
-  }, [libraryId])
+  }, [libraryId, offline])
 
   const finish = (message: string) => {
     onAdded(message)
@@ -133,7 +139,9 @@ export const AddToListSheet = forwardRef<
   const failMessage = (e: unknown, what: string): string =>
     e instanceof ABSRequestError && e.status === 403
       ? `Your account on this server is not allowed to change ${what}s.`
-      : `Could not update that ${what}. Check your connection and try again.`
+      : offline
+        ? `You're offline. Adding to a ${what} needs a connection.`
+        : `Could not update that ${what}. Check your connection and try again.`
 
   const addToCollection = async (id: string, name: string) => {
     if (!ids.length) return
@@ -303,11 +311,13 @@ export const AddToListSheet = forwardRef<
               placeholderTextColor={colors.textFaint}
               value={newName}
               onChangeText={setNewName}
-              onSubmitEditing={() => void createNew()}
+              onSubmitEditing={() => {
+                if (!offline) void createNew()
+              }}
             />
             <Pressable
-              style={[styles.createBtn, (!newName.trim() || busy) && { opacity: 0.5 }]}
-              disabled={!newName.trim() || busy}
+              style={[styles.createBtn, (!newName.trim() || busy || offline) && { opacity: 0.5 }]}
+              disabled={!newName.trim() || busy || offline}
               onPress={() => void createNew()}
             >
               <Icon name={icons.check} size={16} color={colors.onAccent} />
@@ -323,7 +333,16 @@ export const AddToListSheet = forwardRef<
             </AppText>
           ) : null}
 
-          {loading ? (
+          {offline ? (
+            <AppText
+              variant="meta"
+              color={colors.textMuted}
+              style={{ textAlign: 'center', marginTop: spacing.xl }}
+            >
+              You&apos;re offline. Your {tab}s are on your server, so adding to one needs a
+              connection.
+            </AppText>
+          ) : loading ? (
             <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.xl }} />
           ) : listsFailed ? (
             <AppText

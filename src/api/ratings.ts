@@ -16,6 +16,7 @@
  * and that is honest.
  */
 import { getSession } from './session'
+import { fetchWithTimeout } from './fetchWithTimeout'
 import type { HSRatingMap } from '@hearthshelf/core'
 
 export type RatingMap = HSRatingMap
@@ -23,7 +24,9 @@ export type RatingMap = HSRatingMap
 async function rFetch<T>(options: RequestInit = {}, path = '/hs/ratings'): Promise<T> {
   const s = getSession()
   if (!s) throw new Error('not_connected')
-  const res = await fetch(`${s.serverUrl}${path}`, {
+  // A deadline so a hanging network fails the write (and rolls it back) instead
+  // of leaving the request open for a minute or more.
+  const res = await fetchWithTimeout(`${s.serverUrl}${path}`, {
     ...options,
     headers: {
       Accept: 'application/json',

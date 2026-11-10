@@ -39,6 +39,9 @@ import { Toast, useToast } from '@/ui/Toast'
 import { haptics } from '@/ui/haptics'
 import { spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
+import { useConnection } from '@/api/ConnectionProvider'
+import { useIsOffline } from '@/api/useIsOffline'
+import { listWriteFailMessage, whenOnline } from '@/ui/lists/offline'
 import { useRef } from 'react'
 import type { BottomSheetModal } from '@gorhom/bottom-sheet'
 
@@ -57,6 +60,8 @@ export default function CollectionDetailScreen() {
   const { message: toast, show: showToast } = useToast()
   const renameSheet = useRef<BottomSheetModal>(null)
   const pickerSheet = useRef<BottomSheetModal>(null)
+  const offline = useIsOffline()
+  const { retry } = useConnection()
 
   const [collection, setCollection] = useState<ABSCollection | null>(null)
   const [error, setError] = useState(false)
@@ -73,7 +78,10 @@ export default function CollectionDetailScreen() {
     }
   }, [id])
 
+  // Offline the collection cannot be fetched, so skip straight to the offline
+  // state; this runs again when the connection comes back.
   useEffect(() => {
+    if (offline) return
     void load()
     // Trust the server's own flags - ABS gates these on `permissions.update` /
     // `permissions.delete` with no admin bypass (CollectionController.middleware).
@@ -88,7 +96,7 @@ export default function CollectionDetailScreen() {
         setCanUpdate(false)
         setCanDelete(false)
       })
-  }, [load])
+  }, [load, offline])
 
   const books: ABSLibraryItem[] = useMemo(() => collection?.books ?? [], [collection])
   const totalSeconds = useMemo(
@@ -104,9 +112,9 @@ export default function CollectionDetailScreen() {
     try {
       await updateCollection(collection.id, { name })
       showToast('Collection renamed')
-    } catch {
+    } catch (e) {
       setCollection((c) => (c ? { ...c, name: previous } : c))
-      showToast('Could not rename that collection')
+      showToast(listWriteFailMessage(e, 'Could not rename that collection'))
     }
   }
 
@@ -123,8 +131,8 @@ export default function CollectionDetailScreen() {
     try {
       await deleteCollection(collection.id)
       router.back()
-    } catch {
-      showToast('Could not delete that collection')
+    } catch (e) {
+      showToast(listWriteFailMessage(e, 'Could not delete that collection'))
     }
   }
 
@@ -145,11 +153,24 @@ export default function CollectionDetailScreen() {
     try {
       await removeBookFromCollection(collection.id, book.id)
       showToast('Removed from collection')
-    } catch {
+    } catch (e) {
       setCollection(snapshot)
-      showToast('Could not remove that book')
+      showToast(listWriteFailMessage(e, 'Could not remove that book'))
     }
   }
+
+  if (offline && !collection)
+    return (
+      <Screen>
+        <ErrorState
+          title="You're offline"
+          message="This collection is on your server. Connect to see it. Your downloaded books still play."
+          onRetry={retry}
+          secondaryLabel="Go back"
+          onSecondary={() => router.back()}
+        />
+      </Screen>
+    )
 
   if (error && !collection)
     return (
@@ -168,9 +189,13 @@ export default function CollectionDetailScreen() {
         totalSeconds={totalSeconds}
         onBack={() => router.back()}
         onPlayAll={books.length ? () => void playItemById(books[0].id) : undefined}
-        onAddBooks={canUpdate && collection ? () => pickerSheet.current?.present() : undefined}
-        onRename={canUpdate && collection ? () => renameSheet.current?.present() : undefined}
-        onDelete={canDelete && collection ? doDelete : undefined}
+        onAddBooks={
+          canUpdate && collection ? whenOnline(() => pickerSheet.current?.present()) : undefined
+        }
+        onRename={
+          canUpdate && collection ? whenOnline(() => renameSheet.current?.present()) : undefined
+        }
+        onDelete={canDelete && collection ? whenOnline(() => void doDelete()) : undefined}
       />
 
       {collection === null ? (
@@ -189,7 +214,7 @@ export default function CollectionDetailScreen() {
               : 'Add books to this collection from the actions menu on any book.'
           }
           cta={canUpdate ? 'Add books' : undefined}
-          onCta={canUpdate ? () => pickerSheet.current?.present() : undefined}
+          onCta={canUpdate ? whenOnline(() => pickerSheet.current?.present()) : undefined}
         />
       ) : (
         <FlatList
@@ -206,7 +231,7 @@ export default function CollectionDetailScreen() {
               progress={progressById.get(item.id)?.progress}
               finished={progressById.get(item.id)?.isFinished === true}
               from="collections"
-              onLongPress={canUpdate ? () => void removeBook(item) : undefined}
+              onLongPress={canUpdate ? whenOnline(() => void removeBook(item)) : undefined}
             />
           )}
           ListFooterComponent={

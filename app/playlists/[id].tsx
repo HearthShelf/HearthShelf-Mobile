@@ -37,6 +37,9 @@ import { Toast, useToast } from '@/ui/Toast'
 import { haptics } from '@/ui/haptics'
 import { spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
+import { useConnection } from '@/api/ConnectionProvider'
+import { useIsOffline } from '@/api/useIsOffline'
+import { listWriteFailMessage, whenOnline } from '@/ui/lists/offline'
 
 export default function PlaylistDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -47,6 +50,8 @@ export default function PlaylistDetailScreen() {
   const { message: toast, show: showToast } = useToast()
   const renameSheet = useRef<BottomSheetModal>(null)
   const pickerSheet = useRef<BottomSheetModal>(null)
+  const offline = useIsOffline()
+  const { retry } = useConnection()
 
   const [playlist, setPlaylist] = useState<ABSPlaylist | null>(null)
   const [error, setError] = useState(false)
@@ -61,9 +66,12 @@ export default function PlaylistDetailScreen() {
     }
   }, [id])
 
+  // Offline the playlist cannot be fetched, so skip straight to the offline
+  // state; this runs again when the connection comes back.
   useEffect(() => {
+    if (offline) return
     void load()
-  }, [load])
+  }, [load, offline])
 
   // Server order, untouched. Resolving each entry decides book-vs-episode once,
   // so the row never has to re-derive it.
@@ -78,9 +86,9 @@ export default function PlaylistDetailScreen() {
     try {
       await updatePlaylist(playlist.id, { name })
       showToast('Playlist renamed')
-    } catch {
+    } catch (e) {
       setPlaylist((p) => (p ? { ...p, name: previous } : p))
-      showToast('Could not rename that playlist')
+      showToast(listWriteFailMessage(e, 'Could not rename that playlist'))
     }
   }
 
@@ -97,8 +105,8 @@ export default function PlaylistDetailScreen() {
     try {
       await deletePlaylist(playlist.id)
       router.back()
-    } catch {
-      showToast('Could not delete that playlist')
+    } catch (e) {
+      showToast(listWriteFailMessage(e, 'Could not delete that playlist'))
     }
   }
 
@@ -132,9 +140,9 @@ export default function PlaylistDetailScreen() {
         return
       }
       showToast('Removed from playlist')
-    } catch {
+    } catch (e) {
       setPlaylist(snapshot)
-      showToast('Could not remove that item')
+      showToast(listWriteFailMessage(e, 'Could not remove that item'))
     }
   }
 
@@ -150,6 +158,19 @@ export default function PlaylistDetailScreen() {
     if (!entry) return
     router.push(`/item/${entry.libraryItemId}`)
   }
+
+  if (offline && !playlist)
+    return (
+      <Screen>
+        <ErrorState
+          title="You're offline"
+          message="This playlist is on your server. Connect to see it. Your downloaded books still play."
+          onRetry={retry}
+          secondaryLabel="Go back"
+          onSecondary={() => router.back()}
+        />
+      </Screen>
+    )
 
   if (error && !playlist)
     return (
@@ -170,9 +191,9 @@ export default function PlaylistDetailScreen() {
         totalSeconds={totalSeconds}
         onBack={() => router.back()}
         onPlayAll={firstBook ? () => void playItemById(firstBook.libraryItemId) : undefined}
-        onAddBooks={playlist ? () => pickerSheet.current?.present() : undefined}
-        onRename={playlist ? () => renameSheet.current?.present() : undefined}
-        onDelete={playlist ? doDelete : undefined}
+        onAddBooks={playlist ? whenOnline(() => pickerSheet.current?.present()) : undefined}
+        onRename={playlist ? whenOnline(() => renameSheet.current?.present()) : undefined}
+        onDelete={playlist ? whenOnline(() => void doDelete()) : undefined}
       />
 
       {playlist === null ? (
@@ -187,7 +208,7 @@ export default function PlaylistDetailScreen() {
           title="Nothing in here yet"
           body="Search your library and pick the books to line up here."
           cta="Add books"
-          onCta={() => pickerSheet.current?.present()}
+          onCta={whenOnline(() => pickerSheet.current?.present())}
         />
       ) : (
         <FlatList
@@ -200,7 +221,7 @@ export default function PlaylistDetailScreen() {
               position={index + 1}
               onOpen={() => openEntry(index)}
               onPlay={item.isEpisode ? undefined : () => void playItemById(item.libraryItemId)}
-              onLongPress={() => void removeAt(index)}
+              onLongPress={whenOnline(() => void removeAt(index))}
             />
           )}
         />

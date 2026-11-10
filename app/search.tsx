@@ -187,8 +187,13 @@ export default function SearchScreen() {
   }, [])
 
   // ---- search ----
+  // On a slow link an older query can answer after a newer one. Each run takes
+  // a ticket, and only the latest ticket may write results.
+  const searchSeq = useRef(0)
   const runSearch = useCallback(
     async (q: string) => {
+      const seq = ++searchSeq.current
+      const isStale = () => seq !== searchSeq.current
       const trimmed = q.trim()
       if (!trimmed) {
         setResults(null)
@@ -223,6 +228,7 @@ export default function SearchScreen() {
 
       try {
         const libraryId = await resolveLibraryId()
+        if (isStale()) return
         if (!libraryId) {
           setResults(null)
           setSearched(true)
@@ -230,10 +236,12 @@ export default function SearchScreen() {
           return
         }
         const data = await searchLibraryAll(libraryId, trimmed)
+        if (isStale()) return
         setResults(data)
         setSearched(true)
         rememberQuery(trimmed)
       } catch {
+        if (isStale()) return
         setResults(null)
         // Clear the external lane too. This branch used to return without
         // touching it, so the PREVIOUS query's "Beyond your library" rows stayed
@@ -245,8 +253,9 @@ export default function SearchScreen() {
         setLoading(false)
         return
       } finally {
-        setLoading(false)
+        if (!isStale()) setLoading(false)
       }
+      if (isStale()) return
 
       // External (Audible) discovery. Best-effort and gated by the synced
       // setting; read live so it reflects a mid-session toggle. Deduped against
@@ -265,10 +274,11 @@ export default function SearchScreen() {
           getRmabEnabled(),
           ensureOwnedIndex(),
         ])
+        if (isStale()) return
         setRmabEnabled(rmab)
         setExternal(res.results)
       } catch {
-        setExternal([])
+        if (!isStale()) setExternal([])
       }
     },
     [offline, ensureOwnedIndex, resolveLibraryId, rememberQuery],

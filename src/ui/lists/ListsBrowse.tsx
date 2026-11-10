@@ -15,6 +15,9 @@ import { FlatList, StyleSheet, View, useWindowDimensions } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import type { BottomSheetModal } from '@gorhom/bottom-sheet'
 import { getLibraries } from '@/api/abs'
+import { useConnection } from '@/api/ConnectionProvider'
+import { useIsOffline } from '@/api/useIsOffline'
+import { whenOnline } from '@/ui/lists/offline'
 import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { AppText, Screen, Touchable } from '@/ui/primitives'
 import { EmptyState, ErrorState, SkeletonTile } from '@/ui/states'
@@ -45,6 +48,8 @@ export function ListsBrowse({ descriptor }: { descriptor: ListKindDescriptor }) 
   // Held so the picker can create into the same library this screen is showing.
   const [libraryId, setLibraryId] = useState<string | null>(null)
   const pickerRef = useRef<BottomSheetModal>(null)
+  const offline = useIsOffline()
+  const { retry } = useConnection()
 
   const load = useCallback(async () => {
     setError(false)
@@ -63,9 +68,13 @@ export function ListsBrowse({ descriptor }: { descriptor: ListKindDescriptor }) 
     }
   }, [descriptor])
 
+  // Lists live on the server, so offline there is nothing to fetch. Waiting
+  // here (rather than letting the request time out) shows the offline state at
+  // once, and the load runs again when the connection comes back.
   useEffect(() => {
+    if (offline) return
     void load()
-  }, [load])
+  }, [load, offline])
 
   const goToTab = useGoToTab()
 
@@ -89,8 +98,8 @@ export function ListsBrowse({ descriptor }: { descriptor: ListKindDescriptor }) 
           <AppText variant="title">{descriptor.labelPlural}</AppText>
         </View>
         <Touchable
-          onPress={() => pickerRef.current?.present()}
-          disabled={!libraryId}
+          onPress={whenOnline(() => pickerRef.current?.present())}
+          disabled={!libraryId && !offline}
           style={s.iconBtn}
           accessibilityRole="button"
           accessibilityLabel={`New ${descriptor.label.toLowerCase()}`}
@@ -99,7 +108,13 @@ export function ListsBrowse({ descriptor }: { descriptor: ListKindDescriptor }) 
         </Touchable>
       </View>
 
-      {lists === null ? (
+      {offline && (lists === null || error) ? (
+        <ErrorState
+          title="You're offline"
+          message={`Your ${descriptor.labelPlural.toLowerCase()} are on your server. Connect to see them. Your downloaded books still play.`}
+          onRetry={retry}
+        />
+      ) : lists === null ? (
         <View style={[s.grid, s.skeletonRow]}>
           {Array.from({ length: cols * 2 }, (_, i) => (
             <SkeletonTile key={i} width={tileWidth} />

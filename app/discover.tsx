@@ -34,6 +34,7 @@ import {
   ignoredItemIds,
 } from '@hearthshelf/core'
 import { getAllLibraryItems, getLibraries, getLibrarySeries } from '@/api/abs'
+import { isOfflineMode } from '@/player/syncState'
 import { getDismissalsState } from '@/store/dismissals'
 import {
   getDiscoverFeedback,
@@ -45,6 +46,8 @@ import {
   type MonthlyShelf,
 } from '@/api/discover'
 import { publishDiscoverShelves } from '@/store/homeShelves'
+import { useIsOffline } from '@/api/useIsOffline'
+import { OfflineSplash } from '@/ui/OfflineSplash'
 import { getProgressState, subscribeProgress } from '@/store/progress'
 import { playItemById } from '@/player/playback'
 import {
@@ -105,6 +108,7 @@ export default function DiscoverScreen() {
   const { message: toast, show: showToast } = useToast()
   const actionsRef = useRef<BookActionsHandle>(null)
   const feedbackRef = useRef<DiscoverFeedbackHandle>(null)
+  const offline = useIsOffline()
 
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
@@ -125,6 +129,12 @@ export default function DiscoverScreen() {
   useEffect(() => {
     ratingsRef.current = ratings
   }, [ratings])
+
+  // Same reason as ratingsRef: lets a failed vote restore the value it replaced.
+  const feedbackMapRef = useRef<DiscoverFeedbackMap>({})
+  useEffect(() => {
+    feedbackMapRef.current = feedback
+  }, [feedback])
 
   const load = useCallback(async () => {
     try {
@@ -213,9 +223,12 @@ export default function DiscoverScreen() {
     }
   }, [])
 
+  // Offline there is no library to build from, so wait for the connection
+  // instead of sitting on a skeleton; this runs again when it comes back.
   useEffect(() => {
+    if (offline) return
     void load()
-  }, [load])
+  }, [load, offline])
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true)
@@ -239,52 +252,78 @@ export default function DiscoverScreen() {
 
   // Feedback writes optimistically so a tile reacts before the round-trip; the
   // server echoes the full map back and we adopt it when it's non-empty.
-  const writeFeedback = useCallback((itemKey: string, fb: { vote?: DiscoverVote | null }) => {
-    haptics.select()
-    setFeedback((prev) => {
-      const next = { ...prev }
-      const entry = { ...(next[itemKey] ?? {}) }
-      if (fb.vote !== undefined) {
-        if (fb.vote === null) delete entry.vote
-        else entry.vote = fb.vote
-      }
-      if (Object.keys(entry).length === 0) delete next[itemKey]
-      else next[itemKey] = entry
-      return next
-    })
-    void setDiscoverFeedback(itemKey, fb).then((map) => {
-      if (map && Object.keys(map).length > 0) setFeedback(map)
-    })
-  }, [])
+  const writeFeedback = useCallback(
+    (itemKey: string, fb: { vote?: DiscoverVote | null }) => {
+      haptics.select()
+      const previous = feedbackMapRef.current[itemKey]
+      setFeedback((prev) => {
+        const next = { ...prev }
+        const entry = { ...(next[itemKey] ?? {}) }
+        if (fb.vote !== undefined) {
+          if (fb.vote === null) delete entry.vote
+          else entry.vote = fb.vote
+        }
+        if (Object.keys(entry).length === 0) delete next[itemKey]
+        else next[itemKey] = entry
+        return next
+      })
+      void setDiscoverFeedback(itemKey, fb).then((map) => {
+        if (map === null) {
+          setFeedback((prev) => {
+            const next = { ...prev }
+            if (previous === undefined) delete next[itemKey]
+            else next[itemKey] = previous
+            return next
+          })
+          showToast(
+            isOfflineMode()
+              ? "You're offline. Your choice was not saved."
+              : 'Could not save that. Try again.',
+          )
+          return
+        }
+        if (Object.keys(map).length > 0) setFeedback(map)
+      })
+    },
+    [showToast],
+  )
 
   // Ratings write to their own endpoint, and unlike feedback that write can
   // FAIL loudly - so roll the optimistic value back rather than leaving a star
   // on screen the server never stored.
-  const writeRating = useCallback((itemKey: string, value: number | null) => {
-    haptics.select()
-    // Snapshot for rollback from the REF, not from inside the state updater:
-    // an updater must be pure, and React invokes it twice in development, so
-    // the second pass would capture the value we just optimistically wrote and
-    // "roll back" to it. ratingsRef tracks the committed map (see the effect
-    // below), which is the value we actually want to restore.
-    const previous = ratingsRef.current[itemKey]
-    setRatings((prev) => {
-      const next = { ...prev }
-      if (value === null) delete next[itemKey]
-      else next[itemKey] = value
-      return next
-    })
-    void setRating(itemKey, value)
-      .then((map) => setRatings(map))
-      .catch(() => {
-        setRatings((prev) => {
-          const next = { ...prev }
-          if (previous === undefined) delete next[itemKey]
-          else next[itemKey] = previous
-          return next
-        })
+  const writeRating = useCallback(
+    (itemKey: string, value: number | null) => {
+      haptics.select()
+      // Snapshot for rollback from the REF, not from inside the state updater:
+      // an updater must be pure, and React invokes it twice in development, so
+      // the second pass would capture the value we just optimistically wrote and
+      // "roll back" to it. ratingsRef tracks the committed map (see the effect
+      // below), which is the value we actually want to restore.
+      const previous = ratingsRef.current[itemKey]
+      setRatings((prev) => {
+        const next = { ...prev }
+        if (value === null) delete next[itemKey]
+        else next[itemKey] = value
+        return next
       })
-  }, [])
+      void setRating(itemKey, value)
+        .then((map) => setRatings(map))
+        .catch(() => {
+          setRatings((prev) => {
+            const next = { ...prev }
+            if (previous === undefined) delete next[itemKey]
+            else next[itemKey] = previous
+            return next
+          })
+          showToast(
+            isOfflineMode()
+              ? "You're offline. Your rating was not saved."
+              : 'Could not save that rating. Try again.',
+          )
+        })
+    },
+    [showToast],
+  )
 
   const byId = new Map(items.map((it) => [it.id, it] as const))
   // AI picks resolved to owned items, with not-interested hidden.
@@ -355,6 +394,17 @@ export default function DiscoverScreen() {
       />
     </View>
   )
+
+  // Shelves already on screen stay usable offline; only an empty screen gives
+  // way to the offline splash, since there is nothing to build Discover from.
+  if (offline && items.length === 0)
+    return (
+      <OfflineSplash
+        title="Discover needs a connection"
+        body="Picks are built from your whole library. Your downloaded books still play."
+        onBack={() => router.back()}
+      />
+    )
 
   return (
     <Screen tabBar={<AppTabBar activeName={active} onPressTab={goToTab} />}>

@@ -20,6 +20,8 @@ import type { ABSLibraryItem } from '@hearthshelf/core'
 import { coverHue, coverInitial } from '@hearthshelf/core'
 import { coverUrl, itemAuthor, itemTitle, searchLibrary } from '@/api/abs'
 import type { ListKindDescriptor } from '@/ui/lists/kind'
+import { listWriteFailMessage } from '@/ui/lists/offline'
+import { useIsOffline } from '@/api/useIsOffline'
 import { AppText, Cover, PrimaryButton, Sheet, Touchable } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
 import { haptics } from '@/ui/haptics'
@@ -51,13 +53,18 @@ export const BookPickerSheet = forwardRef<
   const [loading, setLoading] = useState(false)
   const [picked, setPicked] = useState<Map<string, ABSLibraryItem>>(new Map())
   const [busy, setBusy] = useState(false)
-  const [failed, setFailed] = useState(false)
+  const [failMessage, setFailMessage] = useState('')
+  // A failed search must not read as "No matches" - that tells someone on a
+  // dropped connection their book is not in the library.
+  const [searchFailed, setSearchFailed] = useState(false)
+  const offline = useIsOffline()
 
   const already = new Set(existingIds)
 
   const runSearch = useCallback(
     async (q: string) => {
       const term = q.trim()
+      setSearchFailed(false)
       if (!term || !libraryId) {
         setResults([])
         setLoading(false)
@@ -68,6 +75,7 @@ export const BookPickerSheet = forwardRef<
         setResults(await searchLibrary(libraryId, term))
       } catch {
         setResults([])
+        setSearchFailed(true)
       } finally {
         setLoading(false)
       }
@@ -93,12 +101,12 @@ export const BookPickerSheet = forwardRef<
 
   const count = picked.size
   const trimmedName = name.trim()
-  const ready = !busy && count > 0 && (mode === 'add' || trimmedName.length > 0)
+  const ready = !busy && !offline && count > 0 && (mode === 'add' || trimmedName.length > 0)
 
   const submit = async () => {
     if (!ready) return
     setBusy(true)
-    setFailed(false)
+    setFailMessage('')
     try {
       await onSubmit([...picked.keys()], trimmedName)
       haptics.success()
@@ -107,8 +115,8 @@ export const BookPickerSheet = forwardRef<
       setName('')
       setQuery('')
       setResults([])
-    } catch {
-      setFailed(true)
+    } catch (e) {
+      setFailMessage(listWriteFailMessage(e, "That didn't go through. Try again."))
       haptics.warn()
     } finally {
       setBusy(false)
@@ -163,9 +171,13 @@ export const BookPickerSheet = forwardRef<
         />
       </View>
 
-      {failed ? (
+      {offline ? (
+        <AppText variant="meta" color={colors.textMuted} style={s.error}>
+          You're offline. Picking books needs a connection to your server.
+        </AppText>
+      ) : failMessage ? (
         <AppText variant="meta" color={colors.destructive} style={s.error}>
-          That didn't go through. Try again.
+          {failMessage}
         </AppText>
       ) : null}
 
@@ -175,7 +187,13 @@ export const BookPickerSheet = forwardRef<
         contentContainerStyle={s.listPad}
         ListEmptyComponent={
           <AppText variant="meta" color={colors.textMuted} style={s.empty}>
-            {loading ? 'Searching...' : query.trim() ? 'No matches' : 'Search to add books'}
+            {loading
+              ? 'Searching...'
+              : searchFailed && query.trim()
+                ? "Search didn't go through. Check your connection."
+                : query.trim()
+                  ? 'No matches'
+                  : 'Search to add books'}
           </AppText>
         }
         renderItem={({ item }) => {
