@@ -21,15 +21,19 @@
  * signed in - that is what `isSignedIn` is for - but never whether the question
  * has been answered.
  */
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSession } from './client'
+import { readStoredSessionData } from './sessionCache'
 
 export interface ResolvedAuth {
   /** True once auth has answered at least once this run. Never returns to false. */
   isLoaded: boolean
   /** True while a session is confirmed. Freely changes across refetches. */
   isSignedIn: boolean
-  /** The raw session, for callers that need the user off it. */
+  /**
+   * The raw session, for callers that need the user off it. While `paused`,
+   * this is the copy stored on the device rather than a confirmed one.
+   */
   session: ReturnType<typeof useSession>['data']
   /**
    * The last session check failed without the service saying "no session" -
@@ -40,6 +44,14 @@ export interface ResolvedAuth {
    * though its cookie is still on disk. Only a 401 clears the session for real.
    */
   authUnreachable: boolean
+  /**
+   * `session` is the device's stored copy, shown because the service cannot be
+   * asked - typically a session that ran out locally while offline. It keeps
+   * the user's name and account on screen; it does NOT count as signed in
+   * (`isSignedIn` stays false), so nothing that needs a confirmed session runs
+   * on it. The first answer from the service replaces it.
+   */
+  paused: boolean
 }
 
 export function useAuthResolved(): ResolvedAuth {
@@ -58,5 +70,31 @@ export function useAuthResolved(): ResolvedAuth {
   const status = (error as { status?: number } | null)?.status
   const authUnreachable = !session && !!error && status !== 401 && status !== 403
 
-  return { isLoaded: answered.current, isSignedIn: !!session, session, authUnreachable }
+  // The Expo client only restores its cached session while that copy is
+  // unexpired, so offline past the local expiry `session` is null even though
+  // the account is still on the device. Read the stored copy ourselves for that
+  // case (see ./sessionCache.ts for why local expiry is not trusted).
+  const [stored, setStored] = useState<ResolvedAuth['session']>(null)
+  useEffect(() => {
+    if (!authUnreachable) {
+      setStored(null)
+      return
+    }
+    let live = true
+    void readStoredSessionData().then((data) => {
+      if (live) setStored(data as ResolvedAuth['session'])
+    })
+    return () => {
+      live = false
+    }
+  }, [authUnreachable])
+
+  const paused = authUnreachable && !!stored
+  return {
+    isLoaded: answered.current,
+    isSignedIn: !!session,
+    session: session ?? (authUnreachable ? stored : null),
+    authUnreachable,
+    paused,
+  }
 }
