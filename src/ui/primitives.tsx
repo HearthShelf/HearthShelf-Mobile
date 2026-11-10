@@ -295,22 +295,75 @@ export function PrimaryButton({
   onPress,
   icon,
   style,
+  disabled,
+  busy,
+  busyLabel,
 }: {
   label: string
-  onPress?: () => void
+  /**
+   * Returning a promise marks the button busy until it settles, and presses
+   * in the meantime are ignored, so a slow submit cannot run twice.
+   */
+  onPress?: () => void | Promise<unknown>
   icon?: IconName
   style?: StyleProp<ViewStyle>
+  /** Greys the button out and ignores presses. */
+  disabled?: boolean
+  /**
+   * Work is under way: presses are ignored and a spinner replaces the icon.
+   * The label stays (or becomes `busyLabel`) so the button keeps its width.
+   */
+  busy?: boolean
+  busyLabel?: string
 }) {
   const colors = useColors()
   const styles = useStyles()
+  // A ref, not just state: two taps can land before React re-renders.
+  const pendingRef = useRef(false)
+  const mountedRef = useRef(true)
+  const [pending, setPending] = useState(false)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+  const isBusy = !!busy || pending
+  const blocked = !!disabled || isBusy
+  const press = () => {
+    if (blocked || pendingRef.current || !onPress) return
+    const result = onPress()
+    if (result && typeof (result as Promise<unknown>).then === 'function') {
+      pendingRef.current = true
+      setPending(true)
+      const settle = () => {
+        pendingRef.current = false
+        if (mountedRef.current) setPending(false)
+      }
+      ;(result as Promise<unknown>).then(settle, settle)
+    }
+  }
   return (
     <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed, style]}
+      onPress={press}
+      disabled={blocked}
+      accessibilityRole="button"
+      accessibilityLabel={isBusy && busyLabel ? busyLabel : label}
+      accessibilityState={{ disabled: blocked, busy: isBusy }}
+      style={({ pressed }) => [
+        styles.primaryBtn,
+        pressed && !blocked && styles.pressed,
+        disabled && !isBusy && styles.touchableDisabled,
+        style,
+      ]}
     >
-      {icon ? <Icon name={icon} size={18} color={colors.onAccent} /> : null}
+      {isBusy ? (
+        <ActivityIndicator size="small" color={colors.onAccent} style={styles.primaryBtnSpinner} />
+      ) : icon ? (
+        <Icon name={icon} size={18} color={colors.onAccent} />
+      ) : null}
       <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.primaryBtnText}>
-        {label}
+        {isBusy && busyLabel ? busyLabel : label}
       </Text>
     </Pressable>
   )
@@ -805,6 +858,7 @@ const makeStyles = (colors: Palette, shadow: ReturnType<typeof useTheme>['shadow
       paddingVertical: spacing.md,
     },
     primaryBtnText: { ...typeScale.label, color: colors.onAccent },
+    primaryBtnSpinner: { width: 18, height: 18 },
     sectionHeader: {
       flexDirection: 'row',
       alignItems: 'center',

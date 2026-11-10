@@ -21,12 +21,12 @@
  * place to maintain rather than one per route.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native'
+import { ActivityIndicator, StyleSheet, TextInput, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import { authClient } from '@/auth/client'
 import { useAuth } from '@/auth/useAuth'
 import { AUTH_FETCH, authErrorText, reachAuth } from '@/auth/net'
-import { AppText } from '@/ui/primitives'
+import { AppText, PrimaryButton } from '@/ui/primitives'
 import { spacing, type Palette } from '@/ui/theme'
 import { useColors } from '@/ui/ThemeProvider'
 import { showToast } from '@/ui/Toast'
@@ -65,6 +65,8 @@ export default function ChooseUsernameScreen() {
   const [value, setValue] = useState('')
   const [state, setState] = useState<Availability>('idle')
   const [saving, setSaving] = useState(false)
+  // Return key and the button can both fire before a re-render.
+  const savingRef = useRef(false)
   const seeded = useRef(false)
 
   // Seed once from the provider's name, then leave it alone - re-seeding would
@@ -111,7 +113,8 @@ export default function ChooseUsernameScreen() {
   }, [trimmed, wellFormed])
 
   const save = useCallback(async () => {
-    if (!wellFormed || saving) return
+    if (!wellFormed || savingRef.current) return
+    savingRef.current = true
     setSaving(true)
     try {
       // `displayUsername` keeps the capitalisation the person typed; `username`
@@ -137,9 +140,10 @@ export default function ChooseUsernameScreen() {
     } catch (e) {
       showToast(authErrorText(e, 'That username could not be saved'))
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
-  }, [trimmed, wellFormed, saving, router])
+  }, [trimmed, wellFormed, router])
 
   if (!user) return null
 
@@ -188,15 +192,14 @@ export default function ChooseUsernameScreen() {
         {hint}
       </AppText>
 
-      <Pressable
+      <PrimaryButton
+        label="Continue"
+        busyLabel="Saving..."
+        busy={saving}
+        disabled={!wellFormed || state === 'taken'}
         onPress={() => void save()}
-        disabled={!wellFormed || saving || state === 'taken'}
-        style={[styles.button, (!wellFormed || saving || state === 'taken') && styles.buttonOff]}
-      >
-        <AppText variant="body" color={colors.onAccent}>
-          {saving ? 'Saving...' : 'Continue'}
-        </AppText>
-      </Pressable>
+        style={styles.button}
+      />
     </View>
   )
 }
@@ -223,13 +226,6 @@ function makeStyles(colors: Palette) {
       fontSize: 17,
     },
     spinner: { position: 'absolute', right: spacing.md },
-    button: {
-      marginTop: spacing.lg,
-      borderRadius: 12,
-      paddingVertical: spacing.md,
-      alignItems: 'center',
-      backgroundColor: colors.accent,
-    },
-    buttonOff: { opacity: 0.5 },
+    button: { marginTop: spacing.lg },
   })
 }

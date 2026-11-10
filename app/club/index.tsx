@@ -125,8 +125,13 @@ export default function MyClubsScreen() {
     return false
   }
 
+  const joiningRef = useRef(false)
   const joinPublicClub = async (club: ClubSummary) => {
-    const joined = await setClubMembership(club.id, true)
+    if (joiningRef.current) return
+    joiningRef.current = true
+    const joined = await setClubMembership(club.id, true).finally(() => {
+      joiningRef.current = false
+    })
     if (!joined) {
       showToast('Could not join the club. Check your connection and try again.')
       return
@@ -380,7 +385,6 @@ const NewClubSheet = forwardRef<
   const [visibility, setVisibility] = useState<ClubVisibility>('closed')
   // A slow connection can take seconds to answer; block a second tap so it
   // cannot make the same club twice, and keep the name if it fails.
-  const [creating, setCreating] = useState(false)
   return (
     <Sheet ref={ref} title="Join or create" snapPoints={['85%']}>
       <BottomSheetScrollView contentContainerStyle={styles.sheetScroll}>
@@ -469,18 +473,15 @@ const NewClubSheet = forwardRef<
           })}
         </View>
         <PrimaryButton
-          label={creating ? 'Creating...' : 'Create club'}
+          label="Create club"
+          busyLabel="Creating..."
           icon={icons.add}
-          onPress={() => {
-            if (creating) return
-            setCreating(true)
-            void onCreate(name, visibility).then((created) => {
-              setCreating(false)
-              if (created) {
-                setName('')
-                setVisibility('closed')
-              }
-            })
+          onPress={async () => {
+            const created = await onCreate(name, visibility)
+            if (created) {
+              setName('')
+              setVisibility('closed')
+            }
           }}
           style={{ marginTop: spacing.md }}
         />

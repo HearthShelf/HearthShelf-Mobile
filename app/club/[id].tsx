@@ -98,6 +98,7 @@ import {
   Cover,
   IconButton,
   Loading,
+  PrimaryButton,
   Screen,
   Sheet,
   Touchable,
@@ -187,6 +188,7 @@ export default function ClubRoomScreen() {
   const [selectedInvitees, setSelectedInvitees] = useState<string[]>([])
 
   const membersSheetRef = useRef<SheetRef>(null)
+  const leavingRef = useRef(false)
   const historySheetRef = useRef<SheetRef>(null)
   const addBooksSheetRef = useRef<SheetRef>(null)
   const noteActionsRef = useRef<SheetRef>(null)
@@ -581,22 +583,27 @@ export default function ClubRoomScreen() {
   }
 
   const leave = async () => {
-    if (!detail) return
-    if (
-      !(await confirm({
-        title: 'Leave club',
-        message: `Leave "${detail.club.name}"? You'll stop getting its updates${detail.club.isOpen ? ' and can find it again while it stays public' : ''}.`,
-        confirmLabel: 'Leave',
-      }))
-    )
-      return
-    ownerSheetRef.current?.dismiss()
-    const ok = await setClubMembership(detail.club.id, false)
-    if (ok) {
-      show('Left the club')
-      router.back()
-    } else {
-      fail('Could not leave')
+    if (!detail || leavingRef.current) return
+    leavingRef.current = true
+    try {
+      if (
+        !(await confirm({
+          title: 'Leave club',
+          message: `Leave "${detail.club.name}"? You'll stop getting its updates${detail.club.isOpen ? ' and can find it again while it stays public' : ''}.`,
+          confirmLabel: 'Leave',
+        }))
+      )
+        return
+      ownerSheetRef.current?.dismiss()
+      const ok = await setClubMembership(detail.club.id, false)
+      if (ok) {
+        show('Left the club')
+        router.back()
+      } else {
+        fail('Could not leave')
+      }
+    } finally {
+      leavingRef.current = false
     }
   }
 
@@ -1458,7 +1465,9 @@ export default function ClubRoomScreen() {
           <AppText variant="caption" color={colors.textMuted} style={{ flex: 1 }}>
             Join to read the discussion. Members see your progress in this club&apos;s books.
           </AppText>
-          <Touchable
+          <PrimaryButton
+            label="Join club"
+            busyLabel="Joining..."
             style={styles.joinBtn}
             disabled={busy}
             onPress={async () => {
@@ -1468,11 +1477,7 @@ export default function ClubRoomScreen() {
               if (ok) await load({ markRead: true })
               else fail('Could not join')
             }}
-          >
-            <AppText variant="label" color={colors.onAccent}>
-              Join club
-            </AppText>
-          </Touchable>
+          />
         </View>
       ) : null}
 
