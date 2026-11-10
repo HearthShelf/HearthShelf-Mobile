@@ -33,6 +33,12 @@ import { coverUrl, getSeriesWithBooks, itemAuthor, itemNarrator, itemTitle } fro
 import { fetchAudibleSeries, peekAudibleSeries } from '@/api/absAudible'
 import { getRmabEnabled } from '@/api/absRmab'
 import { catalogSeriesById } from '@/player/offlineCatalog'
+import { isOfflineMode } from '@/player/syncState'
+import { isDownloaded } from '@/player/downloads'
+import { useIsOffline } from '@/api/useIsOffline'
+import { useConnection } from '@/api/ConnectionProvider'
+import { ErrorState } from '@/ui/states'
+import { showToast } from '@/ui/Toast'
 import {
   getProgressState,
   subscribeProgress,
@@ -59,7 +65,6 @@ import { upcomingBookPath } from '@/lib/upcomingBookRoute'
 import { interleaveMissing, orderBooks, seqLabel, seriesSeqLabel } from '@/lib/seriesOrder'
 import {
   AppText,
-  Centered,
   Cover,
   IconButton,
   Loading,
@@ -97,7 +102,19 @@ export default function SeriesDetailScreen() {
   }>()
   const active = tabFromParam(from, 'library')
   const [series, setSeries] = useState<ABSSeries | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<'offline' | 'unreachable' | null>(null)
+  // True when the page was built from the downloaded books because the server
+  // could not be reached; it reloads from the server once the connection is back.
+  const [fromLocal, setFromLocal] = useState(false)
+  const appOffline = useIsOffline()
+  const { retry: retryConnection } = useConnection()
+  const [reloadKey, setReloadKey] = useState(0)
+  const wasAppOffline = useRef(appOffline)
+  useEffect(() => {
+    if (wasAppOffline.current && !appOffline && (fromLocal || error)) setReloadKey((k) => k + 1)
+    wasAppOffline.current = appOffline
+  }, [appOffline, fromLocal, error])
+  const serverDown = fromLocal || appOffline
   const [marking, setMarking] = useState(false)
   // The unowned books in this series (Audible roster minus what's owned), and
   // whether the request backend can fulfill them. Both best-effort; unresolved
@@ -130,8 +147,12 @@ export default function SeriesDetailScreen() {
   useEffect(() => {
     if (!id || !libraryId) return
     let cancelled = false
+    setError(null)
     void (async () => {
       try {
+        // Known offline: go straight to the local copy instead of waiting out
+        // the request timeout first.
+        if (isOfflineMode()) throw new Error('offline_mode')
         // Fetch THIS series only. This used to page the entire library's series
         // catalog and .find() the one wanted - megabytes of JSON per tap on a
         // large library, with every tap starting another. That is what made
@@ -141,20 +162,23 @@ export default function SeriesDetailScreen() {
         if (cancelled) return
         if (!found) throw new Error('Series not found')
         setSeries(found)
+        setFromLocal(false)
         // Progress is best-effort - a failure shouldn't block the page.
         void refreshProgress().catch(() => {})
       } catch (e) {
         if (cancelled) return
         // Offline: show this series' downloaded books from the local catalog.
         const local = catalogSeriesById(id)
-        if (local && local.books.length > 0) setSeries(local)
-        else setError((e as Error).message)
+        if (local && local.books.length > 0) {
+          setSeries(local)
+          setFromLocal(true)
+        } else setError(isOfflineMode() ? 'offline' : 'unreachable')
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [id, libraryId])
+  }, [id, libraryId, reloadKey])
 
   // Resolve the series' full Audible roster and the request-backend status once
   // the series (and its owned books) are known. Best-effort: any failure leaves
@@ -177,8 +201,14 @@ export default function SeriesDetailScreen() {
     : undefined
   const toggleFollowSeries = () => {
     if (!seriesAsin || !seriesName) return
+    if (serverDown) {
+      showToast("You're offline - follow it when you're back online")
+      return
+    }
     if (seriesSub) {
-      void unsubscribe(seriesSub.id).catch(() => {})
+      void unsubscribe(seriesSub.id).catch(() =>
+        showToast("Couldn't save that. Check your connection and try again."),
+      )
       return
     }
     void subscribe({
@@ -193,7 +223,7 @@ export default function SeriesDetailScreen() {
       // on `sub.seriesTitle` - send only the former and the follow is accepted
       // and then silently never fires.
       seriesTitle: seriesName,
-    }).catch(() => {})
+    }).catch(() => showToast("Couldn't save that. Check your connection and try again."))
   }
   // This screen is reachable without passing through Home (deep link, search),
   // which is where the store is otherwise hydrated.
@@ -217,6 +247,9 @@ export default function SeriesDetailScreen() {
       setSeriesAsin(cached.seriesAsin)
       setMissing(missingSeriesBooks(cached.books, ownedBooks, ignoredAsins, seriesName))
     }
+    // The roster and request status both live on the server; offline the page
+    // just shows the books you have.
+    if (isOfflineMode()) return
     void (async () => {
       const [audible, enabled] = await Promise.all([
         fetchAudibleSeries(seriesName, id),
@@ -243,11 +276,18 @@ export default function SeriesDetailScreen() {
     return (
       <Screen>
         <Header onBack={() => router.back()} />
-        <Centered>
-          <AppText variant="meta" color={colors.destructive}>
-            {error}
-          </AppText>
-        </Centered>
+        <ErrorState
+          title={error === 'offline' ? "You're offline" : "Couldn't reach your server"}
+          message={
+            error === 'offline'
+              ? "None of this series' books are downloaded, so it can't open right now."
+              : 'Check your connection and try again.'
+          }
+          onRetry={() => {
+            if (appOffline) retryConnection()
+            else setReloadKey((k) => k + 1)
+          }}
+        />
       </Screen>
     )
   }
@@ -322,6 +362,10 @@ export default function SeriesDetailScreen() {
   // can't blink back to stale state.
   const markSeries = async () => {
     if (!books.length || marking) return
+    if (serverDown) {
+      showToast("You're offline - try again when you're back online")
+      return
+    }
     const next = !allSeriesFinished
     setMarking(true)
     try {
@@ -333,6 +377,7 @@ export default function SeriesDetailScreen() {
       )
     } catch {
       // Store rolled the optimistic state back.
+      showToast("Couldn't update the series. Check your connection and try again.")
     } finally {
       setMarking(false)
     }
@@ -340,17 +385,32 @@ export default function SeriesDetailScreen() {
 
   const toggleIgnoreSeries = async () => {
     if (!id) return
+    if (serverDown) {
+      showToast("You're offline - try again when you're back online")
+      return
+    }
     try {
       if (seriesIgnored) await restore('series', id)
       else await dismiss('series', id, series?.name)
     } catch {
-      // Store rolled the optimistic write back.
+      // Store rolled the optimistic write back; say so rather than leave the
+      // button looking like it did nothing.
+      showToast("Couldn't save that. Check your connection and try again.")
     }
   }
 
   const play = async (bookId: string) => {
     const p = progressById.get(bookId)
-    await playItemById(bookId)
+    if (serverDown && !isDownloaded(bookId)) {
+      showToast("You're offline - this book isn't downloaded")
+      return
+    }
+    try {
+      await playItemById(bookId)
+    } catch {
+      showToast("Couldn't start this book. Check your connection and try again.")
+      return
+    }
     const start = p?.isFinished ? 0 : (p?.currentTime ?? 0)
     if (start > 0) requestSeek(start)
     router.push('/player')
@@ -476,11 +536,13 @@ export default function SeriesDetailScreen() {
             />
           ) : null}
         </View>
-        <QuestGiverAssessment
-          libraryId={libraryId}
-          target={qgSeriesTarget(series.name, books)}
-          progressById={progressById}
-        />
+        {fromLocal ? null : (
+          <QuestGiverAssessment
+            libraryId={libraryId}
+            target={qgSeriesTarget(series.name, books)}
+            progressById={progressById}
+          />
+        )}
 
         {/* List head / selection toolbar. Long-press a book to start selecting. */}
         {selection.selecting ? (

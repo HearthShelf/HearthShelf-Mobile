@@ -13,6 +13,7 @@
  */
 import type { HSCompletion, HSCompletionsResponse } from '@hearthshelf/core'
 import { getSession } from './session'
+import { fetchWithTimeout } from './fetchWithTimeout'
 
 export type { HSCompletion }
 
@@ -22,12 +23,15 @@ export async function getCompletionsPage(offset = 0, limit = 25): Promise<HSComp
   const s = getSession()
   if (!s) return UNAVAILABLE
   try {
-    const res = await fetch(`${s.serverUrl}/hs/completions?limit=${limit}&offset=${offset}`, {
-      headers: {
-        Authorization: `Bearer ${s.token}`,
-        Accept: 'application/json',
+    const res = await fetchWithTimeout(
+      `${s.serverUrl}/hs/completions?limit=${limit}&offset=${offset}`,
+      {
+        headers: {
+          Authorization: `Bearer ${s.token}`,
+          Accept: 'application/json',
+        },
       },
-    })
+    )
     if (!res.ok) return UNAVAILABLE
     const data = (await res.json()) as Partial<HSCompletionsResponse>
     return {
@@ -36,7 +40,9 @@ export async function getCompletionsPage(offset = 0, limit = 25): Promise<HSComp
       rows: Array.isArray(data.rows) ? data.rows : [],
     }
   } catch {
-    return UNAVAILABLE
+    // A failed request is not "this server can't do it": answering UNAVAILABLE
+    // here told an offline listener their server lacked finished-book history.
+    throw new Error('completions_unreachable')
   }
 }
 
@@ -56,7 +62,7 @@ export async function adjustCompletion(mediaItemId: string, completions: number)
   const s = getSession()
   if (!s) return false
   try {
-    const res = await fetch(`${s.serverUrl}/hs/completions`, {
+    const res = await fetchWithTimeout(`${s.serverUrl}/hs/completions`, {
       method: 'PATCH',
       headers: {
         Authorization: `Bearer ${s.token}`,

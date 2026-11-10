@@ -64,6 +64,9 @@ import { useColors } from '@/ui/ThemeProvider'
 import { haptics } from '@/ui/haptics'
 import { Toast, useToast } from '@/ui/Toast'
 import { breadcrumb } from '@/lib/crashLog'
+import { isOfflineMode } from '@/player/syncState'
+import { useIsOffline } from '@/api/useIsOffline'
+import { useConnection } from '@/api/ConnectionProvider'
 
 const PAGE_SIZE = 25
 
@@ -137,6 +140,37 @@ function Header({ segment, onSegment }: { segment: Segment; onSegment: (s: Segme
   )
 }
 
+// ---- Offline ----------------------------------------------------------------
+
+/**
+ * History lives only on the server. Offline, an empty list would read as "you
+ * have no history" (or, for finished books, "your server can't do this"), so
+ * both views show an honest offline state instead, and reload by themselves
+ * once the connection comes back.
+ */
+function useOfflineReload(reload: () => void) {
+  const appOffline = useIsOffline()
+  const { retry } = useConnection()
+  const wasOffline = useRef(appOffline)
+  useEffect(() => {
+    if (wasOffline.current && !appOffline) reload()
+    wasOffline.current = appOffline
+  }, [appOffline, reload])
+  return {
+    // Rows already on screen stay useful to read, so only replace an empty or
+    // still-loading list.
+    showOffline: (rowCount: number, firstLoad: boolean) =>
+      appOffline && (firstLoad || rowCount === 0),
+    view: (
+      <ErrorState
+        title="You're offline"
+        message="Your history is on your server. It will show up again when you're back online."
+        onRetry={retry}
+      />
+    ),
+  }
+}
+
 // ---- Sessions ---------------------------------------------------------------
 
 function SessionsView() {
@@ -154,6 +188,7 @@ function SessionsView() {
     keyOf: (r) => r.id,
     errorMessage: 'Could not load your history.',
   })
+  const offline = useOfflineReload(list.reload)
 
   useEffect(() => {
     // Mirror the server's own rule exactly. ABS gates DELETE /api/sessions/:id on
@@ -192,11 +227,19 @@ function SessionsView() {
   }
 
   const openEdit = (row: SessionRow) => {
+    if (isOfflineMode()) {
+      showToast("You're offline - edit this when you're back online")
+      return
+    }
     setEditing(row)
     editSheet.current?.present()
   }
 
   const confirmDelete = (row: SessionRow) => {
+    if (isOfflineMode()) {
+      showToast("You're offline - delete this when you're back online")
+      return
+    }
     Alert.alert(
       'Delete this session?',
       `${row.title} - ${formatTimestamp(row.seconds)} on ${fmtSessDate(row.startedAt).day}. This cannot be undone.`,
@@ -265,6 +308,7 @@ function SessionsView() {
     }
   }
 
+  if (offline.showOffline(list.rows.length, list.firstLoad)) return offline.view
   if (list.firstLoad) return <FirstLoad />
   if (list.error && list.rows.length === 0)
     return <ErrorState message={list.error} onRetry={list.reload} />
@@ -414,6 +458,7 @@ function BooksView() {
     keyOf: (r) => r.libraryItemId,
     errorMessage: 'Could not load your finished books.',
   })
+  const offline = useOfflineReload(list.reload)
 
   // Books with no parseable finish date cannot be placed on a month, so they
   // group under one honest heading rather than being silently dropped or
@@ -441,6 +486,10 @@ function BooksView() {
    * (HS-MOBILEAPP-35).
    */
   const applyAdjust = async (row: HSCompletion, next: number) => {
+    if (isOfflineMode()) {
+      showToast("You're offline - change this when you're back online")
+      return
+    }
     const ok = await adjustCompletion(row.mediaItemId, next)
     if (!ok) {
       showToast('Could not update that. Try again.')
@@ -489,6 +538,7 @@ function BooksView() {
     )
   }
 
+  if (offline.showOffline(list.rows.length, list.firstLoad)) return offline.view
   if (list.firstLoad) return <FirstLoad />
 
   // The distinction that matters: this server CANNOT provide completion data

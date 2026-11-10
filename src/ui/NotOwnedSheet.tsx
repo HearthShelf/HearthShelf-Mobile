@@ -37,6 +37,8 @@ import {
 } from '@/store/dismissals'
 import { AppText, Cover, IconButton, PrimaryButton, Sheet, Touchable, icons } from '@/ui/primitives'
 import { radius, spacing, type Palette } from '@/ui/theme'
+import { showToast } from '@/ui/Toast'
+import { isOfflineMode } from '@/player/syncState'
 import { useColors } from '@/ui/ThemeProvider'
 
 export const NotOwnedSheet = forwardRef<
@@ -82,10 +84,18 @@ export const NotOwnedSheet = forwardRef<
     ? (dismissals.rosterAsins ?? []).some((a) => a.toLowerCase() === book.asin.toLowerCase())
     : false
 
+  // Follow and ignore live on the server; without this they failed silently.
+  const offlineStop = (): boolean => {
+    if (!isOfflineMode()) return false
+    showToast("You're offline - try again when you're back online")
+    return true
+  }
+  const saveFailed = () => showToast("Couldn't save that. Check your connection and try again.")
+
   const toggleFollow = () => {
-    if (!book) return
+    if (!book || offlineStop()) return
     if (sub) {
-      void unsubscribe(sub.id).catch(() => {})
+      void unsubscribe(sub.id).catch(saveFailed)
       return
     }
     void subscribe({
@@ -100,19 +110,23 @@ export const NotOwnedSheet = forwardRef<
       durationMinutes: book.durationMinutes,
       releaseDate: book.releaseDate,
       publicationDatetime: book.publicationDatetime,
-    }).catch(() => {})
+    }).catch(saveFailed)
   }
 
   const toggleIgnore = () => {
-    if (!book) return
+    if (!book || offlineStop()) return
     const done = ignored
       ? restoreEntity('roster', book.asin)
       : dismissEntity('roster', book.asin, book.title)
-    void done.then(() => reset()).catch(() => {})
+    void done.then(() => reset()).catch(saveFailed)
   }
 
   const confirm = async () => {
     if (!book) return
+    if (isOfflineMode()) {
+      setError("You're offline. Send the request when you're back online.")
+      return
+    }
     setPending(true)
     setError(null)
     const res = await submitRequest({

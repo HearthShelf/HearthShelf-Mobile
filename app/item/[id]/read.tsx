@@ -18,7 +18,14 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import { Reader, ReaderProvider, useReader } from '@epubjs-react-native/core'
 import type { Location, Section } from '@epubjs-react-native/core'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { cacheDirectory, documentDirectory, downloadAsync } from 'expo-file-system/legacy'
+import {
+  cacheDirectory,
+  createDownloadResumable,
+  deleteAsync,
+  documentDirectory,
+  getInfoAsync,
+  moveAsync,
+} from 'expo-file-system/legacy'
 import {
   ABS_ENDPOINTS,
   cfiStorageKey,
@@ -31,6 +38,8 @@ import {
 } from '@hearthshelf/core'
 import { getSession } from '@/api/session'
 import { getItemDetail } from '@/api/abs'
+import { isOfflineMode } from '@/player/syncState'
+import { downloadFor } from '@/player/downloads'
 import { useTheme } from '@/ui/ThemeProvider'
 import { AppText, IconButton } from '@/ui/primitives'
 import { icons } from '@/ui/icons'
@@ -55,18 +64,99 @@ function useReaderPrefs(): ReaderPrefs {
 // NOT base64-inline the book: that bloats index.html to the book's size and
 // crashes the WebView renderer on large books (DCC). We also can't use
 // fetch().blob() - RN can't build a Blob from the response ArrayBuffer.
+//
+// The last copy opened stays in the cache, so a book read before still opens
+// with no connection (or on Wi-Fi that hangs instead of failing).
+
+/** Give up on a download that has received nothing for this long. A whole-file
+ *  deadline would cut off a big book on a slow but working link. */
+const EBOOK_STALL_MS = 20000
+/** With a cached copy on hand, wait only this long for a fresh one. */
+const EBOOK_FRESH_WAIT_MS = 8000
+
+class EbookError extends Error {}
+
+async function cachedEbookUri(fileUri: string): Promise<string | null> {
+  try {
+    const info = await getInfoAsync(fileUri)
+    return info.exists && !info.isDirectory && (info.size ?? 0) > 0 ? fileUri : null
+  } catch {
+    return null
+  }
+}
+
+async function downloadEbook(url: string, token: string, fileUri: string): Promise<string> {
+  // Downloaded beside the cached copy and moved over it only when complete, so a
+  // dropped connection never leaves a broken book in place of a good one.
+  const partUri = `${fileUri}.part`
+  let lastProgressAt = Date.now()
+  const task = createDownloadResumable(
+    url,
+    partUri,
+    { headers: { Authorization: `Bearer ${token}`, Accept: 'application/epub+zip' } },
+    () => {
+      lastProgressAt = Date.now()
+    },
+  )
+  let stalled = false
+  const watchdog = setInterval(() => {
+    if (Date.now() - lastProgressAt > EBOOK_STALL_MS) {
+      stalled = true
+      void task.cancelAsync().catch(() => {})
+    }
+  }, 2000)
+  try {
+    const dl = await task.downloadAsync()
+    if (stalled || !dl) throw new EbookError('stalled')
+    if (dl.status !== 200) throw new EbookError(`ebook ${dl.status}`)
+    // iOS refuses to move onto an existing file.
+    await deleteAsync(fileUri, { idempotent: true })
+    await moveAsync({ from: partUri, to: fileUri })
+    return fileUri
+  } catch (e) {
+    void deleteAsync(partUri, { idempotent: true }).catch(() => {})
+    throw stalled ? new EbookError('stalled') : e
+  } finally {
+    clearInterval(watchdog)
+  }
+}
+
 async function fetchEbookFileUri(itemId: string): Promise<string> {
-  const session = getSession()
-  if (!session) throw new Error('not_connected')
-  const url = `${session.serverUrl}${ABS_ENDPOINTS.itemEbook(itemId)}`
   const dir = cacheDirectory ?? documentDirectory
-  if (!dir) throw new Error('no_cache_dir')
+  if (!dir) throw new EbookError('no_cache_dir')
   const fileUri = `${dir}reader-${itemId}.epub`
-  const dl = await downloadAsync(url, fileUri, {
-    headers: { Authorization: `Bearer ${session.token}`, Accept: 'application/epub+zip' },
-  })
-  if (dl.status !== 200) throw new Error(`ebook ${dl.status}`)
-  return dl.uri
+  const cached = await cachedEbookUri(fileUri)
+  const session = getSession()
+  if (isOfflineMode() || !session) {
+    if (cached) return cached
+    throw new EbookError('offline')
+  }
+  const url = `${session.serverUrl}${ABS_ENDPOINTS.itemEbook(itemId)}`
+  const fresh = downloadEbook(url, session.token, fileUri)
+  if (!cached) return fresh
+  // Prefer a fresh copy, but don't keep the reader waiting on bad Wi-Fi when a
+  // good one is already here.
+  fresh.catch(() => {})
+  try {
+    return await Promise.race([
+      fresh,
+      new Promise<string>((_, reject) =>
+        setTimeout(() => reject(new EbookError('slow')), EBOOK_FRESH_WAIT_MS),
+      ),
+    ])
+  } catch {
+    return cached
+  }
+}
+
+/** Plain words for why the book didn't open. */
+function ebookErrorText(code: string): string {
+  if (code === 'offline') {
+    return "You're offline, and this book hasn't been opened on this phone before. Open it once while online to read it anywhere."
+  }
+  if (code === 'stalled') return 'The download stopped. Check your connection and try again.'
+  if (code.startsWith('ebook ')) return 'Your server could not send this book.'
+  return 'Check your connection and try again.'
 }
 
 export default function ReaderScreen() {
@@ -133,15 +223,19 @@ function ReaderInner() {
         const saved = (await AsyncStorage.getItem(cfiStorageKey(id))) || undefined
         if (!cancelled) initialCfi.current = saved
         // Title is nice-to-have; don't block the book on it.
-        getItemDetail(id)
-          .then((d) => {
-            if (!cancelled) setTitle(d.media.metadata.title || 'Reading')
-          })
-          .catch(() => {})
+        const localTitle = downloadFor(id)?.title
+        if (localTitle) setTitle(localTitle)
+        if (!isOfflineMode()) {
+          getItemDetail(id)
+            .then((d) => {
+              if (!cancelled) setTitle(d.media.metadata.title || 'Reading')
+            })
+            .catch(() => {})
+        }
         const fileUri = await fetchEbookFileUri(id)
         if (!cancelled) setSrc(fileUri)
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'load_failed')
+        if (!cancelled) setError(e instanceof EbookError ? e.message : 'load_failed')
       }
     })()
     return () => {
@@ -279,8 +373,15 @@ function ReaderInner() {
         <AppText style={{ color: colors.textMuted, marginBottom: 8 }}>
           Could not open this ebook.
         </AppText>
-        <AppText style={{ color: colors.textMuted, marginBottom: 16, fontSize: 11, opacity: 0.7 }}>
-          {error}
+        <AppText
+          style={{
+            color: colors.textMuted,
+            marginBottom: 16,
+            textAlign: 'center',
+            paddingHorizontal: 24,
+          }}
+        >
+          {ebookErrorText(error)}
         </AppText>
         <Pressable
           onPress={() => router.back()}

@@ -37,16 +37,7 @@ import {
   subscribe,
   unsubscribe,
 } from '@/player/subscriptions'
-import {
-  AppText,
-  Centered,
-  Cover,
-  IconButton,
-  Loading,
-  Screen,
-  Touchable,
-  icons,
-} from '@/ui/primitives'
+import { AppText, Cover, IconButton, Loading, Screen, Touchable, icons } from '@/ui/primitives'
 import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { useMiniPlayerInset } from '@/ui/useContentInset'
 import { CoverLightbox } from '@/ui/CoverLightbox'
@@ -58,6 +49,11 @@ import { formatDuration } from '@hearthshelf/core'
 import { radius, spacing, type Palette } from '@/ui/theme'
 import { useTheme } from '@/ui/ThemeProvider'
 import { parseUpcomingBookFallback } from '@/lib/upcomingBookRoute'
+import { isOfflineMode } from '@/player/syncState'
+import { useIsOffline } from '@/api/useIsOffline'
+import { useConnection } from '@/api/ConnectionProvider'
+import { ErrorState } from '@/ui/states'
+import { showToast } from '@/ui/Toast'
 
 // A book the page can render: the Audible result shape plus an optional series
 // sequence (present on subscriptions + series-roster books).
@@ -122,6 +118,9 @@ export default function UpcomingBookScreen() {
   // down would be conditional and blow up the screen (see the fixes in
   // app/item/[id].tsx and app/series/[id].tsx).
   const [ownedSeries, setOwnedSeries] = useState<{ id: string; libraryId: string } | null>(null)
+  const appOffline = useIsOffline()
+  const { retry: retryConnection } = useConnection()
+  const [reloadKey, setReloadKey] = useState(0)
 
   // A roster fallback renders immediately. We still try the product endpoint so
   // a healthy listing can enrich it, but a removed ASIN no longer blanks the
@@ -139,6 +138,12 @@ export default function UpcomingBookScreen() {
     setLoading(!routeFallback)
     setProductResolved(false)
     setProductChecked(false)
+    // The product lookup is on the server; offline, show what the route carried.
+    if (isOfflineMode()) {
+      setProductChecked(true)
+      setLoading(false)
+      return
+    }
     void (async () => {
       const p = await fetchAudibleProduct(routeAsin)
       if (!cancelled) {
@@ -151,7 +156,7 @@ export default function UpcomingBookScreen() {
     return () => {
       cancelled = true
     }
-  }, [existing, routeAsin, routeFallback])
+  }, [existing, routeAsin, routeFallback, reloadKey])
 
   // Resolve the SERIES PAGE this book belongs to, when the listener owns it.
   //
@@ -170,6 +175,7 @@ export default function UpcomingBookScreen() {
       setOwnedSeries(null)
       return
     }
+    if (isOfflineMode()) return
     let cancelled = false
     void (async () => {
       try {
@@ -205,11 +211,18 @@ export default function UpcomingBookScreen() {
     return (
       <Screen tabBar={tabBar}>
         <Header onBack={() => router.back()} />
-        <Centered>
-          <AppText variant="meta" color={colors.textMuted}>
-            Couldn't load this book.
-          </AppText>
-        </Centered>
+        <ErrorState
+          title={appOffline ? "You're offline" : "Couldn't load this book"}
+          message={
+            appOffline
+              ? 'This book needs a connection to your server to show its details.'
+              : 'Check your connection and try again.'
+          }
+          onRetry={() => {
+            if (appOffline) retryConnection()
+            else setReloadKey((k) => k + 1)
+          }}
+        />
       </Screen>
     )
   }
@@ -239,13 +252,18 @@ export default function UpcomingBookScreen() {
   // keeps it out of Upcoming and the Home countdown.
   const toggleIgnore = async () => {
     if (busy) return
+    if (isOfflineMode()) {
+      showToast("You're offline - try again when you're back online")
+      return
+    }
     setBusy(true)
     haptics.select()
     try {
       if (ignored) await restoreEntity('roster', book.asin)
       else await dismissEntity('roster', book.asin, book.title)
     } catch {
-      // Store rolls back optimistically; nothing else to do.
+      // The store rolled the change back; say so instead of looking like a no-op.
+      showToast("Couldn't save that. Check your connection and try again.")
     } finally {
       setBusy(false)
     }
@@ -253,6 +271,10 @@ export default function UpcomingBookScreen() {
 
   const toggleFollow = async () => {
     if (busy) return
+    if (isOfflineMode()) {
+      showToast("You're offline - follow it when you're back online")
+      return
+    }
     setBusy(true)
     haptics.select()
     try {
@@ -276,7 +298,7 @@ export default function UpcomingBookScreen() {
         })
       }
     } catch {
-      // Store rolls back optimistically; nothing else to do.
+      showToast("Couldn't save that. Check your connection and try again.")
     } finally {
       setBusy(false)
     }

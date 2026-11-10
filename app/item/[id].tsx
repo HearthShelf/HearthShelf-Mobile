@@ -78,7 +78,6 @@ import type { SheetHandle } from '@/player/sheets'
 import {
   AppText,
   Avatar,
-  Centered,
   Chip,
   Cover,
   IconButton,
@@ -89,7 +88,9 @@ import {
   type SheetRef,
   icons,
 } from '@/ui/primitives'
-import { Skeleton, SkeletonRow } from '@/ui/states'
+import { ErrorState, Skeleton, SkeletonRow } from '@/ui/states'
+import { useIsOffline } from '@/api/useIsOffline'
+import { useConnection } from '@/api/ConnectionProvider'
 import { Icon } from '@/ui/icons'
 import { DeviceKindIcon } from '@/ui/DeviceKindIcon'
 import { useSheetBackHandler } from '@/ui/useBackHandler'
@@ -154,6 +155,19 @@ export default function ItemDetailScreen() {
   // was unreachable - server-only extras (notes, who's listening, description)
   // are absent, so we show a chip explaining the trimmed page.
   const [offline, setOffline] = useState(false)
+  // App-wide offline mode, live: a page opened from the local copy reloads from
+  // the server once the connection comes back.
+  const appOffline = useIsOffline()
+  const { retry: retryConnection } = useConnection()
+  const [reloadKey, setReloadKey] = useState(0)
+  const wasAppOffline = useRef(appOffline)
+  useEffect(() => {
+    if (wasAppOffline.current && !appOffline && (offline || error)) setReloadKey((k) => k + 1)
+    wasAppOffline.current = appOffline
+  }, [appOffline, offline, error])
+  // Either the page came from the local copy or the app knows the server is gone:
+  // server-only actions would just wait out a timeout and fail.
+  const serverDown = offline || appOffline
   const [zoomed, setZoomed] = useState(false)
   // Increments each time the book is marked finished, firing the ember burst.
   const [finishBurst, setFinishBurst] = useState(0)
@@ -179,6 +193,7 @@ export default function ItemDetailScreen() {
   useEffect(() => {
     if (!id) return
     let cancelled = false
+    setError(null)
     void (async () => {
       let d: ABSLibraryItemDetail
       try {
@@ -205,16 +220,20 @@ export default function ItemDetailScreen() {
             setDetail(offlineDetail)
             setOffline(true)
           } else if (isOfflineMode()) {
-            // Not downloaded and no server to ask: say so plainly rather than
-            // leaking the internal reason string.
-            setError("You're offline and this book isn't downloaded.")
-          } else setError((e as Error).message)
+            setError('offline')
+          } else if (e instanceof ABSRequestError && e.status === 404) {
+            setError('missing')
+          } else {
+            // Never show the raw reason string (abs_request_unreachable ...).
+            setError('unreachable')
+          }
         }
         return
       }
       try {
         if (cancelled) return
         setDetail(d)
+        setOffline(false)
 
         // Progress + bookmarks ride the same /api/me call; both are best-effort.
         // Merge pending local writes over the server list so a bookmark added
@@ -251,24 +270,41 @@ export default function ItemDetailScreen() {
             setListeningNow(res.available ? res.users : [])
           })
           .catch(() => setListeningNow([]))
-      } catch (e) {
-        if (!cancelled) setError((e as Error).message)
+      } catch {
+        if (!cancelled) setError('unreachable')
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [id])
+  }, [id, reloadKey])
 
   if (error) {
+    const tryAgain = () => {
+      if (appOffline) retryConnection()
+      else setReloadKey((k) => k + 1)
+    }
     return (
       <Screen>
         <Header onBack={() => router.back()} />
-        <Centered>
-          <AppText variant="meta" color={colors.destructive}>
-            {error}
-          </AppText>
-        </Centered>
+        {error === 'missing' ? (
+          <ErrorState
+            title="Book not found"
+            message="This book isn't on your server anymore."
+            retryLabel="Go back"
+            onRetry={() => router.back()}
+          />
+        ) : (
+          <ErrorState
+            title={error === 'offline' ? "You're offline" : "Couldn't reach your server"}
+            message={
+              error === 'offline'
+                ? "This book isn't downloaded, so it can't open right now. Downloaded books still open and play."
+                : 'Check your connection and try again.'
+            }
+            onRetry={tryAgain}
+          />
+        )}
       </Screen>
     )
   }
@@ -316,17 +352,38 @@ export default function ItemDetailScreen() {
   // below already names where you are.
   const ctaLabel = isFinished ? 'Listen again' : isInProgress ? 'Resume' : 'Start listening'
 
+  // Streaming needs the server; a downloaded copy plays anywhere.
+  const cantStream = serverDown && download?.status !== 'done'
+
   const play = async () => {
+    if (cantStream) {
+      show("You're offline - download this book to play it without a connection")
+      return
+    }
     haptics.transport()
     // playItemById resolves the resume position itself (play session, else the
     // saved media-progress spot), so no manual seek here.
-    await playItemById(detail.id)
+    try {
+      await playItemById(detail.id)
+    } catch {
+      show("Couldn't start this book. Check your connection and try again.")
+      return
+    }
     router.push('/player')
   }
 
   const playFrom = async (startSec: number) => {
+    if (cantStream) {
+      show("You're offline - download this book to play it without a connection")
+      return
+    }
     haptics.transport()
-    await playItemById(detail.id)
+    try {
+      await playItemById(detail.id)
+    } catch {
+      show("Couldn't start this book. Check your connection and try again.")
+      return
+    }
     requestSeek(startSec)
     chaptersSheetRef.current?.dismiss()
     bookmarksSheetRef.current?.dismiss()
@@ -349,6 +406,14 @@ export default function ItemDetailScreen() {
 
   const toggleFinished = async () => {
     const next = !isFinished
+    if (serverDown) {
+      show(
+        next
+          ? "You're offline - mark it finished when you're back online"
+          : "You're offline - try again when you're back online",
+      )
+      return
+    }
     try {
       // D-FINISH: finishing is ONE tap. Mark it now (server stamps "now"); the
       // date is editable afterward from the toast, not a blocking prompt.
@@ -379,6 +444,10 @@ export default function ItemDetailScreen() {
   // confirms first, then reports through a toast.
   const resetProgress = async () => {
     overflowSheetRef.current?.dismiss()
+    if (serverDown) {
+      show("You're offline - reset it when you're back online")
+      return
+    }
     const ok = await confirm({
       title: 'Reset progress',
       message: `Start "${title}" over from the beginning?`,
@@ -397,6 +466,10 @@ export default function ItemDetailScreen() {
   // via the Undo toast.
   const hideBook = async () => {
     overflowSheetRef.current?.dismiss()
+    if (serverDown) {
+      show("You're offline - hide it when you're back online")
+      return
+    }
     const seriesRef = series
     const useSeries = Boolean(seriesRef)
     const kind: 'series' | 'item' = useSeries ? 'series' : 'item'
@@ -440,6 +513,8 @@ export default function ItemDetailScreen() {
     } else if (download?.status === 'downloading' || download?.status === 'queued') {
       void cancelDownload(detail.id)
       show('Download cancelled')
+    } else if (serverDown) {
+      show("You're offline - downloads start when you're back online")
     } else {
       void downloadItem(detail.id, title, authorName)
       show('Downloading for offline')
@@ -477,7 +552,11 @@ export default function ItemDetailScreen() {
     'finishedBy',
     'notes',
     'club',
-  ]
+  ].filter(
+    // A page built from the downloaded copy has no server to ask, so these would
+    // only sit empty or offer actions that can't work.
+    (k) => !(offline && (k === 'fit' || k === 'notes' || k === 'club')),
+  ) as SectionKey[]
 
   const sections: Record<SectionKey, React.ReactNode> = {
     status: (
@@ -677,6 +756,10 @@ export default function ItemDetailScreen() {
           label="Add to queue, collection, or playlist"
           onPress={() => {
             overflowSheetRef.current?.dismiss()
+            if (serverDown) {
+              show("You're offline - add it to a list when you're back online")
+              return
+            }
             addToListRef.current?.present()
           }}
         />
@@ -1407,6 +1490,10 @@ const SessionEditSheet = ({
   const changed = minutes !== Math.round(session.timeListening / 60) || dayShift !== 0
 
   const save = async () => {
+    if (isOfflineMode()) {
+      showToast("You're offline - edit this listen when you're back online")
+      return
+    }
     setSaving(true)
     try {
       await updateListeningSession({
@@ -1430,6 +1517,10 @@ const SessionEditSheet = ({
   }
 
   const remove = async () => {
+    if (isOfflineMode()) {
+      showToast("You're offline - delete this listen when you're back online")
+      return
+    }
     const ok = await confirm({
       title: 'Delete this listen?',
       message: `${formatDuration(session.timeListening)} on ${shiftedDate.toLocaleDateString()} will be removed from your stats.`,

@@ -6,6 +6,7 @@
  * convention as api/queue.ts.
  */
 import { getSession } from './session'
+import { fetchWithTimeout } from './fetchWithTimeout'
 import type { Dismissals } from '@hearthshelf/core'
 
 function requireSession() {
@@ -17,7 +18,7 @@ function requireSession() {
 /** The user's current dismissals { seriesIds, itemIds }. */
 export async function getDismissals(): Promise<Dismissals> {
   const { serverUrl, token } = requireSession()
-  const res = await fetch(`${serverUrl}/hs/dismissals`, {
+  const res = await fetchWithTimeout(`${serverUrl}/hs/dismissals`, {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) throw new Error(`dismissals ${res.status}`)
@@ -46,7 +47,7 @@ async function writeDismissal(
   entityId: string,
 ): Promise<Dismissals> {
   const { serverUrl, token } = requireSession()
-  const res = await fetch(`${serverUrl}/hs/dismissals`, {
+  const res = await fetchWithTimeout(`${serverUrl}/hs/dismissals`, {
     method,
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ kind, entityId }),

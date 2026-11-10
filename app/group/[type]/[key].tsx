@@ -25,9 +25,13 @@ import {
 } from '@/api/abs'
 import { getProgressState, subscribeProgress } from '@/store/progress'
 import { playItemById } from '@/player/playback'
-import { AppText, Avatar, Centered, IconButton, Screen, Touchable, icons } from '@/ui/primitives'
+import { catalogAsLibraryItems, catalogSeriesById } from '@/player/offlineCatalog'
+import { isOfflineMode } from '@/player/syncState'
+import { useIsOffline } from '@/api/useIsOffline'
+import { useConnection } from '@/api/ConnectionProvider'
+import { AppText, Avatar, IconButton, Screen, Touchable, icons } from '@/ui/primitives'
 import { BookTile } from '@/ui/BookTile'
-import { EmptyState, Skeleton, SkeletonTile } from '@/ui/states'
+import { EmptyState, ErrorState, Skeleton, SkeletonTile } from '@/ui/states'
 import { Icon } from '@/ui/icons'
 import { AppTabBar, tabFromParam, useGoToTab } from '@/ui/AppTabBar'
 import { haptics } from '@/ui/haptics'
@@ -76,7 +80,17 @@ export default function GroupDrilldown() {
   const tileWidth = adaptiveShelfTileWidth(width)
 
   const [books, setBooks] = useState<ABSLibraryItem[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<'offline' | 'unreachable' | null>(null)
+  // Built from the downloaded books because the server could not be reached.
+  const [fromLocal, setFromLocal] = useState(false)
+  const appOffline = useIsOffline()
+  const { retry: retryConnection } = useConnection()
+  const [reloadKey, setReloadKey] = useState(0)
+  const wasAppOffline = useRef(appOffline)
+  useEffect(() => {
+    if (wasAppOffline.current && !appOffline && (fromLocal || error)) setReloadKey((k) => k + 1)
+    wasAppOffline.current = appOffline
+  }, [appOffline, fromLocal, error])
   const [sort, setSort] = useState<GroupSort>(type === 'authors' ? 'series' : 'title')
   const [desc, setDesc] = useState(false)
   // name -> series id, so series subheads can push the series detail.
@@ -91,6 +105,9 @@ export default function GroupDrilldown() {
     setError(null)
     void (async () => {
       try {
+        // Known offline: skip straight to the downloads instead of waiting out
+        // the request timeout first.
+        if (isOfflineMode()) throw new Error('offline_mode')
         let result: ABSLibraryItem[] = []
         if (type === 'series') {
           const series = await getLibrarySeries(libraryId)
@@ -116,19 +133,27 @@ export default function GroupDrilldown() {
           const target = decodeURIComponent(name).toLowerCase()
           result = page.results.filter((it) => itemNarrator(it).toLowerCase().includes(target))
         }
-        if (!cancelled) setBooks(result)
-      } catch (e) {
-        if (!cancelled) setError((e as Error).message)
+        if (!cancelled) {
+          setBooks(result)
+          setFromLocal(false)
+        }
+      } catch {
+        if (cancelled) return
+        const local = localGroupBooks(type, key, displayName)
+        if (local.length > 0) {
+          setBooks(local)
+          setFromLocal(true)
+        } else setError(isOfflineMode() ? 'offline' : 'unreachable')
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [type, key, libraryId, name, byName])
+  }, [type, key, libraryId, name, byName, displayName, reloadKey])
 
   // Resolve series name -> id so subheads can push series detail (best-effort).
   useEffect(() => {
-    if (type === 'series' || !books) return
+    if (type === 'series' || !books || fromLocal) return
     let cancelled = false
     void getLibrarySeries(libraryId)
       .then((all) => {
@@ -141,7 +166,7 @@ export default function GroupDrilldown() {
     return () => {
       cancelled = true
     }
-  }, [type, libraryId, books])
+  }, [type, libraryId, books, fromLocal])
 
   const seriesCount = useMemo(() => {
     if (!books) return 0
@@ -217,11 +242,18 @@ export default function GroupDrilldown() {
       </View>
 
       {error ? (
-        <Centered>
-          <AppText variant="meta" color={colors.destructive}>
-            {error}
-          </AppText>
-        </Centered>
+        <ErrorState
+          title={error === 'offline' ? "You're offline" : "Couldn't reach your server"}
+          message={
+            error === 'offline'
+              ? 'None of these books are downloaded, so this page is empty for now.'
+              : 'Check your connection and try again.'
+          }
+          onRetry={() => {
+            if (appOffline) retryConnection()
+            else setReloadKey((k) => k + 1)
+          }}
+        />
       ) : !books ? (
         <GroupSkeleton tileWidth={tileWidth} />
       ) : books.length === 0 ? (
@@ -254,6 +286,11 @@ export default function GroupDrilldown() {
             <AppText variant="meta" color={colors.textMuted} style={{ marginTop: 4 }}>
               {countLine(books.length, seriesCount, finishedCount)}
             </AppText>
+            {fromLocal ? (
+              <AppText variant="caption" color={colors.textMuted} style={{ marginTop: 4 }}>
+                Offline · showing your downloaded books
+              </AppText>
+            ) : null}
           </View>
 
           {/* Sort control */}
@@ -425,3 +462,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
 })
+
+/** This group's downloaded books, for when the server can't be reached. Names are
+ *  matched the way the narrator route already does: a credit can list several. */
+function localGroupBooks(type: GroupType, key: string, displayName: string): ABSLibraryItem[] {
+  if (type === 'series') return (catalogSeriesById(key)?.books ?? []).filter((b) => !b.isMissing)
+  const target = displayName.toLowerCase()
+  if (!target) return []
+  return catalogAsLibraryItems().filter((it) =>
+    (type === 'authors' ? (it.media.metadata.authorName ?? '') : itemNarrator(it))
+      .toLowerCase()
+      .includes(target),
+  )
+}

@@ -48,6 +48,7 @@ import { useColors } from '@/ui/ThemeProvider'
 import { confirm } from '@/ui/confirm'
 import { dismiss as dismissEntity, restore as restoreEntity } from '@/store/dismissals'
 import { resetItemProgress } from '@/store/progress'
+import { isOfflineMode } from '@/player/syncState'
 
 // Where the long-press originated, so the sheet can offer the right "hide"
 // action: a Continue-Series tile hides the whole SERIES; a Continue-Listening
@@ -117,11 +118,26 @@ export const BookActionsSheet = forwardRef<
 
   const close = () => sheetRef.current?.dismiss()
 
+  // Actions that only the server can carry out say so up front offline, instead
+  // of waiting out a timeout and then failing.
+  const offlineStop = (msg: string): boolean => {
+    if (!isOfflineMode()) return false
+    close()
+    toast(msg)
+    return true
+  }
+
   const play = async () => {
     if (!item) return
+    if (dl?.status !== 'done' && offlineStop("You're offline - this book isn't downloaded")) return
     close()
     haptics.transport()
-    await playItemById(item.id)
+    try {
+      await playItemById(item.id)
+    } catch {
+      toast("Couldn't start this book. Check your connection and try again.")
+      return
+    }
     router.push('/player')
   }
 
@@ -148,6 +164,7 @@ export const BookActionsSheet = forwardRef<
 
   const markFinished = async () => {
     if (!item || busy) return
+    if (offlineStop("You're offline - try again when you're back online")) return
     const next = !finished
     setBusy(true)
     close()
@@ -188,6 +205,8 @@ export const BookActionsSheet = forwardRef<
     } else if (dl?.status === 'downloading' || dl?.status === 'queued') {
       void cancelDownload(item.id)
       toast('Download cancelled')
+    } else if (isOfflineMode()) {
+      toast("You're offline - downloads start when you're back online")
     } else if (!downloadsAllowed()) {
       toast('Downloads are off - allow storage in Downloads & Storage settings')
     } else {
@@ -198,6 +217,7 @@ export const BookActionsSheet = forwardRef<
   }
 
   const addToList = () => {
+    if (offlineStop("You're offline - add it to a list when you're back online")) return
     // Layer the add-to-list sheet on top of this one, then close this.
     addSheetRef.current?.present()
     close()
@@ -224,6 +244,7 @@ export const BookActionsSheet = forwardRef<
   // search. Optimistic via the dismissals store; reversible from the Undo toast.
   const dismissTarget = async () => {
     if (!item || busy) return
+    if (offlineStop("You're offline - try again when you're back online")) return
     close()
     const isSeries = source === 'series'
     const kind: 'series' | 'item' = isSeries ? 'series' : 'item'
@@ -246,6 +267,7 @@ export const BookActionsSheet = forwardRef<
   // book from the shelf (the product decision); elsewhere it just resets.
   const resetProgress = async () => {
     if (!item || busy) return
+    if (offlineStop("You're offline - reset it when you're back online")) return
     close()
     const hideAfter = source === 'listening'
     const ok = await confirm({
