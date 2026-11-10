@@ -373,8 +373,16 @@ function AuthGate({ children }: { children: React.ReactNode }) {
  * routing (settings, sign-in) keeps working behind the overlay.
  */
 function ConnectionGate({ children }: { children: React.ReactNode }) {
-  const { status, retry, connectTo, redeemInvite, enterOffline, canGoOffline, connectionLost } =
-    useConnection()
+  const {
+    status,
+    retry,
+    connectTo,
+    redeemInvite,
+    enterOffline,
+    canGoOffline,
+    connectionLost,
+    backOnline,
+  } = useConnection()
   // Clear the stored session too: sign-out must work with the auth service
   // unreachable, or a user on a dead network is stuck signed in.
   const signOut = useCallback(async () => {
@@ -465,7 +473,7 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
     <View style={styles.gateRoot}>
       {children}
       {status.phase === 'offline' ? (
-        <OfflineBanner onRetry={retry} reason={status.reason} />
+        <OfflineBanner onRetry={retry} reason={status.reason} backOnline={backOnline} />
       ) : connectionLost ? (
         <OfflineBanner onRetry={retry} reason={CONNECTION_LOST_REASON} />
       ) : null}

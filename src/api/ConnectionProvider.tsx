@@ -300,6 +300,9 @@ interface ConnectionValue {
    *  session is still valid and comes back on its own); this only drives the
    *  banner and tells playback/downloads to skip the network meanwhile. */
   connectionLost: boolean
+  /** The user chose offline mode, and a connect has since succeeded behind it:
+   *  the server is reachable again, and Retry switches to the online app. */
+  backOnline: boolean
   /** Re-run the whole connect flow from the top. While the connection is lost,
    *  checks the server again instead, without covering the app. */
   retry: () => void
@@ -1392,6 +1395,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         // and foreground probe call connect() too, and a network edge is not the
         // user changing their mind.
         connectionLost: lostWhileReady,
+        backOnline: status.phase === 'offline' && connectedOffline,
         retry: () => {
           // Lost while ready: check the server again behind the app. The full
           // connect from `ready` would cover the app with the splash.
