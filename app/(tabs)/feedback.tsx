@@ -31,6 +31,8 @@ import { useColors } from '@/ui/ThemeProvider'
 import { useContentInset } from '@/ui/useContentInset'
 import { FULL_VERSION, SENTRY_DSN } from '@/lib/config'
 import { withFeedbackScope } from '@/lib/feedbackDiagnostics'
+import { isCurrentlyReachable } from '@/player/connectivity'
+import { useIsOffline } from '@/api/useIsOffline'
 
 type Kind = 'bug' | 'idea' | 'other'
 
@@ -178,7 +180,9 @@ export default function FeedbackScreen() {
     }
   }
 
-  const send = () => {
+  const appOffline = useIsOffline()
+
+  const send = async () => {
     if (!canSend) return
     if (!SENTRY_DSN) {
       showToast("Feedback isn't set up in this build.")
@@ -239,7 +243,15 @@ export default function FeedbackScreen() {
       haptics.success()
       setMessage('')
       setShots([])
-      showToast('Thanks - your feedback is on its way.')
+      // Sentry keeps an unsent report on disk and delivers it once the phone is
+      // back online, so offline is "queued", not "failed" - but say so, or the
+      // reporter is left wondering whether it went anywhere.
+      const online = !appOffline && (await isCurrentlyReachable())
+      showToast(
+        online
+          ? 'Thanks - your feedback is on its way.'
+          : "You're offline - your feedback is saved and will send automatically once you're back online.",
+      )
     } catch {
       showToast("That didn't send. Please try again.")
     } finally {
