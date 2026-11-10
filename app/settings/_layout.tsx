@@ -15,6 +15,8 @@ import { useScreenBlurTarget } from '@/ui/BlurTarget'
 import { AppText } from '@/ui/primitives'
 import { useTheme } from '@/ui/ThemeProvider'
 import { fonts, spacing } from '@/ui/theme'
+import { OfflineSplash } from '@/ui/OfflineSplash'
+import { useIsOffline } from '@/api/useIsOffline'
 
 /** The running build, shown in the settings header so "what version am I on?"
  *  is answerable without scrolling to the bottom of the list. */
@@ -35,7 +37,9 @@ export default function SettingsLayout() {
   const { colors } = useTheme()
   const router = useRouter()
   const pathname = usePathname()
-  const hideTabs = pathname.startsWith('/settings/admin')
+  const inAdmin = pathname.startsWith('/settings/admin')
+  const hideTabs = inAdmin
+  const offline = useIsOffline()
   const blurTarget = useScreenBlurTarget()
 
   const goToTab = useGoToTab()
@@ -108,6 +112,18 @@ export default function SettingsLayout() {
           <Stack.Screen name="diagnostics" options={{ title: 'Diagnostics' }} />
         </Stack>
       </BlurTargetView>
+      {/* Every Server Admin page reads and writes the live server, so offline the
+          whole section is one honest splash rather than ~30 pages of spinners. */}
+      {inAdmin && offline ? (
+        <View style={StyleSheet.absoluteFill}>
+          <OfflineSplash
+            title="Server Admin needs a connection"
+            body="Reconnect to your server to manage it. Your downloaded books still play."
+            onBack={() => router.dismissTo('/settings')}
+            backLabel="Back to settings"
+          />
+        </View>
+      ) : null}
       {hideTabs ? null : <AppTabBar activeName="more" onPressTab={goToTab} />}
     </View>
   )
