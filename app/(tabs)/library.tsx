@@ -89,6 +89,8 @@ import { BookTile } from '@/ui/BookTile'
 import { EmptyState, ErrorState, SkeletonTile } from '@/ui/states'
 import { playItemById } from '@/player/playback'
 import { useConnection } from '@/api/ConnectionProvider'
+import { useIsOffline } from '@/api/useIsOffline'
+import { isOfflineMode } from '@/player/syncState'
 import { fetchSeriesGapSummaries, type SeriesGapSummary } from '@/api/absAudible'
 import { BookSelectionToolbar } from '@/ui/BookSelectionToolbar'
 import { getProgressState, subscribeProgress, refreshProgress } from '@/store/progress'
@@ -141,10 +143,18 @@ const CONTROL_BAR_HEIGHT = 50
  * do. The exception text is not discarded lightly: it is genuinely useless to
  * the person holding the phone, and Sentry already captures the real one.
  */
+const OFFLINE_EMPTY =
+  "You're offline and no books are downloaded yet. Books you download show up here."
+
 function humanError(e: unknown): string {
   const raw = e instanceof Error ? e.message : String(e)
   const m = raw.toLowerCase()
-  if (m.includes('network') || m.includes('fetch') || m.includes('timeout')) {
+  if (
+    m.includes('network') ||
+    m.includes('fetch') ||
+    m.includes('timeout') ||
+    m.includes('unreachable')
+  ) {
     return 'Your server did not answer. Check that it is running and that you are on the same network.'
   }
   if (m.includes('401') || m.includes('403') || m.includes('unauthorized')) {
@@ -243,6 +253,7 @@ export default function LibraryScreen() {
 
   // ---- library resolution (auto-pick the primary book library; switcher for
   // multi-library servers) ----
+  const offline = useIsOffline()
   const [libraries, setLibraries] = useState<ABSLibrary[]>([])
   const [libraryId, setLibraryId] = useState<string | null>(null)
   const [libError, setLibError] = useState<string | null>(null)
@@ -254,7 +265,19 @@ export default function LibraryScreen() {
     useCallback(() => {
       // Already resolved? Don't re-fetch on every tab focus - only (re)load when
       // nothing is loaded yet or a prior attempt errored (the self-heal case).
-      if (libraryId && !libError) return
+      // Offline: the catalog's id is all there is, so resolve to it without
+      // first waiting out a request that cannot land. Once back online the
+      // server's list is fetched, since the offline id may be a placeholder and
+      // the library switcher needs the real list.
+      if (offline) {
+        if (!libraryId) {
+          const offlineLib = catalogLibraryId()
+          if (offlineLib) setLibraryId(offlineLib)
+          else setLibError(OFFLINE_EMPTY)
+        }
+        return
+      }
+      if (libraryId && !libError && libraries.length > 0) return
       let cancelled = false
       void (async () => {
         try {
@@ -281,7 +304,7 @@ export default function LibraryScreen() {
       return () => {
         cancelled = true
       }
-    }, [libraryId, libError]),
+    }, [libraryId, libError, libraries.length, offline]),
   )
 
   // ---- view selector ----
@@ -698,6 +721,10 @@ function BooksView({
   const { status } = useConnection()
   const offline = status.phase === 'offline'
   const [items, setItems] = useState<ABSLibraryItem[] | null>(null)
+  // True when the list is downloads only. Also covers a launch that connected
+  // but whose fetch failed later, where `offline` is false and the list would
+  // otherwise pass for the whole library.
+  const [fromCatalog, setFromCatalog] = useState(false)
   // Shared per-item progress; mark-finished anywhere updates this view live.
   const progress = useSyncExternalStore(subscribeProgress, getProgressState).byId
   // Re-run the load when the offline catalog changes (a book finishes
@@ -822,6 +849,13 @@ function BooksView({
       const cancelled = opts?.signal ?? (() => false)
       if (opts?.blank) setItems(null)
       setError(null)
+      if (isOfflineMode()) {
+        const local = catalogAsLibraryItems()
+        setFromCatalog(true)
+        if (local.length > 0) setItems(local)
+        else setError(OFFLINE_EMPTY)
+        return
+      }
       try {
         const [page] = await Promise.all([
           // NOT minified: this screen's Genre and Series filter groups read
@@ -833,17 +867,21 @@ function BooksView({
           refreshProgress().catch(() => null),
         ])
         if (cancelled()) return
+        setFromCatalog(false)
         setItems(page.results)
       } catch (e) {
         if (cancelled()) return
         // Offline (or the server is unreachable): show downloaded books from the
         // local catalog instead of a bare error, so the library stays browseable.
         const offline = catalogAsLibraryItems()
+        setFromCatalog(true)
         if (offline.length > 0) setItems(offline)
         else setError(humanError(e))
       }
     },
-    [libraryId],
+    // `offline` reloads from the server the moment the connection comes back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [libraryId, offline],
   )
 
   useEffect(() => {
@@ -1211,11 +1249,11 @@ function BooksView({
         </View>
       )}
 
-      {offline && (
+      {(offline || fromCatalog) && (
         <View style={styles.offlineChip}>
           <Icon name={icons.cloudOff} size={14} color={colors.brandHearth} />
           <AppText variant="caption" color={colors.textMuted}>
-            Offline · downloaded books only
+            {offline ? 'Offline' : "Can't reach your server"} · downloaded books only
           </AppText>
         </View>
       )}
@@ -1842,6 +1880,8 @@ function GroupsView({
   const contentInset = useContentInset()
   const [groups, setGroups] = useState<GroupRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const offline = useIsOffline()
+  const [fromCatalog, setFromCatalog] = useState(false)
   // Gap counts for every swept series, in ONE request rather than one per row.
   // Empty offline or when the Audible catalog is off, which just means no
   // badges - see fetchSeriesGapSummaries.
@@ -1923,6 +1963,14 @@ function GroupsView({
       const cancelled = opts?.signal ?? (() => false)
       if (opts?.blank) setGroups(null)
       setError(null)
+      if (isOfflineMode()) {
+        const local = offlineGroups(mode)
+        setFromCatalog(true)
+        if (local.length > 0) setGroups(local)
+        else setError(OFFLINE_EMPTY)
+        return
+      }
+      setFromCatalog(false)
       try {
         if (mode === 'series') {
           const series = await getLibrarySeries(libraryId)
@@ -1940,12 +1988,14 @@ function GroupsView({
       } catch (e) {
         if (cancelled()) return
         // Offline: build the groups from downloaded books instead of erroring.
-        const offline = offlineGroups(mode)
-        if (offline.length > 0) setGroups(offline)
+        const local = offlineGroups(mode)
+        setFromCatalog(true)
+        if (local.length > 0) setGroups(local)
         else setError(humanError(e))
       }
     },
-    [libraryId, mode],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [libraryId, mode, offline],
   )
 
   useEffect(() => {
@@ -1993,6 +2043,14 @@ function GroupsView({
 
   return (
     <Animated.View entering={enterAnim} style={{ flex: 1 }}>
+      {fromCatalog && (
+        <View style={styles.offlineChip}>
+          <Icon name={icons.cloudOff} size={14} color={colors.brandHearth} />
+          <AppText variant="caption" color={colors.textMuted}>
+            {offline ? 'Offline' : "Can't reach your server"} · downloaded books only
+          </AppText>
+        </View>
+      )}
       <View style={[styles.groupControlRow, showAzRail && { paddingRight: 30 }]}>
         <AppText variant="caption" color={colors.textMuted}>
           {sorted.length} {mode === 'series' ? 'series' : mode}

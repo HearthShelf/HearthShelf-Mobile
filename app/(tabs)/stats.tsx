@@ -72,6 +72,9 @@ import { useContentInset } from '@/ui/useContentInset'
 import { useBackHandler } from '@/ui/useBackHandler'
 import { adaptiveContentMaxWidth } from '@/ui/responsive'
 import { Skeleton, SkeletonRow, EmptyState, ErrorState } from '@/ui/states'
+import { OfflineSplash } from '@/ui/OfflineSplash'
+import { breadcrumb } from '@/lib/crashLog'
+import { useIsOffline } from '@/api/useIsOffline'
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const DAY_SHORT = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
@@ -174,6 +177,7 @@ export default function StatsTab() {
   const { colors, shadow } = useTheme()
   const styles = useMemo(() => makeStyles(colors, shadow), [colors, shadow])
   const [status, setStatus] = useState<Status>({ phase: 'loading' })
+  const offline = useIsOffline()
   // Mirrors status.phase for the focus effect, which is memoized on silentReload
   // only and would otherwise read a stale phase.
   const statusPhaseRef = useRef(status.phase)
@@ -244,13 +248,21 @@ export default function StatsTab() {
         historyFailed: hist.failed,
       })
     } catch (e) {
-      setStatus({ phase: 'error', message: (e as Error).message })
+      breadcrumb('stats', `load failed: ${e instanceof Error ? e.message : String(e)}`)
+      setStatus({
+        phase: 'error',
+        message: 'Your server did not answer. Check your connection and try again.',
+      })
     }
   }, [fetchHistory])
 
+  // Stats live only on the server, so offline there is nothing to fetch: waiting
+  // on a request that cannot land just held the skeleton up. Coming back online
+  // flips `offline` and this runs the load the splash was standing in for.
   useEffect(() => {
+    if (offline) return
     void load()
-  }, [load])
+  }, [load, offline])
 
   const refresh = useCallback(async () => {
     setRefreshing(true)
@@ -355,6 +367,16 @@ export default function StatsTab() {
       scrollRef.current?.scrollTo({ y: Math.max(0, y - spacing.md), animated: true })
     }
   }, [])
+
+  if (offline && status.phase !== 'ready') {
+    return (
+      <OfflineSplash
+        body="Your stats live on your server. Your downloaded books still play."
+        onBack={() => router.replace('/(tabs)')}
+        backLabel="Go home"
+      />
+    )
+  }
 
   if (status.phase === 'loading') {
     return (

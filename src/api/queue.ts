@@ -6,6 +6,7 @@
  * convention as getHSStats.
  */
 import { getSession } from './session'
+import { fetchWithTimeout } from './fetchWithTimeout'
 import type { QueueEntry, QueueState } from '@hearthshelf/core'
 
 export interface ServerQueue extends QueueState {
@@ -22,7 +23,7 @@ function requireSession() {
 
 export async function getServerQueue(): Promise<ServerQueue> {
   const { serverUrl, token } = requireSession()
-  const res = await fetch(`${serverUrl}/hs/queue`, {
+  const res = await fetchWithTimeout(`${serverUrl}/hs/queue`, {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) throw new Error(`queue ${res.status}`)
@@ -40,7 +41,7 @@ export async function getServerQueue(): Promise<ServerQueue> {
  */
 export async function recomputeServerQueue(currentItemId?: string | null): Promise<ServerQueue> {
   const { serverUrl, token } = requireSession()
-  const res = await fetch(`${serverUrl}/hs/queue/recompute`, {
+  const res = await fetchWithTimeout(`${serverUrl}/hs/queue/recompute`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(currentItemId === undefined ? {} : { currentItemId }),
@@ -60,7 +61,7 @@ export interface QueueStatus {
 
 export async function getQueueStatus(): Promise<QueueStatus> {
   const { serverUrl, token } = requireSession()
-  const res = await fetch(`${serverUrl}/hs/queue/status`, {
+  const res = await fetchWithTimeout(`${serverUrl}/hs/queue/status`, {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) throw new Error(`queue ${res.status}`)
@@ -74,7 +75,7 @@ export async function putServerQueue(
   updatedAt: number,
 ): Promise<ServerQueue> {
   const { serverUrl, token } = requireSession()
-  const res = await fetch(`${serverUrl}/hs/queue`, {
+  const res = await fetchWithTimeout(`${serverUrl}/hs/queue`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ items, manual, playlistId, updatedAt }),

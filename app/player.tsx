@@ -66,7 +66,7 @@ import { recentSessionsFor } from '@/player/sessionCache'
 import { playItemById } from '@/player/playback'
 import { SyncStatusIcon } from '@/player/SyncStatusIcon'
 import { NotificationBell } from '@/notifications/NotificationBell'
-import { getSyncState, subscribeSyncState } from '@/player/syncState'
+import { getSyncState, isOfflineMode, subscribeSyncState } from '@/player/syncState'
 import {
   getPendingSessionState,
   subscribePendingSessions,
@@ -811,7 +811,17 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
       case 'bookmarks':
         return bookmarksRef.current?.present()
       case 'addList':
-        return addToListRef.current?.present()
+        // The sheet only mounts once the book's library is known, which needs
+        // the server. Without it the tap used to do nothing at all.
+        if (!libraryId || !addToListRef.current) {
+          toast.show(
+            isOfflineMode()
+              ? "You're offline - lists need a connection to your server"
+              : "Can't reach your server right now. Try again in a moment.",
+          )
+          return
+        }
+        return addToListRef.current.present()
       case 'notes':
         return notesRef.current?.present()
       case 'details':
@@ -837,6 +847,8 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
       } else if (download?.status === 'downloading' || download?.status === 'queued') {
         void cancelDownload(nowPlaying.itemId)
         toast.show('Download cancelled')
+      } else if (isOfflineMode()) {
+        toast.show("You're offline - connect to your server to download this book")
       } else {
         void downloadItem(nowPlaying.itemId, nowPlaying.title, nowPlaying.author)
         toast.show('Downloading for offline')
@@ -1516,7 +1528,16 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
             ref={queueRef}
             onJump={async (itemId) => {
               const saved = getProgressState().byId.get(itemId)
-              await playItemById(itemId)
+              try {
+                await playItemById(itemId)
+              } catch {
+                toast.show(
+                  isOfflineMode()
+                    ? "You're offline - only downloaded books can play"
+                    : "Couldn't start that book. Try again in a moment.",
+                )
+                return
+              }
               if (!saved?.isFinished && (saved?.currentTime ?? 0) > 0)
                 requestSeek(saved!.currentTime)
               router.replace('/player')

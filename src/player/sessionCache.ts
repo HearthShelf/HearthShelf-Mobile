@@ -14,6 +14,7 @@
  * Plain subscribe-free snapshot store (the sheets fetch on open), persisted to
  * AsyncStorage and hydrated at launch like the other offline stores.
  */
+import { isOfflineMode } from './syncState'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { ABSListeningSession } from '@hearthshelf/core'
 import { getRecentSessions } from '@/api/abs'
@@ -96,6 +97,9 @@ export function cacheSessions(all: ABSListeningSession[]): void {
  * list when we can't.
  */
 export async function recentSessionsFor(itemId: string): Promise<ABSListeningSession[]> {
+  // Offline the request can only fail, so answer from the cache instead of
+  // making the player and book page sit through its timeout first.
+  if (isOfflineMode()) return cachedSessionsFor(itemId)
   try {
     const all = await getRecentSessions()
     cacheSessions(all)

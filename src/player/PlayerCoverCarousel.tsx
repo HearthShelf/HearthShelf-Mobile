@@ -25,6 +25,8 @@ import { AppText, Cover } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
 import { SpringPressable } from '@/ui/motion'
 import { haptics } from '@/ui/haptics'
+import { showToast } from '@/ui/Toast'
+import { isOfflineMode } from '@/player/syncState'
 import { radius, spacing, withAlpha, type Palette } from '@/ui/theme'
 import { useTheme } from '@/ui/ThemeProvider'
 import { CarouselBookClubStrip } from '@/player/CarouselBookClubStrip'
@@ -225,13 +227,26 @@ export function PlayerCoverCarousel({
         author: liveAuthor,
         duration: liveDuration || undefined,
       }
-      const rest = getQueueState().items.filter(
+      const before = getQueueState().items
+      const rest = before.filter(
         (q) => q.libraryItemId !== page.itemId && q.libraryItemId !== liveItemId,
       )
       setQueueItems([outgoing, ...rest], false)
 
       const saved = getProgressState().byId.get(page.itemId)
-      await playItemById(page.itemId)
+      try {
+        await playItemById(page.itemId)
+      } catch {
+        // The live book is still playing, so the deck goes back to how it was
+        // rather than showing a swap that never happened.
+        setQueueItems(before, false)
+        showToast(
+          isOfflineMode()
+            ? "You're offline - only downloaded books can play"
+            : "Couldn't start that book. Try again in a moment.",
+        )
+        return
+      }
       if (!saved?.isFinished && (saved?.currentTime ?? 0) > 0) requestSeek(saved!.currentTime)
       // The live book is now this one; snap the deck back to page 0.
       listRef.current?.scrollToOffset({ offset: 0, animated: false })

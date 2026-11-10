@@ -14,6 +14,9 @@ import { playItemById } from '@/player/playback'
 import { startAnytimePhase } from '@/lib/startupTrace'
 import { getTrack, subscribe } from '@/player/store'
 import { breadcrumb } from '@/lib/crashLog'
+import { isOfflineMode } from '@/player/syncState'
+import { catalogItems } from '@/player/offlineCatalog'
+import { useIsOffline } from '@/api/useIsOffline'
 import { getProgressState, subscribeProgress, refreshProgress } from '@/store/progress'
 import { AppText, Screen, PrimaryButton, icons } from '@/ui/primitives'
 import { Icon } from '@/ui/icons'
@@ -63,6 +66,18 @@ function IdleResolver() {
     let cancelled = false
     void (async () => {
       try {
+        // Offline the server calls below can only time out, and a book that is
+        // not downloaded cannot play anyway. Resume the downloaded book touched
+        // most recently, from the progress saved on the phone.
+        if (isOfflineMode()) {
+          const localId = lastDownloadedInProgress()
+          if (!localId) {
+            if (!cancelled) setPhase('empty')
+            return
+          }
+          await playItemById(localId, false)
+          return
+        }
         // Pull fresh media progress before resuming. This is ALWAYS refreshed,
         // not just when the store is empty: hydrateProgress() fills the store
         // from disk at launch, so a size check is never zero and the refresh was
@@ -130,6 +145,19 @@ function IdleResolver() {
   return <EmptyPlayer />
 }
 
+/** The downloaded, unfinished book with the newest saved progress, or null. */
+function lastDownloadedInProgress(): string | null {
+  const byId = getProgressState().byId
+  let best: { id: string; at: number } | null = null
+  for (const c of catalogItems()) {
+    const p = byId.get(c.id)
+    if (!p || p.isFinished || !(p.progress > 0)) continue
+    const at = typeof p.lastUpdate === 'number' ? p.lastUpdate : 0
+    if (!best || at > best.at) best = { id: c.id, at }
+  }
+  return best?.id ?? null
+}
+
 /**
  * The designed empty-player state: a hearth flame, "Nothing on the hearth", a
  * few pick-up-a-book mini tiles (best-effort from the personalized feed), and a
@@ -142,8 +170,13 @@ function EmptyPlayer() {
   const tileWidth = adaptiveShelfTileWidth(width)
   const progressById = useSyncExternalStore(subscribeProgress, getProgressState).byId
   const [picks, setPicks] = useState<ABSLibraryItem[]>([])
+  const offline = useIsOffline()
 
   useEffect(() => {
+    if (offline) {
+      setPicks([])
+      return
+    }
     let cancelled = false
     void (async () => {
       try {
@@ -162,7 +195,7 @@ function EmptyPlayer() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [offline])
 
   return (
     <Screen>
@@ -174,7 +207,9 @@ function EmptyPlayer() {
           Nothing on the hearth
         </AppText>
         <AppText variant="meta" color={colors.textMuted} style={styles.centerText}>
-          Pick a book and it will be waiting right here.
+          {offline
+            ? "You're offline. Pick a downloaded book and it will be waiting right here."
+            : 'Pick a book and it will be waiting right here.'}
         </AppText>
 
         {picks.length > 0 ? (

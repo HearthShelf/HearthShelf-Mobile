@@ -75,6 +75,7 @@ import {
   refreshAllDownloadMetadata,
 } from '@/player/downloads'
 import { catalogHomeShelves } from '@/player/offlineCatalog'
+import { isOfflineMode } from '@/player/syncState'
 import { publishHomeShelves } from '@/store/homeShelves'
 import { AppText, Cover, Screen, SectionHeader, Touchable, icons } from '@/ui/primitives'
 import { EmptyState, ErrorState, Skeleton, SkeletonRow, SkeletonTile } from '@/ui/states'
@@ -814,7 +815,19 @@ export default function HomeScreen() {
           // rows", so shelves.length is never 0 on a server that has books.
           <StartHere onBrowse={() => router.push('/(tabs)/library')} />
         ) : null}
-        {!nowPlaying && !hero && shelves.length === 0 ? (
+        {!nowPlaying && !hero && shelves.length === 0 && offline ? (
+          // Offline Home is built from downloads alone, so an empty one means
+          // nothing is downloaded, not an empty server. "Browse your library"
+          // would lead to the same empty list.
+          <EmptyState
+            icon={icons.cloudOff}
+            title="No downloaded books"
+            body="You're offline. Books you download show up here and play without a connection."
+            cta="Try again"
+            onCta={retry}
+            style={{ minHeight: 420 }}
+          />
+        ) : !nowPlaying && !hero && shelves.length === 0 ? (
           // Genuinely empty server (no books at all). Distinct from the first-run
           // case above, which has books but no listening history yet.
           <EmptyState
@@ -879,7 +892,16 @@ export default function HomeScreen() {
         ref={queueSheetRef}
         onJump={async (itemId) => {
           const saved = getProgressState().byId.get(itemId)
-          await playItemById(itemId)
+          try {
+            await playItemById(itemId)
+          } catch {
+            showToast(
+              isOfflineMode()
+                ? "You're offline - only downloaded books can play"
+                : "Couldn't start that book. Try again in a moment.",
+            )
+            return
+          }
           if (!saved?.isFinished && (saved?.currentTime ?? 0) > 0) requestSeek(saved!.currentTime)
           router.push('/player')
         }}

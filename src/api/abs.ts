@@ -44,6 +44,7 @@ import type {
 } from '@hearthshelf/core'
 import { computeListeningStats } from '@hearthshelf/core'
 import { setMeId, setMeType } from './me'
+import { fetchWithTimeout } from './fetchWithTimeout'
 
 /** A page of library items plus the total count, for infinite scroll. */
 export interface LibraryItemsPage {
@@ -1058,7 +1059,7 @@ export async function addItemsToPlaylist(
 export async function getHSStats(): Promise<HSListeningStats> {
   const { serverUrl, token } = requireSession()
   const tz = new Date().getTimezoneOffset()
-  const res = await fetch(`${serverUrl}/hs/stats?tz=${tz}`, {
+  const res = await fetchWithTimeout(`${serverUrl}/hs/stats?tz=${tz}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (res.ok) {
@@ -1090,9 +1091,10 @@ export async function getStatsHistory(
   if (!session) return HISTORY_UNAVAILABLE
   const { serverUrl, token } = session
   try {
-    const res = await fetch(`${serverUrl}/hs/stats/history?range=${encodeURIComponent(range)}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    const res = await fetchWithTimeout(
+      `${serverUrl}/hs/stats/history?range=${encodeURIComponent(range)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
     if (!res.ok) return HISTORY_UNAVAILABLE
     const data = (await res.json()) as HSStatsHistory
     if (!data || data.available !== true) return HISTORY_UNAVAILABLE
