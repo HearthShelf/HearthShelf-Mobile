@@ -202,6 +202,22 @@ export function isDownloaded(itemId: string): boolean {
   return state.byId.get(itemId)?.status === 'done'
 }
 
+/**
+ * A download that stopped partway (failed, or interrupted by the app closing).
+ * The book is listed offline but cannot play until the download finishes;
+ * calling downloadItem() again resumes it from where it stopped.
+ */
+export function isDownloadIncomplete(itemId: string): boolean {
+  return state.byId.get(itemId)?.status === 'failed'
+}
+
+/** The toast for a book that could not start offline, naming an unfinished download. */
+export function offlinePlayBlockedMessage(itemId?: string): string {
+  return itemId && isDownloadIncomplete(itemId)
+    ? "This download didn't finish - reconnect to finish it"
+    : "You're offline - only downloaded books can play"
+}
+
 /** Load persisted downloads on app start. */
 export async function hydrateDownloads(): Promise<void> {
   try {
@@ -733,6 +749,22 @@ export async function downloadItem(itemId: string, title: string, author: string
         partial: cur?.partial && resumeData ? { ...cur.partial, resumeData } : cur?.partial,
       })
       persist()
+      // List it offline (with its "download incomplete" badge) right away,
+      // as hydrate does on the next launch; without a row it stays hidden until
+      // then. INSERT OR IGNORE, so a richer row already there is kept.
+      const failed = state.byId.get(itemId)
+      if (failed && (failed.tracks.length > 0 || failed.partial || failed.bytes > 0)) {
+        void backfillFromDownloads([
+          {
+            id: itemId,
+            libraryId: 'offline',
+            title: failed.title,
+            author: failed.author,
+            duration: failed.duration,
+            addedAt: 0,
+          },
+        ])
+      }
     }
   } finally {
     if (sessionId) {

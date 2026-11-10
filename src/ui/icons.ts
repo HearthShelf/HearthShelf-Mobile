@@ -160,6 +160,7 @@ export const icons = {
   openInNew: 'open-in-new',
   cloudDownload: 'cloud-download',
   error: 'error',
+  downloadIncomplete: 'priority-high',
   receiptLong: 'receipt-long',
 } as const satisfies Record<string, IconName>
 

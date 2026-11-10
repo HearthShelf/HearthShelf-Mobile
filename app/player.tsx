@@ -78,6 +78,7 @@ import {
   downloadItem,
   cancelDownload,
   deleteDownload,
+  offlinePlayBlockedMessage,
 } from '@/player/downloads'
 import {
   AppText,
@@ -1533,7 +1534,7 @@ export function PlayerSurface({ embedded = false }: { embedded?: boolean }) {
               } catch {
                 toast.show(
                   isOfflineMode()
-                    ? "You're offline - only downloaded books can play"
+                    ? offlinePlayBlockedMessage(itemId)
                     : "Couldn't start that book. Try again in a moment.",
                 )
                 return

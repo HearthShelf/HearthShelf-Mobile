@@ -1,7 +1,9 @@
 /**
- * A small accent-colored check in the bottom-right corner of a book cover,
- * marking it as downloaded for offline. Shown on the Library and Home covers so
- * you can spot at a glance which books are already on the device.
+ * A small badge in the bottom-right corner of a book cover showing its offline
+ * state: an accent check when the book is downloaded, or a red "!" when a
+ * download stopped partway (failed, or interrupted by the app being closed) and
+ * the book cannot play offline yet. Shown on the Library and Home covers so you
+ * can spot at a glance which books are on the device.
  *
  * Subscribes to the downloads store itself (like CoverDownloadOverlay) so it
  * stays live when a download finishes - callers only pass the item id. It hides
@@ -12,6 +14,7 @@ import { useSyncExternalStore } from 'react'
 import { StyleSheet, View } from 'react-native'
 import FontAwesome from '@expo/vector-icons/FontAwesome'
 import { subscribeDownloads, getDownloadsState } from '@/player/downloads'
+import { Icon, icons } from './icons'
 import { useColors } from './ThemeProvider'
 
 export function CoverDownloadedBadge({ itemId, size = 22 }: { itemId: string; size?: number }) {
@@ -20,7 +23,8 @@ export function CoverDownloadedBadge({ itemId, size = 22 }: { itemId: string; si
     subscribeDownloads,
     () => getDownloadsState().byId.get(itemId)?.status,
   )
-  if (status !== 'done') return null
+  if (status !== 'done' && status !== 'failed') return null
+  const incomplete = status === 'failed'
 
   const inset = Math.max(3, Math.round(size * 0.28))
   return (
@@ -33,13 +37,19 @@ export function CoverDownloadedBadge({ itemId, size = 22 }: { itemId: string; si
           width: size,
           height: size,
           borderRadius: size / 2,
-          backgroundColor: colors.accent,
+          backgroundColor: incomplete ? colors.destructive : colors.accent,
           borderColor: colors.scaffold,
         },
       ]}
       pointerEvents="none"
+      accessible
+      accessibilityLabel={incomplete ? 'Download incomplete' : 'Downloaded'}
     >
-      <FontAwesome name="check" size={size * 0.5} color={colors.onAccent} />
+      {incomplete ? (
+        <Icon name={icons.downloadIncomplete} size={size * 0.62} color="#fff" />
+      ) : (
+        <FontAwesome name="check" size={size * 0.5} color={colors.onAccent} />
+      )}
     </View>
   )
 }

@@ -73,6 +73,7 @@ import {
   getDownloadsState,
   subscribeDownloads,
   refreshAllDownloadMetadata,
+  offlinePlayBlockedMessage,
 } from '@/player/downloads'
 import { catalogHomeShelves } from '@/player/offlineCatalog'
 import { isOfflineMode } from '@/player/syncState'
@@ -897,7 +898,7 @@ export default function HomeScreen() {
           } catch {
             showToast(
               isOfflineMode()
-                ? "You're offline - only downloaded books can play"
+                ? offlinePlayBlockedMessage(itemId)
                 : "Couldn't start that book. Try again in a moment.",
             )
             return

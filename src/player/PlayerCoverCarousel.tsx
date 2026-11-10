@@ -20,6 +20,7 @@ import { getClub, getClubs } from '@/api/clubs'
 import { playItemById } from '@/player/playback'
 import { requestSeek } from '@/player/store'
 import { getQueueState, setQueueItems } from '@/player/queue'
+import { offlinePlayBlockedMessage } from '@/player/downloads'
 import { getProgressState } from '@/store/progress'
 import { AppText, Cover } from '@/ui/primitives'
 import { Icon, icons } from '@/ui/icons'
@@ -242,7 +243,7 @@ export function PlayerCoverCarousel({
         setQueueItems(before, false)
         showToast(
           isOfflineMode()
-            ? "You're offline - only downloaded books can play"
+            ? offlinePlayBlockedMessage(page.itemId)
             : "Couldn't start that book. Try again in a moment.",
         )
         return

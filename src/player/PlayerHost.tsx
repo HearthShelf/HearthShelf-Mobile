@@ -49,7 +49,13 @@ import {
 } from './carHandbackReport'
 import { coverUrl } from '@/api/abs'
 import { addBookmarkPending } from './pendingBookmarks'
-import { localCoverFor, localSourceFor, isOversizedDownload } from './downloads'
+import {
+  localCoverFor,
+  localSourceFor,
+  isOversizedDownload,
+  isDownloadIncomplete,
+  offlinePlayBlockedMessage,
+} from './downloads'
 import { markPartsFailed, prepareAheadOf } from './parts'
 import {
   handOffToCar,
@@ -1119,7 +1125,9 @@ export function PlayerHost() {
         void playItemById(e.itemId).catch((err) => {
           showToast(
             err?.message === 'not_downloaded'
-              ? 'This book is not downloaded'
+              ? isDownloadIncomplete(e.itemId)
+                ? offlinePlayBlockedMessage(e.itemId)
+                : 'This book is not downloaded'
               : 'Could not play this book',
           )
         })
