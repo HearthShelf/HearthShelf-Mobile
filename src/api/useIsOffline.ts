@@ -9,3 +9,13 @@ import { useConnection } from './ConnectionProvider'
 export function useIsOffline(): boolean {
   return useConnection().status.phase === 'offline'
 }
+
+/**
+ * True while the app is connected (`ready`) but the connection has since dropped:
+ * the network went away, or requests stopped reaching the server. Unlike
+ * useIsOffline this is temporary and clears on its own once the server answers;
+ * the app stays signed in to the server the whole time.
+ */
+export function useConnectionLost(): boolean {
+  return useConnection().connectionLost
+}

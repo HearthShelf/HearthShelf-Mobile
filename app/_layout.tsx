@@ -25,7 +25,7 @@ import { checkGoalCelebration } from '@/lib/goalCelebration'
 import { SplashScreen as HearthSplash, ForcedSplashHost, type SplashPhase } from '@/ui/SplashScreen'
 import { OfflineBanner } from '@/ui/OfflineBanner'
 import { BackupRestoreWatcher } from '@/admin/BackupRestore'
-import { ConnectionProvider, useConnection } from '@/api/ConnectionProvider'
+import { ConnectionProvider, useConnection, CONNECTION_LOST_REASON } from '@/api/ConnectionProvider'
 import { clearSession } from '@/api/session'
 import { clearTrack } from '@/player/store'
 import { clearAutoSession } from '@/player/autoBridge'
@@ -373,7 +373,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
  * routing (settings, sign-in) keeps working behind the overlay.
  */
 function ConnectionGate({ children }: { children: React.ReactNode }) {
-  const { status, retry, connectTo, redeemInvite, enterOffline, canGoOffline } = useConnection()
+  const { status, retry, connectTo, redeemInvite, enterOffline, canGoOffline, connectionLost } =
+    useConnection()
   // Clear the stored session too: sign-out must work with the auth service
   // unreachable, or a user on a dead network is stuck signed in.
   const signOut = useCallback(async () => {
@@ -463,7 +464,11 @@ function ConnectionGate({ children }: { children: React.ReactNode }) {
   return (
     <View style={styles.gateRoot}>
       {children}
-      {status.phase === 'offline' ? <OfflineBanner onRetry={retry} reason={status.reason} /> : null}
+      {status.phase === 'offline' ? (
+        <OfflineBanner onRetry={retry} reason={status.reason} />
+      ) : connectionLost ? (
+        <OfflineBanner onRetry={retry} reason={CONNECTION_LOST_REASON} />
+      ) : null}
       {covered ? (
         <View style={StyleSheet.absoluteFill}>
           <HearthSplash

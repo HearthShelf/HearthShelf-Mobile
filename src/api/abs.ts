@@ -117,6 +117,20 @@ function refreshSession(): Promise<boolean> {
   return inFlightRefresh
 }
 
+/**
+ * Told whether each ABS request reached the server: true for any HTTP answer
+ * (even an error status), false when the request never got one (network down,
+ * our timeout). A caller cancelling its own request reports nothing. Registered
+ * by ConnectionProvider to notice a connection that drops mid-session; null in
+ * the headless car service.
+ */
+type TransportListener = (reached: boolean) => void
+let transportListener: TransportListener | null = null
+
+export function setAbsTransportListener(fn: TransportListener | null): void {
+  transportListener = fn
+}
+
 /** Per-request options that aren't part of the standard fetch init. */
 type ABSRequestOptions = {
   /** Override ABS_TIMEOUT_MS for an endpoint known to be slow by design.
@@ -147,6 +161,7 @@ async function absRequest<T>(
   try {
     res = await fetch(`${serverUrl}${path}`, { ...init, headers, signal: controller.signal })
   } catch {
+    if (!init?.signal?.aborted) transportListener?.(false)
     // An abort (our timeout) reads the same as a network failure to callers:
     // a plain Error with no `status`, i.e. "couldn't reach the server", which is
     // what drives the offline/local fallbacks.
@@ -155,6 +170,7 @@ async function absRequest<T>(
     clearTimeout(timer)
     init?.signal?.removeEventListener('abort', onCallerAbort)
   }
+  transportListener?.(true)
   if (!res.ok) {
     // A 401 means our ABS token is no longer accepted - it expired, was revoked,
     // or the server re-minted it. Previously NOTHING handled this: the only status

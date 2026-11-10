@@ -22,6 +22,7 @@ import {
 } from 'react'
 import { isAdminAccountType } from '@hearthshelf/core'
 import { AppState } from 'react-native'
+import NetInfo from '@react-native-community/netinfo'
 import { useAuthResolved } from '@/auth/useAuthResolved'
 import { getSessionToken } from '@/auth/token'
 import { hasCachedSession } from '@/auth/sessionCache'
@@ -38,6 +39,7 @@ import {
   hydrateSession,
   setLastServerName,
   getLastServerName,
+  getSession,
 } from './session'
 import { tracePhase } from '@/lib/startupTrace'
 import {
@@ -69,12 +71,19 @@ import {
 } from '@/player/downloads'
 import { getQueueState } from '@/player/queue'
 import { hydrateCatalog, backfillCatalog } from '@/player/offlineCatalog'
-import { getItemDetail, getLibrarySeries, getMe, setAbsReconnectHandler } from './abs'
+import {
+  getItemDetail,
+  getLibrarySeries,
+  getMe,
+  setAbsReconnectHandler,
+  setAbsTransportListener,
+} from './abs'
 import { getMeType, isMeTypeLive, restoreMeType, subscribeMeType } from './me'
 import {
   startConnectivityWatch,
   stopConnectivityWatch,
   probeReachable,
+  probeServerReachable,
   pokeConnectivity,
   isCurrentlyReachable,
   diagnoseOutage,
@@ -245,6 +254,24 @@ const OFFLINE_REASON: Record<ConnectIssue, string | undefined> = {
   retrying: undefined,
 }
 
+/** Banner line while a connection that was working has dropped. */
+export const CONNECTION_LOST_REASON = 'Connection lost - trying to reconnect'
+
+/** Requests in a row that must fail to reach the server before we check whether
+ *  the connection is gone. One failure is usually a blip (a handoff, a slow
+ *  hop), and the check itself costs a request. */
+const LOST_FAILURE_THRESHOLD = 2
+
+/** How long NetInfo must keep saying "no network" before the banner shows. A
+ *  Wi-Fi to cellular handoff reports a short gap that is not worth a banner. */
+const LOST_NETINFO_SETTLE_MS = 4000
+
+/** How often to look for the server again while the connection is lost. Only
+ *  runs while lost; the network edge, foreground, and any request that gets
+ *  through recover sooner. Covers a server that comes back on a stable network,
+ *  which produces no edge at all. */
+const LOST_RECHECK_MS = 15000
+
 class ConnectTimeoutError extends Error {
   constructor() {
     super('connect_timeout')
@@ -268,7 +295,13 @@ interface ConnectionValue {
    *  or root account. Drives admin-only UI (e.g. the Server Admin entry on the
    *  settings menu). 'user' until the account type is known. */
   activeRole: 'admin' | 'user'
-  /** Re-run the whole connect flow from the top. */
+  /** True while `ready` but the connection has since dropped: the network went
+   *  away, or requests stopped reaching the server. The phase stays `ready` (the
+   *  session is still valid and comes back on its own); this only drives the
+   *  banner and tells playback/downloads to skip the network meanwhile. */
+  connectionLost: boolean
+  /** Re-run the whole connect flow from the top. While the connection is lost,
+   *  checks the server again instead, without covering the app. */
   retry: () => void
   /** Stop waiting on the launch connect and go straight to downloaded books.
    *  No-op unless we're still `connecting`. */
@@ -463,6 +496,27 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   // modules must not be told we're offline. Kept as state, not a ref, because the
   // effect that mirrors offline mode has to re-run when it flips.
   const [connectedOffline, setConnectedOffline] = useState(false)
+
+  // The connection dropped after `ready` (see ConnectionValue.connectionLost).
+  // The ref mirrors the state for the non-React callbacks (transport listener,
+  // NetInfo) that must read it without re-subscribing.
+  const [connectionLost, setConnectionLostState] = useState(false)
+  const lostRef = useRef(false)
+  const setConnectionLost = useCallback((v: boolean) => {
+    if (lostRef.current === v) return
+    lostRef.current = v
+    breadcrumb('connect', v ? 'connection lost while ready' : 'connection back')
+    setConnectionLostState(v)
+  }, [])
+  // Requests in a row that failed to reach the server while ready.
+  const transportFailures = useRef(0)
+  // One lost/recovery check at a time.
+  const checkingLost = useRef(false)
+  // Re-run the candidate sweep for the connected server and swap in a fresh
+  // session. Shared by the 401 refresh and connection-lost recovery: a LAN
+  // session goes dead when the phone moves to cellular, and only a new sweep
+  // finds the public address. Set by the effect that registers the ABS handler.
+  const resweepRef = useRef<() => Promise<boolean>>(async () => false)
 
   const connectTo = useCallback(
     async (server: LinkedServer | SplashServer, opts?: { quiet?: boolean }) => {
@@ -990,9 +1044,131 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   const connectRef = useRef(connect)
   connectRef.current = connect
 
+  // --- Connection lost after `ready` ------------------------------------------
+  //
+  // Every other recovery path is aimed at getting OUT of offline/error. Once
+  // `ready`, nothing noticed the network or the server going away mid-session:
+  // no banner, offline mode stayed off, and every screen and play tap waited out
+  // its own timeout. These set `connectionLost` instead of leaving `ready`: many
+  // screens read `offline` as "launched without a server", and a valid session
+  // that comes back on its own should not be torn down for a dip.
+
+  /** Is the connected server answering? Tries the session's address, then (when
+   *  the device has a network) a fresh sweep of the server's addresses. */
+  const serverAnswers = useCallback(async (): Promise<boolean> => {
+    const url = getSession()?.serverUrl
+    if (url && (await probeServerReachable(url))) return true
+    if (!(await isCurrentlyReachable())) return false
+    return resweepRef.current().catch(() => false)
+  }, [])
+
+  /** Several requests failed to reach the server: confirm before showing the banner. */
+  const confirmLost = useCallback(async () => {
+    if (checkingLost.current || lostRef.current) return
+    if (statusRef.current.phase !== 'ready') return
+    checkingLost.current = true
+    try {
+      const url = getSession()?.serverUrl
+      const ok = url ? await probeServerReachable(url) : await probeReachable()
+      if (ok) transportFailures.current = 0
+      else if (statusRef.current.phase === 'ready') setConnectionLost(true)
+    } finally {
+      checkingLost.current = false
+    }
+  }, [setConnectionLost])
+
+  /** While lost: look for the server again, and clear the banner if it answers. */
+  const recoverLost = useCallback(async () => {
+    if (checkingLost.current || !lostRef.current) return
+    checkingLost.current = true
+    try {
+      if (await serverAnswers()) {
+        transportFailures.current = 0
+        setConnectionLost(false)
+        void flushPendingProgress()
+      }
+    } finally {
+      checkingLost.current = false
+    }
+  }, [serverAnswers, setConnectionLost])
+  const recoverLostRef = useRef(recoverLost)
+  recoverLostRef.current = recoverLost
+
+  // Leaving `ready` (sign-out, server switch, falling to offline/error) ends any
+  // lost state: those phases have their own screens.
+  useEffect(() => {
+    if (status.phase === 'ready') return
+    transportFailures.current = 0
+    setConnectionLost(false)
+  }, [status.phase, setConnectionLost])
+
+  // Count requests that never got an answer. Any answer (even an error status)
+  // proves the server is there and clears the lost state.
+  useEffect(() => {
+    setAbsTransportListener((reached) => {
+      if (reached) {
+        transportFailures.current = 0
+        setConnectionLost(false)
+        return
+      }
+      if (statusRef.current.phase !== 'ready' || lostRef.current) return
+      transportFailures.current += 1
+      if (transportFailures.current >= LOST_FAILURE_THRESHOLD) void confirmLost()
+    })
+    return () => setAbsTransportListener(null)
+  }, [confirmLost, setConnectionLost])
+
+  // NetInfo while ready: no network for a few seconds means lost. "Connected but
+  // no internet" alone is not enough - a server on the home Wi-Fi works without
+  // internet - so that case asks the server. Back on a network while lost:
+  // look again now. A second NetInfo listener, separate from the reconnect
+  // watcher in player/connectivity, which only reports online edges.
+  useEffect(() => {
+    if (status.phase !== 'ready') return
+    let settle: ReturnType<typeof setTimeout> | null = null
+    const unsub = NetInfo.addEventListener((s) => {
+      if (settle) {
+        clearTimeout(settle)
+        settle = null
+      }
+      if (!s.isConnected || s.isInternetReachable === false) {
+        settle = setTimeout(() => {
+          settle = null
+          void NetInfo.fetch()
+            .then((now) => {
+              if (statusRef.current.phase !== 'ready') return
+              if (!now.isConnected) setConnectionLost(true)
+              else if (now.isInternetReachable === false) void confirmLost()
+            })
+            .catch(() => {})
+        }, LOST_NETINFO_SETTLE_MS)
+      } else if (lostRef.current) {
+        void recoverLostRef.current()
+      }
+    })
+    return () => {
+      unsub()
+      if (settle) clearTimeout(settle)
+    }
+  }, [status.phase, confirmLost, setConnectionLost])
+
+  // While lost, look again now and then: a server that restarts on a stable
+  // network produces no edge to react to.
+  useEffect(() => {
+    if (!connectionLost) return
+    const t = setInterval(() => void recoverLostRef.current(), LOST_RECHECK_MS)
+    return () => clearInterval(t)
+  }, [connectionLost])
+
   // Reconnect whenever we're not `ready` and the network looks available. The
   // shared trigger is used by both the NetInfo watcher and the foreground probe.
   const reconnectIfNeeded = useCallback(() => {
+    // Ready but lost: the session is still good, so look for the server again
+    // rather than re-running the handshake (which would cover the app).
+    if (statusRef.current.phase === 'ready' && lostRef.current) {
+      void recoverLostRef.current()
+      return
+    }
     setStatus((cur) => {
       if (cur.phase !== 'ready') void connectRef.current()
       return cur
@@ -1054,10 +1230,18 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   // pending sessions, bank bookmarks, and refuse to load book detail from a server
   // sitting right there. So a landed connect clears offline mode even while the
   // banner stays up.
+  //
+  // A connection lost while `ready` mirrors offline mode too: the server stopped
+  // answering, so playback should open downloads straight from disk and bank
+  // listening locally instead of waiting out a timeout on every tap. Safe because
+  // it is cleared by any request that reaches the server, by server-reached and by
+  // the recovery checks, and the pending flush that ships banked listening does
+  // not read offline mode, so it still runs.
   const sessionLanded = status.phase === 'ready' || connectedOffline
+  const lostWhileReady = status.phase === 'ready' && connectionLost
   useEffect(() => {
-    setOfflineMode(status.phase === 'offline' && !sessionLanded)
-  }, [status.phase, sessionLanded])
+    setOfflineMode((status.phase === 'offline' && !sessionLanded) || lostWhileReady)
+  }, [status.phase, sessionLanded, lostWhileReady])
 
   // Watch connectivity for the whole signed-in lifetime: when the network
   // returns (incl. a Wi-Fi<->cellular handoff) while we're not `ready`, retry the
@@ -1076,8 +1260,12 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   // an offline banner while playback was syncing to that same server just fine.
   useEffect(() => {
     if (!effectiveSignedIn) return
-    return subscribeServerReached(reconnectIfNeeded)
-  }, [reconnectIfNeeded, effectiveSignedIn])
+    return subscribeServerReached(() => {
+      transportFailures.current = 0
+      setConnectionLost(false)
+      reconnectIfNeeded()
+    })
+  }, [reconnectIfNeeded, effectiveSignedIn, setConnectionLost])
 
   // Let absRequest silently re-establish the session when ABS rejects our token.
   //
@@ -1092,7 +1280,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
       setAbsReconnectHandler(null)
       return
     }
-    setAbsReconnectHandler(async () => {
+    const resweep = async (): Promise<boolean> => {
       const server = connectedServer.current
       if (!server) return false
       try {
@@ -1115,8 +1303,13 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         // network edge, foreground, server-reached - will retry.
         return false
       }
-    })
-    return () => setAbsReconnectHandler(null)
+    }
+    resweepRef.current = resweep
+    setAbsReconnectHandler(resweep)
+    return () => {
+      resweepRef.current = async () => false
+      setAbsReconnectHandler(null)
+    }
   }, [effectiveSignedIn, tokenFn])
 
   // Also re-probe on foreground: NetInfo can miss a network change that happened
@@ -1127,6 +1320,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     if (!effectiveSignedIn) return
     const sub = AppState.addEventListener('change', (s) => {
       if (s !== 'active') return
+      if (lostRef.current) void recoverLostRef.current()
       void pokeConnectivity(reconnectIfNeeded)
       // The car may have played downloads offline while we were backgrounded;
       // collect that listening now so the reconnect above can ship it.
@@ -1197,7 +1391,14 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         // offline banner. Only this explicit path clears it: the NetInfo watcher
         // and foreground probe call connect() too, and a network edge is not the
         // user changing their mind.
+        connectionLost: lostWhileReady,
         retry: () => {
+          // Lost while ready: check the server again behind the app. The full
+          // connect from `ready` would cover the app with the splash.
+          if (statusRef.current.phase === 'ready' && lostRef.current) {
+            void recoverLostRef.current()
+            return
+          }
           userChoseOffline.current = false
           setConnectedOffline(false)
           void connect()
